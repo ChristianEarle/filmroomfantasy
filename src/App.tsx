@@ -75,7 +75,7 @@ export default function App() {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings'>('Home');
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
