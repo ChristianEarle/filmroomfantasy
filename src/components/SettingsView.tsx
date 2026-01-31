@@ -13,9 +13,11 @@ interface ConnectedLeague {
 interface SettingsViewProps {
   isDarkMode?: boolean;
   onToggleDarkMode?: () => void;
+  /** Called when user syncs a league (e.g. clicks Sync Now); enables gated views */
+  onLeagueSynced?: () => void;
 }
 
-export function SettingsView({ isDarkMode = true, onToggleDarkMode }: SettingsViewProps) {
+export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSynced }: SettingsViewProps) {
   const [connectedLeagues, setConnectedLeagues] = useState<ConnectedLeague[]>([
     {
       id: '1',
@@ -82,7 +84,10 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode }: SettingsVi
                     <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
                     Connected
                   </span>
-                  <button className={`text-sm px-3 py-1.5 rounded transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200'}`}>
+                  <button
+                    onClick={() => onLeagueSynced?.()}
+                    className={`text-sm px-3 py-1.5 rounded transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200'}`}
+                  >
                     Sync Now
                   </button>
                   <button className="text-sm text-red-500 hover:text-red-400 px-3 py-1.5 hover:bg-red-500/10 rounded transition-colors">
