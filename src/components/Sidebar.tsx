@@ -1,8 +1,10 @@
 import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy } from 'lucide-react';
 
+type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings';
+
 interface SidebarProps {
-  activeView: 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings';
-  onViewChange: (view: 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings') => void;
+  activeView: SidebarView | 'Profile' | 'Login';
+  onViewChange: (view: SidebarView) => void;
   isDarkMode: boolean;
 }
 

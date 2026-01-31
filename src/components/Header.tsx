@@ -6,6 +6,8 @@ import { nflPlayersData } from '../data/nflTeamsData';
 interface HeaderProps {
   onPlayerClick: (player: Player) => void;
   isDarkMode: boolean;
+  isAuthenticated?: boolean;
+  onProfileClick?: () => void;
 }
 
 interface Notification {
@@ -52,7 +54,7 @@ const mockNotifications: Notification[] = [
   }
 ];
 
-export function Header({ onPlayerClick, isDarkMode }: HeaderProps) {
+export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onProfileClick }: HeaderProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -227,7 +229,11 @@ export function Header({ onPlayerClick, isDarkMode }: HeaderProps) {
           )}
         </div>
 
-        <button className={`w-9 h-9 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+        <button
+          onClick={onProfileClick}
+          className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'} ${onProfileClick ? 'cursor-pointer' : ''}`}
+          title={isAuthenticated ? 'Profile' : 'Sign in'}
+        >
           <User className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
         </button>
       </div>

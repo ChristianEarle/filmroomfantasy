@@ -16,6 +16,7 @@ import { GameDetailModal } from './components/GameDetailModal';
 import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
+import { ProfileView } from './components/ProfileView';
 
 // Page transition wrapper component
 function PageTransition({ children, viewKey }: { children: React.ReactNode; viewKey: string }) {
@@ -73,7 +74,7 @@ export default function App() {
   const [selectedPosition, setSelectedPosition] = useState<string>('ALL');
   const [currentWeek, setCurrentWeek] = useState(5);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
-  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings'>('Home');
+  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings' | 'Profile' | 'Login'>('Home');
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
@@ -97,39 +98,29 @@ export default function App() {
 
   const handleLogin = () => {
     setIsAuthenticated(true);
+    setActiveView('Home');
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
     setAuthView('login');
+    setActiveView('Home');
   };
-
-  // Show login/register pages if not authenticated
-  if (!isAuthenticated) {
-    if (authView === 'login') {
-      return (
-        <LoginView
-          onLogin={handleLogin}
-          onSwitchToRegister={() => setAuthView('register')}
-          isDarkMode={isDarkMode}
-        />
-      );
-    }
-    return (
-      <RegisterView
-        onRegister={handleLogin}
-        onSwitchToLogin={() => setAuthView('login')}
-        isDarkMode={isDarkMode}
-      />
-    );
-  }
 
   return (
     <div className={`flex h-screen ${isDarkMode ? 'dark bg-slate-900' : 'bg-slate-100'}`}>
       <Sidebar activeView={activeView} onViewChange={setActiveView} isDarkMode={isDarkMode} />
       
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} />
+        <Header
+          onPlayerClick={setSelectedPlayer}
+          isDarkMode={isDarkMode}
+          isAuthenticated={isAuthenticated}
+          onProfileClick={() => {
+            if (isAuthenticated) setActiveView('Profile');
+            else { setAuthView('login'); setActiveView('Login'); }
+          }}
+        />
         
         <main className={`flex-1 overflow-y-auto p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
           <PageTransition viewKey={activeView}>
@@ -186,6 +177,22 @@ export default function App() {
                 isDarkMode={isDarkMode}
                 onToggleDarkMode={handleToggleDarkMode}
               />
+            ) : activeView === 'Profile' ? (
+              <ProfileView isDarkMode={isDarkMode} onLogout={handleLogout} />
+            ) : activeView === 'Login' ? (
+              authView === 'login' ? (
+                <LoginView
+                  onLogin={handleLogin}
+                  onSwitchToRegister={() => setAuthView('register')}
+                  isDarkMode={isDarkMode}
+                />
+              ) : (
+                <RegisterView
+                  onRegister={handleLogin}
+                  onSwitchToLogin={() => setAuthView('login')}
+                  isDarkMode={isDarkMode}
+                />
+              )
             ) : (
               <WaiversView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} />
             )}
