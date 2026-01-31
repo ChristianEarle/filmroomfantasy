@@ -14,6 +14,8 @@ import { TrendsView } from './components/TrendsView';
 import { PlayoffPredictorView } from './components/PlayoffPredictorView';
 import { GameDetailModal } from './components/GameDetailModal';
 import { SettingsView } from './components/SettingsView';
+import { LoginView } from './components/LoginView';
+import { RegisterView } from './components/RegisterView';
 
 // Page transition wrapper component
 function PageTransition({ children, viewKey }: { children: React.ReactNode; viewKey: string }) {
@@ -75,6 +77,10 @@ export default function App() {
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authView, setAuthView] = useState<'login' | 'register'>('login');
+
   const handleGameSelect = (game: Game | null) => {
     setSelectedGame(game);
   };
@@ -88,6 +94,35 @@ export default function App() {
     setSelectedGame(null);
     setSelectedPlayer(player);
   };
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setAuthView('login');
+  };
+
+  // Show login/register pages if not authenticated
+  if (!isAuthenticated) {
+    if (authView === 'login') {
+      return (
+        <LoginView
+          onLogin={handleLogin}
+          onSwitchToRegister={() => setAuthView('register')}
+          isDarkMode={isDarkMode}
+        />
+      );
+    }
+    return (
+      <RegisterView
+        onRegister={handleLogin}
+        onSwitchToLogin={() => setAuthView('login')}
+        isDarkMode={isDarkMode}
+      />
+    );
+  }
 
   return (
     <div className={`flex h-screen ${isDarkMode ? 'dark bg-slate-900' : 'bg-slate-100'}`}>
