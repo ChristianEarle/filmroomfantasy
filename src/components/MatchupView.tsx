@@ -1,15 +1,24 @@
-import { useState } from 'react';
-import { ChevronDown, TrendingUp, TrendingDown, Zap, Shield, Target, Check } from 'lucide-react';
+import { useMemo } from 'react';
+import { TrendingUp, TrendingDown, Zap, Shield, Target, Loader2 } from 'lucide-react';
 import { Player } from '../App';
+import { useLeagueContext } from '../context/LeagueContext';
+import type { RosterPlayer } from '../context/LeagueContext';
+import { PlayerAvatar } from './PlayerAvatar';
+import { sortByPosition } from '../utils/rosterPositions';
+import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
+
+/** Sentinel name for an unfilled roster slot */
+const EMPTY_SLOT_NAME = 'Empty';
 
 interface MatchupPlayer {
+  id?: string;
   position: string;
   name: string;
   team: string;
   projection: number;
   isStarter: boolean;
   matchupGrade?: 'A+' | 'A' | 'A-' | 'B+' | 'B' | 'B-' | 'C+' | 'C' | 'C-' | 'D' | 'F';
-  weekChange?: number;
+  headshotUrl?: string | null;
 }
 
 interface MatchupViewProps {
@@ -17,87 +26,126 @@ interface MatchupViewProps {
   isDarkMode: boolean;
 }
 
-const yourTeam: MatchupPlayer[] = [
-  // Starters
-  { position: 'QB', name: 'Josh Allen', team: 'BUF', projection: 24.1, isStarter: true, matchupGrade: 'A', weekChange: 1.2 },
-  { position: 'RB', name: 'Bijan Robinson', team: 'ATL', projection: 17.1, isStarter: true, matchupGrade: 'B+', weekChange: -0.5 },
-  { position: 'RB', name: 'Breece Hall', team: 'NYJ', projection: 17.2, isStarter: true, matchupGrade: 'B', weekChange: 0.8 },
-  { position: 'WR', name: 'CeeDee Lamb', team: 'DAL', projection: 18.7, isStarter: true, matchupGrade: 'A-', weekChange: 2.1 },
-  { position: 'WR', name: "Ja'Marr Chase", team: 'CIN', projection: 19.4, isStarter: true, matchupGrade: 'A', weekChange: 1.5 },
-  { position: 'TE', name: 'Travis Kelce', team: 'KC', projection: 14.2, isStarter: true, matchupGrade: 'B+', weekChange: -1.2 },
-  { position: 'FLEX', name: 'Amon-Ra St. Brown', team: 'DET', projection: 17.6, isStarter: true, matchupGrade: 'A-', weekChange: 0.9 },
-  { position: 'K', name: 'Justin Tucker', team: 'BAL', projection: 9.4, isStarter: true, matchupGrade: 'B', weekChange: 0.2 },
-  { position: 'DEF', name: 'San Francisco', team: 'SF', projection: 11.2, isStarter: true, matchupGrade: 'A', weekChange: 1.8 },
-
-  // Bench
-  { position: 'RB', name: 'Tony Pollard', team: 'DAL', projection: 14.8, isStarter: false, matchupGrade: 'C+', weekChange: -0.3 },
-  { position: 'WR', name: 'Stefon Diggs', team: 'BUF', projection: 15.1, isStarter: false, matchupGrade: 'B-', weekChange: -2.1 },
-  { position: 'WR', name: 'Tyreek Hill', team: 'MIA', projection: 16.8, isStarter: false, matchupGrade: 'A+', weekChange: 3.4 },
-  { position: 'QB', name: 'Lamar Jackson', team: 'BAL', projection: 22.9, isStarter: false, matchupGrade: 'A-', weekChange: 0.6 },
-  { position: 'TE', name: 'Mark Andrews', team: 'BAL', projection: 12.3, isStarter: false, matchupGrade: 'B', weekChange: -0.8 },
-  { position: 'RB', name: 'Austin Ekeler', team: 'LAC', projection: 13.7, isStarter: false, matchupGrade: 'C', weekChange: -1.5 },
-];
-
-const opponentTeam: MatchupPlayer[] = [
-  // Starters
-  { position: 'QB', name: 'Jalen Hurts', team: 'PHI', projection: 23.4, isStarter: true, matchupGrade: 'A-', weekChange: 0.8 },
-  { position: 'RB', name: 'Christian McCaffrey', team: 'SF', projection: 19.8, isStarter: true, matchupGrade: 'A', weekChange: -1.2 },
-  { position: 'RB', name: 'Derrick Henry', team: 'TEN', projection: 16.5, isStarter: true, matchupGrade: 'B+', weekChange: 0.4 },
-  { position: 'WR', name: 'Justin Jefferson', team: 'MIN', projection: 18.3, isStarter: true, matchupGrade: 'A', weekChange: 1.1 },
-  { position: 'WR', name: 'Tyreek Hill', team: 'MIA', projection: 16.8, isStarter: true, matchupGrade: 'A+', weekChange: 3.4 },
-  { position: 'TE', name: 'TJ Hockenson', team: 'MIN', projection: 11.9, isStarter: true, matchupGrade: 'B', weekChange: -0.5 },
-  { position: 'FLEX', name: 'Davante Adams', team: 'LV', projection: 15.2, isStarter: true, matchupGrade: 'B-', weekChange: -1.8 },
-  { position: 'K', name: 'Harrison Butker', team: 'KC', projection: 8.8, isStarter: true, matchupGrade: 'B+', weekChange: 0.3 },
-  { position: 'DEF', name: 'Dallas', team: 'DAL', projection: 9.2, isStarter: true, matchupGrade: 'C+', weekChange: -0.7 },
-
-  // Bench
-  { position: 'QB', name: 'Tua Tagovailoa', team: 'MIA', projection: 19.7, isStarter: false, matchupGrade: 'B+', weekChange: 0.5 },
-  { position: 'RB', name: 'James Conner', team: 'ARI', projection: 13.2, isStarter: false, matchupGrade: 'C', weekChange: -0.9 },
-  { position: 'WR', name: 'DeVonta Smith', team: 'PHI', projection: 14.6, isStarter: false, matchupGrade: 'B', weekChange: 0.2 },
-  { position: 'WR', name: 'DK Metcalf', team: 'SEA', projection: 13.9, isStarter: false, matchupGrade: 'B-', weekChange: -0.4 },
-  { position: 'TE', name: 'Dalton Kincaid', team: 'BUF', projection: 9.8, isStarter: false, matchupGrade: 'C+', weekChange: 0.6 },
-  { position: 'RB', name: 'Rachaad White', team: 'TB', projection: 12.1, isStarter: false, matchupGrade: 'C', weekChange: -1.2 },
-];
-
-const getMatchupGradeColor = (grade: string | undefined) => {
-  if (!grade) return 'text-slate-400 bg-slate-800';
-  if (grade.startsWith('A')) return 'text-green-400 bg-green-500/20';
-  if (grade.startsWith('B')) return 'text-blue-400 bg-blue-500/20';
-  if (grade.startsWith('C')) return 'text-yellow-400 bg-yellow-500/20';
-  return 'text-red-400 bg-red-500/20';
-};
-
 export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
-  const [selectedWeek, setSelectedWeek] = useState(5);
-  const [showWeekDropdown, setShowWeekDropdown] = useState(false);
+  const { league, userTeam, roster, matchup, matchupLoading, error } = useLeagueContext();
+  const currentWeek = league?.currentWeek || 1;
 
-  const yourStarters = yourTeam.filter(p => p.isStarter);
-  const yourBench = yourTeam.filter(p => !p.isStarter);
-  const opponentStarters = opponentTeam.filter(p => p.isStarter);
-  const opponentBench = opponentTeam.filter(p => !p.isStarter);
+  // Check if we have a real matchup
+  const hasMatchup = !!matchup?.opponent?.id;
 
-  const yourTotal = yourStarters.reduce((sum, p) => sum + p.projection, 0);
-  const opponentTotal = opponentStarters.reduce((sum, p) => sum + p.projection, 0);
+  // Convert roster to MatchupPlayer format
+  const yourTeamData = useMemo(() => {
+    if (roster && roster.length > 0) {
+      return roster.map(p => ({
+        id: p?.id,
+        position: p?.slot || p?.position || 'FLEX',
+        name: p?.name || 'Unknown',
+        team: p?.team || '-',
+        projection: p?.projectedPoints || 0,
+        isStarter: p?.isStarter ?? false,
+        matchupGrade: calculateGrade(p?.projectedPoints || 0, p?.position || 'FLEX') as MatchupPlayer['matchupGrade'],
+        headshotUrl: p?.imageUrl || null,
+      }));
+    }
+    // Return empty array if no roster
+    return [];
+  }, [roster]);
 
-  // Calculate win probability based on projection difference
+  // Create empty opponent slots - derive from user's starters when available, else default 9-slot lineup
+  const emptyOpponentSlots: MatchupPlayer[] = useMemo(() => {
+    const userStarters = roster?.filter(p => p?.isStarter).map(p => p?.slot || p?.position || 'FLEX') ?? [];
+    const starterSlots =
+      userStarters.length > 0 ? userStarters : ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DEF'];
+    return sortByPosition(
+      starterSlots.map(pos => ({
+        position: pos,
+        slot: pos,
+        name: EMPTY_SLOT_NAME,
+        team: '-',
+        projection: 0,
+        isStarter: true,
+        matchupGrade: undefined as MatchupPlayer['matchupGrade'],
+      }))
+    );
+  }, [roster]);
+
+  // Get opponent data from matchup context or show empty slots
+  const opponentTeamData = useMemo(() => {
+    if (hasMatchup && matchup?.opponent?.roster && matchup.opponent.roster.length > 0) {
+      return matchup.opponent.roster.map((p: RosterPlayer) => ({
+        id: p?.id,
+        position: p?.slot || p?.position || 'FLEX',
+        name: p?.name || 'Unknown',
+        team: p?.team || '-',
+        projection: p?.projectedPoints || 0,
+        isStarter: p?.isStarter ?? false,
+        matchupGrade: calculateGrade(p?.projectedPoints || 0, p?.position || 'FLEX') as MatchupPlayer['matchupGrade'],
+        headshotUrl: p?.imageUrl || null,
+      }));
+    }
+    // Return empty slots when no matchup
+    return emptyOpponentSlots;
+  }, [matchup, hasMatchup, emptyOpponentSlots]);
+
+  const opponentName = hasMatchup ? (matchup?.opponent?.name || 'Opponent') : 'No Opponent';
+
+  // Memoize sorted arrays and totals to avoid recomputing on every render
+  const yourStarters = useMemo(() => sortByPosition(yourTeamData.filter(p => p.isStarter)), [yourTeamData]);
+  const yourBench = useMemo(() => sortByPosition(yourTeamData.filter(p => !p.isStarter)), [yourTeamData]);
+  const opponentStarters = useMemo(() => sortByPosition(opponentTeamData.filter(p => p.isStarter)), [opponentTeamData]);
+  const opponentBench = useMemo(() => sortByPosition(opponentTeamData.filter(p => !p.isStarter)), [opponentTeamData]);
+
+  const yourTotal = useMemo(() => yourStarters.reduce((sum, p) => sum + p.projection, 0), [yourStarters]);
+  const opponentTotal = useMemo(() => opponentStarters.reduce((sum, p) => sum + p.projection, 0), [opponentStarters]);
+
+  // Show loading state
+  if (matchupLoading) {
+    return (
+      <div className="max-w-[1600px] mx-auto">
+        <div className={`rounded-lg border p-12 flex flex-col items-center justify-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" aria-hidden="true" aria-label="Loading matchup" />
+          <p className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Loading matchup...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if we have valid data for comparison
+  const hasValidData = yourStarters.length > 0;
+
+  // Calculate win probability based on projection difference (only if there's a real matchup)
   const projDiff = yourTotal - opponentTotal;
-  const winProbability = Math.min(95, Math.max(5, 50 + (projDiff * 2.5)));
+  const winProbability = hasMatchup ? Math.min(95, Math.max(5, 50 + (projDiff * 2.5))) : 50;
 
-  // Convert matchup player to Player interface for modal
-  const convertToPlayer = (matchupPlayer: MatchupPlayer, index: number): Player => ({
-    id: `matchup-${index}`,
-    rank: index + 1,
-    name: matchupPlayer.name,
-    team: matchupPlayer.team,
-    position: matchupPlayer.position === 'FLEX' ? 'WR' : matchupPlayer.position as any,
-    keyLine: 'O/U 85.5 rec yds',
-    projectedPoints: matchupPlayer.projection,
-    weekChange: matchupPlayer.weekChange || 0,
-  });
+  // Convert matchup player to Player interface for modal (use real player id for stats API)
+  const convertToPlayer = (matchupPlayer: MatchupPlayer, index: number): Player => {
+    const pos = (matchupPlayer.position === 'FLEX' ? 'WR' : matchupPlayer.position) as Player['position'];
+    const projPts = matchupPlayer.projection;
+    const keyLine = projPts > 0 ? `Proj: ${projPts.toFixed(1)} pts` : '';
 
-  // Find position-by-position advantages
+    return {
+      id: matchupPlayer.id || `matchup-${index}`,
+      rank: index + 1,
+      name: matchupPlayer.name,
+      team: matchupPlayer.team,
+      position: pos,
+      keyLine,
+      projectedPoints: projPts,
+      weekChange: 0,
+      headshotUrl: matchupPlayer.headshotUrl ?? undefined,
+    };
+  };
+
+  // Find position-by-position advantages (handle different sized arrays)
   const positionComparison = yourStarters.map((yourPlayer, idx) => {
-    const oppPlayer = opponentStarters[idx];
+    const oppPlayer = opponentStarters[idx] || {
+      position: yourPlayer.position,
+      name: EMPTY_SLOT_NAME,
+      team: '-',
+      projection: 0,
+      isStarter: true,
+      matchupGrade: 'C' as const,
+    };
     const diff = yourPlayer.projection - oppPlayer.projection;
     return { position: yourPlayer.position, diff, yourPlayer, oppPlayer };
   });
@@ -105,108 +153,143 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
   const yourAdvantages = positionComparison.filter(p => p.diff > 1).length;
   const oppAdvantages = positionComparison.filter(p => p.diff < -1).length;
 
+  // No roster state - show message to sync
+  if (!hasValidData && !matchupLoading) {
+    return (
+      <div className="max-w-[1600px] mx-auto">
+        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <Target className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`} aria-hidden="true" />
+          <h2 className={`text-xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No Matchup Data</h2>
+          <p className={`text-sm mb-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+            Sync your league to import matchup data from Sleeper.
+          </p>
+          <p className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+            Go to Settings and click "Sync" on your league.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-[1600px] mx-auto space-y-6">
+      {/* Error alert */}
+      {error && (
+        <div className={`rounded-lg border p-4 flex items-center gap-3 ${isDarkMode ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'}`}>
+          <Target className="w-5 h-5 text-red-500" aria-hidden="true" />
+          <p className={`text-sm font-medium ${isDarkMode ? 'text-red-400' : 'text-red-700'}`}>{error}</p>
+        </div>
+      )}
+
+      {/* No opponent alert */}
+      {!hasMatchup && !matchupLoading && (
+        <div className={`rounded-lg border p-4 flex items-center gap-3 ${isDarkMode ? 'bg-blue-500/10 border-blue-500/30' : 'bg-blue-50 border-blue-200'}`}>
+          <Target className="w-5 h-5 text-blue-500" aria-hidden="true" />
+          <div>
+            <p className={`text-sm font-medium ${isDarkMode ? 'text-blue-400' : 'text-blue-700'}`}>
+              No opponent scheduled for Week {currentWeek}
+            </p>
+            <p className={`text-xs ${isDarkMode ? 'text-blue-500/70' : 'text-blue-600'}`}>
+              This could be a bye week or the matchup hasn't been set yet.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header Card */}
-      <div className={`rounded-xl border p-8 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <div className={`rounded-lg border p-8 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className={`text-2xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fantasy Matchup</h1>
-            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Side-by-side projections and biggest edges</p>
+            <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Side-by-side projections and biggest edges</p>
           </div>
-          <div className="relative">
-            <button
-              onClick={() => setShowWeekDropdown(!showWeekDropdown)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors border ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
-            >
-              <span className="text-sm font-medium">Week {selectedWeek}</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${showWeekDropdown ? 'rotate-180' : ''}`} />
-            </button>
-            {showWeekDropdown && (
-              <div className={`absolute top-12 right-0 w-32 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map(week => (
-                  <button
-                    key={week}
-                    onClick={() => { setSelectedWeek(week); setShowWeekDropdown(false); }}
-                    className={`w-full px-4 py-2 text-sm text-left transition-colors ${
-                      selectedWeek === week
-                        ? 'bg-blue-600 text-white'
-                        : isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    Week {week}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3] border-[#222]' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+            aria-label={`Current week: ${currentWeek}`}
+          >
+            <span className="text-sm font-medium">Week {currentWeek}</span>
           </div>
         </div>
 
         {/* Matchup Overview */}
-        <div className={`rounded-xl p-6 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+        <div className={`rounded-lg p-6 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
           <div className="flex items-center justify-between mb-6">
             {/* Your Team */}
             <div className="text-center flex-1">
-              <div className={`text-sm mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Team</div>
+              <div className={`text-sm mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>You</div>
               <div className={`text-4xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{yourTotal.toFixed(1)}</div>
-              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Projected Points</div>
+              <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>Projected Points</div>
             </div>
 
             {/* VS Badge */}
             <div className="px-8">
-              <div className={`w-16 h-16 rounded-full border-2 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-600' : 'bg-white border-slate-300'}`}>
-                <span className={`font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>VS</span>
+              <div className={`w-16 h-16 rounded-full border-2 flex items-center justify-center ${isDarkMode ? 'bg-[#111] border-slate-600' : 'bg-white border-slate-300'}`}>
+                <span className={`font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>VS</span>
               </div>
             </div>
 
             {/* Opponent */}
             <div className="text-center flex-1">
-              <div className={`text-sm mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>The Gronk Squad</div>
-              <div className={`text-4xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{opponentTotal.toFixed(1)}</div>
-              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Projected Points</div>
+              <div className={`text-sm mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-600' : 'text-[#737373]') : (isDarkMode ? 'text-[#737373]' : 'text-[#555]')}`}>
+                {opponentName}
+              </div>
+              <div className={`text-4xl font-bold mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-700' : 'text-[#a3a3a3]') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                {hasMatchup ? opponentTotal.toFixed(1) : '-'}
+              </div>
+              <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                {hasMatchup ? 'Projected Points' : 'No opponent'}
+              </div>
             </div>
           </div>
 
           {/* Win Probability Bar */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between text-xs mb-2">
-              <span className="text-blue-500 font-semibold">{winProbability.toFixed(0)}% Win</span>
-              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{(100 - winProbability).toFixed(0)}% Win</span>
+          {hasMatchup ? (
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="text-blue-500 font-semibold">{winProbability.toFixed(0)}% Win</span>
+                <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>{(100 - winProbability).toFixed(0)}% Win</span>
+              </div>
+              <div className={`h-3 rounded-full overflow-hidden flex ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} role="progressbar" aria-valuenow={winProbability} aria-valuemin={0} aria-valuemax={100} aria-label="Win probability">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500"
+                  style={{ width: `${winProbability}%` }}
+                />
+                <div
+                  className={`h-full ${isDarkMode ? 'bg-slate-600' : 'bg-slate-300'}`}
+                  style={{ width: `${100 - winProbability}%` }}
+                />
+              </div>
             </div>
-            <div className={`h-3 rounded-full overflow-hidden flex ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500"
-                style={{ width: `${winProbability}%` }}
-              />
-              <div
-                className={`h-full ${isDarkMode ? 'bg-slate-600' : 'bg-slate-300'}`}
-                style={{ width: `${100 - winProbability}%` }}
-              />
+          ) : (
+            <div className={`mb-4 p-3 rounded-lg text-center ${isDarkMode ? 'bg-[#111]' : 'bg-slate-100'}`}>
+              <p className={`text-sm ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                Bye week or no opponent scheduled
+              </p>
             </div>
-          </div>
+          )}
 
           {/* Quick Stats */}
           <div className="grid grid-cols-3 gap-4 mt-6">
-            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-center gap-1 mb-1">
-                <Target className="w-4 h-4 text-blue-500" />
-                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Proj. Margin</span>
+                <Target className="w-4 h-4 text-blue-500" aria-hidden="true" />
+                <span className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Proj. Margin</span>
               </div>
               <div className={`text-lg font-bold ${projDiff >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 {projDiff >= 0 ? '+' : ''}{projDiff.toFixed(1)}
               </div>
             </div>
-            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-center gap-1 mb-1">
-                <Zap className="w-4 h-4 text-green-500" />
-                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Edges</span>
+                <Zap className="w-4 h-4 text-green-500" aria-hidden="true" />
+                <span className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Your Edges</span>
               </div>
               <div className="text-lg font-bold text-green-500">{yourAdvantages}</div>
             </div>
-            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-center gap-1 mb-1">
-                <Shield className="w-4 h-4 text-red-500" />
-                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Their Edges</span>
+                <Shield className="w-4 h-4 text-red-500" aria-hidden="true" />
+                <span className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Their Edges</span>
               </div>
               <div className="text-lg font-bold text-red-500">{oppAdvantages}</div>
             </div>
@@ -215,29 +298,29 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
       </div>
 
       {/* Position-by-Position Comparison */}
-      <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+      <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`p-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
           <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Position-by-Position Breakdown</h2>
-          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Compare projections at each roster spot</p>
+          <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Compare projections at each roster spot</p>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className={`border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                <th className={`text-left px-6 py-3 text-xs w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>POS</th>
-                <th className={`text-left px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Player</th>
-                <th className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Proj</th>
-                <th className={`text-center px-4 py-3 text-xs w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Edge</th>
-                <th className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Proj</th>
-                <th className={`text-right px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Their Player</th>
+              <tr className={`border-b ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                <th scope="col" className={`text-left px-6 py-3 text-xs w-16 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>POS</th>
+                <th scope="col" className={`text-left px-4 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Your Player</th>
+                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Proj</th>
+                <th scope="col" className={`text-center px-4 py-3 text-xs w-20 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Edge</th>
+                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Proj</th>
+                <th scope="col" className={`text-right px-4 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Their Player</th>
               </tr>
             </thead>
             <tbody>
               {positionComparison.map((comp, index) => (
-                <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-800 hover:bg-slate-800/50' : 'border-slate-100 hover:bg-slate-50'}`}>
+                <tr key={`${comp.yourPlayer.id || comp.position}-${index}`} className={`border-b transition-colors ${isDarkMode ? 'border-slate-800 hover:bg-[#1a1a1a]/50' : 'border-slate-100 hover:bg-slate-50'}`}>
                   <td className="px-6 py-4">
-                    <span className={`text-xs font-medium px-2 py-1 rounded ${isDarkMode ? 'text-slate-500 bg-slate-800' : 'text-slate-500 bg-slate-100'}`}>
+                    <span className={`text-xs font-medium px-2 py-1 rounded ${isDarkMode ? 'text-[#555] bg-[#1a1a1a]' : 'text-[#555] bg-slate-100'}`}>
                       {comp.position}
                     </span>
                   </td>
@@ -247,12 +330,22 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                       className="text-left hover:text-blue-500 transition-colors group"
                     >
                       <div className="flex items-center gap-2">
-                        <span className={`font-bold group-hover:text-blue-500 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.yourPlayer.name}</span>
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${getMatchupGradeColor(comp.yourPlayer.matchupGrade)}`}>
-                          {comp.yourPlayer.matchupGrade}
-                        </span>
+                        <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-[#1a1a1a] text-[#737373] border-[#222]' : 'bg-slate-100 text-[#555] border-slate-200'}`}>
+                          <PlayerAvatar name={comp.yourPlayer.name} headshotUrl={comp.yourPlayer.headshotUrl} fallbackClassName="text-sm font-bold" isDarkMode={isDarkMode} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-4">
+                            <span className={`font-bold group-hover:text-blue-500 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.yourPlayer.name}</span>
+                            <span
+                              className={`text-xs font-medium px-2 py-1 rounded border shrink-0 ${getMatchupGradeColor(comp.yourPlayer.matchupGrade, isDarkMode)}`}
+                              title={`${getMatchupGradeLabel(comp.yourPlayer.matchupGrade)} projection for position`}
+                            >
+                              Matchup {comp.yourPlayer.matchupGrade || '—'}
+                            </span>
+                          </div>
+                          <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{comp.yourPlayer.team}</div>
+                        </div>
                       </div>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{comp.yourPlayer.team}</div>
                     </button>
                   </td>
                   <td className="px-4 py-4 text-center">
@@ -262,28 +355,49 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                     <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${
                       comp.diff > 1 ? 'bg-green-500/20 text-green-500' :
                       comp.diff < -1 ? 'bg-red-500/20 text-red-500' :
-                      isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'
+                      isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'
                     }`}>
-                      {comp.diff > 0 ? <TrendingUp className="w-3 h-3" /> : comp.diff < 0 ? <TrendingDown className="w-3 h-3" /> : null}
+                      {comp.diff > 0 ? <TrendingUp className="w-3 h-3" aria-hidden="true" /> : comp.diff < 0 ? <TrendingDown className="w-3 h-3" aria-hidden="true" /> : null}
                       {comp.diff > 0 ? '+' : ''}{comp.diff.toFixed(1)}
                     </div>
                   </td>
                   <td className="px-4 py-4 text-center">
-                    <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.oppPlayer.projection.toFixed(1)}</span>
+                    <span className={`font-bold ${comp.oppPlayer.name === EMPTY_SLOT_NAME ? (isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                      {comp.oppPlayer.name === EMPTY_SLOT_NAME ? '-' : comp.oppPlayer.projection.toFixed(1)}
+                    </span>
                   </td>
                   <td className="px-4 py-4 text-right">
-                    <button
-                      onClick={() => onPlayerClick(convertToPlayer(comp.oppPlayer, yourTeam.length + index))}
-                      className="text-right hover:text-blue-500 transition-colors group"
-                    >
-                      <div className="flex items-center gap-2 justify-end">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${getMatchupGradeColor(comp.oppPlayer.matchupGrade)}`}>
-                          {comp.oppPlayer.matchupGrade}
-                        </span>
-                        <span className={`font-bold group-hover:text-blue-500 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.oppPlayer.name}</span>
+                    {comp.oppPlayer.name === EMPTY_SLOT_NAME ? (
+                      <div className="text-right">
+                        <div className={`flex items-center gap-2 justify-end ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`}>
+                          <span className="font-bold italic">{EMPTY_SLOT_NAME}</span>
+                        </div>
+                        <div className={`text-xs ${isDarkMode ? 'text-slate-700' : 'text-[#a3a3a3]'}`}>No opponent</div>
                       </div>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{comp.oppPlayer.team}</div>
-                    </button>
+                    ) : (
+                      <button
+                        onClick={() => onPlayerClick(convertToPlayer(comp.oppPlayer, yourStarters.length + index))}
+                        className="text-right hover:text-blue-500 transition-colors group"
+                      >
+                        <div className="flex items-center gap-2 justify-end">
+                          <div>
+                            <div className="flex items-center gap-4 justify-end">
+                              <span
+                                className={`text-xs font-medium px-2 py-1 rounded border shrink-0 ${getMatchupGradeColor(comp.oppPlayer.matchupGrade, isDarkMode)}`}
+                                title={`${getMatchupGradeLabel(comp.oppPlayer.matchupGrade)} projection for position`}
+                              >
+                                Matchup {comp.oppPlayer.matchupGrade || '—'}
+                              </span>
+                              <span className={`font-bold group-hover:text-blue-500 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.oppPlayer.name}</span>
+                            </div>
+                            <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{comp.oppPlayer.team}</div>
+                          </div>
+                          <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-[#1a1a1a] text-[#737373] border-[#222]' : 'bg-slate-100 text-[#555] border-slate-200'}`}>
+                            <PlayerAvatar name={comp.oppPlayer.name} headshotUrl={comp.oppPlayer.headshotUrl} fallbackClassName="text-sm font-bold" isDarkMode={isDarkMode} />
+                          </div>
+                        </div>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -295,92 +409,94 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
       {/* Bench Comparison */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Your Bench */}
-        <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <div className={`p-4 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+        <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`p-4 border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/50' : 'border-slate-200 bg-slate-50'}`}>
             <h3 className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Your Bench</h3>
           </div>
           <div className="p-4 space-y-2">
-            {yourBench.map((player, index) => (
-              <button
-                key={index}
-                onClick={() => onPlayerClick(convertToPlayer(player, yourStarters.length + index))}
-                className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.position}</span>
-                    <div>
-                      <span className={`font-bold transition-colors ${isDarkMode ? 'text-slate-300 group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.team}</div>
+            {yourBench.length === 0 ? (
+              <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>
+                <p className="text-sm">No bench players</p>
+              </div>
+            ) : (
+              yourBench.map((player) => (
+                <button
+                  key={player.id || `bench-${player.name}-${player.team}`}
+                  onClick={() => onPlayerClick(convertToPlayer(player, yourStarters.length))}
+                  className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.position}</span>
+                      <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'}`}>
+                        <PlayerAvatar name={player.name} headshotUrl={player.headshotUrl} fallbackClassName="text-xs font-bold" isDarkMode={isDarkMode} />
+                      </div>
+                      <div>
+                        <span className={`font-bold transition-colors ${isDarkMode ? 'text-[#a3a3a3] group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
+                        <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.team}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span
+                        className={`text-xs font-medium px-2 py-1 rounded border shrink-0 ${getMatchupGradeColor(player.matchupGrade, isDarkMode)}`}
+                        title={`${getMatchupGradeLabel(player.matchupGrade)} projection for position`}
+                      >
+                        Matchup {player.matchupGrade || '—'}
+                      </span>
+                      <span className={`text-sm font-semibold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.projection.toFixed(1)}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${getMatchupGradeColor(player.matchupGrade)}`}>
-                      {player.matchupGrade}
-                    </span>
-                    <span className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.projection.toFixed(1)}</span>
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))
+            )}
           </div>
         </div>
 
         {/* Opponent Bench */}
-        <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <div className={`p-4 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+        <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`p-4 border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/50' : 'border-slate-200 bg-slate-50'}`}>
             <h3 className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Opponent's Bench</h3>
           </div>
           <div className="p-4 space-y-2">
-            {opponentBench.map((player, index) => (
-              <button
-                key={index}
-                onClick={() => onPlayerClick(convertToPlayer(player, yourTeam.length + opponentStarters.length + index))}
-                className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.position}</span>
-                    <div>
-                      <span className={`font-bold transition-colors ${isDarkMode ? 'text-slate-300 group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.team}</div>
+            {!hasMatchup ? (
+              <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>
+                <p className="text-sm">No opponent this week</p>
+              </div>
+            ) : opponentBench.length === 0 ? (
+              <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>
+                <p className="text-sm">No bench players</p>
+              </div>
+            ) : (
+              opponentBench.map((player) => (
+                <button
+                  key={player.id || `opp-bench-${player.name}-${player.team}`}
+                  onClick={() => onPlayerClick(convertToPlayer(player, yourStarters.length + opponentStarters.length))}
+                  className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.position}</span>
+                      <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'}`}>
+                        <PlayerAvatar name={player.name} headshotUrl={player.headshotUrl} fallbackClassName="text-xs font-bold" isDarkMode={isDarkMode} />
+                      </div>
+                      <div>
+                        <span className={`font-bold transition-colors ${isDarkMode ? 'text-[#a3a3a3] group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
+                        <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.team}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span
+                        className={`text-xs font-medium px-2 py-1 rounded border shrink-0 ${getMatchupGradeColor(player.matchupGrade, isDarkMode)}`}
+                        title={`${getMatchupGradeLabel(player.matchupGrade)} projection for position`}
+                      >
+                        Matchup {player.matchupGrade || '—'}
+                      </span>
+                      <span className={`text-sm font-semibold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.projection.toFixed(1)}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${getMatchupGradeColor(player.matchupGrade)}`}>
-                      {player.matchupGrade}
-                    </span>
-                    <span className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.projection.toFixed(1)}</span>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* FilmRoom Insights */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl p-6 border border-blue-500/30">
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Zap className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h3 className="font-bold text-white mb-2">FilmRoom Edge Analysis</h3>
-            <div className="space-y-2 text-sm text-blue-100">
-              <p className="flex items-start gap-2">
-                <Check className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
-                <span>You have a clear <strong className="text-white">WR advantage</strong> this week with CeeDee and Ja'Marr both facing weak secondaries.</span>
-              </p>
-              <p className="flex items-start gap-2">
-                <Check className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
-                <span>Consider starting <strong className="text-white">Tyreek Hill</strong> over Amon-Ra St. Brown for upside — he has an A+ matchup grade.</span>
-              </p>
-              <p className="flex items-start gap-2">
-                <Check className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                <span>Monitor <strong className="text-white">Travis Kelce's</strong> injury status — he's questionable with an ankle issue.</span>
-              </p>
-            </div>
+                </button>
+              ))
+            )}
           </div>
         </div>
       </div>

@@ -8,6 +8,10 @@
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
       alias: {
+        // Versioned aliases required because src/components/ui/ imports packages
+        // with version suffixes (e.g., '@radix-ui/react-dialog@1.1.6').
+        // TODO: Remove these aliases by updating UI component imports to use
+        // bare package names instead of versioned specifiers.
         'vaul@1.1.2': 'vaul',
         'sonner@2.0.3': 'sonner',
         'recharts@2.15.2': 'recharts',
@@ -55,6 +59,23 @@
     },
     server: {
       port: 3000,
+      host: true,
       open: true,
+      proxy: {
+        '/api': {
+          // Use VITE_API_URL env var for portability across local dev, CI, and Docker
+          target: process.env.VITE_API_URL || 'http://127.0.0.1:8787',
+          changeOrigin: true,
+          secure: false,
+          configure: (proxy) => {
+            proxy.on('error', (err, req, res) => {
+              console.warn('API proxy error - is the backend running on port 8787?', err.message);
+            });
+            proxy.on('proxyReq', (proxyReq, req) => {
+              proxyReq.setHeader('Connection', 'keep-alive');
+            });
+          },
+        },
+      },
     },
   });

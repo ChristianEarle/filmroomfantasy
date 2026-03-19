@@ -1,0 +1,238 @@
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { drizzle } from 'drizzle-orm/d1';
+import * as schema from './db/schema';
+
+// Import utilities
+import { cleanupExpiredRateLimits } from './middleware/rateLimit';
+
+// Import routes
+import { authRoutes } from './routes/auth';
+import { leagueRoutes } from './routes/leagues';
+import { teamRoutes } from './routes/teams';
+import { playerRoutes } from './routes/players';
+import { matchupRoutes } from './routes/matchups';
+import { gameRoutes } from './routes/games';
+import { adminRoutes } from './routes/admin';
+import { feedbackRoutes } from './routes/feedback';
+import { yahooRoutes } from './routes/yahoo';
+
+// Types
+export type Env = {
+  DB: D1Database;
+  JWT_SECRET: string;
+  ENVIRONMENT: string;
+  SYNC_SECRET?: string; // Optional: required for POST /api/admin/sync-players
+  TWITTER_RSS_URLS?: string; // Comma-separated RSS URLs, e.g. https://nitter.net/AdamSchefter/rss
+  OPENAI_API_KEY?: string; // For AI relevance filtering of player news
+  GOOGLE_CLIENT_ID?: string; // Google OAuth client ID — get from https://console.cloud.google.com/apis/credentials
+  YAHOO_CLIENT_ID?: string; // Yahoo OAuth client ID — get from https://developer.yahoo.com/apps/
+  YAHOO_CLIENT_SECRET?: string; // Yahoo OAuth client secret
+  RESEND_API_KEY?: string; // Optional: Resend API key for password reset emails — get from https://resend.com
+  APP_URL?: string; // Frontend URL for password reset links (defaults to http://localhost:5173)
+  FEEDBACK_EMAIL?: string; // Optional: Email address to receive feedback notifications via Resend
+};
+
+export type Variables = {
+  db: ReturnType<typeof drizzle<typeof schema>>;
+  user?: schema.User;
+  requestId: string;
+};
+
+// Create app
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Global middleware
+app.use('*', logger());
+
+// Request ID middleware
+app.use('*', async (c, next) => {
+  const requestId = crypto.randomUUID();
+  c.set('requestId', requestId);
+  c.header('X-Request-Id', requestId);
+  if (c.env.ENVIRONMENT !== 'production') {
+    console.log(`[${requestId}] ${c.req.method} ${c.req.path}`);
+  }
+  await next();
+});
+
+const allowedOrigins = [
+  'http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173',
+  'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://127.0.0.1:5173',
+];
+app.use('*', cors({
+  origin: (origin, _c) => {
+    if (!origin) return allowedOrigins[0];
+    if (allowedOrigins.includes(origin)) return origin;
+    // Allow Cloudflare Pages/Workers subdomains (trusted Cloudflare infrastructure)
+    if (origin.endsWith('.pages.dev') || origin.endsWith('.cloudflarepages.com') || origin.endsWith('.workers.dev')) return origin;
+    // Allow custom production domains:
+    if (origin === 'https://filmroomfantasy.com' || origin === 'https://www.filmroomfantasy.com') return origin;
+    if (origin === 'https://filmroom.app' || origin === 'https://www.filmroom.app') return origin;
+    return allowedOrigins[0];
+  },
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
+
+// Prevent CORS cache poisoning — always vary on Origin
+app.use('*', async (c, next) => {
+  await next();
+  c.header('Vary', 'Origin');
+});
+
+// Security headers
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('X-XSS-Protection', '1; mode=block');
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (c.env.ENVIRONMENT === 'production') {
+    c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  // Content Security Policy
+  const cspDirectives = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'", // Tailwind uses inline styles
+    "img-src 'self' https://sleepercdn.com https://a.espncdn.com https://*.googleusercontent.com data: blob:",
+    "font-src 'self'",
+    "connect-src 'self' https://accounts.google.com https://api.sleeper.app",
+    "frame-src 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ];
+  c.header('Content-Security-Policy', cspDirectives.join('; '));
+});
+
+// Environment validation middleware — warn on missing critical config
+app.use('*', async (c, next) => {
+  // Log warnings once per isolate for missing config (non-blocking)
+  if (!(globalThis as any).__envChecked) {
+    (globalThis as any).__envChecked = true;
+    if (!c.env.JWT_SECRET) console.error('[startup] CRITICAL: JWT_SECRET not set — auth will fail');
+    if (!c.env.DB) console.error('[startup] CRITICAL: DB (D1 binding) not configured');
+    if (!c.env.SYNC_SECRET) console.warn('[startup] WARNING: SYNC_SECRET not set — admin endpoints unprotected');
+  }
+  await next();
+});
+
+// Database middleware - attach drizzle instance to context
+app.use('*', async (c, next) => {
+  const db = drizzle(c.env.DB, { schema });
+  c.set('db', db);
+  await next();
+});
+
+// Health check
+app.get('/', (c) => {
+  return c.json({
+    status: 'ok',
+    name: 'FilmRoom Fantasy API',
+    version: '1.0.0',
+    environment: c.env.ENVIRONMENT,
+  });
+});
+
+app.get('/health', (c) => {
+  return c.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// Mount routes
+app.route('/api/auth', authRoutes);
+app.route('/api/leagues', leagueRoutes);
+app.route('/api/teams', teamRoutes);
+app.route('/api/players', playerRoutes);
+app.route('/api/matchups', matchupRoutes);
+app.route('/api/games', gameRoutes);
+app.route('/api/admin', adminRoutes);
+app.route('/api/feedback', feedbackRoutes);
+app.route('/api/yahoo', yahooRoutes);
+
+// 404 handler
+app.notFound((c) => {
+  return c.json({ error: 'Not found', path: c.req.path }, 404);
+});
+
+// Error handler — structured logging with endpoint context
+app.onError((err, c) => {
+  const requestId = c.get('requestId') || 'unknown';
+  const endpoint = `${c.req.method} ${c.req.path}`;
+  console.error(`[${requestId}] Unhandled error on ${endpoint}:`, err.message, err.stack);
+  return c.json({
+    error: 'Internal server error',
+    requestId,
+    message: c.env.ENVIRONMENT === 'development' ? err.message : undefined,
+  }, 500);
+});
+
+// Scheduled handler for Cloudflare Cron Triggers
+// Uses app.fetch() to call existing admin endpoints internally
+async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+  const baseUrl = 'http://localhost';
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (env.SYNC_SECRET) headers['X-Admin-Key'] = env.SYNC_SECRET;
+
+  const callSync = async (path: string, body?: object, retries = 1): Promise<boolean> => {
+    const init: RequestInit = { method: 'POST', headers };
+    if (body) init.body = JSON.stringify(body);
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(`[cron] Retry ${attempt}/${retries} for ${path}`);
+          await new Promise(r => setTimeout(r, 2000 * attempt));
+        }
+        const res = await app.fetch(new Request(`${baseUrl}${path}`, init), env, ctx);
+        const data = await res.json() as Record<string, unknown>;
+        if (res.ok) {
+          console.log(`[cron] ${path}: ${data.message || 'done'}`);
+          return true;
+        }
+        console.error(`[cron] ${path} returned ${res.status}: ${data.error || 'unknown error'}`);
+      } catch (err) {
+        console.error(`[cron] ${path} failed (attempt ${attempt + 1}):`, err);
+      }
+    }
+    console.error(`[cron] ${path} FAILED after ${retries + 1} attempts — data may be stale`);
+    return false;
+  };
+
+  // Clean up expired rate limit entries and revoked sessions on every cron run
+  try {
+    const deleted = await cleanupExpiredRateLimits(env.DB);
+    if (deleted > 0) console.log(`[cron] Cleaned up ${deleted} expired rate limit entries`);
+
+    // Clean up expired sessions
+    const sessionResult = await env.DB.prepare(
+      'DELETE FROM sessions WHERE expires_at <= ?1'
+    ).bind(Date.now()).run();
+    const sessionsDeleted = sessionResult.meta.changes ?? 0;
+    if (sessionsDeleted > 0) console.log(`[cron] Cleaned up ${sessionsDeleted} expired sessions`);
+  } catch (err) {
+    console.error('[cron] Cleanup failed:', err);
+  }
+
+  if (event.cron === '0 12 * * *') {
+    // Daily 6 AM CT (12 PM UTC): sync players, injury news, games
+    await callSync('/api/admin/sync-players');
+    await callSync('/api/admin/sync-news');
+    await callSync('/api/admin/sync-games');
+  } else if (event.cron === '0 */4 * * *') {
+    // Every 4 hours: sync stats and projections (all weeks so the board has data for every week)
+    await callSync('/api/admin/sync-stats');
+    await callSync('/api/admin/sync-projections', { allWeeks: true });
+  } else if (event.cron === '0 */6 * * *') {
+    // Every 6 hours: sync RSS sports news
+    await callSync('/api/admin/sync-twitter-news');
+  }
+}
+
+export default {
+  fetch: app.fetch,
+  scheduled: handleScheduled,
+};

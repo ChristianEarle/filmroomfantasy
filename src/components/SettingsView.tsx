@@ -1,223 +1,861 @@
-import { Plus, Check, Globe, Link as LinkIcon, AlertCircle } from 'lucide-react';
-import { useState } from 'react';
-
-interface ConnectedLeague {
-  id: string;
-  platform: 'Sleeper' | 'ESPN' | 'Yahoo' | 'NFL';
-  name: string;
-  year: number;
-  teams: number;
-  status: 'connected' | 'syncing' | 'error';
-}
+import { Plus, Globe, AlertCircle, Loader2, X, RefreshCw, Trash2 } from 'lucide-react';
+import { FeedbackWidget } from './FeedbackWidget';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useLeaguesContext } from '../context/LeaguesContext';
+import { leagueConnectService, sleeperApi, yahooApi, type Platform, type ExternalLeague } from '../services';
+import type { ScoringFormat } from '../services/auth';
 
 interface SettingsViewProps {
   isDarkMode?: boolean;
   onToggleDarkMode?: () => void;
-  /** Called when user syncs a league (e.g. clicks Sync Now); enables gated views */
   onLeagueSynced?: () => void;
 }
 
+const SCORING_OPTIONS: { value: ScoringFormat; label: string }[] = [
+  { value: 'ppr', label: 'PPR (Point Per Reception)' },
+  { value: 'half_ppr', label: 'Half PPR' },
+  { value: 'standard', label: 'Standard' },
+];
+
+type ConnectionStep = 'select-platform' | 'sleeper-username' | 'sleeper-leagues' | 'enter-league-id' | 'confirm' | 'yahoo-connecting' | 'yahoo-leagues';
+
 export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSynced }: SettingsViewProps) {
-  const [connectedLeagues, setConnectedLeagues] = useState<ConnectedLeague[]>([
-    {
-      id: '1',
-      platform: 'Sleeper',
-      name: 'Sunday Funday League',
-      year: 2025,
-      teams: 12,
-      status: 'connected'
-    }
-  ]);
+  const { user, updateProfile } = useAuth();
+  const { leagues, isLoading: leaguesLoading, error: leaguesError, refetch: refetchLeagues } = useLeaguesContext();
+
+  const preferredScoring = user?.preferredScoring ?? 'ppr';
+  const notificationsEnabled = user?.notificationsEnabled ?? true;
+
+  // Preference update error state
+  const [prefError, setPrefError] = useState<string | null>(null);
+
+  // Refs for Yahoo OAuth cleanup on unmount
+  const yahooPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const yahooListenerRef = useRef<((event: MessageEvent) => void) | null>(null);
+
+  // Clean up Yahoo OAuth resources on unmount
+  useEffect(() => {
+    return () => {
+      if (yahooPollRef.current) clearInterval(yahooPollRef.current);
+      if (yahooListenerRef.current) window.removeEventListener('message', yahooListenerRef.current);
+    };
+  }, []);
+
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [connectionStep, setConnectionStep] = useState<ConnectionStep>('select-platform');
+  const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(null);
+
+  // Sleeper connection state
+  const [sleeperUsername, setSleeperUsername] = useState('');
+  const [sleeperLeagues, setSleeperLeagues] = useState<ExternalLeague[]>([]);
+  const [loadingSleeperLeagues, setLoadingSleeperLeagues] = useState(false);
+  const [sleeperError, setSleeperError] = useState<string | null>(null);
+
+  // Manual league ID state
+  const [manualLeagueId, setManualLeagueId] = useState('');
+  const [fetchedLeague, setFetchedLeague] = useState<ExternalLeague | null>(null);
+  const [fetchingLeague, setFetchingLeague] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Connection state
+  const [connecting, setConnecting] = useState(false);
+  const [connectingLeagueId, setConnectingLeagueId] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  // Sync/disconnect state
+  const [syncingLeagueId, setSyncingLeagueId] = useState<string | null>(null);
+  const [syncingError, setSyncingError] = useState<string | null>(null);
+  const [disconnectingLeagueId, setDisconnectingLeagueId] = useState<string | null>(null);
+
+  // Yahoo connection state
+  const [yahooLeagues, setYahooLeagues] = useState<ExternalLeague[]>([]);
+  const [loadingYahooLeagues, setLoadingYahooLeagues] = useState(false);
+  const [yahooError, setYahooError] = useState<string | null>(null);
+
+  // Wrap updateProfile with error handling
+  const handleUpdatePreference = useCallback(async (updates: Parameters<typeof updateProfile>[0]) => {
+    setPrefError(null);
+    try {
+      await updateProfile(updates);
+    } catch (err) {
+      setPrefError(err instanceof Error ? err.message : 'Failed to save preference. Please try again.');
+    }
+  }, [updateProfile]);
 
   const platforms = [
-    { name: 'Sleeper', icon: Globe, color: 'bg-blue-500' },
-    { name: 'ESPN', icon: Globe, color: 'bg-red-600' },
-    { name: 'Yahoo', icon: Globe, color: 'bg-purple-600' },
-    { name: 'NFL', icon: Globe, color: 'bg-blue-800' },
+    { id: 'sleeper' as Platform, name: 'Sleeper', color: 'bg-blue-500', textColor: 'text-blue-400', description: 'Connect via username' },
+    { id: 'espn' as Platform, name: 'ESPN', color: 'bg-red-600', textColor: 'text-red-400', description: 'Public leagues only' },
+    { id: 'yahoo' as Platform, name: 'Yahoo', color: 'bg-purple-600', textColor: 'text-purple-400', description: 'Connect via OAuth' },
   ];
+
+  // Reset modal state
+  const resetModal = () => {
+    setConnectionStep('select-platform');
+    setSelectedPlatform(null);
+    setSleeperUsername('');
+    setSleeperLeagues([]);
+    setSleeperError(null);
+    setManualLeagueId('');
+    setFetchedLeague(null);
+    setFetchError(null);
+    setConnectError(null);
+    setYahooLeagues([]);
+    setYahooError(null);
+  };
+
+  const handleCloseModal = () => {
+    setShowConnectModal(false);
+    resetModal();
+  };
+
+  // Fetch Sleeper user's leagues
+  const handleFetchSleeperLeagues = async () => {
+    if (!sleeperUsername.trim()) return;
+
+    setLoadingSleeperLeagues(true);
+    setSleeperError(null);
+
+    try {
+      const sleeperUser = await sleeperApi.getUser(sleeperUsername.trim());
+      if (!sleeperUser) {
+        setSleeperError('User not found. Please check the username.');
+        setLoadingSleeperLeagues(false);
+        return;
+      }
+
+      const fetchedLeagues = await sleeperApi.getUserLeagues(sleeperUser.user_id);
+      if (fetchedLeagues.length === 0) {
+        setSleeperError('No NFL leagues found for this user.');
+      } else {
+        setSleeperLeagues(fetchedLeagues);
+        setConnectionStep('sleeper-leagues');
+      }
+    } catch {
+      setSleeperError('Failed to fetch leagues. Please try again.');
+    } finally {
+      setLoadingSleeperLeagues(false);
+    }
+  };
+
+  // Yahoo OAuth connect flow
+  const handleYahooConnect = async () => {
+    setConnectionStep('yahoo-connecting');
+    setYahooError(null);
+
+    // Clean up any previous OAuth resources
+    if (yahooPollRef.current) clearInterval(yahooPollRef.current);
+    if (yahooListenerRef.current) window.removeEventListener('message', yahooListenerRef.current);
+
+    try {
+      const authUrl = await yahooApi.getAuthUrl();
+
+      // Open OAuth popup
+      const popup = window.open(authUrl, 'yahoo_oauth', 'width=600,height=700,scrollbars=yes');
+
+      // Listen for the callback message
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.data?.type !== 'yahoo_oauth') return;
+        // Validate origin — only accept messages from our own domain
+        if (event.origin !== window.location.origin) return;
+        window.removeEventListener('message', handleMessage);
+        yahooListenerRef.current = null;
+
+        if (event.data.success) {
+          // OAuth succeeded — fetch Yahoo leagues
+          setLoadingYahooLeagues(true);
+          setConnectionStep('yahoo-leagues');
+          try {
+            const yahooFetchedLeagues = await yahooApi.getLeagues();
+            setYahooLeagues(yahooFetchedLeagues);
+            if (yahooFetchedLeagues.length === 0) {
+              setYahooError('No NFL leagues found on your Yahoo account.');
+            }
+          } catch {
+            setYahooError('Failed to fetch Yahoo leagues. Please try again.');
+          } finally {
+            setLoadingYahooLeagues(false);
+          }
+        } else {
+          setYahooError(event.data.error || 'Yahoo authorization failed.');
+          setConnectionStep('select-platform');
+        }
+      };
+
+      window.addEventListener('message', handleMessage);
+      yahooListenerRef.current = handleMessage;
+
+      // Handle popup being closed manually
+      const pollTimer = setInterval(() => {
+        if (popup && popup.closed) {
+          clearInterval(pollTimer);
+          yahooPollRef.current = null;
+          // If still on connecting step, the callback never fired
+          setConnectionStep((prev) => {
+            if (prev === 'yahoo-connecting') {
+              setYahooError('Authorization window was closed. Please try again.');
+              return 'select-platform';
+            }
+            return prev;
+          });
+          window.removeEventListener('message', handleMessage);
+          yahooListenerRef.current = null;
+        }
+      }, 500);
+      yahooPollRef.current = pollTimer;
+    } catch {
+      setYahooError('Failed to start Yahoo authorization. Please try again.');
+      setConnectionStep('select-platform');
+    }
+  };
+
+  // Fetch league by ID
+  const handleFetchLeagueById = async () => {
+    if (!manualLeagueId.trim() || !selectedPlatform) return;
+
+    setFetchingLeague(true);
+    setFetchError(null);
+    setFetchedLeague(null);
+
+    try {
+      const league = await leagueConnectService.fetchExternalLeague(selectedPlatform, manualLeagueId.trim());
+      if (!league) {
+        setFetchError('League not found. Please check the ID and make sure the league is public.');
+      } else {
+        setFetchedLeague(league);
+        setConnectionStep('confirm');
+      }
+    } catch {
+      setFetchError('Failed to fetch league. Please try again.');
+    } finally {
+      setFetchingLeague(false);
+    }
+  };
+
+  // Connect a league
+  const handleConnectLeague = async (league: ExternalLeague) => {
+    setConnecting(true);
+    setConnectingLeagueId(league.externalId);
+    setConnectError(null);
+
+    try {
+      // Pass the sleeper username so the backend knows which team belongs to this user
+      const result = await leagueConnectService.connectLeague(
+        league.platform,
+        league.externalId,
+        league,
+        league.platform === 'sleeper' ? sleeperUsername : undefined
+      );
+
+      // Auto-sync the league to import teams and rosters
+      if (result.league?.id) {
+        try {
+          await leagueConnectService.syncLeague(result.league.id);
+        } catch (syncError: unknown) {
+          const msg = syncError instanceof Error ? syncError.message : 'Sync failed';
+          setConnectError(`League connected but sync failed: ${msg}. You can try syncing manually.`);
+          // Don't close modal so user sees the message - they can close manually
+          refetchLeagues();
+          onLeagueSynced?.();
+          setConnecting(false);
+          return;
+        }
+      }
+
+      refetchLeagues();
+      handleCloseModal();
+      onLeagueSynced?.();
+    } catch (error: unknown) {
+      setConnectError(error instanceof Error ? error.message : 'Failed to connect league. Please try again.');
+    } finally {
+      setConnecting(false);
+      setConnectingLeagueId(null);
+    }
+  };
+
+  // Sync a league
+  const handleSyncLeague = async (leagueId: string) => {
+    setSyncingLeagueId(leagueId);
+    setSyncingError(null);
+    try {
+      await leagueConnectService.syncLeague(leagueId);
+      refetchLeagues();
+      onLeagueSynced?.();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : (error as { message?: string })?.message || 'Sync failed. Please try again.';
+      setSyncingError(message);
+    } finally {
+      setSyncingLeagueId(null);
+    }
+  };
+
+  // Disconnect a league
+  const handleDisconnectLeague = async (leagueId: string) => {
+    if (!confirm('Are you sure you want to disconnect this league?')) return;
+
+    setDisconnectingLeagueId(leagueId);
+    setSyncingError(null);
+    try {
+      await leagueConnectService.disconnectLeague(leagueId);
+      refetchLeagues();
+      onLeagueSynced?.();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to disconnect league. Please try again.';
+      setSyncingError(message);
+    } finally {
+      setDisconnectingLeagueId(null);
+    }
+  };
+
+  const getPlatformColor = (platform?: string) => {
+    switch (platform) {
+      case 'sleeper': return 'bg-blue-500/20 text-blue-500';
+      case 'espn': return 'bg-red-500/20 text-red-500';
+      case 'yahoo': return 'bg-purple-500/20 text-purple-500';
+      default: return isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3]' : 'bg-slate-200 text-slate-600';
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
       <div>
         <h1 className={`text-3xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Settings</h1>
-        <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Manage your connected leagues and application preferences</p>
+        <p className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Manage your connected leagues and application preferences</p>
       </div>
 
       {/* Connected Leagues */}
-      <div className={`border rounded-xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
           <div>
             <h2 className={`text-lg font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Connected Leagues</h2>
-            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Manage your fantasy league connections</p>
+            <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Manage your fantasy league connections</p>
           </div>
-          <button 
+          <button
             onClick={() => setShowConnectModal(true)}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4" aria-hidden="true" />
             Connect League
           </button>
         </div>
-        
+
         <div className="p-6">
-          <div className="space-y-4">
-            {connectedLeagues.map((league) => (
-              <div key={league.id} className={`rounded-lg p-4 border flex items-center justify-between ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    league.platform === 'Sleeper' ? 'bg-blue-500/20 text-blue-500' :
-                    league.platform === 'ESPN' ? 'bg-red-500/20 text-red-500' :
-                    league.platform === 'Yahoo' ? 'bg-purple-500/20 text-purple-500' :
-                    isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'
-                  }`}>
-                    <Globe className="w-5 h-5" />
+          {leaguesError && (
+            <div className="mb-4 flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+              Failed to load leagues: {leaguesError.message}
+            </div>
+          )}
+          {syncingError && (
+            <div className="mb-4 flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+              {syncingError}
+            </div>
+          )}
+          {leaguesLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+            </div>
+          ) : leagues.length === 0 ? (
+            <div className={`text-center py-8 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+              <Globe className="w-12 h-12 mx-auto mb-3 opacity-50" aria-hidden="true" />
+              <p className="text-sm">No leagues connected yet.</p>
+              <p className="text-xs mt-1">Click "Connect League" to get started.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {leagues.map((league) => (
+                <div key={league.id} className={`rounded-lg p-4 border flex items-center justify-between ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${getPlatformColor(league.platform)}`}>
+                      <Globe className="w-5 h-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{league.name}</div>
+                      <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                        {league.platform ? league.platform.charAt(0).toUpperCase() + league.platform.slice(1) : 'FilmRoom'} • {league.seasonYear} • {league.teamCount} Teams • {league.scoringFormat.toUpperCase()}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{league.name}</div>
-                    <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{league.platform} • {league.year} • {league.teams} Teams</div>
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5 px-2.5 py-1 bg-green-500/10 text-green-500 text-xs font-medium rounded-full border border-green-500/20">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      Connected
+                    </span>
+                    <button
+                      onClick={() => handleSyncLeague(league.id)}
+                      disabled={syncingLeagueId === league.id || disconnectingLeagueId === league.id}
+                      aria-label={`Sync ${league.name}`}
+                      className={`text-sm px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 ${
+                        syncingLeagueId === league.id
+                          ? 'text-blue-500 bg-blue-500/10'
+                          : isDarkMode ? 'text-[#737373] hover:text-white hover:bg-[#1a1a1a]' : 'text-[#555] hover:text-slate-900 hover:bg-slate-200'
+                      } disabled:cursor-not-allowed`}
+                    >
+                      {syncingLeagueId === league.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+                      )}
+                      {syncingLeagueId === league.id ? 'Syncing...' : 'Sync'}
+                    </button>
+                    <button
+                      onClick={() => handleDisconnectLeague(league.id)}
+                      disabled={disconnectingLeagueId === league.id || syncingLeagueId === league.id}
+                      aria-label={`Disconnect ${league.name}`}
+                      className={`text-sm px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 ${
+                        disconnectingLeagueId === league.id
+                          ? 'text-red-400 bg-red-500/10'
+                          : 'text-red-500 hover:text-red-400 hover:bg-red-500/10'
+                      } disabled:cursor-not-allowed`}
+                    >
+                      {disconnectingLeagueId === league.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                      )}
+                      {disconnectingLeagueId === league.id ? 'Removing...' : 'Disconnect'}
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1.5 px-2.5 py-1 bg-green-500/10 text-green-500 text-xs font-medium rounded-full border border-green-500/20">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                    Connected
-                  </span>
-                  <button
-                    onClick={() => onLeagueSynced?.()}
-                    className={`text-sm px-3 py-1.5 rounded transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200'}`}
-                  >
-                    Sync Now
-                  </button>
-                  <button className="text-sm text-red-500 hover:text-red-400 px-3 py-1.5 hover:bg-red-500/10 rounded transition-colors">
-                    Disconnect
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Account Settings */}
-      <div className={`border rounded-xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+      {/* Application Preferences */}
+      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`p-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
           <h2 className={`text-lg font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Application Preferences</h2>
-          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Customize your FilmRoom experience</p>
+          <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Customize your FilmRoom experience</p>
         </div>
-        
+
         <div className="p-6 space-y-6">
+          {prefError && (
+            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+              {prefError}
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <div>
-              <div className={`font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Default Scoring Format</div>
-              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Set your preferred scoring for projections</div>
+              <label htmlFor="scoring-format" className={`font-medium mb-1 block ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Default Scoring Format</label>
+              <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Set your preferred scoring for projections</div>
             </div>
-            <select className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}>
-              <option>PPR (Point Per Reception)</option>
-              <option>Half PPR</option>
-              <option>Standard</option>
+            <select
+              id="scoring-format"
+              value={preferredScoring}
+              onChange={(e) => handleUpdatePreference({ preferredScoring: e.target.value as ScoringFormat })}
+              className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 ${isDarkMode ? 'bg-[#1a1a1a] border-[#222] text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+            >
+              {SCORING_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <div className={`font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Notifications</div>
-              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Receive alerts for injuries and lineup changes</div>
+              <div id="notifications-label" className={`font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Notifications</div>
+              <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Receive alerts for injuries and lineup changes</div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" className="sr-only peer" defaultChecked />
-              <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={notificationsEnabled}
+                onChange={(e) => handleUpdatePreference({ notificationsEnabled: e.target.checked })}
+                aria-labelledby="notifications-label"
+                role="switch"
+                aria-checked={notificationsEnabled}
+              />
+              <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-300'}`}></div>
             </label>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <div className={`font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Dark Mode</div>
-              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Toggle dark mode appearance</div>
+              <div id="darkmode-label" className={`font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Dark Mode</div>
+              <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Toggle dark mode appearance</div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
-              <input 
-                type="checkbox" 
-                className="sr-only peer" 
+              <input
+                type="checkbox"
+                className="sr-only peer"
                 checked={isDarkMode}
                 onChange={onToggleDarkMode}
+                aria-labelledby="darkmode-label"
+                role="switch"
+                aria-checked={isDarkMode}
               />
-              <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
+              <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-300'}`}></div>
             </label>
           </div>
         </div>
       </div>
 
+      {/* Feedback */}
+      <FeedbackWidget isDarkMode={!!isDarkMode} currentPage="Settings" embedded />
+
       {/* Connect League Modal */}
       {showConnectModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full overflow-hidden shadow-2xl">
-            <div className="p-6 border-b border-slate-700">
-              <h3 className="text-xl font-bold text-white">Connect New League</h3>
-              <p className="text-slate-400 text-sm mt-1">Select your fantasy platform to import your league</p>
-            </div>
-            
-            <div className="p-6">
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                {platforms.map((platform) => (
-                  <button 
-                    key={platform.name}
-                    className="flex flex-col items-center justify-center p-4 bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-750 hover:border-blue-500 transition-all group"
-                  >
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform ${
-                      platform.name === 'Sleeper' ? 'bg-blue-500/20 text-blue-400' :
-                      platform.name === 'ESPN' ? 'bg-red-500/20 text-red-400' :
-                      platform.name === 'Yahoo' ? 'bg-purple-500/20 text-purple-400' :
-                      'bg-blue-800/20 text-blue-300'
-                    }`}>
-                      <platform.icon className="w-6 h-6" />
-                    </div>
-                    <span className="font-semibold text-white">{platform.name}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50 mb-6">
-                <div className="flex items-start gap-3">
-                  <div className="bg-blue-500/20 rounded-full p-1.5 flex-shrink-0">
-                    <LinkIcon className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold text-white mb-1">Import via League ID</h4>
-                    <p className="text-xs text-slate-400 mb-3">
-                      Enter your league ID directly if you know it.
-                    </p>
-                    <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        placeholder="Enter League ID" 
-                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder:text-slate-600"
-                      />
-                      <button className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-medium transition-colors">
-                        Import
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex items-start gap-3 p-4 bg-blue-900/20 border border-blue-900/30 rounded-lg">
-                <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0" />
-                <p className="text-xs text-blue-200/80">
-                  By connecting your league, you allow FilmRoom to access your roster, matchups, and league settings to provide personalized insights.
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) handleCloseModal(); }}
+          onKeyDown={(e) => { if (e.key === 'Escape') handleCloseModal(); }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="connect-league-title"
+            className={`rounded-lg max-w-lg w-full overflow-hidden shadow-2xl ${isDarkMode ? 'bg-[#111] border border-[#222]' : 'bg-white border border-slate-200'}`}
+          >
+            {/* Modal Header */}
+            <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+              <div>
+                <h3 id="connect-league-title" className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Connect League</h3>
+                <p className={`text-sm mt-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                  {connectionStep === 'select-platform' && 'Select your fantasy platform'}
+                  {connectionStep === 'sleeper-username' && 'Enter your Sleeper username'}
+                  {connectionStep === 'sleeper-leagues' && 'Select a league to connect'}
+                  {connectionStep === 'enter-league-id' && `Enter your ${selectedPlatform?.toUpperCase()} league ID`}
+                  {connectionStep === 'confirm' && 'Confirm league connection'}
+                  {connectionStep === 'yahoo-connecting' && 'Connecting to Yahoo...'}
+                  {connectionStep === 'yahoo-leagues' && 'Select a Yahoo league to connect'}
                 </p>
               </div>
-            </div>
-
-            <div className="p-4 bg-slate-950 border-t border-slate-700 flex justify-end gap-3">
-              <button 
-                onClick={() => setShowConnectModal(false)}
-                className="px-4 py-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg text-sm font-medium transition-colors"
+              <button
+                onClick={handleCloseModal}
+                aria-label="Close dialog"
+                className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-[#1a1a1a]' : 'hover:bg-slate-100'}`}
               >
-                Cancel
+                <X className={`w-5 h-5 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} aria-hidden="true" />
               </button>
             </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {/* Step 1: Select Platform */}
+              {connectionStep === 'select-platform' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    {platforms.map((platform) => (
+                      <button
+                        key={platform.id}
+                        onClick={() => {
+                          setSelectedPlatform(platform.id);
+                          if (platform.id === 'sleeper') {
+                            setConnectionStep('sleeper-username');
+                          } else if (platform.id === 'yahoo') {
+                            handleYahooConnect();
+                          } else {
+                            setConnectionStep('enter-league-id');
+                          }
+                        }}
+                        className={`flex flex-col items-center justify-center p-4 border rounded-lg transition-all group ${
+                          isDarkMode
+                            ? 'bg-[#1a1a1a] border-[#222] hover:border-blue-500'
+                            : 'bg-slate-50 border-slate-200 hover:border-blue-500'
+                        }`}
+                      >
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 ${platform.color}/20 ${platform.textColor}`}>
+                          <Globe className="w-6 h-6" />
+                        </div>
+                        <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{platform.name}</span>
+                        <span className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{platform.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Sleeper: Enter Username */}
+              {connectionStep === 'sleeper-username' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>
+                      Sleeper Username
+                    </label>
+                    <input
+                      type="text"
+                      value={sleeperUsername}
+                      onChange={(e) => setSleeperUsername(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleFetchSleeperLeagues()}
+                      placeholder="Enter your Sleeper username"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-[#1a1a1a] border-[#222] text-white placeholder-[#555]' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                    />
+                  </div>
+
+                  {sleeperError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      {sleeperError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setConnectionStep('select-platform')}
+                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={handleFetchSleeperLeagues}
+                      disabled={!sleeperUsername.trim() || loadingSleeperLeagues}
+                      className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {loadingSleeperLeagues && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Find Leagues
+                    </button>
+                  </div>
+
+                  {/* Manual League ID option */}
+                  <div className={`pt-4 border-t ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+                    <button
+                      onClick={() => setConnectionStep('enter-league-id')}
+                      className={`w-full text-sm text-center ${isDarkMode ? 'text-[#737373] hover:text-white' : 'text-[#555] hover:text-slate-900'}`}
+                    >
+                      Or enter League ID directly →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Sleeper: Select League */}
+              {connectionStep === 'sleeper-leagues' && (
+                <div className="space-y-4">
+                  <div className="max-h-64 overflow-y-auto space-y-2">
+                    {sleeperLeagues.map((league) => {
+                      const isThisConnecting = connectingLeagueId === league.externalId;
+                      return (
+                        <button
+                          key={league.externalId}
+                          onClick={() => handleConnectLeague(league)}
+                          disabled={connecting}
+                          className={`w-full p-4 border rounded-lg text-left transition-all relative ${
+                            isThisConnecting
+                              ? (isDarkMode ? 'bg-blue-500/10 border-blue-500 ring-1 ring-blue-500/50' : 'bg-blue-50 border-blue-500 ring-1 ring-blue-500/50')
+                              : (isDarkMode ? 'bg-[#1a1a1a] border-[#222] hover:border-blue-500' : 'bg-slate-50 border-slate-200 hover:border-blue-500')
+                          } ${connecting && !isThisConnecting ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{league.name}</div>
+                              <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                                {league.seasonYear} • {league.teamCount} Teams • {league.scoringFormat.toUpperCase()}
+                              </div>
+                            </div>
+                            {isThisConnecting && (
+                              <div className="flex items-center gap-2 text-blue-500">
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                <span className="text-sm font-medium">Connecting...</span>
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {connectError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      {connectError}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setConnectionStep('sleeper-username')}
+                    className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                  >
+                    Back
+                  </button>
+                </div>
+              )}
+
+              {/* Enter League ID Manually */}
+              {connectionStep === 'enter-league-id' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>
+                      League ID
+                    </label>
+                    <input
+                      type="text"
+                      value={manualLeagueId}
+                      onChange={(e) => setManualLeagueId(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleFetchLeagueById()}
+                      placeholder={`Enter your ${selectedPlatform?.toUpperCase() || ''} league ID`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-[#1a1a1a] border-[#222] text-white placeholder-[#555]' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                    />
+                    <p className={`text-xs mt-2 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                      {selectedPlatform === 'sleeper' && 'Find your league ID in the Sleeper app under League Settings'}
+                      {selectedPlatform === 'espn' && 'Find your league ID in the URL: fantasy.espn.com/football/league?leagueId=XXXXXX'}
+                      {selectedPlatform === 'yahoo' && 'Find your league ID in the URL: football.fantasysports.yahoo.com/f1/XXXXXX'}
+                    </p>
+                  </div>
+
+                  {fetchError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      {fetchError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setConnectionStep(selectedPlatform === 'sleeper' ? 'sleeper-username' : 'select-platform')}
+                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={handleFetchLeagueById}
+                      disabled={!manualLeagueId.trim() || fetchingLeague}
+                      className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {fetchingLeague && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Find League
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Yahoo: Connecting */}
+              {connectionStep === 'yahoo-connecting' && (
+                <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                  <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+                  <p className={isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}>
+                    Waiting for Yahoo authorization...
+                  </p>
+                  <p className={`text-sm ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                    Complete the sign-in in the popup window.
+                  </p>
+                </div>
+              )}
+
+              {/* Yahoo: Select League */}
+              {connectionStep === 'yahoo-leagues' && (
+                <div className="space-y-4">
+                  {loadingYahooLeagues ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
+                    </div>
+                  ) : (
+                    <div className="max-h-64 overflow-y-auto space-y-2">
+                      {yahooLeagues.map((league) => {
+                        const isThisConnecting = connectingLeagueId === league.externalId;
+                        return (
+                          <button
+                            key={league.externalId}
+                            onClick={() => handleConnectLeague(league)}
+                            disabled={connecting}
+                            className={`w-full p-4 border rounded-lg text-left transition-all ${
+                              isThisConnecting
+                                ? (isDarkMode ? 'bg-purple-500/10 border-purple-500 ring-1 ring-purple-500/50' : 'bg-purple-50 border-purple-500 ring-1 ring-purple-500/50')
+                                : (isDarkMode ? 'bg-[#1a1a1a] border-[#222] hover:border-purple-500' : 'bg-slate-50 border-slate-200 hover:border-purple-500')
+                            } ${connecting && !isThisConnecting ? 'opacity-40 cursor-not-allowed' : ''}`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{league.name}</div>
+                                <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                                  {league.seasonYear} • {league.teamCount} Teams • {league.scoringFormat.toUpperCase()}
+                                </div>
+                              </div>
+                              {isThisConnecting && (
+                                <div className="flex items-center gap-2 text-purple-500">
+                                  <Loader2 className="w-5 h-5 animate-spin" />
+                                  <span className="text-sm font-medium">Connecting...</span>
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {yahooError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      {yahooError}
+                    </div>
+                  )}
+
+                  {connectError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      {connectError}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setConnectionStep('select-platform')}
+                    className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                  >
+                    Back
+                  </button>
+                </div>
+              )}
+
+              {/* Confirm Connection */}
+              {connectionStep === 'confirm' && fetchedLeague && (
+                <div className="space-y-4">
+                  <div className={`p-4 border rounded-lg ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      {fetchedLeague.name}
+                    </div>
+                    <div className={`text-sm space-y-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                      <p>Platform: {fetchedLeague.platform.charAt(0).toUpperCase() + fetchedLeague.platform.slice(1)}</p>
+                      <p>Season: {fetchedLeague.seasonYear}</p>
+                      <p>Teams: {fetchedLeague.teamCount}</p>
+                      <p>Scoring: {fetchedLeague.scoringFormat.toUpperCase()}</p>
+                    </div>
+                  </div>
+
+                  {connectError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      {connectError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setConnectionStep('enter-league-id')}
+                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={() => handleConnectLeague(fetchedLeague)}
+                      disabled={connecting}
+                      className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {connecting && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {connecting ? 'Connecting & Syncing...' : 'Connect League'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Info Banner */}
+            {connectionStep === 'select-platform' && (
+              <div className={`p-4 border-t ${isDarkMode ? 'bg-[#0a0a0a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex items-start gap-3">
+                  <AlertCircle className={`w-5 h-5 flex-shrink-0 ${isDarkMode ? 'text-blue-400' : 'text-blue-500'}`} aria-hidden="true" />
+                  <p className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                    By connecting your league, FilmRoom will access your roster, matchups, and league settings to provide personalized insights. Your data is never shared.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

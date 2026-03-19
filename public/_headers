@@ -1,0 +1,17 @@
+# Cloudflare Pages custom headers
+# Allow search engine crawlers and automated testing through bot protection
+# Ref: https://developers.cloudflare.com/pages/configuration/headers/
+
+/robots.txt
+  X-Robots-Tag: all
+  Cache-Control: public, max-age=3600
+
+/sitemap.xml
+  X-Robots-Tag: all
+  Cache-Control: public, max-age=3600
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+  Referrer-Policy: strict-origin-when-cross-origin

@@ -1,0 +1,1457 @@
+import { Hono } from 'hono';
+import { eq, like, and, desc, asc, sql, inArray, type SQL } from 'drizzle-orm';
+import * as schema from '../db/schema';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { rateLimit } from '../middleware/rateLimit';
+import { generateId } from '../utils/id';
+import type { Env, Variables } from '../index';
+
+// Rate limits for player routes
+const playerSearchRateLimit = rateLimit(30, 60 * 1000); // 30 req/min for search
+const playerReadRateLimit = rateLimit(120, 60 * 1000); // 120 req/min for reads
+
+function mapSleeperStatsToRow(internalPlayerId: string, seasonYear: number, week: number, playerStats: any) {
+  return {
+    playerId: internalPlayerId,
+    week,
+    seasonYear,
+    opponent: playerStats.opponent || null,
+    passAttempts: playerStats.pass_att || 0,
+    passCompletions: playerStats.pass_cmp || 0,
+    passYards: playerStats.pass_yd || 0,
+    passTDs: playerStats.pass_td || 0,
+    passInterceptions: playerStats.pass_int || 0,
+    rushAttempts: playerStats.rush_att || 0,
+    rushYards: playerStats.rush_yd || 0,
+    rushTDs: playerStats.rush_td || 0,
+    targets: playerStats.rec_tgt || 0,
+    receptions: playerStats.rec || 0,
+    receivingYards: playerStats.rec_yd || 0,
+    receivingTDs: playerStats.rec_td || 0,
+    fumbles: playerStats.fum || 0,
+    fumblesLost: playerStats.fum_lost || 0,
+    twoPointConversions: (playerStats.pass_2pt || 0) + (playerStats.rush_2pt || 0) + (playerStats.rec_2pt || 0),
+    fgMade: playerStats.fgm || 0,
+    fgAttempts: playerStats.fga || 0,
+    fg40PlusMade: (playerStats.fgm_40_49 || 0) + (playerStats.fgm_50p || 0),
+    fg50PlusMade: playerStats.fgm_50p || 0,
+    xpMade: playerStats.xpm || 0,
+    xpAttempts: playerStats.xpa || 0,
+    offSnaps: Math.round(playerStats.off_snp || 0),
+    defSnaps: Math.round(playerStats.def_snp || 0),
+    stSnaps: Math.round(playerStats.st_snp || 0),
+    tmOffSnaps: Math.round(playerStats.tm_off_snp || 0),
+    tmDefSnaps: Math.round(playerStats.tm_def_snp || 0),
+    tmStSnaps: Math.round(playerStats.tm_st_snp || 0),
+    sacks: playerStats.sack || 0,
+    defInterceptions: playerStats.int || 0,
+    fumblesRecovered: playerStats.fum_rec || 0,
+    defenseTDs: (playerStats.def_td || 0) + (playerStats.st_td || 0),
+    safeties: playerStats.safe || 0,
+    pointsAllowed: playerStats.pts_allow || 0,
+    fantasyPointsPPR: playerStats.pts_ppr || 0,
+    fantasyPointsHalf: playerStats.pts_half_ppr || 0,
+    fantasyPointsStd: playerStats.pts_std || 0,
+  };
+}
+
+/** Sleeper stats API returns array of { player_id, stats: {...}, opponent }. Extract stats for a player. */
+function extractSleeperPlayerStats(apiResponse: any, sleeperExternalId: string): { stats: any; opponent: string } | null {
+  if (Array.isArray(apiResponse)) {
+    const item = apiResponse.find((p: any) => String(p?.player_id) === String(sleeperExternalId));
+    if (!item) return null;
+    const s = item.stats || {};
+    return {
+      stats: { ...s, opponent: item.opponent },
+      opponent: item.opponent || null,
+    };
+  }
+  if (apiResponse && typeof apiResponse === 'object' && apiResponse[sleeperExternalId]) {
+    const playerStats = apiResponse[sleeperExternalId];
+    return { stats: playerStats, opponent: playerStats.opponent };
+  }
+  return null;
+}
+
+/** Fetch stats for a player from Sleeper API and insert into DB. Returns array of weekly stats. */
+async function fetchAndStoreSleeperStats(
+  db: any,
+  internalPlayerId: string,
+  sleeperExternalId: string,
+  seasonYear: number
+): Promise<any[]> {
+  const maxWeeks = 18;
+  const weekPromises = Array.from({ length: maxWeeks }, (_, i) => i + 1).map(async (week) => {
+    try {
+      const res = await fetch(
+        `https://api.sleeper.com/stats/nfl/${seasonYear}/${week}?season_type=regular`
+      );
+      if (!res.ok) return null;
+      const raw = await res.json();
+      const extracted = extractSleeperPlayerStats(raw, sleeperExternalId);
+      if (!extracted) return null;
+      return { week, playerStats: extracted.stats };
+    } catch {
+      return null;
+    }
+  });
+  const results = await Promise.all(weekPromises);
+  const inserted: any[] = [];
+  for (const r of results) {
+    if (!r) continue;
+    const statsData = mapSleeperStatsToRow(internalPlayerId, seasonYear, r.week, r.playerStats);
+    const existing = await db.query.playerWeeklyStats.findFirst({
+      where: and(
+        eq(schema.playerWeeklyStats.playerId, internalPlayerId),
+        eq(schema.playerWeeklyStats.week, r.week),
+        eq(schema.playerWeeklyStats.seasonYear, seasonYear)
+      ),
+    });
+    if (existing) {
+      await db
+        .update(schema.playerWeeklyStats)
+        .set(statsData)
+        .where(eq(schema.playerWeeklyStats.id, existing.id));
+    } else {
+      await db.insert(schema.playerWeeklyStats).values({
+        id: generateId(),
+        ...statsData,
+      });
+    }
+    inserted.push(statsData);
+  }
+  inserted.sort((a, b) => a.week - b.week);
+  return inserted;
+}
+
+export const playerRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Apply rate limiting to all player read endpoints
+playerRoutes.use('*', playerReadRateLimit);
+
+// Get all players (paginated, filterable) with stats
+playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+
+  // Query params
+  const page = parseInt(c.req.query('page') || '1');
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 200);
+  const offset = (page - 1) * limit;
+
+  const position = c.req.query('position');
+  const team = c.req.query('team');
+  const search = c.req.query('search');
+  const status = c.req.query('status');
+  const sortBy = c.req.query('sortBy') || 'name';
+  const sortOrder = c.req.query('sortOrder') || 'asc';
+  const leagueId = c.req.query('leagueId');
+  const includeStats = c.req.query('includeStats') === 'true';
+  const availableOnly = c.req.query('availableOnly') === 'true';
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const weekParam = c.req.query('week');
+  const week = weekParam ? parseInt(weekParam) : undefined;
+  const scoringFormatParam = c.req.query('scoringFormat') || 'ppr';
+  const scoringFormat = scoringFormatParam === 'half_ppr' || scoringFormatParam === 'half-ppr' ? 'half-ppr' : scoringFormatParam === 'standard' ? 'standard' : 'ppr';
+
+  try {
+    // Build where conditions (used in both past-week and normal flows)
+    const conditions: SQL[] = [];
+    if (position && position !== 'ALL') conditions.push(eq(schema.nflPlayers.position, position));
+    if (team) conditions.push(eq(schema.nflPlayers.team, team));
+    if (status) conditions.push(eq(schema.nflPlayers.status, status));
+    if (search) {
+      // Sanitize search input: strip non-name characters and escape LIKE wildcards
+      const sanitizedSearch = search.replace(/[^a-zA-Z\s\-'.]/g, '').trim();
+      if (sanitizedSearch.length >= 2) {
+        const escapedSearch = sanitizedSearch.replace(/%/g, '\\%').replace(/_/g, '\\_');
+        conditions.push(like(schema.nflPlayers.name, `%${escapedSearch}%`));
+      }
+    }
+
+    // When week is provided and week is complete, use past-week mode: stats only, sort by actual pts
+    let weekComplete = false;
+    if (week !== undefined && week >= 1 && week <= 18) {
+      const gamesForWeek = await db.query.nflGames.findMany({
+        where: and(eq(schema.nflGames.week, week), eq(schema.nflGames.seasonYear, season)),
+        columns: { id: true, isComplete: true, homeScore: true, awayScore: true },
+      });
+      weekComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
+
+      // Fallback: if we have stats for this week (Sleeper only has stats for completed weeks), treat as past week
+      if (!weekComplete && includeStats) {
+        const anyStat = await db.query.playerWeeklyStats.findFirst({
+          where: and(
+            eq(schema.playerWeeklyStats.week, week),
+            eq(schema.playerWeeklyStats.seasonYear, season)
+          ),
+          columns: { id: true },
+        });
+        if (anyStat) weekComplete = true;
+      }
+
+      // Offseason fallback: if we're in the offseason (Feb-Aug), the entire NFL season is over
+      if (!weekComplete) {
+        const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 7=Aug
+        if (currentMonth >= 1 && currentMonth <= 7) weekComplete = true;
+      }
+    }
+
+    if (week !== undefined && weekComplete && includeStats && !availableOnly) {
+      // Past-week mode: players who played, sorted by actual fantasy pts
+      const ptsOrderCol = scoringFormat === 'standard' ? schema.playerWeeklyStats.fantasyPointsStd : scoringFormat === 'half-ppr' ? schema.playerWeeklyStats.fantasyPointsHalf : schema.playerWeeklyStats.fantasyPointsPPR;
+      const stats = await db.query.playerWeeklyStats.findMany({
+        where: and(
+          eq(schema.playerWeeklyStats.week, week),
+          eq(schema.playerWeeklyStats.seasonYear, season)
+        ),
+        orderBy: desc(ptsOrderCol),
+        limit: 500,
+      });
+      const played = (s: typeof stats[0]) => {
+        // DEF: has defensive stats (no offensive involvement)
+        const hasDefStats = (s.defSnaps ?? 0) > 0 || (s.sacks ?? 0) > 0 || (s.defInterceptions ?? 0) > 0 ||
+          (s.fumblesRecovered ?? 0) > 0 || (s.defenseTDs ?? 0) > 0 || (s.safeties ?? 0) > 0;
+        const noOffStats = (s.offSnaps ?? 0) === 0 && (s.passAttempts ?? 0) === 0 && (s.rushAttempts ?? 0) === 0 && (s.targets ?? 0) === 0;
+        if (hasDefStats && noOffStats) return true;
+        return (s.offSnaps ?? 0) > 0 || (s.defSnaps ?? 0) > 0 || (s.stSnaps ?? 0) > 0 ||
+          (s.passAttempts ?? 0) > 0 || (s.rushAttempts ?? 0) > 0 || (s.targets ?? 0) > 0 ||
+          (s.receptions ?? 0) > 0 || (s.passCompletions ?? 0) > 0 || (s.passYards ?? 0) > 0 ||
+          (s.rushYards ?? 0) > 0 || (s.receivingYards ?? 0) > 0 ||
+          (s.fgAttempts ?? 0) > 0 || (s.xpAttempts ?? 0) > 0 || (s.fgMade ?? 0) > 0 || (s.xpMade ?? 0) > 0 ||
+          (s.sacks ?? 0) > 0 || (s.defInterceptions ?? 0) > 0 || (s.fumblesRecovered ?? 0) > 0 ||
+          (s.defenseTDs ?? 0) > 0 || (s.safeties ?? 0) > 0 ||
+          (s.fumbles ?? 0) > 0 || (s.twoPointConversions ?? 0) > 0;
+      };
+      const ptsCol = scoringFormat === 'standard' ? 'fantasyPointsStd' : scoringFormat === 'half-ppr' ? 'fantasyPointsHalf' : 'fantasyPointsPPR';
+      const playedStats = stats.filter(played);
+      const playerIdsFromStats = [...new Set(playedStats.map(s => s.playerId))];
+
+      if (playerIdsFromStats.length === 0) {
+        return c.json({
+          players: [],
+          pagination: { page: 1, limit, total: 0, totalPages: 0 },
+          weekComplete: true,
+          pointsType: 'actual',
+        });
+      }
+
+      const CHUNK = 50;
+      const idChunks: string[][] = [];
+      for (let i = 0; i < playerIdsFromStats.length; i += CHUNK) idChunks.push(playerIdsFromStats.slice(i, i + CHUNK));
+
+      const playerPromises = idChunks.map(chunk => {
+        const cond = conditions.length > 0 ? and(...conditions, inArray(schema.nflPlayers.id, chunk)) : inArray(schema.nflPlayers.id, chunk);
+        return db.query.nflPlayers.findMany({ where: cond });
+      });
+      const playerChunkResults = await Promise.all(playerPromises);
+      const playersPast = playerChunkResults.flat();
+
+      const ptsByPlayer = new Map<string, number>();
+      const statsByPlayer = new Map<string, (typeof playedStats)[0]>();
+      for (const s of playedStats) {
+        const pts = (s as any)[ptsCol] ?? 0;
+        ptsByPlayer.set(s.playerId, pts);
+        statsByPlayer.set(s.playerId, s);
+      }
+
+      let enriched = playersPast.map(p => {
+        const pts = ptsByPlayer.get(p.id) ?? 0;
+        const s = statsByPlayer.get(p.id);
+        const isDef = p.position === 'DEF';
+        const snapPct = (() => {
+          if (!s) return null;
+          const off = s.offSnaps ?? 0, def = s.defSnaps ?? 0, st = s.stSnaps ?? 0;
+          const tmOff = s.tmOffSnaps ?? 0, tmDef = s.tmDefSnaps ?? 0, tmSt = s.tmStSnaps ?? 0;
+          if (off > 0 && tmOff > 0) return (off / tmOff) * 100;
+          if (def > 0 && tmDef > 0) return (def / tmDef) * 100;
+          if (st > 0 && tmSt > 0) return (st / tmSt) * 100;
+          return null;
+        })();
+        const seasonStats = s ? {
+          games: 1,
+          gamesPlayed: 1,
+          fantasyPointsPPR: s.fantasyPointsPPR ?? 0,
+          fantasyPointsHalf: s.fantasyPointsHalf ?? 0,
+          fantasyPointsStd: s.fantasyPointsStd ?? 0,
+          passYards: s.passYards ?? 0,
+          passTDs: s.passTDs ?? 0,
+          rushYards: s.rushYards ?? 0,
+          rushTDs: s.rushTDs ?? 0,
+          receptions: s.receptions ?? 0,
+          receivingYards: s.receivingYards ?? 0,
+          receivingTDs: s.receivingTDs ?? 0,
+          averageSnapPct: snapPct != null ? Math.round(snapPct * 10) / 10 : null,
+        } : undefined;
+        return {
+          ...p,
+          projectedPoints: pts,
+          avgPointsPPR: pts,
+          seasonStats,
+          isRostered: false as boolean,
+        };
+      });
+
+      let rosteredPlayerIds: string[] = [];
+      if (leagueId) {
+        const teams = await db.query.teams.findMany({
+          where: eq(schema.teams.leagueId, leagueId),
+          with: { roster: true },
+        });
+        rosteredPlayerIds = teams.flatMap(t => t.roster.map(r => r.playerId));
+      }
+      enriched = enriched.map(p => ({ ...p, isRostered: rosteredPlayerIds.includes(p.id) }));
+
+      if (position && position !== 'ALL' && position !== 'FLEX') enriched = enriched.filter((p: any) => p.position === position);
+      if (position === 'FLEX') enriched = enriched.filter((p: any) => ['RB', 'WR', 'TE'].includes(p.position));
+      if (team) enriched = enriched.filter((p: any) => (p as any).team === team);
+      if (search) enriched = enriched.filter((p: any) => (p as any).name?.toLowerCase().includes(search?.toLowerCase()));
+      if (availableOnly && leagueId) enriched = enriched.filter((p: any) => !p.isRostered);
+
+      enriched.sort((a, b) => (b.projectedPoints ?? 0) - (a.projectedPoints ?? 0));
+      const total = enriched.length;
+      const paginated = enriched.slice(offset, offset + limit);
+
+      return c.json({
+        players: paginated,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+        weekComplete: true,
+        pointsType: 'actual',
+      });
+    }
+
+    // Get sort column safely (DB columns only)
+    const getSortColumn = () => {
+      const columns: Record<string, any> = {
+        name: schema.nflPlayers.name,
+        position: schema.nflPlayers.position,
+        team: schema.nflPlayers.team,
+        status: schema.nflPlayers.status,
+      };
+      return columns[sortBy] || schema.nflPlayers.name;
+    };
+
+    // When sorting by projected/avg points, we must fetch more, enrich, then sort in memory
+    const sortByComputed = sortBy === 'projectedPoints' || sortBy === 'avgPointsPPR';
+    // When availableOnly, fetch extra to compensate for rostered players we'll filter out
+    const availableMultiplier = availableOnly && leagueId ? 3 : 1;
+    const fetchLimit = (sortByComputed && includeStats) || availableOnly
+      ? Math.max((limit + offset) * availableMultiplier, 500)
+      : limit + offset;
+    const fetchOffset = (sortByComputed && includeStats) || availableOnly ? 0 : offset;
+
+    // Get players
+    const players = await db.query.nflPlayers.findMany({
+      where: conditions.length > 0 ? and(...conditions) : undefined,
+      limit: fetchLimit,
+      offset: fetchOffset,
+      orderBy: sortByComputed ? asc(schema.nflPlayers.name) : (sortOrder === 'desc' ? desc(getSortColumn()) : asc(getSortColumn())),
+    });
+
+    // Get rostered player IDs if leagueId provided
+    let rosteredPlayerIds: string[] = [];
+    if (leagueId) {
+      const teams = await db.query.teams.findMany({
+        where: eq(schema.teams.leagueId, leagueId),
+        with: { roster: true },
+      });
+      rosteredPlayerIds = teams.flatMap(t => t.roster.map(r => r.playerId));
+    }
+
+    // Enrich players with stats if requested (batch fetch to avoid N+1)
+    // Chunk playerIds to stay under D1/SQLite bound parameter limit (~100 per query)
+    // Use parallel fetches for all chunks to maximize performance
+    let enrichedPlayers = players;
+    if (includeStats && players.length > 0) {
+      const playerIds = players.map(p => p.id);
+      const CHUNK = 50; // D1 limits ~100 params per query; inArray uses 1 per id + other WHERE vars
+
+      // Create all chunk promises at once for parallel execution
+      const chunks: string[][] = [];
+      for (let i = 0; i < playerIds.length; i += CHUNK) {
+        chunks.push(playerIds.slice(i, i + CHUNK));
+      }
+
+      // Fetch all chunks in parallel
+      const chunkResults = await Promise.all(
+        chunks.map(chunk => {
+          // BUG-005 FIX: Always include scoringFormat in the projection query.
+          // Previously, when week was undefined the scoringFormat filter was omitted,
+          // causing projections from all formats to be returned and potentially mismatched.
+          const projCond = week !== undefined
+            ? and(inArray(schema.playerProjections.playerId, chunk), eq(schema.playerProjections.seasonYear, season), eq(schema.playerProjections.week, week), eq(schema.playerProjections.scoringFormat, scoringFormat))
+            : and(inArray(schema.playerProjections.playerId, chunk), eq(schema.playerProjections.seasonYear, season), eq(schema.playerProjections.scoringFormat, scoringFormat));
+          return Promise.all([
+            db.query.playerWeeklyStats.findMany({
+              where: and(
+                inArray(schema.playerWeeklyStats.playerId, chunk),
+                eq(schema.playerWeeklyStats.seasonYear, season)
+              ),
+            }),
+            db.query.playerProjections.findMany({
+              where: projCond,
+              orderBy: week !== undefined ? undefined : desc(schema.playerProjections.week),
+            }),
+          ]);
+        })
+      );
+
+      // Flatten results
+      const allStats: { playerId: string; [k: string]: any }[] = [];
+      const allProjections: { playerId: string; [k: string]: any }[] = [];
+      for (const [statsChunk, projChunk] of chunkResults) {
+        allStats.push(...statsChunk);
+        allProjections.push(...projChunk);
+      }
+
+      const statsByPlayer = new Map<string, typeof allStats>();
+      for (const s of allStats) {
+        const list = statsByPlayer.get(s.playerId) || [];
+        list.push(s);
+        statsByPlayer.set(s.playerId, list);
+      }
+
+      const projectionByPlayer = new Map<string, (typeof allProjections)[0]>();
+      for (const p of allProjections) {
+        if (!projectionByPlayer.has(p.playerId)) projectionByPlayer.set(p.playerId, p);
+      }
+
+      enrichedPlayers = players.map((player) => {
+        const stats = statsByPlayer.get(player.id) || [];
+        const isDef = player.position === 'DEF';
+        const seasonStats = stats.reduce((acc, week) => {
+          const played = isDef ||
+            (week.offSnaps ?? 0) > 0 || (week.defSnaps ?? 0) > 0 || (week.stSnaps ?? 0) > 0 ||
+            ((week.passAttempts ?? 0) > 0 || (week.rushAttempts ?? 0) > 0 || (week.targets ?? 0) > 0 ||
+            (week.receptions ?? 0) > 0 || (week.fgAttempts ?? 0) > 0 || (week.xpAttempts ?? 0) > 0 ||
+            (week.sacks ?? 0) > 0 || (week.defInterceptions ?? 0) > 0);
+          const snapPct = (() => {
+            const off = week.offSnaps ?? 0, def = week.defSnaps ?? 0, st = week.stSnaps ?? 0;
+            const tmOff = week.tmOffSnaps ?? 0, tmDef = week.tmDefSnaps ?? 0, tmSt = week.tmStSnaps ?? 0;
+            if (off > 0 && tmOff > 0) return (off / tmOff) * 100;
+            if (def > 0 && tmDef > 0) return (def / tmDef) * 100;
+            if (st > 0 && tmSt > 0) return (st / tmSt) * 100;
+            return null;
+          })();
+          return {
+            games: acc.games + 1,
+            gamesPlayed: acc.gamesPlayed + (played ? 1 : 0),
+            snapPctSum: acc.snapPctSum + (snapPct != null ? snapPct : 0),
+            fantasyPointsPPR: acc.fantasyPointsPPR + (week.fantasyPointsPPR || 0),
+            fantasyPointsHalf: acc.fantasyPointsHalf + (week.fantasyPointsHalf || 0),
+            fantasyPointsStd: acc.fantasyPointsStd + (week.fantasyPointsStd || 0),
+            passYards: acc.passYards + (week.passYards || 0),
+            passTDs: acc.passTDs + (week.passTDs || 0),
+            rushYards: acc.rushYards + (week.rushYards || 0),
+            rushTDs: acc.rushTDs + (week.rushTDs || 0),
+            receptions: acc.receptions + (week.receptions || 0),
+            receivingYards: acc.receivingYards + (week.receivingYards || 0),
+            receivingTDs: acc.receivingTDs + (week.receivingTDs || 0),
+          };
+        }, {
+          games: 0,
+          gamesPlayed: 0,
+          snapPctSum: 0,
+          fantasyPointsPPR: 0,
+          fantasyPointsHalf: 0,
+          fantasyPointsStd: 0,
+          passYards: 0,
+          passTDs: 0,
+          rushYards: 0,
+          rushTDs: 0,
+          receptions: 0,
+          receivingYards: 0,
+          receivingTDs: 0,
+        });
+
+        const projection = projectionByPlayer.get(player.id);
+        const gp = seasonStats.gamesPlayed ?? seasonStats.games;
+        const avgSnapPct = (seasonStats as any).snapPctSum > 0 && gp > 0
+          ? Math.round(((seasonStats as any).snapPctSum / gp) * 10) / 10
+          : null;
+        const avgPts = gp > 0
+          ? Math.round((seasonStats.fantasyPointsPPR / gp) * 10) / 10
+          : 0;
+
+        // For completed weeks, use actual points scored; otherwise use projections
+        let projPts = 0;
+        if (weekComplete && week !== undefined) {
+          const weekStat = stats.find((s: any) => s.week === week);
+          if (weekStat) {
+            const ptsCol = scoringFormat === 'standard' ? 'fantasyPointsStd' : scoringFormat === 'half-ppr' ? 'fantasyPointsHalf' : 'fantasyPointsPPR';
+            projPts = (weekStat as any)[ptsCol] ?? 0;
+          }
+        } else {
+          projPts = projection?.projectedPoints || 0;
+        }
+        const { snapPctSum, ...ss } = seasonStats as any;
+        return {
+          ...player,
+          seasonStats: { ...ss, averageSnapPct: avgSnapPct },
+          avgPointsPPR: avgPts,
+          projectedPoints: projPts,
+          isRostered: rosteredPlayerIds.includes(player.id),
+        };
+      });
+
+      // Filter to available (non-rostered) when requested
+      if (availableOnly && leagueId) {
+        enrichedPlayers = enrichedPlayers.filter((p: any) => !p.isRostered);
+      }
+      // Sort by computed field and apply pagination
+      if (sortByComputed) {
+        const key = sortBy === 'projectedPoints' ? 'projectedPoints' : 'avgPointsPPR';
+        enrichedPlayers = [...enrichedPlayers].sort((a, b) => {
+          const aVal = (a as any)[key] ?? 0;
+          const bVal = (b as any)[key] ?? 0;
+          return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
+        });
+        enrichedPlayers = enrichedPlayers.slice(offset, offset + limit);
+      }
+    } else {
+      // Just add rostered status without stats
+      enrichedPlayers = players.map(player => ({
+        ...player,
+        isRostered: rosteredPlayerIds.includes(player.id),
+      }));
+      if (availableOnly && leagueId) {
+        enrichedPlayers = enrichedPlayers.filter((p: any) => !p.isRostered);
+      }
+    }
+
+    // Get total count
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.nflPlayers)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+    const total = countResult[0]?.count || 0;
+
+    return c.json({
+      players: enrichedPlayers,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      weekComplete,
+      pointsType: weekComplete ? 'actual' : 'projected',
+    });
+  } catch (error) {
+    console.error('Get players error:', error);
+    return c.json({ error: 'Failed to fetch players' }, 500);
+  }
+});
+
+// Projection movements - players whose projections have moved the most (for BiggestMovers / Trends)
+playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const week = parseInt(c.req.query('week') || '1');
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const scoringFormat = c.req.query('scoringFormat') || 'ppr';
+  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
+
+  try {
+    const currentProjections = await db.query.playerProjections.findMany({
+      where: and(
+        eq(schema.playerProjections.week, week),
+        eq(schema.playerProjections.seasonYear, season),
+        eq(schema.playerProjections.scoringFormat, scoringFormat)
+      ),
+      with: { player: true },
+    });
+
+    const playerIds = currentProjections.map(p => p.playerId);
+    if (playerIds.length === 0) return c.json({ movements: [] });
+
+    const CHUNK = 50;
+    const snapshots: { playerId: string; projectedPoints: number; snapshotAt: Date }[] = [];
+    for (let i = 0; i < playerIds.length; i += CHUNK) {
+      const chunk = playerIds.slice(i, i + CHUNK);
+      const rows = await db.query.projectionLineSnapshots.findMany({
+        where: and(
+          inArray(schema.projectionLineSnapshots.playerId, chunk),
+          eq(schema.projectionLineSnapshots.week, week),
+          eq(schema.projectionLineSnapshots.seasonYear, season),
+          eq(schema.projectionLineSnapshots.scoringFormat, scoringFormat)
+        ),
+        orderBy: asc(schema.projectionLineSnapshots.snapshotAt),
+      });
+      snapshots.push(...rows.map(r => ({ playerId: r.playerId, projectedPoints: r.projectedPoints, snapshotAt: r.snapshotAt })));
+    }
+
+    const earliestByPlayer = new Map<string, { projectedPoints: number; snapshotAt: Date }>();
+    for (const s of snapshots) {
+      if (!earliestByPlayer.has(s.playerId)) earliestByPlayer.set(s.playerId, { projectedPoints: s.projectedPoints, snapshotAt: s.snapshotAt });
+    }
+
+    const movements = currentProjections
+      .map(p => {
+        const prev = earliestByPlayer.get(p.playerId);
+        const prevPts = prev?.projectedPoints ?? p.projectedPoints;
+        const movement = p.projectedPoints - prevPts;
+        return {
+          playerId: p.playerId,
+          name: (p as any).player?.name,
+          team: (p as any).player?.team,
+          position: (p as any).player?.position,
+          previousProjectedPoints: prevPts,
+          projectedPoints: p.projectedPoints,
+          movement,
+        };
+      })
+      .filter(m => Math.abs(m.movement) > 0.01)
+      .sort((a, b) => Math.abs(b.movement) - Math.abs(a.movement))
+      .slice(0, limit);
+
+    return c.json({ movements });
+  } catch (error) {
+    console.error('Projection movements error:', error);
+    return c.json({ error: 'Failed to fetch projection movements' }, 500);
+  }
+});
+
+// Search players (quick search) — rate limited, input sanitized
+playerRoutes.get('/search', playerSearchRateLimit, optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const query = c.req.query('q');
+
+  if (!query || query.length < 2) {
+    return c.json({ players: [] });
+  }
+
+  // Enforce max query length to prevent abuse
+  if (query.length > 100) {
+    return c.json({ error: 'Search query too long (max 100 characters)' }, 400);
+  }
+
+  // Sanitize: strip characters that are not letters, spaces, hyphens, periods, or apostrophes
+  const sanitized = query.replace(/[^a-zA-Z\s\-'.]/g, '').trim();
+  if (sanitized.length < 2) {
+    return c.json({ players: [] });
+  }
+
+  // Escape SQL LIKE wildcards in the user input to prevent LIKE injection
+  const escapedQuery = sanitized.replace(/%/g, '\\%').replace(/_/g, '\\_');
+
+  try {
+    const players = await db.query.nflPlayers.findMany({
+      where: like(schema.nflPlayers.name, `%${escapedQuery}%`),
+      limit: 20,
+    });
+
+    return c.json({ players });
+  } catch (error) {
+    console.error('Search players error:', error);
+    return c.json({ error: 'Search failed' }, 500);
+  }
+});
+
+// Get all recent news across all players (player-relevant only, includes source/author)
+playerRoutes.get('/news', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 50);
+
+  try {
+    const news = await db.query.playerNews.findMany({
+      orderBy: desc(schema.playerNews.publishedAt),
+      limit,
+      with: {
+        player: true,
+      },
+    });
+
+    return c.json({ news });
+  } catch (error) {
+    console.error('Get all news error:', error);
+    return c.json({ error: 'Failed to fetch news' }, 500);
+  }
+});
+
+// Get trending players from Sleeper platform + league-specific ownership
+playerRoutes.get('/trending', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const direction = c.req.query('direction') || 'up'; // 'up' or 'down'
+  const leagueId = c.req.query('leagueId'); // optional: for league-specific ownership %
+  const limit = Math.min(parseInt(c.req.query('limit') || '15'), 25);
+
+  try {
+    // 1. Fetch trending data from Sleeper's platform-wide API
+    const sleeperType = direction === 'up' ? 'add' : 'drop';
+    const sleeperRes = await fetch(
+      `https://api.sleeper.app/v1/players/nfl/trending/${sleeperType}?lookback_hours=336&limit=${limit}`
+    );
+
+    if (!sleeperRes.ok) {
+      return c.json({ error: 'Failed to fetch trending data from Sleeper' }, 502);
+    }
+
+    const sleeperTrending: Array<{ player_id: string; count: number }> = await sleeperRes.json();
+
+    if (!sleeperTrending || sleeperTrending.length === 0) {
+      return c.json({ trending: [] });
+    }
+
+    // 2. Map Sleeper external IDs to our internal players
+    const externalIds = sleeperTrending.map(t => t.player_id);
+    const CHUNK_SIZE = 80;
+    const allPlayers: any[] = [];
+    for (let i = 0; i < externalIds.length; i += CHUNK_SIZE) {
+      const chunk = externalIds.slice(i, i + CHUNK_SIZE);
+      const chunkPlayers = await db.query.nflPlayers.findMany({
+        where: inArray(schema.nflPlayers.externalId, chunk),
+      });
+      allPlayers.push(...chunkPlayers);
+    }
+    const playerByExtId = new Map(allPlayers.map(p => [p.externalId, p]));
+
+    // 3. Get league-specific ownership data if leagueId provided
+    let leagueRosteredIds = new Set<string>();
+    let leagueTeamCount = 0;
+
+    if (leagueId) {
+      // Get all teams in this league
+      const leagueTeams = await db.query.teams.findMany({
+        where: eq(schema.teams.leagueId, leagueId),
+        columns: { id: true },
+      });
+      leagueTeamCount = leagueTeams.length;
+
+      if (leagueTeams.length > 0) {
+        const teamIds = leagueTeams.map(t => t.id);
+        // Get all rostered players in this league
+        const rosterRows = await db
+          .select({ playerId: schema.rosterSpots.playerId })
+          .from(schema.rosterSpots)
+          .where(inArray(schema.rosterSpots.teamId, teamIds));
+        leagueRosteredIds = new Set(rosterRows.map(r => r.playerId));
+      }
+    }
+
+    // 4. Get the latest weekly stats for PPR points (last synced week)
+    const internalIds = allPlayers.map(p => p.id);
+    const avgPointsMap = new Map<string, number>();
+    if (internalIds.length > 0) {
+      // Get average PPR points from last 4 weeks of stats
+      for (let i = 0; i < internalIds.length; i += CHUNK_SIZE) {
+        const chunk = internalIds.slice(i, i + CHUNK_SIZE);
+        const statsRows = await db
+          .select({
+            playerId: schema.playerWeeklyStats.playerId,
+            avgPts: sql<number>`ROUND(AVG(${schema.playerWeeklyStats.fantasyPointsPPR}), 1)`.as('avg_pts'),
+          })
+          .from(schema.playerWeeklyStats)
+          .where(inArray(schema.playerWeeklyStats.playerId, chunk))
+          .groupBy(schema.playerWeeklyStats.playerId) as any[];
+        for (const row of statsRows) {
+          avgPointsMap.set(row.playerId, row.avgPts ?? 0);
+        }
+      }
+    }
+
+    // 5. Build response
+    const trending = sleeperTrending
+      .map(t => {
+        const player = playerByExtId.get(t.player_id);
+        if (!player) return null;
+
+        // Ownership: if league provided, show league-specific; otherwise platform estimate
+        let ownedPct = 0;
+        if (leagueId && leagueTeamCount > 0) {
+          ownedPct = leagueRosteredIds.has(player.id) ? 100 : 0;
+        }
+
+        return {
+          id: player.id,
+          name: player.name,
+          team: player.team,
+          position: player.position,
+          status: player.status,
+          headshotUrl: player.headshotUrl ?? null,
+          trendDirection: direction,
+          trendValue: t.count,
+          ownedPct,
+          ownedInLeague: leagueId ? leagueRosteredIds.has(player.id) : undefined,
+          avgPointsPPR: avgPointsMap.get(player.id) ?? 0,
+        };
+      })
+      .filter(Boolean);
+
+    return c.json({
+      trending,
+      source: 'sleeper',
+      leagueId: leagueId || null,
+    });
+  } catch (error) {
+    console.error('Get trending error:', error);
+    return c.json({ error: 'Failed to fetch trending players' }, 500);
+  }
+});
+
+// Get available stats seasons (for defaulting to most recent)
+playerRoutes.get('/stats/available-years', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  try {
+    const result = await db
+      .select({ seasonYear: schema.playerWeeklyStats.seasonYear })
+      .from(schema.playerWeeklyStats)
+      .groupBy(schema.playerWeeklyStats.seasonYear)
+      .orderBy(desc(schema.playerWeeklyStats.seasonYear));
+    const years = result.map((r) => r.seasonYear).filter((y): y is number => y != null);
+    // Dynamic fallback: NFL season spans Sep–Feb, so Jan–Jul = previous year's season
+    const now = new Date();
+    const fallbackSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
+    return c.json({
+      years: years.length > 0 ? years : [fallbackSeason, fallbackSeason - 1],
+      latest: years[0] ?? fallbackSeason,
+    });
+  } catch (error) {
+    console.error('Get available years error:', error);
+    const now = new Date();
+    const fallbackSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
+    return c.json({ years: [fallbackSeason, fallbackSeason - 1], latest: fallbackSeason });
+  }
+});
+
+// Get player details
+playerRoutes.get('/:id', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const playerId = c.req.param('id');
+
+  try {
+    const player = await db.query.nflPlayers.findFirst({
+      where: eq(schema.nflPlayers.id, playerId),
+      with: {
+        news: {
+          orderBy: desc(schema.playerNews.publishedAt),
+          limit: 3,
+        },
+      },
+    });
+
+    if (!player) {
+      return c.json({ error: 'Player not found' }, 404);
+    }
+
+    return c.json({ player });
+  } catch (error) {
+    console.error('Get player error:', error);
+    return c.json({ error: 'Failed to fetch player' }, 500);
+  }
+});
+
+// Get years for which this player has stats (for dropdown - only show years with data)
+playerRoutes.get('/:id/stats/available-years', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  let playerId = c.req.param('id');
+
+  try {
+    // Resolve playerId - might be our UUID or Sleeper externalId
+    if (/^\d+$/.test(playerId)) {
+      const player = await db.query.nflPlayers.findFirst({
+        where: eq(schema.nflPlayers.externalId, playerId),
+      });
+      if (player) playerId = player.id;
+    }
+
+    const result = await db
+      .select({ seasonYear: schema.playerWeeklyStats.seasonYear })
+      .from(schema.playerWeeklyStats)
+      .where(eq(schema.playerWeeklyStats.playerId, playerId))
+      .groupBy(schema.playerWeeklyStats.seasonYear)
+      .orderBy(desc(schema.playerWeeklyStats.seasonYear));
+    const years = result.map((r) => r.seasonYear).filter((y): y is number => y != null);
+
+    return c.json({
+      years: years.length > 0 ? years : [],
+      latest: years[0] ?? null,
+    });
+  } catch (error) {
+    console.error('Get player available years error:', error);
+    return c.json({ years: [], latest: null });
+  }
+});
+
+// Get player stats
+playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  let playerId = c.req.param('id');
+
+  try {
+    // Resolve season - use "latest" or fetch max from DB when not specified
+    const seasonParam = c.req.query('season') || 'latest';
+    let season: number;
+    if (seasonParam === 'latest') {
+      const maxResult = await db
+        .select({ maxYear: sql<number>`max(${schema.playerWeeklyStats.seasonYear})` })
+        .from(schema.playerWeeklyStats);
+      const fallbackSeason = new Date().getMonth() <= 6 ? new Date().getFullYear() - 1 : new Date().getFullYear();
+      season = maxResult[0]?.maxYear ?? fallbackSeason;
+    } else {
+      const parsed = parseInt(seasonParam);
+      const fallbackSeason = new Date().getMonth() <= 6 ? new Date().getFullYear() - 1 : new Date().getFullYear();
+      season = isNaN(parsed) ? fallbackSeason : parsed;
+    }
+    // Resolve playerId - might be our UUID or Sleeper externalId
+    let stats = await db.query.playerWeeklyStats.findMany({
+      where: and(
+        eq(schema.playerWeeklyStats.playerId, playerId),
+        eq(schema.playerWeeklyStats.seasonYear, season)
+      ),
+      orderBy: asc(schema.playerWeeklyStats.week),
+    });
+
+    // Fallback 1: if no stats and playerId looks like Sleeper ID (numeric), try lookup by externalId
+    if (stats.length === 0 && /^\d+$/.test(playerId)) {
+      const player = await db.query.nflPlayers.findFirst({
+        where: eq(schema.nflPlayers.externalId, playerId),
+      });
+      if (player) {
+        playerId = player.id;
+        stats = await db.query.playerWeeklyStats.findMany({
+          where: and(
+            eq(schema.playerWeeklyStats.playerId, playerId),
+            eq(schema.playerWeeklyStats.seasonYear, season)
+          ),
+          orderBy: asc(schema.playerWeeklyStats.week),
+        });
+      }
+    }
+
+    // Fallback 2: if requested season has no stats, try prior season
+    if (stats.length === 0 && season >= 2023) {
+      stats = await db.query.playerWeeklyStats.findMany({
+        where: and(
+          eq(schema.playerWeeklyStats.playerId, playerId),
+          eq(schema.playerWeeklyStats.seasonYear, season - 1)
+        ),
+        orderBy: asc(schema.playerWeeklyStats.week),
+      });
+    }
+
+    // Resolve player position for DEF (plays every game; K needs attempts to count as played)
+    const playerRow = await db.query.nflPlayers.findFirst({
+      where: eq(schema.nflPlayers.id, playerId),
+      columns: { position: true },
+    });
+    const position = playerRow?.position ?? '';
+
+    // Calculate season totals (gamesPlayed = weeks with snap participation; fallback to stat activity for older records)
+    // DEF plays every game - count each week with stats as played; K requires FG/XP attempts
+    const seasonTotals = stats.reduce(
+      (acc, week) => {
+        const isDef = position === 'DEF';
+        const played = isDef ||
+          (week.offSnaps ?? 0) > 0 || (week.defSnaps ?? 0) > 0 || (week.stSnaps ?? 0) > 0 ||
+          ((week.passAttempts ?? 0) > 0 || (week.rushAttempts ?? 0) > 0 || (week.targets ?? 0) > 0 ||
+          (week.receptions ?? 0) > 0 || (week.fgAttempts ?? 0) > 0 || (week.xpAttempts ?? 0) > 0 ||
+          (week.sacks ?? 0) > 0 || (week.defInterceptions ?? 0) > 0);
+        const snapPct = (() => {
+          const off = week.offSnaps ?? 0;
+          const def = week.defSnaps ?? 0;
+          const st = week.stSnaps ?? 0;
+          const tmOff = week.tmOffSnaps ?? 0;
+          const tmDef = week.tmDefSnaps ?? 0;
+          const tmSt = week.tmStSnaps ?? 0;
+          if (off > 0 && tmOff > 0) return (off / tmOff) * 100;
+          if (def > 0 && tmDef > 0) return (def / tmDef) * 100;
+          if (st > 0 && tmSt > 0) return (st / tmSt) * 100;
+          return null;
+        })();
+        return {
+          games: acc.games + 1,
+          gamesPlayed: acc.gamesPlayed + (played ? 1 : 0),
+          snapPctSum: acc.snapPctSum + (snapPct != null ? snapPct : 0),
+          passYards: acc.passYards + (week.passYards || 0),
+        passTDs: acc.passTDs + (week.passTDs || 0),
+        passInterceptions: acc.passInterceptions + (week.passInterceptions || 0),
+        rushYards: acc.rushYards + (week.rushYards || 0),
+        rushTDs: acc.rushTDs + (week.rushTDs || 0),
+        receptions: acc.receptions + (week.receptions || 0),
+        receivingYards: acc.receivingYards + (week.receivingYards || 0),
+        receivingTDs: acc.receivingTDs + (week.receivingTDs || 0),
+        targets: acc.targets + (week.targets || 0),
+        fantasyPointsPPR: acc.fantasyPointsPPR + (week.fantasyPointsPPR || 0),
+        fantasyPointsHalf: acc.fantasyPointsHalf + (week.fantasyPointsHalf || 0),
+        fantasyPointsStd: acc.fantasyPointsStd + (week.fantasyPointsStd || 0),
+        };
+      },
+      {
+        games: 0,
+        gamesPlayed: 0,
+        snapPctSum: 0,
+        passYards: 0,
+        passTDs: 0,
+        passInterceptions: 0,
+        rushYards: 0,
+        rushTDs: 0,
+        receptions: 0,
+        receivingYards: 0,
+        receivingTDs: 0,
+        targets: 0,
+        fantasyPointsPPR: 0,
+        fantasyPointsHalf: 0,
+        fantasyPointsStd: 0,
+      }
+    );
+
+    const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    const computeSnapPct = (row: any) => {
+      const off = row.offSnaps ?? 0;
+      const def = row.defSnaps ?? 0;
+      const st = row.stSnaps ?? 0;
+      const tmOff = row.tmOffSnaps ?? 0;
+      const tmDef = row.tmDefSnaps ?? 0;
+      const tmSt = row.tmStSnaps ?? 0;
+      if (off > 0 && tmOff > 0) return Math.round((off / tmOff) * 1000) / 10;
+      if (def > 0 && tmDef > 0) return Math.round((def / tmDef) * 1000) / 10;
+      if (st > 0 && tmSt > 0) return Math.round((st / tmSt) * 1000) / 10;
+      return null;
+    };
+    const normalize = (row: any) => {
+      const out: any = {};
+      for (const [k, v] of Object.entries(row)) {
+        out[k.includes('_') ? toCamel(k) : k] = v;
+      }
+      const snapPct = computeSnapPct(row);
+      if (snapPct != null) out.snapPct = snapPct;
+      return out;
+    };
+    const normalizedStats = stats.map(normalize);
+
+    const { snapPctSum, ...totalsOut } = seasonTotals as any;
+    const averageSnapPct = snapPctSum > 0 && (seasonTotals.gamesPlayed ?? seasonTotals.games) > 0
+      ? Math.round((snapPctSum / (seasonTotals.gamesPlayed ?? seasonTotals.games)) * 10) / 10
+      : null;
+    return c.json({
+      weeklyStats: normalizedStats,
+      seasonTotals: { ...totalsOut, averageSnapPct },
+      resolvedSeason: season,
+      averagePointsPPR: (seasonTotals.gamesPlayed ?? seasonTotals.games) > 0
+        ? Math.round((seasonTotals.fantasyPointsPPR / (seasonTotals.gamesPlayed ?? seasonTotals.games)) * 10) / 10
+        : 0,
+      averagePointsHalf: (seasonTotals.gamesPlayed ?? seasonTotals.games) > 0
+        ? Math.round((seasonTotals.fantasyPointsHalf / (seasonTotals.gamesPlayed ?? seasonTotals.games)) * 10) / 10
+        : 0,
+      averagePointsStd: (seasonTotals.gamesPlayed ?? seasonTotals.games) > 0
+        ? Math.round((seasonTotals.fantasyPointsStd / (seasonTotals.gamesPlayed ?? seasonTotals.games)) * 10) / 10
+        : 0,
+    });
+  } catch (error) {
+    console.error('Get player stats error:', error);
+    return c.json({ error: 'Failed to fetch player stats' }, 500);
+  }
+});
+
+// Get player projections
+playerRoutes.get('/:id/projections', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const playerId = c.req.param('id');
+  const week = c.req.query('week');
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const scoringFormat = c.req.query('format') || 'ppr';
+
+  try {
+    const conditions = [
+      eq(schema.playerProjections.playerId, playerId),
+      eq(schema.playerProjections.seasonYear, season),
+      eq(schema.playerProjections.scoringFormat, scoringFormat),
+    ];
+
+    if (week) {
+      conditions.push(eq(schema.playerProjections.week, parseInt(week)));
+    }
+
+    const projections = await db.query.playerProjections.findMany({
+      where: and(...conditions),
+      orderBy: asc(schema.playerProjections.week),
+    });
+
+    return c.json({ projections });
+  } catch (error) {
+    console.error('Get player projections error:', error);
+    return c.json({ error: 'Failed to fetch projections' }, 500);
+  }
+});
+
+// Get player news
+playerRoutes.get('/:id/news', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const playerId = c.req.param('id');
+
+  try {
+    const news = await db.query.playerNews.findMany({
+      where: eq(schema.playerNews.playerId, playerId),
+      orderBy: desc(schema.playerNews.publishedAt),
+      limit: 3,
+    });
+
+    return c.json({ news });
+  } catch (error) {
+    console.error('Get player news error:', error);
+    return c.json({ error: 'Failed to fetch player news' }, 500);
+  }
+});
+
+// Get available players for a league (not on any roster)
+playerRoutes.get('/available/:leagueId', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+  const leagueId = c.req.param('leagueId');
+
+  if (!user) {
+    return c.json({ error: 'Not authenticated' }, 401);
+  }
+
+  // Check membership
+  const membership = await db.query.leagueMembers.findFirst({
+    where: and(
+      eq(schema.leagueMembers.userId, user.id),
+      eq(schema.leagueMembers.leagueId, leagueId)
+    ),
+  });
+
+  if (!membership) {
+    return c.json({ error: 'Not a member of this league' }, 403);
+  }
+
+  try {
+    // Get all rostered player IDs in this league
+    const teams = await db.query.teams.findMany({
+      where: eq(schema.teams.leagueId, leagueId),
+      with: {
+        roster: true,
+      },
+    });
+
+    const rosteredPlayerIds = teams.flatMap(t => t.roster.map(r => r.playerId));
+
+    // Get all players not on a roster
+    const allPlayers = await db.query.nflPlayers.findMany({
+      where: eq(schema.nflPlayers.status, 'active'),
+    });
+
+    const availablePlayers = allPlayers.filter(
+      p => !rosteredPlayerIds.includes(p.id)
+    );
+
+    return c.json({ players: availablePlayers });
+  } catch (error) {
+    console.error('Get available players error:', error);
+    return c.json({ error: 'Failed to fetch available players' }, 500);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Matchup Grade – based on the opponent defense's last 5 games vs this position
+// ---------------------------------------------------------------------------
+playerRoutes.get('/:id/matchup-grade', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  let playerId = c.req.param('id');
+  const seasonParam = c.req.query('season');
+  const weekParam = c.req.query('week'); // optional: evaluate grade for a specific week
+  const formatParam = (c.req.query('format') || 'ppr') as 'ppr' | 'half' | 'std';
+
+  try {
+    // 1. Resolve player
+    let player = await db.query.nflPlayers.findFirst({
+      where: eq(schema.nflPlayers.id, playerId),
+    });
+    if (!player && /^\d+$/.test(playerId)) {
+      player = await db.query.nflPlayers.findFirst({
+        where: eq(schema.nflPlayers.externalId, playerId),
+      });
+    }
+    if (!player) return c.json({ error: 'Player not found' }, 404);
+
+    const position = player.position; // QB, RB, WR, TE, K, DEF
+    const playerTeam = player.team;
+
+    // Determine season
+    let season: number;
+    if (seasonParam) {
+      season = parseInt(seasonParam);
+      if (isNaN(season)) season = new Date().getFullYear();
+    } else {
+      const maxResult = await db
+        .select({ maxYear: sql<number>`max(${schema.playerWeeklyStats.seasonYear})` })
+        .from(schema.playerWeeklyStats);
+      season = maxResult[0]?.maxYear ?? new Date().getFullYear();
+    }
+
+    // 2. Find the opponent for this player's upcoming/current week
+    //    Strategy: look at nfl_games for the player's team, find the next incomplete game,
+    //    or if a week is specified, use that week.
+    let opponentTeam: string | null = null;
+    let matchupWeek: number | null = null;
+
+    if (weekParam) {
+      const week = parseInt(weekParam);
+      if (!isNaN(week) && week >= 1 && week <= 22) {
+        // Find the game for this team on the given week
+        const game = await db.query.nflGames.findFirst({
+          where: and(
+            eq(schema.nflGames.seasonYear, season),
+            eq(schema.nflGames.week, week),
+            sql`(${schema.nflGames.homeTeam} = ${playerTeam} OR ${schema.nflGames.awayTeam} = ${playerTeam})`
+          ),
+        });
+        if (game) {
+          opponentTeam = game.homeTeam === playerTeam ? game.awayTeam : game.homeTeam;
+          matchupWeek = week;
+        }
+      }
+    }
+
+    // If no week specified (or game not found), find next incomplete game
+    if (!opponentTeam) {
+      const nextGame = await db.query.nflGames.findFirst({
+        where: and(
+          eq(schema.nflGames.seasonYear, season),
+          eq(schema.nflGames.seasonType, 'regular'),
+          sql`(${schema.nflGames.homeTeam} = ${playerTeam} OR ${schema.nflGames.awayTeam} = ${playerTeam})`,
+          eq(schema.nflGames.isComplete, false)
+        ),
+        orderBy: asc(schema.nflGames.week),
+      });
+      if (nextGame) {
+        opponentTeam = nextGame.homeTeam === playerTeam ? nextGame.awayTeam : nextGame.homeTeam;
+        matchupWeek = nextGame.week;
+      }
+    }
+
+    // Fallback: if season is over, use the last completed game's opponent
+    if (!opponentTeam) {
+      const lastGame = await db.query.nflGames.findFirst({
+        where: and(
+          eq(schema.nflGames.seasonYear, season),
+          eq(schema.nflGames.seasonType, 'regular'),
+          sql`(${schema.nflGames.homeTeam} = ${playerTeam} OR ${schema.nflGames.awayTeam} = ${playerTeam})`,
+          eq(schema.nflGames.isComplete, true)
+        ),
+        orderBy: desc(schema.nflGames.week),
+      });
+      if (lastGame) {
+        opponentTeam = lastGame.homeTeam === playerTeam ? lastGame.awayTeam : lastGame.homeTeam;
+        matchupWeek = lastGame.week;
+      }
+    }
+
+    if (!opponentTeam) {
+      return c.json({
+        grade: null,
+        label: 'Unknown',
+        message: 'No matchup data available',
+        opponent: null,
+        week: null,
+      });
+    }
+
+    // 3. Get the opponent defense's last 5 completed games (not bye weeks)
+    //    A "completed game" for the defense = a game in nfl_games where that team played and isComplete
+    const defGames = await db
+      .select({
+        week: schema.nflGames.week,
+        homeTeam: schema.nflGames.homeTeam,
+        awayTeam: schema.nflGames.awayTeam,
+      })
+      .from(schema.nflGames)
+      .where(
+        and(
+          eq(schema.nflGames.seasonYear, season),
+          eq(schema.nflGames.seasonType, 'regular'),
+          eq(schema.nflGames.isComplete, true),
+          sql`(${schema.nflGames.homeTeam} = ${opponentTeam} OR ${schema.nflGames.awayTeam} = ${opponentTeam})`,
+          matchupWeek ? sql`${schema.nflGames.week} < ${matchupWeek}` : sql`1=1`
+        )
+      )
+      .orderBy(desc(schema.nflGames.week))
+      .limit(5);
+
+    if (defGames.length === 0) {
+      return c.json({
+        grade: null,
+        label: 'Unknown',
+        message: `No completed games found for ${opponentTeam} defense`,
+        opponent: opponentTeam,
+        week: matchupWeek,
+      });
+    }
+
+    const defWeeks = defGames.map(g => g.week);
+
+    // Pick the right fantasy points column
+    const fpCol = formatParam === 'std'
+      ? schema.playerWeeklyStats.fantasyPointsStd
+      : formatParam === 'half'
+        ? schema.playerWeeklyStats.fantasyPointsHalf
+        : schema.playerWeeklyStats.fantasyPointsPPR;
+
+    // 4. Query all players of this position who faced the opponent defense in those weeks
+    //    The opponent field in player_weekly_stats stores the opposing team (with optional @ prefix)
+    //    Players faced opponentTeam's defense = players whose opponent is opponentTeam (or @opponentTeam)
+    //    AND who actually played (have stats / snaps)
+    const defAllowedStats = await db
+      .select({
+        week: schema.playerWeeklyStats.week,
+        fantasyPoints: fpCol,
+        playerId: schema.playerWeeklyStats.playerId,
+      })
+      .from(schema.playerWeeklyStats)
+      .innerJoin(schema.nflPlayers, eq(schema.playerWeeklyStats.playerId, schema.nflPlayers.id))
+      .where(
+        and(
+          eq(schema.playerWeeklyStats.seasonYear, season),
+          eq(schema.nflPlayers.position, position),
+          inArray(schema.playerWeeklyStats.week, defWeeks),
+          sql`(${schema.playerWeeklyStats.opponent} = ${opponentTeam} OR ${schema.playerWeeklyStats.opponent} = ${'@' + opponentTeam})`,
+          // Must have actually played (non-zero stats)
+          sql`(
+            ${schema.playerWeeklyStats.offSnaps} > 0
+            OR ${schema.playerWeeklyStats.defSnaps} > 0
+            OR ${schema.playerWeeklyStats.passAttempts} > 0
+            OR ${schema.playerWeeklyStats.rushAttempts} > 0
+            OR ${schema.playerWeeklyStats.targets} > 0
+            OR ${schema.playerWeeklyStats.receptions} > 0
+            OR ${schema.playerWeeklyStats.fgAttempts} > 0
+            OR ${schema.playerWeeklyStats.xpAttempts} > 0
+            OR ${schema.playerWeeklyStats.sacks} > 0
+            OR ${schema.playerWeeklyStats.defInterceptions} > 0
+          )`
+        )
+      );
+
+    // Sum fantasy points allowed by week
+    const pointsByWeek = new Map<number, number>();
+    for (const row of defAllowedStats) {
+      const pts = row.fantasyPoints ?? 0;
+      pointsByWeek.set(row.week, (pointsByWeek.get(row.week) ?? 0) + pts);
+    }
+
+    const weeksWithData = [...pointsByWeek.keys()];
+    if (weeksWithData.length === 0) {
+      return c.json({
+        grade: null,
+        label: 'Unknown',
+        message: `No ${position} stats available against ${opponentTeam}`,
+        opponent: opponentTeam,
+        week: matchupWeek,
+      });
+    }
+
+    const totalAllowed = [...pointsByWeek.values()].reduce((a, b) => a + b, 0);
+    const avgAllowedPerGame = totalAllowed / weeksWithData.length;
+
+    // 5. Get league-wide average for this position over the same weeks
+    //    (total fantasy points scored by all players of this position in these weeks / number of weeks)
+    const leagueAvgResult = await db
+      .select({
+        week: schema.playerWeeklyStats.week,
+        totalPoints: sql<number>`sum(${fpCol})`,
+      })
+      .from(schema.playerWeeklyStats)
+      .innerJoin(schema.nflPlayers, eq(schema.playerWeeklyStats.playerId, schema.nflPlayers.id))
+      .where(
+        and(
+          eq(schema.playerWeeklyStats.seasonYear, season),
+          eq(schema.nflPlayers.position, position),
+          inArray(schema.playerWeeklyStats.week, defWeeks),
+          sql`(
+            ${schema.playerWeeklyStats.offSnaps} > 0
+            OR ${schema.playerWeeklyStats.defSnaps} > 0
+            OR ${schema.playerWeeklyStats.passAttempts} > 0
+            OR ${schema.playerWeeklyStats.rushAttempts} > 0
+            OR ${schema.playerWeeklyStats.targets} > 0
+            OR ${schema.playerWeeklyStats.receptions} > 0
+            OR ${schema.playerWeeklyStats.fgAttempts} > 0
+            OR ${schema.playerWeeklyStats.xpAttempts} > 0
+            OR ${schema.playerWeeklyStats.sacks} > 0
+            OR ${schema.playerWeeklyStats.defInterceptions} > 0
+          )`
+        )
+      )
+      .groupBy(schema.playerWeeklyStats.week);
+
+    // Count how many teams played each week to get per-team average
+    const teamsPerWeekResult = await db
+      .select({
+        week: schema.nflGames.week,
+        gameCount: sql<number>`count(*)`,
+      })
+      .from(schema.nflGames)
+      .where(
+        and(
+          eq(schema.nflGames.seasonYear, season),
+          eq(schema.nflGames.seasonType, 'regular'),
+          eq(schema.nflGames.isComplete, true),
+          inArray(schema.nflGames.week, defWeeks)
+        )
+      )
+      .groupBy(schema.nflGames.week);
+
+    const teamsPerWeek = new Map(teamsPerWeekResult.map(r => [r.week, r.gameCount * 2])); // each game = 2 teams
+
+    // League avg points allowed per team per week for this position
+    let leagueTotalPerTeam = 0;
+    let leagueWeekCount = 0;
+    for (const row of leagueAvgResult) {
+      const numTeams = teamsPerWeek.get(row.week) ?? 32;
+      leagueTotalPerTeam += (row.totalPoints ?? 0) / numTeams;
+      leagueWeekCount++;
+    }
+    const leagueAvgPerTeamPerGame = leagueWeekCount > 0 ? leagueTotalPerTeam / leagueWeekCount : 0;
+
+    // 6. Calculate grade: how does this defense compare to league average?
+    //    Higher avgAllowed = easier matchup for the player (good grade)
+    //    ratio > 1 means defense allows MORE than average (favorable)
+    //    ratio < 1 means defense allows LESS than average (tough)
+    const ratio = leagueAvgPerTeamPerGame > 0 ? avgAllowedPerGame / leagueAvgPerTeamPerGame : 1;
+
+    // Map ratio to grade
+    // ratio >= 1.25 → A+, 1.20 → A, 1.15 → A-, 1.10 → B+, 1.05 → B, 1.00 → B-
+    // 0.95 → C+, 0.90 → C, 0.85 → C-, 0.80 → D+, 0.75 → D, < 0.75 → D-
+    let grade: string;
+    if (ratio >= 1.25) grade = 'A+';
+    else if (ratio >= 1.20) grade = 'A';
+    else if (ratio >= 1.15) grade = 'A-';
+    else if (ratio >= 1.10) grade = 'B+';
+    else if (ratio >= 1.05) grade = 'B';
+    else if (ratio >= 1.00) grade = 'B-';
+    else if (ratio >= 0.95) grade = 'C+';
+    else if (ratio >= 0.90) grade = 'C';
+    else if (ratio >= 0.85) grade = 'C-';
+    else if (ratio >= 0.80) grade = 'D+';
+    else if (ratio >= 0.75) grade = 'D';
+    else grade = 'D-';
+
+    const label = grade.startsWith('A') ? 'Elite'
+      : grade.startsWith('B') ? 'Good'
+        : grade.startsWith('C') ? 'Average'
+          : 'Tough';
+
+    // Build per-game breakdown for the last 5 games
+    const gameBreakdown = defGames.map(g => ({
+      week: g.week,
+      pointsAllowed: Math.round((pointsByWeek.get(g.week) ?? 0) * 10) / 10,
+    }));
+
+    return c.json({
+      grade,
+      label,
+      opponent: opponentTeam,
+      week: matchupWeek,
+      season,
+      position,
+      format: formatParam,
+      gamesAnalyzed: weeksWithData.length,
+      avgPointsAllowed: Math.round(avgAllowedPerGame * 10) / 10,
+      leagueAvg: Math.round(leagueAvgPerTeamPerGame * 10) / 10,
+      ratio: Math.round(ratio * 100) / 100,
+      gameBreakdown,
+      message: `${opponentTeam} allows ${Math.round(avgAllowedPerGame * 10) / 10} ${formatParam.toUpperCase()} pts/game to ${position}s (league avg: ${Math.round(leagueAvgPerTeamPerGame * 10) / 10})`,
+    });
+  } catch (error) {
+    console.error('Matchup grade error:', error);
+    return c.json({ error: 'Failed to calculate matchup grade' }, 500);
+  }
+});

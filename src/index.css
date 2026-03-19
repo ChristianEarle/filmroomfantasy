@@ -2494,3 +2494,36 @@ html {
   inherits: false;
   initial-value: 0;
 }
+
+/* Responsive sidebar: hidden on mobile, visible on desktop */
+.sidebar-responsive {
+  display: none;
+  flex-direction: column;
+}
+@media (min-width: 768px) {
+  .sidebar-responsive {
+    display: flex;
+    position: relative;
+  }
+}
+
+/* Sidebar open state (mobile overlay) */
+.sidebar-open {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+}
+
+/* Mobile-only element (e.g., hamburger menu button) */
+.mobile-only {
+  display: flex;
+}
+@media (min-width: 768px) {
+  .mobile-only {
+    display: none;
+  }
+}

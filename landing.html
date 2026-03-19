@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FilmRoom Fantasy — Fantasy Football Rankings, Projections & Analysis</title>
+    <meta name="description" content="Fantasy football rankings powered by Vegas lines, real NFL data, and multi-source projections. Sync your Sleeper, Yahoo, or ESPN league instantly.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0a0a0a;
+            --surface: #111111;
+            --surface-2: #1a1a1a;
+            --border: #222222;
+            --text: #e5e5e5;
+            --text-muted: #737373;
+            --accent: #3b82f6;
+            --green: #22c55e;
+            --red: #ef4444;
+        }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; overflow-x: hidden; }
+        .serif { font-family: 'Playfair Display', Georgia, serif; }
+
+        /* Nav */
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 16px 0; transition: background 0.3s, backdrop-filter 0.3s; }
+        nav.scrolled { background: rgba(10,10,10,0.85); backdrop-filter: blur(16px); border-bottom: 1px solid var(--border); }
+        .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
+        .nav-logo { font-weight: 800; font-size: 18px; letter-spacing: -0.5px; color: white; text-decoration: none; }
+        .nav-logo span { color: var(--accent); }
+        .nav-links { display: flex; gap: 32px; align-items: center; }
+        .nav-links a { color: var(--text-muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 0.2s; }
+        .nav-links a:hover { color: white; }
+        .nav-cta { background: white; color: black; padding: 8px 20px; border-radius: 6px; font-weight: 600; font-size: 14px; text-decoration: none; transition: opacity 0.2s; }
+        .nav-cta:hover { opacity: 0.85; }
+
+        /* Hero — editorial style, no orbs */
+        .hero { padding: 160px 24px 80px; max-width: 1200px; margin: 0 auto; }
+        .hero-label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 24px; }
+        .hero-label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .hero h1 { font-size: clamp(40px, 7vw, 80px); font-weight: 900; letter-spacing: -2px; line-height: 0.95; color: white; max-width: 900px; margin-bottom: 28px; }
+        .hero p { font-size: 18px; color: var(--text-muted); max-width: 540px; line-height: 1.7; margin-bottom: 40px; }
+        .hero-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+        .btn-primary { background: white; color: black; padding: 14px 28px; border-radius: 8px; font-weight: 700; font-size: 15px; text-decoration: none; transition: all 0.2s; border: none; cursor: pointer; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 24px rgba(255,255,255,0.15); }
+        .btn-secondary { background: transparent; color: white; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 15px; text-decoration: none; border: 1px solid #333; transition: all 0.2s; }
+        .btn-secondary:hover { border-color: #555; background: rgba(255,255,255,0.03); }
+
+        /* Live ticker strip */
+        .ticker { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 14px 0; overflow: hidden; white-space: nowrap; margin-bottom: 0; }
+        .ticker-track { display: inline-flex; animation: scroll 40s linear infinite; gap: 48px; }
+        .ticker-track:hover { animation-play-state: paused; }
+        @keyframes scroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .ticker-item { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+        .ticker-item .name { color: white; }
+        .ticker-item .pts { font-variant-numeric: tabular-nums; }
+        .ticker-item .up { color: var(--green); }
+        .ticker-item .down { color: var(--red); }
+        .ticker-item .sep { color: #333; }
+
+        /* Rankings preview — the actual product shown, not a mockup */
+        .rankings-section { max-width: 1200px; margin: 80px auto; padding: 0 24px; }
+        .section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+        .section-header h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); }
+        .section-header a { font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 600; }
+        .rankings-table { width: 100%; border-collapse: collapse; }
+        .rankings-table th { text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+        .rankings-table th.right { text-align: right; }
+        .rankings-table td { padding: 14px 16px; border-bottom: 1px solid #161616; font-size: 14px; vertical-align: middle; }
+        .rankings-table tr { transition: background 0.15s; }
+        .rankings-table tbody tr:hover { background: var(--surface); }
+        .player-name { font-weight: 700; color: white; }
+        .player-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+        .pos-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+        .pos-qb { background: #dc265220; color: #dc2652; }
+        .pos-rb { background: #16a34a20; color: #22c55e; }
+        .pos-wr { background: #2563eb20; color: #60a5fa; }
+        .pos-te { background: #d9731520; color: #f59e0b; }
+        .pts { font-weight: 800; color: white; font-variant-numeric: tabular-nums; text-align: right; }
+        .trend { text-align: right; font-weight: 600; font-size: 13px; }
+        .trend.up { color: var(--green); }
+        .trend.down { color: var(--red); }
+        .line { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+        .blur-overlay { position: relative; }
+        .blur-overlay::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 180px; background: linear-gradient(transparent, var(--bg)); pointer-events: none; }
+        .unlock-row td { text-align: center; padding: 32px 16px; }
+        .unlock-text { font-size: 15px; color: var(--text-muted); margin-bottom: 16px; }
+
+        /* Differentiators — not a feature grid, more like an editorial callout */
+        .diff-section { max-width: 1200px; margin: 100px auto; padding: 0 24px; }
+        .diff-grid { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        @media (min-width: 768px) { .diff-grid { grid-template-columns: 1fr 1fr; } }
+        @media (min-width: 1024px) { .diff-grid { grid-template-columns: 1fr 1fr 1fr; } }
+        .diff-card { background: var(--bg); padding: 40px 32px; }
+        .diff-card .num { font-size: 48px; font-weight: 900; color: white; letter-spacing: -2px; line-height: 1; margin-bottom: 12px; font-variant-numeric: tabular-nums; }
+        .diff-card h3 { font-size: 16px; font-weight: 700; color: white; margin-bottom: 8px; }
+        .diff-card p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+
+        /* How it works — minimal, editorial */
+        .how-section { max-width: 800px; margin: 120px auto; padding: 0 24px; }
+        .how-section h2 { font-size: clamp(32px, 5vw, 48px); font-weight: 900; letter-spacing: -1px; color: white; margin-bottom: 64px; text-align: center; }
+        .how-steps { display: flex; flex-direction: column; gap: 48px; }
+        .how-step { display: flex; gap: 24px; align-items: flex-start; }
+        .how-step .step-num { flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; border: 2px solid #333; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; color: white; }
+        .how-step h3 { font-weight: 700; font-size: 18px; color: white; margin-bottom: 6px; }
+        .how-step p { font-size: 15px; color: var(--text-muted); line-height: 1.6; }
+
+        /* Pricing — clean, no glow, no hover effects */
+        .pricing-section { max-width: 1000px; margin: 120px auto; padding: 0 24px; }
+        .pricing-section h2 { font-size: clamp(32px, 5vw, 48px); font-weight: 900; letter-spacing: -1px; color: white; margin-bottom: 16px; text-align: center; }
+        .pricing-section .subtitle { text-align: center; font-size: 16px; color: var(--text-muted); margin-bottom: 48px; }
+        .pricing-grid { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        @media (min-width: 768px) { .pricing-grid { grid-template-columns: 1fr 1fr 1fr; } }
+        .price-card { background: var(--bg); padding: 40px 32px; display: flex; flex-direction: column; }
+        .price-card.featured { background: var(--surface); }
+        .price-card .tier { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px; }
+        .price-card .tier.pop { color: var(--accent); }
+        .price-card .amount { font-size: 40px; font-weight: 900; color: white; letter-spacing: -2px; margin-bottom: 4px; }
+        .price-card .amount span { font-size: 16px; font-weight: 500; color: var(--text-muted); letter-spacing: 0; }
+        .price-card .period { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
+        .price-card ul { list-style: none; flex: 1; margin-bottom: 32px; }
+        .price-card li { font-size: 14px; color: var(--text-muted); padding: 6px 0; display: flex; align-items: center; gap: 10px; }
+        .price-card li::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: #444; flex-shrink: 0; }
+        .price-card li.highlight { color: white; }
+        .price-card li.highlight::before { background: var(--accent); }
+        .price-btn { display: block; text-align: center; padding: 12px; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; transition: all 0.2s; }
+        .price-btn.outline { border: 1px solid #333; color: white; background: transparent; }
+        .price-btn.outline:hover { border-color: #555; }
+        .price-btn.fill { background: white; color: black; border: none; }
+        .price-btn.fill:hover { opacity: 0.85; }
+
+        /* Final CTA — one line, bold */
+        .final-cta { max-width: 1200px; margin: 120px auto 0; padding: 80px 24px; text-align: center; border-top: 1px solid var(--border); }
+        .final-cta h2 { font-size: clamp(28px, 4vw, 44px); font-weight: 900; letter-spacing: -1px; color: white; margin-bottom: 16px; }
+        .final-cta p { color: var(--text-muted); font-size: 16px; margin-bottom: 32px; }
+
+        /* Footer — minimal */
+        footer { max-width: 1200px; margin: 0 auto; padding: 40px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        footer .left { font-size: 13px; color: var(--text-muted); }
+        footer .right { display: flex; gap: 24px; }
+        footer .right a { font-size: 13px; color: var(--text-muted); text-decoration: none; }
+        footer .right a:hover { color: white; }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .hero h1 { letter-spacing: -1px; }
+            .rankings-table .hide-mobile { display: none; }
+            .how-step { flex-direction: column; gap: 12px; }
+        }
+
+        /* Fade in */
+        .fade-in { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease, transform 0.6s ease; }
+        .fade-in.visible { opacity: 1; transform: translateY(0); }
+    </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav id="nav">
+    <div class="nav-inner">
+        <a href="/" class="nav-logo">Film<span>Room</span></a>
+        <div class="nav-links">
+            <a href="#rankings">Rankings</a>
+            <a href="#features">Why FilmRoom</a>
+            <a href="#pricing">Pricing</a>
+            <a href="/login" class="nav-cta">Sign Up Free</a>
+        </div>
+    </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+    <div class="hero-label"><span class="dot"></span> 2026 NFL Season — Data Updated Every 4 Hours</div>
+    <h1>Your edge starts<br>before the snap.</h1>
+    <p>Player rankings and projections built on Vegas lines, multi-source NFL data, and real scoring trends. Not vibes. Not hype. Just numbers that win leagues.</p>
+    <div class="hero-actions">
+        <a href="/login" class="btn-primary">Start free &rarr;</a>
+        <a href="#rankings" class="btn-secondary">See the rankings</a>
+    </div>
+</section>
+
+<!-- Live Ticker -->
+<div class="ticker" aria-hidden="true">
+    <div class="ticker-track">
+        <span class="ticker-item"><span class="name">J. Hurts</span> QB PHI <span class="pts">26.4</span> <span class="up">+2.1</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">C. McCaffrey</span> RB SF <span class="pts">24.8</span> <span class="up">+0.6</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">J. Chase</span> WR CIN <span class="pts">22.1</span> <span class="down">-1.3</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">S. Barkley</span> RB PHI <span class="pts">21.9</span> <span class="up">+3.4</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">T. Hill</span> WR MIA <span class="pts">20.5</span> <span class="down">-0.8</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">L. Jackson</span> QB BAL <span class="pts">25.7</span> <span class="up">+1.5</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">A. St. Brown</span> WR DET <span class="pts">19.2</span> <span class="up">+0.9</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">B. Robinson</span> RB ATL <span class="pts">18.7</span> <span class="down">-2.1</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">S. LaPorta</span> TE DET <span class="pts">14.3</span> <span class="up">+1.1</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">P. Mahomes</span> QB KC <span class="pts">22.8</span> <span class="up">+0.4</span> <span class="sep">|</span></span>
+        <!-- Duplicate for seamless loop -->
+        <span class="ticker-item"><span class="name">J. Hurts</span> QB PHI <span class="pts">26.4</span> <span class="up">+2.1</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">C. McCaffrey</span> RB SF <span class="pts">24.8</span> <span class="up">+0.6</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">J. Chase</span> WR CIN <span class="pts">22.1</span> <span class="down">-1.3</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">S. Barkley</span> RB PHI <span class="pts">21.9</span> <span class="up">+3.4</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">T. Hill</span> WR MIA <span class="pts">20.5</span> <span class="down">-0.8</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">L. Jackson</span> QB BAL <span class="pts">25.7</span> <span class="up">+1.5</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">A. St. Brown</span> WR DET <span class="pts">19.2</span> <span class="up">+0.9</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">B. Robinson</span> RB ATL <span class="pts">18.7</span> <span class="down">-2.1</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">S. LaPorta</span> TE DET <span class="pts">14.3</span> <span class="up">+1.1</span> <span class="sep">|</span></span>
+        <span class="ticker-item"><span class="name">P. Mahomes</span> QB KC <span class="pts">22.8</span> <span class="up">+0.4</span> <span class="sep">|</span></span>
+    </div>
+</div>
+
+<!-- Rankings Preview — actual data, not a mockup -->
+<section class="rankings-section fade-in" id="rankings">
+    <div class="section-header">
+        <h2>Week 1 Rankings &mdash; PPR</h2>
+        <a href="/login">Full rankings &rarr;</a>
+    </div>
+    <div class="blur-overlay">
+        <table class="rankings-table">
+            <thead>
+                <tr>
+                    <th style="width:48px">#</th>
+                    <th>Player</th>
+                    <th class="hide-mobile" style="width:64px">Pos</th>
+                    <th class="hide-mobile">Line / O&thinsp;U</th>
+                    <th class="hide-mobile">Key Stat</th>
+                    <th class="right" style="width:72px">Proj</th>
+                    <th class="right hide-mobile" style="width:72px">Trend</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="color:#555; font-weight:700">1</td>
+                    <td><div class="player-name">Jalen Hurts</div><div class="player-meta">PHI vs DAL</div></td>
+                    <td class="hide-mobile"><span class="pos-badge pos-qb">QB</span></td>
+                    <td class="hide-mobile"><span class="line">PHI -6.5 &bull; 51.5</span></td>
+                    <td class="hide-mobile"><span class="line">340 yds, 3 TD, 52 rush</span></td>
+                    <td class="pts">26.4</td>
+                    <td class="trend up hide-mobile">+2.1</td>
+                </tr>
+                <tr>
+                    <td style="color:#555; font-weight:700">2</td>
+                    <td><div class="player-name">Lamar Jackson</div><div class="player-meta">BAL vs CLE</div></td>
+                    <td class="hide-mobile"><span class="pos-badge pos-qb">QB</span></td>
+                    <td class="hide-mobile"><span class="line">BAL -9.0 &bull; 46.5</span></td>
+                    <td class="hide-mobile"><span class="line">285 yds, 2 TD, 68 rush</span></td>
+                    <td class="pts">25.7</td>
+                    <td class="trend up hide-mobile">+1.5</td>
+                </tr>
+                <tr>
+                    <td style="color:#555; font-weight:700">3</td>
+                    <td><div class="player-name">Christian McCaffrey</div><div class="player-meta">SF vs ARI</div></td>
+                    <td class="hide-mobile"><span class="pos-badge pos-rb">RB</span></td>
+                    <td class="hide-mobile"><span class="line">SF -7.0 &bull; 49.0</span></td>
+                    <td class="hide-mobile"><span class="line">88 rush, 5 rec, 42 rec yds</span></td>
+                    <td class="pts">24.8</td>
+                    <td class="trend up hide-mobile">+0.6</td>
+                </tr>
+                <tr>
+                    <td style="color:#555; font-weight:700">4</td>
+                    <td><div class="player-name">Patrick Mahomes</div><div class="player-meta">KC vs LAC</div></td>
+                    <td class="hide-mobile"><span class="pos-badge pos-qb">QB</span></td>
+                    <td class="hide-mobile"><span class="line">KC -3.5 &bull; 47.0</span></td>
+                    <td class="hide-mobile"><span class="line">310 yds, 3 TD, 18 rush</span></td>
+                    <td class="pts">22.8</td>
+                    <td class="trend up hide-mobile">+0.4</td>
+                </tr>
+                <tr>
+                    <td style="color:#555; font-weight:700">5</td>
+                    <td><div class="player-name">Ja'Marr Chase</div><div class="player-meta">CIN vs PIT</div></td>
+                    <td class="hide-mobile"><span class="pos-badge pos-wr">WR</span></td>
+                    <td class="hide-mobile"><span class="line">CIN -2.5 &bull; 44.5</span></td>
+                    <td class="hide-mobile"><span class="line">8 rec, 118 yds, 1 TD</span></td>
+                    <td class="pts">22.1</td>
+                    <td class="trend down hide-mobile">-1.3</td>
+                </tr>
+                <tr>
+                    <td style="color:#555; font-weight:700">6</td>
+                    <td><div class="player-name">Saquon Barkley</div><div class="player-meta">PHI vs DAL</div></td>
+                    <td class="hide-mobile"><span class="pos-badge pos-rb">RB</span></td>
+                    <td class="hide-mobile"><span class="line">PHI -6.5 &bull; 51.5</span></td>
+                    <td class="hide-mobile"><span class="line">95 rush, 4 rec, 32 rec yds</span></td>
+                    <td class="pts">21.9</td>
+                    <td class="trend up hide-mobile">+3.4</td>
+                </tr>
+                <tr>
+                    <td style="color:#555; font-weight:700">7</td>
+                    <td><div class="player-name">Tyreek Hill</div><div class="player-meta">MIA vs NE</div></td>
+                    <td class="hide-mobile"><span class="pos-badge pos-wr">WR</span></td>
+                    <td class="hide-mobile"><span class="line">MIA -5.5 &bull; 48.5</span></td>
+                    <td class="hide-mobile"><span class="line">7 rec, 105 yds, 1 TD</span></td>
+                    <td class="pts">20.5</td>
+                    <td class="trend down hide-mobile">-0.8</td>
+                </tr>
+                <tr>
+                    <td style="color:#555; font-weight:700">8</td>
+                    <td><div class="player-name">Amon-Ra St. Brown</div><div class="player-meta">DET vs MIN</div></td>
+                    <td class="hide-mobile"><span class="pos-badge pos-wr">WR</span></td>
+                    <td class="hide-mobile"><span class="line">DET -3.0 &bull; 52.0</span></td>
+                    <td class="hide-mobile"><span class="line">9 rec, 98 yds, 1 TD</span></td>
+                    <td class="pts">19.2</td>
+                    <td class="trend up hide-mobile">+0.9</td>
+                </tr>
+                <tr>
+                    <td style="color:#555; font-weight:700">9</td>
+                    <td><div class="player-name">Bijan Robinson</div><div class="player-meta">ATL vs NO</div></td>
+                    <td class="hide-mobile"><span class="pos-badge pos-rb">RB</span></td>
+                    <td class="hide-mobile"><span class="line">ATL -4.0 &bull; 43.5</span></td>
+                    <td class="hide-mobile"><span class="line">82 rush, 3 rec, 24 rec yds</span></td>
+                    <td class="pts">18.7</td>
+                    <td class="trend down hide-mobile">-2.1</td>
+                </tr>
+                <tr class="unlock-row">
+                    <td colspan="7">
+                        <div class="unlock-text">350+ players ranked every week with Vegas lines baked in</div>
+                        <a href="/login" class="btn-primary" style="display:inline-block">See full rankings &rarr;</a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Why FilmRoom — numbers, not bullet points -->
+<section class="diff-section fade-in" id="features">
+    <div class="section-header" style="margin-bottom:24px">
+        <h2>Why FilmRoom</h2>
+    </div>
+    <div class="diff-grid">
+        <div class="diff-card">
+            <div class="num">5+</div>
+            <h3>Data sources. Not one model.</h3>
+            <p>Projections sourced from Sleeper, ESPN, Vegas lines, and historical scoring data. Multiple angles, one ranking.</p>
+        </div>
+        <div class="diff-card">
+            <div class="num">4hr</div>
+            <h3>Data refresh cycle</h3>
+            <p>Stats, projections, and line movements updated every 4 hours. Never making decisions on stale numbers.</p>
+        </div>
+        <div class="diff-card">
+            <div class="num">3</div>
+            <h3>Platforms, one dashboard</h3>
+            <p>Sync Sleeper, Yahoo, and ESPN leagues instantly. See all your teams, matchups, and waivers in one place.</p>
+        </div>
+        <div class="diff-card">
+            <div class="num">18</div>
+            <h3>Weeks of projections</h3>
+            <p>Full-season projections across PPR, Half PPR, and Standard. Plan your season, not just your week.</p>
+        </div>
+        <div class="diff-card">
+            <div class="num">0</div>
+            <h3>Paywalled rankings</h3>
+            <p>Core rankings are free forever. No email gate, no "sign up to see #6." Just open the page and see the data.</p>
+        </div>
+        <div class="diff-card">
+            <div class="num">&lt;1s</div>
+            <h3>Time to sync your league</h3>
+            <p>Paste your Sleeper username or connect Yahoo/ESPN with OAuth. Your roster, matchups, and waivers load instantly.</p>
+        </div>
+    </div>
+</section>
+
+<!-- How it works -->
+<section class="how-section fade-in">
+    <h2>Three steps. That's it.</h2>
+    <div class="how-steps">
+        <div class="how-step">
+            <div class="step-num">1</div>
+            <div>
+                <h3>Connect your league</h3>
+                <p>Enter your Sleeper username or link your Yahoo/ESPN account. Your league data, rosters, and schedule sync in under a second.</p>
+            </div>
+        </div>
+        <div class="how-step">
+            <div class="step-num">2</div>
+            <div>
+                <h3>Check the numbers</h3>
+                <p>See player rankings with Vegas lines, multi-source projections, and real stat breakdowns. Filter by position, scoring format, and week.</p>
+            </div>
+        </div>
+        <div class="how-step">
+            <div class="step-num">3</div>
+            <div>
+                <h3>Make better decisions</h3>
+                <p>Start/sit calls backed by data. Waiver pickups before your leaguemates notice. Trade offers you can actually evaluate.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Pricing -->
+<section class="pricing-section fade-in" id="pricing">
+    <h2>Simple pricing</h2>
+    <p class="subtitle">Free to start. Upgrade when you want more.</p>
+    <div class="pricing-grid">
+        <div class="price-card">
+            <div class="tier">Free</div>
+            <div class="amount">$0</div>
+            <div class="period">Forever</div>
+            <ul>
+                <li class="highlight">Player rankings — all positions</li>
+                <li class="highlight">NFL Game Slate with live scores</li>
+                <li class="highlight">News & injury updates</li>
+                <li>1 league sync</li>
+                <li>Current week projections</li>
+            </ul>
+            <a href="/login" class="price-btn outline">Start free</a>
+        </div>
+        <div class="price-card featured">
+            <div class="tier pop">Pro &mdash; Most Popular</div>
+            <div class="amount">$5<span>/mo</span></div>
+            <div class="period">or $30/year (save 50%)</div>
+            <ul>
+                <li class="highlight">Everything in Free</li>
+                <li class="highlight">Unlimited league syncs</li>
+                <li class="highlight">All 18 weeks of projections</li>
+                <li class="highlight">Waiver wire recommendations</li>
+                <li class="highlight">Advanced matchup breakdowns</li>
+                <li>Trending players & add/drop data</li>
+                <li>Playoff predictor simulator</li>
+                <li>Player news alerts</li>
+            </ul>
+            <a href="/login" class="price-btn fill">Try Pro free for 7 days</a>
+        </div>
+        <div class="price-card">
+            <div class="tier">Elite</div>
+            <div class="amount">$10<span>/mo</span></div>
+            <div class="period">or $60/year (save 50%)</div>
+            <ul>
+                <li class="highlight">Everything in Pro</li>
+                <li class="highlight">Trade analyzer</li>
+                <li class="highlight">Lineup optimizer</li>
+                <li>Custom scoring models</li>
+                <li>Season-long projections</li>
+                <li>Priority support</li>
+                <li>Early access to new features</li>
+            </ul>
+            <a href="/login" class="price-btn outline">Try Elite free for 7 days</a>
+        </div>
+    </div>
+</section>
+
+<!-- Final CTA -->
+<section class="final-cta fade-in">
+    <h2>Stop guessing. Start winning.</h2>
+    <p>Free rankings. Real data. No credit card required.</p>
+    <a href="/login" class="btn-primary">Get started free &rarr;</a>
+</section>
+
+<!-- Footer -->
+<footer>
+    <div class="left">&copy; 2026 FilmRoom Fantasy</div>
+    <div class="right">
+        <a href="#rankings">Rankings</a>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="/login">Login</a>
+    </div>
+</footer>
+
+<script>
+// Sticky nav
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 40);
+});
+
+// Fade-in on scroll
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
+}, { threshold: 0.15 });
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>

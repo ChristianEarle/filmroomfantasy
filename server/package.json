@@ -1,0 +1,35 @@
+{
+  "name": "filmroom-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:remote": "wrangler dev --remote",
+    "deploy": "wrangler deploy",
+    "deploy:prod": "wrangler deploy --env production",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "wrangler d1 migrations apply filmroom-db --local",
+    "db:migrate:prod": "wrangler d1 migrations apply filmroom-db --remote",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "wrangler d1 execute filmroom-db --local --file=./src/db/seed.sql",
+    "sync:players": "node scripts/sync-players.mjs",
+    "sync:headshots": "node scripts/sync-headshots.mjs",
+    "sync:stats": "node scripts/sync-stats.mjs",
+    "sync:games": "node scripts/sync-games.mjs",
+    "sync:news": "node scripts/sync-news.mjs",
+    "sync:twitter": "node scripts/sync-twitter-news.mjs",
+    "db:stats-sample": "node scripts/print-stats-sample.mjs"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.32.0",
+    "hono": "^4.4.0",
+    "jose": "^5.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260305.1",
+    "drizzle-kit": "^0.23.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^4.70.0"
+  }
+}

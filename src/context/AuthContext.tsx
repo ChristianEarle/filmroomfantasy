@@ -1,0 +1,140 @@
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { authService, getToken, removeToken } from '../services';
+import type { User, League, UpdateProfileData, GoogleAuthResponse } from '../services/auth';
+
+interface AuthContextType {
+  user: User | null;
+  leagues: League[];
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, username: string) => Promise<void>;
+  loginWithGoogle: (credential: string, username?: string) => Promise<GoogleAuthResponse>;
+  logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
+  updateProfile: (data: UpdateProfileData) => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [leagues, setLeagues] = useState<League[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const isAuthenticated = !!user;
+
+  // Check for existing token and load user on mount
+  useEffect(() => {
+    const initAuth = async () => {
+      const token = getToken();
+      if (token) {
+        try {
+          const response = await authService.me();
+          setUser(response.user);
+          setLeagues(response.leagues);
+        } catch {
+          // Token invalid or expired
+          removeToken();
+        }
+      }
+      setIsLoading(false);
+    };
+
+    initAuth();
+  }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await authService.login(email, password);
+    // Fetch full user with preferences and leagues (token already set by login)
+    try {
+      const meResponse = await authService.me();
+      setUser(meResponse.user);
+      setLeagues(meResponse.leagues);
+    } catch {
+      setUser(response.user);
+      setLeagues([]);
+    }
+  }, []);
+
+  const register = useCallback(async (email: string, password: string, username: string) => {
+    const response = await authService.register(email, password, username);
+    // Fetch full user with preferences (authService.register already calls setToken)
+    try {
+      const meResponse = await authService.me();
+      setUser(meResponse.user);
+      setLeagues(meResponse.leagues);
+    } catch {
+      setUser(response.user);
+      setLeagues([]);
+    }
+  }, []);
+
+  const loginWithGoogle = useCallback(async (credential: string, username?: string): Promise<GoogleAuthResponse> => {
+    const response = await authService.googleLogin(credential, username);
+
+    // If the backend asks for a username, return early so the caller can prompt the user
+    if (response.needsUsername) {
+      return response;
+    }
+
+    // Fetch full user with preferences and leagues (token already set by googleLogin)
+    if (response.user) {
+      try {
+        const meResponse = await authService.me();
+        setUser(meResponse.user);
+        setLeagues(meResponse.leagues);
+      } catch {
+        setUser(response.user);
+        setLeagues([]);
+      }
+    }
+    return response;
+  }, []);
+
+  const logout = useCallback(async () => {
+    await authService.logout();
+    setUser(null);
+    setLeagues([]);
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await authService.me();
+      setUser(response.user);
+      setLeagues(response.leagues);
+    } catch {
+      logout();
+    }
+  }, [logout]);
+
+  const updateProfile = useCallback(async (data: UpdateProfileData) => {
+    const response = await authService.updateProfile(data);
+    setUser(response.user);
+  }, []);
+
+  const value: AuthContextType = {
+    user,
+    leagues,
+    isLoading,
+    isAuthenticated,
+    login,
+    register,
+    loginWithGoogle,
+    logout,
+    refreshUser,
+    updateProfile,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
+
+export default AuthContext;

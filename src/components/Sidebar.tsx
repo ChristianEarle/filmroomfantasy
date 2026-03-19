@@ -1,14 +1,21 @@
 import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy } from 'lucide-react';
+import { LeagueManager } from './LeagueManager';
 
-type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings';
+type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'Settings';
 
 interface SidebarProps {
   activeView: SidebarView | 'Profile' | 'Login';
   onViewChange: (view: SidebarView) => void;
   isDarkMode: boolean;
+  isAuthenticated?: boolean;
+  selectedLeagueId: string | null;
+  onLeagueSelect: (leagueId: string) => void;
+  onConnectLeague: () => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export function Sidebar({ activeView, onViewChange, isDarkMode }: SidebarProps) {
+export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated = false, selectedLeagueId, onLeagueSelect, onConnectLeague, mobileOpen = false, onMobileClose }: SidebarProps) {
   const menuItems = [
     { icon: Home, label: 'Home', view: 'Home' as const },
     { icon: LayoutDashboard, label: 'Board', view: 'Board' as const },
@@ -21,49 +28,64 @@ export function Sidebar({ activeView, onViewChange, isDarkMode }: SidebarProps) 
     { icon: Settings, label: 'Settings', view: 'Settings' as const },
   ];
 
+  const handleNavClick = (view: SidebarView) => {
+    onViewChange(view);
+    onMobileClose?.();
+  };
+
   return (
-    <aside className={`w-64 border-r flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-      {/* Logo */}
-      <div className={`h-16 flex items-center px-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <LayoutDashboard className="w-5 h-5 text-white" />
+    <>
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+
+      <aside className={`w-64 border-r z-50 ${mobileOpen ? 'sidebar-open' : 'sidebar-responsive'} ${isDarkMode ? 'bg-[#0a0a0a] border-[#222]' : 'bg-white border-slate-200'}`}>
+        {/* Logo */}
+        <div className={`h-16 flex items-center px-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <LayoutDashboard className="w-5 h-5 text-white" />
+            </div>
+            <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom</span>
           </div>
-          <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom</span>
         </div>
-      </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4">
-        <ul className="space-y-1">
-          {menuItems.map((item, index) => (
-            <li key={index}>
-              <button
-                onClick={() => onViewChange(item.view)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
-                  item.view === activeView
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : isDarkMode 
-                      ? 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-              >
-                <item.icon className="w-5 h-5" />
-                <span className={`text-sm ${item.view === activeView ? 'font-semibold' : ''}`}>{item.label}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </nav>
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
+          <ul className="space-y-1">
+            {menuItems.map((item, index) => (
+              <li key={index}>
+                <button
+                  onClick={() => handleNavClick(item.view)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
+                    item.view === activeView
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : isDarkMode
+                        ? 'text-[#737373] hover:bg-[#1a1a1a] hover:text-white'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <item.icon className="w-5 h-5" />
+                  <span className={`text-sm ${item.view === activeView ? 'font-semibold' : ''}`}>{item.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-      {/* League Info */}
-      <div className={`p-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-        <div className={`rounded-lg p-4 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-          <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Current League</div>
-          <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Sunday Funday League</div>
-          <div className={`text-xs mt-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Record: <span className="font-semibold">3-1</span> (2nd place)</div>
-        </div>
-      </div>
-    </aside>
+        {/* League Manager */}
+        <LeagueManager
+          isDarkMode={isDarkMode}
+          isAuthenticated={isAuthenticated}
+          selectedLeagueId={selectedLeagueId}
+          onLeagueSelect={onLeagueSelect}
+          onConnectLeague={onConnectLeague}
+        />
+      </aside>
+    </>
   );
 }

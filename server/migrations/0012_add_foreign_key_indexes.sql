@@ -1,0 +1,22 @@
+-- Add indexes on foreign key columns for query performance
+CREATE INDEX IF NOT EXISTS idx_league_members_league_id ON league_members(league_id);
+CREATE INDEX IF NOT EXISTS idx_league_members_user_id ON league_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_teams_league_id ON teams(league_id);
+CREATE INDEX IF NOT EXISTS idx_teams_owner_id ON teams(owner_id);
+CREATE INDEX IF NOT EXISTS idx_roster_spots_team_id ON roster_spots(team_id);
+CREATE INDEX IF NOT EXISTS idx_roster_spots_player_id ON roster_spots(player_id);
+CREATE INDEX IF NOT EXISTS idx_matchups_league_id ON matchups(league_id);
+CREATE INDEX IF NOT EXISTS idx_matchups_home_team_id ON matchups(home_team_id);
+CREATE INDEX IF NOT EXISTS idx_matchups_away_team_id ON matchups(away_team_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_league_id ON transactions(league_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_player_id ON transactions(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_weekly_stats_player_id ON player_weekly_stats(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_projections_player_id ON player_projections(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_news_player_id ON player_news(player_id);
+CREATE INDEX IF NOT EXISTS idx_nfl_games_week_season ON nfl_games(week, season_year);
+CREATE INDEX IF NOT EXISTS idx_trades_league_id ON trades(league_id);
+CREATE INDEX IF NOT EXISTS idx_trade_items_trade_id ON trade_items(trade_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_feedback_user_id ON user_feedback(user_id);
+CREATE INDEX IF NOT EXISTS idx_projection_snapshots_player_id ON projection_line_snapshots(player_id);
+CREATE INDEX IF NOT EXISTS idx_game_snapshots_game_id ON game_line_snapshots(game_id);

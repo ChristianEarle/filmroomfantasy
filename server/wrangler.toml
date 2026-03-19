@@ -1,0 +1,55 @@
+name = "filmroom-api"
+main = "src/index.ts"
+compatibility_date = "2024-06-01"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "filmroom-db"
+database_id = "6acfacc9-ccdd-46bd-9cea-8693306ed524"
+
+# ===== Production Secrets Setup =====
+# Run these commands before first production deploy:
+#
+#   wrangler secret put JWT_SECRET --env production
+#     → Use a strong random string (e.g. openssl rand -hex 32)
+#
+#   wrangler secret put SYNC_SECRET --env production
+#     → Protects admin sync endpoints (X-Admin-Key header)
+#
+#   wrangler secret put OPENAI_API_KEY --env production
+#     → Optional: enables AI relevance filtering of player news
+#
+#   wrangler secret put GOOGLE_CLIENT_ID --env production
+#     → Google OAuth client ID from https://console.cloud.google.com/apis/credentials
+#
+#   wrangler secret put YAHOO_CLIENT_ID --env production
+#   wrangler secret put YAHOO_CLIENT_SECRET --env production
+#     → Yahoo OAuth from https://developer.yahoo.com/apps/
+#
+# For local dev, these are set in server/.dev.vars (gitignored)
+
+[vars]
+ENVIRONMENT = "development"
+# Sports news RSS feeds (Nitter is often down; using official feeds)
+TWITTER_RSS_URLS = "https://www.espn.com/espn/rss/nfl/news|ESPN NFL,https://www.cbssports.com/rss/headlines/nfl|CBS Sports NFL,https://www.espn.com/espn/rss/nfl/headlines|ESPN NFL Headlines,https://sports.yahoo.com/nfl/rss.xml|Yahoo Sports NFL,https://www.rotowire.com/rss/news.php?sport=NFL|RotoWire NFL,https://www.pff.com/feed|Pro Football Focus"
+# JWT_SECRET is in .dev.vars for local dev. For production: wrangler secret put JWT_SECRET --env production
+
+# Production environment (deploy with: wrangler deploy --env production)
+[env.production]
+name = "filmroom-api"
+vars = { ENVIRONMENT = "production" }
+# JWT_SECRET and SYNC_SECRET must be set via: wrangler secret put JWT_SECRET --env production
+
+# Cron triggers for automated data sync
+[triggers]
+crons = [
+  "0 12 * * *",   # Daily 6 AM CT (12 PM UTC): sync players, injury news, games
+  "0 */4 * * *",  # Every 4 hours: sync stats and projections
+  "0 */6 * * *",  # Every 6 hours: sync RSS sports news
+]
+
+# Local development
+[dev]
+port = 8787
+local_protocol = "http"

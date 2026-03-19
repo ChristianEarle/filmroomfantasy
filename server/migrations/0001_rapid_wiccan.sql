@@ -1,0 +1,1 @@
+ALTER TABLE `league_members` ADD `external_username` text;

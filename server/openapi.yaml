@@ -1,0 +1,661 @@
+openapi: 3.1.0
+info:
+  title: FilmRoom Fantasy Football API
+  version: 1.0.0
+  description: |
+    Backend API for FilmRoom Fantasy Football. Built on Cloudflare Workers with Hono, D1 (SQLite), and Drizzle ORM.
+
+    ## Authentication
+    Most endpoints require a Bearer token in the `Authorization` header:
+    ```
+    Authorization: Bearer <jwt_token>
+    ```
+    Tokens are obtained via `/api/auth/login`, `/api/auth/register`, or `/api/auth/google`.
+    Tokens expire after 24 hours. Sessions can be revoked via `/api/auth/logout`.
+
+    ## Rate Limiting
+    Auth endpoints are rate limited to 10 requests per 15 minutes per IP.
+    Rate limit headers are returned on all rate-limited endpoints:
+    - `X-RateLimit-Limit` — max requests in window
+    - `X-RateLimit-Remaining` — remaining requests
+    - `X-RateLimit-Reset` — Unix timestamp when window resets
+    - `Retry-After` — seconds to wait (on 429 only)
+
+    ## Admin Endpoints
+    Admin sync endpoints require `X-Admin-Key` header matching the `SYNC_SECRET` environment variable.
+  contact:
+    name: FilmRoom
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8787
+    description: Local development
+  - url: https://filmroom-api.your-domain.workers.dev
+    description: Production
+
+tags:
+  - name: Auth
+    description: User authentication & profile management
+  - name: Leagues
+    description: Fantasy league management
+  - name: Teams
+    description: Team & roster management
+  - name: Players
+    description: NFL player search, stats & news
+  - name: Games
+    description: NFL games, scores & betting lines
+  - name: Matchups
+    description: Fantasy matchup scoring
+  - name: Admin
+    description: Data sync & admin operations (requires X-Admin-Key)
+  - name: Yahoo
+    description: Yahoo Fantasy OAuth integration
+  - name: Feedback
+    description: User feedback submission
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    AdminKey:
+      type: apiKey
+      in: header
+      name: X-Admin-Key
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        username: { type: string }
+        avatarUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        preferredScoring: { type: string, enum: [ppr, half_ppr, standard] }
+        darkMode: { type: boolean }
+        notificationsEnabled: { type: boolean }
+        hasGoogle: { type: boolean }
+        hasPassword: { type: boolean }
+
+    League:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        platform: { type: string, enum: [sleeper, espn, yahoo, custom] }
+        scoringFormat: { type: string, enum: [ppr, half-ppr, standard] }
+        teamCount: { type: integer }
+        currentWeek: { type: integer }
+        seasonYear: { type: integer }
+        role: { type: string, enum: [commissioner, member] }
+
+    Team:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        leagueId: { type: string }
+        name: { type: string }
+        wins: { type: integer }
+        losses: { type: integer }
+        ties: { type: integer }
+        pointsFor: { type: number }
+        pointsAgainst: { type: number }
+
+    NFLPlayer:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        team: { type: string }
+        position: { type: string, enum: [QB, RB, WR, TE, K, DEF] }
+        status: { type: string, enum: [active, injured_reserve, out, questionable, doubtful] }
+        byeWeek: { type: integer, nullable: true }
+        headshotUrl: { type: string, nullable: true }
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        token: { type: string }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+paths:
+  # ─── AUTH ────────────────────────────────────────
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      description: Creates a new account with email, password, and username. Rate limited to 10 req/15min.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, username]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                username: { type: string, minLength: 3, maxLength: 30, pattern: '^[a-zA-Z0-9_-]+$' }
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error or duplicate email/username
+        '429':
+          description: Rate limit exceeded
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email & password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+
+  /api/auth/google:
+    post:
+      tags: [Auth]
+      summary: Google OAuth login/register
+      description: Verifies a Google ID token. Creates account, links to existing email, or returns existing Google user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential: { type: string, description: Google ID token JWT }
+      responses:
+        '200':
+          description: Auth successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user profile & leagues
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: User profile with leagues
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  leagues:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/League'
+
+  /api/auth/profile:
+    put:
+      tags: [Auth]
+      summary: Update user profile & preferences
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                avatarUrl: { type: string }
+                preferredScoring: { type: string, enum: [ppr, half_ppr, standard] }
+                darkMode: { type: boolean }
+                notificationsEnabled: { type: boolean }
+      responses:
+        '200':
+          description: Profile updated
+
+  /api/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change or set password
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              properties:
+                currentPassword: { type: string, description: Required unless Google-only account }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        '200':
+          description: Password changed
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout & revoke session
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Session revoked
+
+  # ─── PLAYERS ─────────────────────────────────────
+  /api/players:
+    get:
+      tags: [Players]
+      summary: Search & filter NFL players
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Search by name
+        - name: position
+          in: query
+          schema: { type: string, enum: [QB, RB, WR, TE, K, DEF] }
+        - name: team
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        '200':
+          description: Paginated player list
+
+  /api/players/{id}:
+    get:
+      tags: [Players]
+      summary: Get player details with stats, projections & news
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Player details
+
+  /api/players/trending:
+    get:
+      tags: [Players]
+      summary: Get trending players (most adds/drops)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: Trending players list
+
+  /api/players/injuries:
+    get:
+      tags: [Players]
+      summary: Get all injured players
+      responses:
+        '200':
+          description: Injured players list
+
+  # ─── GAMES ──────────────────────────────────────
+  /api/games/slate:
+    get:
+      tags: [Games]
+      summary: Get game slate for week
+      parameters:
+        - name: week
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Game slate with spreads, O/U, weather
+
+  /api/games/live/scores:
+    get:
+      tags: [Games]
+      summary: Get live scores for in-progress games
+      description: Fetches real-time scores from ESPN for games currently in progress.
+      responses:
+        '200':
+          description: Live game scores
+
+  /api/games/upcoming:
+    get:
+      tags: [Games]
+      summary: Get upcoming games
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 5 }
+      responses:
+        '200':
+          description: Upcoming games list
+
+  /api/games/{id}:
+    get:
+      tags: [Games]
+      summary: Get game details with player stats
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Game details
+
+  /api/games/line-movements:
+    get:
+      tags: [Games]
+      summary: Get line movements (spread/OU changes)
+      parameters:
+        - name: week
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Line movement data
+
+  # ─── LEAGUES ─────────────────────────────────────
+  /api/leagues:
+    get:
+      tags: [Leagues]
+      summary: Get user's leagues
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: List of leagues
+    post:
+      tags: [Leagues]
+      summary: Create a new league
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                scoringFormat: { type: string, enum: [ppr, half-ppr, standard] }
+                teamCount: { type: integer }
+                seasonYear: { type: integer }
+      responses:
+        '201':
+          description: League created
+
+  /api/leagues/{leagueId}:
+    get:
+      tags: [Leagues]
+      summary: Get league details
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: leagueId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: League details with teams
+
+  /api/leagues/{leagueId}/standings:
+    get:
+      tags: [Leagues]
+      summary: Get league standings
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: leagueId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: League standings
+
+  # ─── TEAMS ──────────────────────────────────────
+  /api/teams/{id}:
+    get:
+      tags: [Teams]
+      summary: Get team details
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Team details with roster
+
+  /api/teams/{id}/roster:
+    get:
+      tags: [Teams]
+      summary: Get team roster with stats & projections
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Roster details
+    put:
+      tags: [Teams]
+      summary: Set lineup (move players between slots)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [moves]
+              properties:
+                moves:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      playerId: { type: string }
+                      newSlot: { type: string }
+                      isStarter: { type: boolean }
+      responses:
+        '200':
+          description: Lineup updated
+
+  # ─── MATCHUPS ────────────────────────────────────
+  /api/matchups/{id}:
+    get:
+      tags: [Matchups]
+      summary: Get matchup details with rosters
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Matchup details
+
+  /api/matchups/{id}/live:
+    get:
+      tags: [Matchups]
+      summary: Get live scoring for matchup
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Live matchup scores
+
+  /api/matchups/my/current:
+    get:
+      tags: [Matchups]
+      summary: Get user's current matchup
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: leagueId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current matchup
+
+  # ─── ADMIN ──────────────────────────────────────
+  /api/admin/sync-players:
+    post:
+      tags: [Admin]
+      summary: Sync NFL players from Sleeper API
+      security: [{ AdminKey: [] }]
+      responses:
+        '200':
+          description: Sync results with insert/update counts
+
+  /api/admin/sync-stats:
+    post:
+      tags: [Admin]
+      summary: Sync weekly player stats from Sleeper
+      security: [{ AdminKey: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seasonYear: { type: integer }
+                maxWeeks: { type: integer, minimum: 1, maximum: 22 }
+      responses:
+        '200':
+          description: Stats sync results
+
+  /api/admin/sync-projections:
+    post:
+      tags: [Admin]
+      summary: Sync player projections from Sleeper
+      security: [{ AdminKey: [] }]
+      responses:
+        '200':
+          description: Projection sync results
+
+  /api/admin/sync-games:
+    post:
+      tags: [Admin]
+      summary: Sync NFL games from ESPN
+      security: [{ AdminKey: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seasonYear: { type: integer, minimum: 2000, maximum: 2100 }
+                weeks: { type: array, items: { type: integer, minimum: 1, maximum: 22 } }
+      responses:
+        '200':
+          description: Games sync results
+
+  /api/admin/sync-news:
+    post:
+      tags: [Admin]
+      summary: Sync player injury news from Sleeper
+      security: [{ AdminKey: [] }]
+      responses:
+        '200':
+          description: News sync results
+
+  /api/admin/sync-twitter-news:
+    post:
+      tags: [Admin]
+      summary: Sync sports news from RSS feeds
+      security: [{ AdminKey: [] }]
+      responses:
+        '200':
+          description: RSS news sync results
+
+  # ─── YAHOO ──────────────────────────────────────
+  /api/yahoo/auth-url:
+    post:
+      tags: [Yahoo]
+      summary: Generate Yahoo OAuth URL
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: OAuth authorization URL
+
+  /api/yahoo/leagues:
+    get:
+      tags: [Yahoo]
+      summary: Get Yahoo Fantasy leagues
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Yahoo Fantasy NFL leagues
+
+  /api/yahoo/disconnect:
+    post:
+      tags: [Yahoo]
+      summary: Disconnect Yahoo account
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Yahoo account disconnected
+
+  # ─── FEEDBACK ────────────────────────────────────
+  /api/feedback:
+    post:
+      tags: [Feedback]
+      summary: Submit user feedback
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, message]
+              properties:
+                type: { type: string, enum: [bug, feature, general] }
+                message: { type: string }
+                email: { type: string, format: email }
+                page: { type: string }
+      responses:
+        '201':
+          description: Feedback submitted

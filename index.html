@@ -1,15 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!DOCTYPE html>
-  <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Fantasy Football Web App</title>
-    </head>
+    <!-- Primary Meta Tags -->
+    <title>FilmRoom - Fantasy Football Analysis & Management</title>
+    <meta name="title" content="FilmRoom - Fantasy Football Analysis & Management" />
+    <meta name="description" content="Manage your fantasy football leagues with advanced analytics, player projections, waiver wire analysis, and real-time stats from Sleeper and ESPN." />
+    <meta name="keywords" content="fantasy football, fantasy sports, NFL, player rankings, projections, waiver wire, sleeper, ESPN, league management" />
+    <meta name="author" content="FilmRoom" />
+    <link rel="canonical" href="https://filmroomfantasy.com/" />
 
-    <body>
-      <div id="root"></div>
-      <script type="module" src="/src/main.tsx"></script>
-    </body>
-  </html>
-  
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://filmroomfantasy.com/" />
+    <meta property="og:title" content="FilmRoom - Fantasy Football Analysis & Management" />
+    <meta property="og:description" content="Manage your fantasy football leagues with advanced analytics, player projections, waiver wire analysis, and real-time stats." />
+    <meta property="og:image" content="https://filmroomfantasy.com/og-image.png" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://filmroomfantasy.com/" />
+    <meta property="twitter:title" content="FilmRoom - Fantasy Football Analysis & Management" />
+    <meta property="twitter:description" content="Manage your fantasy football leagues with advanced analytics, player projections, waiver wire analysis, and real-time stats." />
+    <meta property="twitter:image" content="https://filmroomfantasy.com/og-image.png" />
+
+    <!-- Favicon & PWA -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Prevent telephone number detection -->
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Preconnect to API for faster first request -->
+    <link rel="preconnect" href="https://filmroom-api.earle2001.workers.dev" crossorigin />
+    <link rel="dns-prefetch" href="https://filmroom-api.earle2001.workers.dev" />
+
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "FilmRoom",
+      "url": "https://filmroomfantasy.com",
+      "description": "Fantasy football analysis and league management with player projections, waiver wire tools, and playoff predictions.",
+      "applicationCategory": "SportsApplication",
+      "operatingSystem": "Web",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "creator": {
+        "@type": "Organization",
+        "name": "FilmRoom"
+      }
+    }
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
+  </body>
+</html>
