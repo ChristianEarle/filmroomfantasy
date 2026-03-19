@@ -5,12 +5,15 @@ node_modules/
 dist/
 build/
 
-# Environment files
+# Environment files (never commit real keys)
 .env
 .env.local
 .env.production
 .env.*.local
 .dev.vars
+server/.dev.vars
+**/.env
+**/.dev.vars
 
 # IDE
 .vscode/

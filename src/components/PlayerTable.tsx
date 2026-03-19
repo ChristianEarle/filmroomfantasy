@@ -210,12 +210,8 @@ export function PlayerTable({
       );
     }
 
-    // Convert to display format (strip headshotUrl — no photos on board rankings)
-    const displayPlayers = filtered.map((p, i) => {
-      const player = convertAPIPlayerToPlayer(p, i);
-      player.headshotUrl = null;
-      return player;
-    });
+    // Convert to display format
+    const displayPlayers = filtered.map((p, i) => convertAPIPlayerToPlayer(p, i));
 
     // Apply sorting
     const sorted = [...displayPlayers].sort((a, b) => {
