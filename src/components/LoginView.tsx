@@ -5,11 +5,12 @@ interface LoginViewProps {
   onLogin: (email: string, password: string) => Promise<void>;
   onSwitchToRegister: () => void;
   onForgotPassword?: () => void;
+  onViewPricing?: () => void;
   isDarkMode?: boolean;
   error?: string | null;
 }
 
-export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDarkMode = true, error: externalError }: LoginViewProps) {
+export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, onViewPricing, isDarkMode = true, error: externalError }: LoginViewProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -145,6 +146,11 @@ export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDar
           Don&apos;t have an account?{' '}
           <button onClick={onSwitchToRegister} className="text-blue-500 hover:text-blue-400 font-medium transition-colors">Sign up for free</button>
         </p>
+        {onViewPricing && (
+          <p className={`text-center mt-3 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <button onClick={onViewPricing} className="text-blue-500 hover:text-blue-400 font-medium transition-colors">View pricing plans</button>
+          </p>
+        )}
       </div>
     </div>
   );

@@ -22,6 +22,7 @@ import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswo
 import { ProfileView } from './components/ProfileView';
 import { AllPlayersView } from './components/AllPlayersView';
 import { ComingSoonView } from './components/ComingSoonView';
+import { PricingView } from './components/PricingView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LeagueProvider, useLeagueContext } from './context/LeagueContext';
@@ -152,6 +153,7 @@ const VIEW_TO_PATH: Record<string, string> = {
   GameSlate: '/game-slate',
   Trends: '/trends',
   Playoffs: '/playoff-predictor',
+  Pricing: '/pricing',
   DraftRankings: '/draft-rankings',
   TradeAnalyzer: '/trade-analyzer',
   Settings: '/settings',
@@ -188,7 +190,7 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works (BUG-002 fix)
-  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Pricing' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const isDarkMode = user?.darkMode ?? true;
   const [allPlayersSource, setAllPlayersSource] = useState<'board' | 'waivers'>('board');
@@ -227,6 +229,7 @@ function AppContent() {
       GameSlate: 'NFL Games | FilmRoom',
       Trends: 'Trends | FilmRoom',
       Playoffs: 'Playoff Predictor | FilmRoom',
+      Pricing: 'Pricing | FilmRoom',
       DraftRankings: 'Draft Rankings | FilmRoom',
       TradeAnalyzer: 'AI Trade Analyzer | FilmRoom',
       Settings: 'Settings | FilmRoom',
@@ -496,6 +499,7 @@ function AppContent() {
                   onLogin={handleLogin}
                   onSwitchToRegister={() => setAuthView('register')}
                   onForgotPassword={() => setAuthView('forgot')}
+                  onViewPricing={() => setActiveView('Pricing')}
                   isDarkMode={isDarkMode}
                   error={loginError}
                 />
@@ -521,6 +525,8 @@ function AppContent() {
               ) : (
                 <WaiversView onPlayerClick={setSelectedPlayer} onViewAll={handleViewAllFromWaivers} isDarkMode={isDarkMode} />
               )
+            ) : activeView === 'Pricing' ? (
+              <PricingView isDarkMode={isDarkMode} onGoToLogin={goToLogin} />
             ) : activeView === 'DraftRankings' ? (
               <ComingSoonView title="Draft Rankings" description="AI-powered draft rankings with ADP tracking, tier breakdowns, and custom scoring projections." icon="draft" isDarkMode={isDarkMode} />
             ) : activeView === 'TradeAnalyzer' ? (
