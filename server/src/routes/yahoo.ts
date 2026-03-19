@@ -3,7 +3,13 @@ import { SignJWT, jwtVerify } from 'jose';
 import { eq } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
+import { rateLimit } from '../middleware/rateLimit';
 import type { Env, Variables } from '../index';
+
+// Rate limits for Yahoo OAuth routes
+const yahooAuthRateLimit = rateLimit(10, 15 * 60 * 1000); // 10 req/15min — OAuth initiation
+const yahooCallbackRateLimit = rateLimit(10, 15 * 60 * 1000); // 10 req/15min — OAuth callback
+const yahooReadRateLimit = rateLimit(30, 60 * 1000); // 30 req/min — API reads
 
 export const yahooRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -118,7 +124,7 @@ async function yahooApiFetch(accessToken: string, path: string): Promise<any> {
 // ============================================
 
 // Generate Yahoo OAuth authorization URL
-yahooRoutes.post('/auth-url', authMiddleware, async (c) => {
+yahooRoutes.post('/auth-url', yahooAuthRateLimit, authMiddleware, async (c) => {
   const user = c.get('user');
   if (!user) return c.json({ error: 'Not authenticated' }, 401);
 
@@ -144,7 +150,7 @@ yahooRoutes.post('/auth-url', authMiddleware, async (c) => {
 });
 
 // Handle Yahoo OAuth callback
-yahooRoutes.get('/callback', async (c) => {
+yahooRoutes.get('/callback', yahooCallbackRateLimit, async (c) => {
   const code = c.req.query('code');
   const state = c.req.query('state');
   const error = c.req.query('error');
@@ -212,7 +218,7 @@ yahooRoutes.get('/callback', async (c) => {
 });
 
 // Get user's Yahoo Fantasy leagues
-yahooRoutes.get('/leagues', authMiddleware, async (c) => {
+yahooRoutes.get('/leagues', yahooReadRateLimit, authMiddleware, async (c) => {
   const user = c.get('user');
   if (!user) return c.json({ error: 'Not authenticated' }, 401);
 
@@ -248,7 +254,7 @@ yahooRoutes.get('/leagues', authMiddleware, async (c) => {
 });
 
 // Disconnect Yahoo account
-yahooRoutes.post('/disconnect', authMiddleware, async (c) => {
+yahooRoutes.post('/disconnect', yahooAuthRateLimit, authMiddleware, async (c) => {
   const user = c.get('user');
   if (!user) return c.json({ error: 'Not authenticated' }, 401);
 

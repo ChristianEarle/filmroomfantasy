@@ -5,6 +5,7 @@ import { getMappedPlayers, fetchSleeperPlayers, buildHeadshotUrl, sleep } from '
 import { fetchTwitterTweets } from '../services/twitter';
 import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
+import { invalidateCache } from '../utils/cache';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -367,6 +368,9 @@ adminRoutes.post('/sync-news', async (c) => {
       await db.batch(newsStatements as any);
     }
 
+    // Invalidate news cache so fresh data is served immediately
+    invalidateCache('player-news:', true);
+
     return c.json({
       success: true,
       message: 'News sync completed',
@@ -501,6 +505,9 @@ adminRoutes.post('/sync-twitter-news', async (c) => {
         inserted++;
       }
     }
+
+    // Invalidate news cache so fresh data is served immediately
+    invalidateCache('player-news:', true);
 
     return c.json({
       success: true,
@@ -805,6 +812,10 @@ adminRoutes.post('/sync-stats', async (c) => {
       await db.batch(statsStatements as any);
     }
 
+    // Invalidate caches that depend on stats data
+    invalidateCache('stats-available-years');
+    invalidateCache('sleeper-trending:', true);
+
     return c.json({
       success: true,
       message: 'Stats sync completed',
@@ -985,6 +996,9 @@ adminRoutes.post('/sync-projections', async (c) => {
       updated += weekUpdated;
       weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated });
     }
+
+    // Invalidate projection-related caches so fresh data is served immediately
+    invalidateCache('projection-movements:', true);
 
     return c.json({
       success: true,

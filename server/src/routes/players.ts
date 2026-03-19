@@ -4,6 +4,7 @@ import * as schema from '../db/schema';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
+import { cached } from '../utils/cache';
 import type { Env, Variables } from '../index';
 
 // Rate limits for player routes
@@ -544,6 +545,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
 });
 
 // Projection movements - players whose projections have moved the most (for BiggestMovers / Trends)
+// Cached for 5 minutes — projection movements update infrequently between syncs
 playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1');
@@ -552,57 +554,60 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
 
   try {
-    const currentProjections = await db.query.playerProjections.findMany({
-      where: and(
-        eq(schema.playerProjections.week, week),
-        eq(schema.playerProjections.seasonYear, season),
-        eq(schema.playerProjections.scoringFormat, scoringFormat)
-      ),
-      with: { player: true },
-    });
-
-    const playerIds = currentProjections.map(p => p.playerId);
-    if (playerIds.length === 0) return c.json({ movements: [] });
-
-    const CHUNK = 50;
-    const snapshots: { playerId: string; projectedPoints: number; snapshotAt: Date }[] = [];
-    for (let i = 0; i < playerIds.length; i += CHUNK) {
-      const chunk = playerIds.slice(i, i + CHUNK);
-      const rows = await db.query.projectionLineSnapshots.findMany({
+    const cacheKey = `projection-movements:${season}:${week}:${scoringFormat}:${limit}`;
+    const movements = await cached(cacheKey, 5 * 60 * 1000, async () => {
+      const currentProjections = await db.query.playerProjections.findMany({
         where: and(
-          inArray(schema.projectionLineSnapshots.playerId, chunk),
-          eq(schema.projectionLineSnapshots.week, week),
-          eq(schema.projectionLineSnapshots.seasonYear, season),
-          eq(schema.projectionLineSnapshots.scoringFormat, scoringFormat)
+          eq(schema.playerProjections.week, week),
+          eq(schema.playerProjections.seasonYear, season),
+          eq(schema.playerProjections.scoringFormat, scoringFormat)
         ),
-        orderBy: asc(schema.projectionLineSnapshots.snapshotAt),
+        with: { player: true },
       });
-      snapshots.push(...rows.map(r => ({ playerId: r.playerId, projectedPoints: r.projectedPoints, snapshotAt: r.snapshotAt })));
-    }
 
-    const earliestByPlayer = new Map<string, { projectedPoints: number; snapshotAt: Date }>();
-    for (const s of snapshots) {
-      if (!earliestByPlayer.has(s.playerId)) earliestByPlayer.set(s.playerId, { projectedPoints: s.projectedPoints, snapshotAt: s.snapshotAt });
-    }
+      const playerIds = currentProjections.map(p => p.playerId);
+      if (playerIds.length === 0) return [];
 
-    const movements = currentProjections
-      .map(p => {
-        const prev = earliestByPlayer.get(p.playerId);
-        const prevPts = prev?.projectedPoints ?? p.projectedPoints;
-        const movement = p.projectedPoints - prevPts;
-        return {
-          playerId: p.playerId,
-          name: (p as any).player?.name,
-          team: (p as any).player?.team,
-          position: (p as any).player?.position,
-          previousProjectedPoints: prevPts,
-          projectedPoints: p.projectedPoints,
-          movement,
-        };
-      })
-      .filter(m => Math.abs(m.movement) > 0.01)
-      .sort((a, b) => Math.abs(b.movement) - Math.abs(a.movement))
-      .slice(0, limit);
+      const CHUNK = 50;
+      const snapshots: { playerId: string; projectedPoints: number; snapshotAt: Date }[] = [];
+      for (let i = 0; i < playerIds.length; i += CHUNK) {
+        const chunk = playerIds.slice(i, i + CHUNK);
+        const rows = await db.query.projectionLineSnapshots.findMany({
+          where: and(
+            inArray(schema.projectionLineSnapshots.playerId, chunk),
+            eq(schema.projectionLineSnapshots.week, week),
+            eq(schema.projectionLineSnapshots.seasonYear, season),
+            eq(schema.projectionLineSnapshots.scoringFormat, scoringFormat)
+          ),
+          orderBy: asc(schema.projectionLineSnapshots.snapshotAt),
+        });
+        snapshots.push(...rows.map(r => ({ playerId: r.playerId, projectedPoints: r.projectedPoints, snapshotAt: r.snapshotAt })));
+      }
+
+      const earliestByPlayer = new Map<string, { projectedPoints: number; snapshotAt: Date }>();
+      for (const s of snapshots) {
+        if (!earliestByPlayer.has(s.playerId)) earliestByPlayer.set(s.playerId, { projectedPoints: s.projectedPoints, snapshotAt: s.snapshotAt });
+      }
+
+      return currentProjections
+        .map(p => {
+          const prev = earliestByPlayer.get(p.playerId);
+          const prevPts = prev?.projectedPoints ?? p.projectedPoints;
+          const movement = p.projectedPoints - prevPts;
+          return {
+            playerId: p.playerId,
+            name: (p as any).player?.name,
+            team: (p as any).player?.team,
+            position: (p as any).player?.position,
+            previousProjectedPoints: prevPts,
+            projectedPoints: p.projectedPoints,
+            movement,
+          };
+        })
+        .filter(m => Math.abs(m.movement) > 0.01)
+        .sort((a, b) => Math.abs(b.movement) - Math.abs(a.movement))
+        .slice(0, limit);
+    });
 
     return c.json({ movements });
   } catch (error) {
@@ -648,17 +653,21 @@ playerRoutes.get('/search', playerSearchRateLimit, optionalAuthMiddleware, async
 });
 
 // Get all recent news across all players (player-relevant only, includes source/author)
+// Cached for 5 minutes — news doesn't change frequently and this is a high-traffic endpoint
 playerRoutes.get('/news', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const limit = Math.min(parseInt(c.req.query('limit') || '10'), 50);
 
   try {
-    const news = await db.query.playerNews.findMany({
-      orderBy: desc(schema.playerNews.publishedAt),
-      limit,
-      with: {
-        player: true,
-      },
+    const cacheKey = `player-news:${limit}`;
+    const news = await cached(cacheKey, 5 * 60 * 1000, async () => {
+      return db.query.playerNews.findMany({
+        orderBy: desc(schema.playerNews.publishedAt),
+        limit,
+        with: {
+          player: true,
+        },
+      });
     });
 
     return c.json({ news });
@@ -669,6 +678,7 @@ playerRoutes.get('/news', optionalAuthMiddleware, async (c) => {
 });
 
 // Get trending players from Sleeper platform + league-specific ownership
+// Cached for 10 minutes — reduces external Sleeper API calls and D1 queries
 playerRoutes.get('/trending', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const direction = c.req.query('direction') || 'up'; // 'up' or 'down'
@@ -676,17 +686,20 @@ playerRoutes.get('/trending', optionalAuthMiddleware, async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '15'), 25);
 
   try {
-    // 1. Fetch trending data from Sleeper's platform-wide API
+    // Cache the Sleeper API call (10 min TTL) — this is the most expensive part
     const sleeperType = direction === 'up' ? 'add' : 'drop';
-    const sleeperRes = await fetch(
-      `https://api.sleeper.app/v1/players/nfl/trending/${sleeperType}?lookback_hours=336&limit=${limit}`
+    const sleeperCacheKey = `sleeper-trending:${sleeperType}:${limit}`;
+    const sleeperTrending = await cached<Array<{ player_id: string; count: number }>>(
+      sleeperCacheKey, 10 * 60 * 1000, async () => {
+        const sleeperRes = await fetch(
+          `https://api.sleeper.app/v1/players/nfl/trending/${sleeperType}?lookback_hours=336&limit=${limit}`
+        );
+        if (!sleeperRes.ok) {
+          throw new Error(`Sleeper API returned ${sleeperRes.status}`);
+        }
+        return sleeperRes.json();
+      }
     );
-
-    if (!sleeperRes.ok) {
-      return c.json({ error: 'Failed to fetch trending data from Sleeper' }, 502);
-    }
-
-    const sleeperTrending: Array<{ player_id: string; count: number }> = await sleeperRes.json();
 
     if (!sleeperTrending || sleeperTrending.length === 0) {
       return c.json({ trending: [] });
@@ -789,22 +802,25 @@ playerRoutes.get('/trending', optionalAuthMiddleware, async (c) => {
 });
 
 // Get available stats seasons (for defaulting to most recent)
+// Cached for 1 hour — available seasons change at most once per day
 playerRoutes.get('/stats/available-years', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   try {
-    const result = await db
-      .select({ seasonYear: schema.playerWeeklyStats.seasonYear })
-      .from(schema.playerWeeklyStats)
-      .groupBy(schema.playerWeeklyStats.seasonYear)
-      .orderBy(desc(schema.playerWeeklyStats.seasonYear));
-    const years = result.map((r) => r.seasonYear).filter((y): y is number => y != null);
-    // Dynamic fallback: NFL season spans Sep–Feb, so Jan–Jul = previous year's season
-    const now = new Date();
-    const fallbackSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
-    return c.json({
-      years: years.length > 0 ? years : [fallbackSeason, fallbackSeason - 1],
-      latest: years[0] ?? fallbackSeason,
+    const data = await cached('stats-available-years', 60 * 60 * 1000, async () => {
+      const result = await db
+        .select({ seasonYear: schema.playerWeeklyStats.seasonYear })
+        .from(schema.playerWeeklyStats)
+        .groupBy(schema.playerWeeklyStats.seasonYear)
+        .orderBy(desc(schema.playerWeeklyStats.seasonYear));
+      const years = result.map((r) => r.seasonYear).filter((y): y is number => y != null);
+      const now = new Date();
+      const fallbackSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
+      return {
+        years: years.length > 0 ? years : [fallbackSeason, fallbackSeason - 1],
+        latest: years[0] ?? fallbackSeason,
+      };
     });
+    return c.json(data);
   } catch (error) {
     console.error('Get available years error:', error);
     const now = new Date();
