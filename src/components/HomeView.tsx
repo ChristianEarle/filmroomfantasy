@@ -180,11 +180,11 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           </div>
 
           {/* Record Badge */}
-          <div className="bg-[#111]/80 rounded-lg px-4 py-2 text-center">
+          <div className="bg-slate-900/80 rounded-lg px-4 py-2 text-center">
             <div className="text-2xl font-bold text-white">
               {userTeam ? `${userTeam.wins}-${userTeam.losses}${userTeam.ties > 0 ? `-${userTeam.ties}` : ''}` : '-'}
             </div>
-            <div className="text-xs text-[#737373]">
+            <div className="text-xs text-slate-400">
               {standingRank != null ? `${standingRank}${getOrdinal(standingRank)} place` : 'No standings'}
             </div>
           </div>
@@ -198,41 +198,41 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <button
               onClick={() => onViewChange('Matchup')}
-              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-[#111] border-[#222] hover:bg-[#1a1a1a]/50' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:bg-slate-800/50' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
             >
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-200'}`}>
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                 <Trophy className="w-4 h-4 text-blue-400" aria-hidden="true" />
               </div>
               <div className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>View Matchup</div>
-              <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>vs. {opponentName}</div>
+              <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>vs. {opponentName}</div>
             </button>
 
             <button
               onClick={() => onViewChange('Waivers')}
-              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-[#111] border-[#222] hover:bg-[#1a1a1a]/50' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:bg-slate-800/50' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
             >
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-200'}`}>
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                 <Flame className="w-4 h-4 text-orange-400" aria-hidden="true" />
               </div>
               <div className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Hot Pickups</div>
-              <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{trending.length} trending players</div>
+              <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{trending.length} trending players</div>
             </button>
 
             <button
               onClick={() => onViewChange('Team')}
-              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-[#111] border-[#222] hover:bg-[#1a1a1a]/50' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:bg-slate-800/50' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
             >
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-200'}`}>
-                <Clock className={`w-4 h-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} aria-hidden="true" />
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                <Clock className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} aria-hidden="true" />
               </div>
               <div className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Set Lineup</div>
-              <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{firstGameLabel}</div>
+              <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{firstGameLabel}</div>
             </button>
           </div>
 
           {/* Important Updates - News from API */}
-          <div className={`rounded-lg border ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-            <div className={`p-4 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+          <div className={`rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`p-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <h2 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Important Updates</h2>
             </div>
             <div className={`divide-y ${isDarkMode ? 'divide-slate-700/50' : 'divide-slate-100'}`}>
@@ -248,7 +248,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                 </div>
               ) : myTeamNews.length === 0 ? (
                 <div className="p-8 text-center">
-                  <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                  <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     {roster.length > 0 ? 'No news for your players' : 'Join a league to see news for your team'}
                   </p>
                 </div>
@@ -270,7 +270,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                             onPlayerClick(convertToPlayer(item.player));
                           }
                         }}
-                        className={`p-4 transition-colors ${item.player ? 'cursor-pointer' : ''} ${isDarkMode ? 'hover:bg-[#1a1a1a]/50' : 'hover:bg-slate-50'}`}
+                        className={`p-4 transition-colors ${item.player ? 'cursor-pointer' : ''} ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
                       >
                         <div className="flex items-start gap-3">
                           <div className={`w-2 h-2 rounded-full ${dotColor} mt-2 flex-shrink-0`}></div>
@@ -282,7 +282,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                               <span className={`px-2 py-0.5 ${impact.bg} ${impact.text} text-xs rounded font-medium`}>
                                 {impact.label}
                               </span>
-                              <span className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                              <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                 {timeAgo(item.publishedAt)}
                               </span>
                             </div>
@@ -290,7 +290,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                               <NewsSnippet item={item} />
                             </p>
                             {item.player && (
-                              <span className={`text-xs mt-2 block ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                              <span className={`text-xs mt-2 block ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                 {item.player.name} · {item.player.position} · {item.player.team}
                               </span>
                             )}
@@ -306,8 +306,8 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           </div>
 
           {/* This Week's Matchup Preview */}
-          <div className={`rounded-lg border ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-            <div className={`p-4 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+          <div className={`rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`p-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <h2 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 Week {league?.currentWeek || 1} Matchup
               </h2>
@@ -318,27 +318,27 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                   <div className={`text-3xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {starterProjection > 0 ? starterProjection.toFixed(1) : '—'}
                   </div>
-                  <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                  <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     You
                   </div>
                   <div className="text-xs text-green-500 mt-1">Projected</div>
                 </div>
                 <div className="px-6">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-100'}`}>
-                    <span className={`text-sm font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>VS</span>
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                    <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>VS</span>
                   </div>
                 </div>
                 <div className="text-center flex-1">
                   <div className={`text-3xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {opponentProjection != null ? opponentProjection.toFixed(1) : '—'}
                   </div>
-                  <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{opponentName}</div>
-                  <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>Projected</div>
+                  <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{opponentName}</div>
+                  <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Projected</div>
                 </div>
               </div>
               <button
                 onClick={() => onViewChange('Matchup')}
-                className={`w-full mt-6 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-slate-700 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                className={`w-full mt-6 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
               >
                 View Full Matchup
                 <ChevronRight className="w-4 h-4" />
@@ -350,18 +350,18 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
         {/* Right Sidebar */}
         <div className="space-y-6">
           {/* Injury Alerts — your roster only */}
-          <div className={`rounded-lg border p-4 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`rounded-lg border p-4 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             <div className="flex items-center gap-2 mb-4">
               <AlertCircle className="w-4 h-4 text-red-500" aria-hidden="true" />
               <h3 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Injury Alerts</h3>
             </div>
             <div className="space-y-3">
               {roster.length === 0 ? (
-                <p className={`text-sm text-center py-2 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <p className={`text-sm text-center py-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   Sync a league to see alerts
                 </p>
               ) : injuredRosterPlayers.length === 0 ? (
-                <p className={`text-sm text-center py-2 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <p className={`text-sm text-center py-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   No injuries on your roster
                 </p>
               ) : (
@@ -392,7 +392,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                           {badge.label}
                         </span>
                       </div>
-                      <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {player.position} · {player.team}
                         {player.injuryBodyPart ? ` · ${player.injuryBodyPart}` : ''}
                         {player.injuryNote ? ` — ${player.injuryNote}` : ''}
@@ -405,7 +405,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           </div>
 
           {/* Top Waiver Pickups */}
-          <div className={`rounded-lg border p-4 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`rounded-lg border p-4 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             <div className="flex items-center gap-2 mb-4">
               <TrendingUp className="w-4 h-4 text-green-500" aria-hidden="true" />
               <h3 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Top Waiver Pickups</h3>
@@ -420,7 +420,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                   Failed to load trending players
                 </p>
               ) : topPickups.length === 0 ? (
-                <p className={`text-sm text-center py-2 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <p className={`text-sm text-center py-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   No trending players
                 </p>
               ) : (
@@ -436,15 +436,15 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                         onPlayerClick(player);
                       }
                     }}
-                    className={`rounded-lg p-3 cursor-pointer transition-colors border ${isDarkMode ? 'bg-[#1a1a1a]/50 border-[#222]/50 hover:bg-[#1a1a1a]' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
+                    className={`rounded-lg p-3 cursor-pointer transition-colors border ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</span>
                       <span className="text-xs text-green-500 font-semibold">+{player.weekChange}%</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.team} • {player.position}</span>
-                      <span className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                      <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.team} • {player.position}</span>
+                      <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {player.projectedPoints > 0 ? `${player.projectedPoints} pts proj.` : 'Trending'}
                       </span>
                     </div>

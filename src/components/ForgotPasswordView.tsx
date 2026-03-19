@@ -33,35 +33,35 @@ export function ForgotPasswordView({ onBackToLogin, isDarkMode = true }: ForgotP
   };
 
   const inputWrap = `flex h-12 items-center gap-3 rounded-lg border text-sm transition-all focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${
-    isDarkMode ? 'bg-[#1a1a1a]/50 border-[#222]' : 'bg-slate-50 border-slate-200'
+    isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
   }`;
-  const iconSlot = `flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`;
+  const iconSlot = `flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`;
   const inputClass = `min-w-0 flex-1 bg-transparent py-0 pr-4 text-sm focus:outline-none placeholder:text-sm ${
-    isDarkMode ? 'text-white placeholder:text-[#555]' : 'text-slate-900 placeholder:text-[#737373]'
+    isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
   }`;
 
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-slate-100'}`}>
+    <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${isDarkMode ? 'bg-[#1a1a1a] border border-[#222]' : 'bg-white border border-slate-200'}`}>
+          <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-slate-200'}`}>
             <span className="text-xl font-bold text-blue-600">FR</span>
           </div>
           <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             {sent ? 'Check your email' : 'Reset your password'}
           </h1>
-          <p className={`mt-2 text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+          <p className={`mt-2 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             {sent
               ? 'If an account exists with that email, we sent a reset link.'
               : "Enter your email and we'll send you a link to reset your password."}
           </p>
         </div>
 
-        <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           {sent ? (
             <div className="text-center py-4">
               <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-              <p className={`text-sm mb-6 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+              <p className={`text-sm mb-6 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                 Check your inbox for the reset link. It expires in 1 hour.
               </p>
               <button
@@ -78,7 +78,7 @@ export function ForgotPasswordView({ onBackToLogin, isDarkMode = true }: ForgotP
               )}
 
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>Email address</label>
+                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
                 <div className={inputWrap}>
                   <div className={iconSlot}><Mail className="h-5 w-5" strokeWidth={1.5} /></div>
                   <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required />
@@ -98,7 +98,7 @@ export function ForgotPasswordView({ onBackToLogin, isDarkMode = true }: ForgotP
 
         <button
           onClick={onBackToLogin}
-          className={`flex items-center justify-center gap-2 w-full mt-6 text-sm ${isDarkMode ? 'text-[#737373] hover:text-[#a3a3a3]' : 'text-[#555] hover:text-slate-700'} transition-colors`}
+          className={`flex items-center justify-center gap-2 w-full mt-6 text-sm ${isDarkMode ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'} transition-colors`}
         >
           <ArrowLeft className="w-4 h-4" />
           Back to sign in
@@ -153,31 +153,31 @@ export function ResetPasswordView({ token, onSuccess, isDarkMode = true }: Reset
   };
 
   const inputWrap = `flex h-12 items-center gap-3 rounded-lg border text-sm transition-all focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${
-    isDarkMode ? 'bg-[#1a1a1a]/50 border-[#222]' : 'bg-slate-50 border-slate-200'
+    isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
   }`;
-  const iconSlot = `flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`;
+  const iconSlot = `flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`;
   const inputClass = `min-w-0 flex-1 bg-transparent py-0 pr-4 text-sm focus:outline-none placeholder:text-sm ${
-    isDarkMode ? 'text-white placeholder:text-[#555]' : 'text-slate-900 placeholder:text-[#737373]'
+    isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
   }`;
 
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-slate-100'}`}>
+    <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${isDarkMode ? 'bg-[#1a1a1a] border border-[#222]' : 'bg-white border border-slate-200'}`}>
+          <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-slate-200'}`}>
             <span className="text-xl font-bold text-blue-600">FR</span>
           </div>
           <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             {success ? 'Password reset!' : 'Choose a new password'}
           </h1>
-          <p className={`mt-2 text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+          <p className={`mt-2 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             {success
               ? 'Your password has been updated successfully.'
               : 'Enter your new password below.'}
           </p>
         </div>
 
-        <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           {success ? (
             <div className="text-center py-4">
               <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
@@ -195,7 +195,7 @@ export function ResetPasswordView({ token, onSuccess, isDarkMode = true }: Reset
               )}
 
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>New password</label>
+                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>New password</label>
                 <div className={inputWrap}>
                   <div className={iconSlot}><Lock className="h-5 w-5" strokeWidth={1.5} /></div>
                   <input
@@ -207,14 +207,14 @@ export function ResetPasswordView({ token, onSuccess, isDarkMode = true }: Reset
                     required
                     minLength={8}
                   />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-[#555] hover:text-[#a3a3a3]' : 'text-[#737373] hover:text-slate-600'} transition-colors`}>
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}>
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>Confirm password</label>
+                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Confirm password</label>
                 <div className={inputWrap}>
                   <div className={iconSlot}><Lock className="h-5 w-5" strokeWidth={1.5} /></div>
                   <input

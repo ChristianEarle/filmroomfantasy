@@ -123,36 +123,36 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
-      <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+      <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Activity className="w-5 h-5 text-blue-500" />
                 <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Trends & Movements</h1>
               </div>
-              <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+              <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 Most added/dropped players across Sleeper{league ? ` • ${league.name}` : ''}
               </p>
             </div>
 
             <div className="flex items-center gap-2">
-              <div className={`px-4 py-2 rounded-lg ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-100'}`}>
+              <div className={`px-4 py-2 rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
                 <div className="flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-green-500" />
-                  <span className={`text-sm font-medium ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>{trendingUp.length} Rising</span>
+                  <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{trendingUp.length} Rising</span>
                 </div>
               </div>
-              <div className={`px-4 py-2 rounded-lg ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-100'}`}>
+              <div className={`px-4 py-2 rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
                 <div className="flex items-center gap-2">
                   <TrendingDown className="w-4 h-4 text-red-500" />
-                  <span className={`text-sm font-medium ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>{trendingDown.length} Falling</span>
+                  <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{trendingDown.length} Falling</span>
                 </div>
               </div>
               <button
                 onClick={fetchData}
                 disabled={loading}
-                className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-[#1a1a1a] text-[#737373]' : 'hover:bg-slate-100 text-[#555]'}`}
+                className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
@@ -161,14 +161,14 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
         </div>
 
         {/* Tabs */}
-        <div className={`px-6 py-3 flex items-center gap-2 ${isDarkMode ? 'bg-[#1a1a1a]/30' : 'bg-slate-50'}`}>
-          <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>View:</span>
+        <div className={`px-6 py-3 flex items-center gap-2 ${isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50'}`}>
+          <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>View:</span>
           <button
             onClick={() => setActiveTab('trending')}
             className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'trending'
                 ? 'bg-blue-600 text-white'
-                : isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3] hover:bg-[#1a1a1a]' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
@@ -179,7 +179,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
             className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'projections'
                 ? 'bg-blue-600 text-white'
-                : isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3] hover:bg-[#1a1a1a]' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
           >
             <BarChart3 className="w-3.5 h-3.5" />
@@ -190,14 +190,14 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
 
       {/* Loading */}
       {loading ? (
-        <div className={`rounded-lg border p-12 flex items-center justify-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`rounded-lg border p-12 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
         </div>
       ) : error || !hasAnyData ? (
-        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-          <Activity className={`w-10 h-10 mx-auto mb-3 ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`} />
+        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <Activity className={`w-10 h-10 mx-auto mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
           <h3 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No trend data available</h3>
-          <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             {error || 'Could not load trending data. Try refreshing.'}
           </p>
         </div>
@@ -205,25 +205,25 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
         /* Trending Tab — two-column: Most Added / Most Dropped */
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Most Added */}
-          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-            <div className={`px-6 py-4 border-b flex items-center gap-2 ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`px-6 py-4 border-b flex items-center gap-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <ArrowUpRight className="w-4 h-4 text-green-500" />
               <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Most Added</h2>
-              <span className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>Last 14 days</span>
+              <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Last 14 days</span>
             </div>
             <div className={`divide-y ${isDarkMode ? 'divide-slate-800' : 'divide-slate-100'}`}>
               {trendingUp.length === 0 ? (
-                <div className={`p-8 text-center text-sm ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                <div className={`p-8 text-center text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   No trending adds found
                 </div>
               ) : trendingUp.map((player, i) => (
                 <button
                   key={player.id}
                   onClick={() => onPlayerClick(convertTrendingToPlayer(player))}
-                  className={`w-full px-6 py-3 text-left transition-colors flex items-center gap-3 ${isDarkMode ? 'hover:bg-[#1a1a1a]' : 'hover:bg-slate-50'}`}
+                  className={`w-full px-6 py-3 text-left transition-colors flex items-center gap-3 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
                 >
-                  <span className={`text-xs font-mono w-5 text-center ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>{i + 1}</span>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3]' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`text-xs font-mono w-5 text-center ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>{i + 1}</span>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
                     {(player.name || '?').split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -233,7 +233,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${isDarkMode ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>ROSTERED</span>
                       )}
                     </div>
-                    <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                       {player.team} • {player.position}
                       {player.avgPointsPPR ? ` • ${player.avgPointsPPR} PPR/g` : ''}
                     </div>
@@ -243,7 +243,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                       <TrendingUp className="w-3.5 h-3.5" />
                       +{formatCount(player.trendValue)}
                     </div>
-                    <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>adds</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>adds</div>
                   </div>
                 </button>
               ))}
@@ -251,25 +251,25 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
           </div>
 
           {/* Most Dropped */}
-          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-            <div className={`px-6 py-4 border-b flex items-center gap-2 ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`px-6 py-4 border-b flex items-center gap-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <ArrowDownRight className="w-4 h-4 text-red-500" />
               <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Most Dropped</h2>
-              <span className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>Last 14 days</span>
+              <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Last 14 days</span>
             </div>
             <div className={`divide-y ${isDarkMode ? 'divide-slate-800' : 'divide-slate-100'}`}>
               {trendingDown.length === 0 ? (
-                <div className={`p-8 text-center text-sm ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                <div className={`p-8 text-center text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   No trending drops found
                 </div>
               ) : trendingDown.map((player, i) => (
                 <button
                   key={player.id}
                   onClick={() => onPlayerClick(convertTrendingToPlayer(player))}
-                  className={`w-full px-6 py-3 text-left transition-colors flex items-center gap-3 ${isDarkMode ? 'hover:bg-[#1a1a1a]' : 'hover:bg-slate-50'}`}
+                  className={`w-full px-6 py-3 text-left transition-colors flex items-center gap-3 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
                 >
-                  <span className={`text-xs font-mono w-5 text-center ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>{i + 1}</span>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3]' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`text-xs font-mono w-5 text-center ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>{i + 1}</span>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
                     {(player.name || '?').split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -279,7 +279,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${isDarkMode ? 'bg-amber-600/20 text-amber-400' : 'bg-amber-50 text-amber-600'}`}>ROSTERED</span>
                       )}
                     </div>
-                    <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                       {player.team} • {player.position}
                       {player.avgPointsPPR ? ` • ${player.avgPointsPPR} PPR/g` : ''}
                     </div>
@@ -289,7 +289,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                       <TrendingDown className="w-3.5 h-3.5" />
                       -{formatCount(player.trendValue)}
                     </div>
-                    <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>drops</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>drops</div>
                   </div>
                 </button>
               ))}
@@ -298,8 +298,8 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
         </div>
       ) : (
         /* Projections Tab — biggest movers */
-        <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-          <div className={`px-6 py-4 border-b flex items-center justify-between ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+        <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <div className={`px-6 py-4 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
             <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               Biggest Projection Movers — Week {currentWeek}
             </h2>
@@ -311,7 +311,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                   className={`px-3 py-1 text-xs rounded-lg transition-colors ${
                     projFilter === f
                       ? 'bg-blue-600 text-white'
-                      : isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3] hover:bg-[#1a1a1a]' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   {f === 'all' ? 'All' : f === 'up' ? '↑ Up' : '↓ Down'}
@@ -322,7 +322,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
 
           <div className={`divide-y ${isDarkMode ? 'divide-slate-800' : 'divide-slate-100'}`}>
             {filteredMovers.length === 0 ? (
-              <div className={`p-12 text-center ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+              <div className={`p-12 text-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                 <BarChart3 className="w-8 h-8 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No projection changes found for this week.</p>
                 <p className="text-xs mt-1">Sync your league to import projections.</p>
@@ -333,18 +333,18 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                 <button
                   key={mover.playerId || `${mover.name}-${i}`}
                   onClick={() => onPlayerClick(convertMoverToPlayer(mover))}
-                  className={`w-full px-6 py-3 text-left transition-colors flex items-center gap-4 ${isDarkMode ? 'hover:bg-[#1a1a1a]' : 'hover:bg-slate-50'}`}
+                  className={`w-full px-6 py-3 text-left transition-colors flex items-center gap-4 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
                 >
-                  <span className={`text-xs font-mono w-5 text-center ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>{i + 1}</span>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3]' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`text-xs font-mono w-5 text-center ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>{i + 1}</span>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
                     {(mover.name || '?').split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className={`text-sm font-semibold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{mover.name || 'Unknown'}</div>
-                    <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                       {mover.team} • {mover.position}
                       <span className="mx-1">•</span>
-                      <span className={isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}>{(mover.previousProjectedPoints ?? 0).toFixed(1)}</span>
+                      <span className={isDarkMode ? 'text-slate-600' : 'text-slate-300'}>{(mover.previousProjectedPoints ?? 0).toFixed(1)}</span>
                       <span className="mx-1">→</span>
                       <span className={`font-medium ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{(mover.projectedPoints ?? 0).toFixed(1)} pts</span>
                     </div>

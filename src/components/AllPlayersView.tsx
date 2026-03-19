@@ -106,7 +106,7 @@ export function AllPlayersView({
   };
 
   const getSortIcon = (field: SortField) => {
-    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 text-[#555]" />;
+    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 text-slate-500" />;
     return sortDirection === 'asc'
       ? <ArrowUp className="w-3 h-3 text-blue-400" />
       : <ArrowDown className="w-3 h-3 text-blue-400" />;
@@ -155,14 +155,14 @@ export function AllPlayersView({
   return (
     <div className="max-w-[1400px] mx-auto">
       {/* Table with Header */}
-      <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+      <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
-        <div className={`p-4 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+        <div className={`p-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <div className="flex items-center gap-3 mb-3">
             <button
               onClick={onBack}
               aria-label="Go back"
-              className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-[#1a1a1a] text-[#737373] hover:text-white' : 'hover:bg-slate-100 text-[#555] hover:text-slate-900'}`}
+              className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-900'}`}
             >
               <ArrowLeft className="w-5 h-5" aria-hidden="true" />
             </button>
@@ -170,7 +170,7 @@ export function AllPlayersView({
               <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 {source === 'waivers' ? 'All Available Players' : 'All Players'} (Week {currentWeek})
               </h2>
-              <p className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+              <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {source === 'waivers' ? 'All waiver wire players' : 'Complete player rankings'}
               </p>
             </div>
@@ -179,15 +179,15 @@ export function AllPlayersView({
           {/* Filters - Compact */}
           <div className="flex items-center gap-2 flex-wrap">
             {/* Search */}
-            <div className={`flex items-center rounded-lg px-2 gap-1.5 ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-100'}`}>
-              <Search className={`w-3.5 h-3.5 flex-shrink-0 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`} aria-hidden="true" />
+            <div className={`flex items-center rounded-lg px-2 gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+              <Search className={`w-3.5 h-3.5 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} aria-hidden="true" />
               <input
                 type="text"
                 placeholder="Search..."
                 aria-label="Search players"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={`py-1 bg-transparent text-xs focus:outline-none w-20 ${isDarkMode ? 'text-white placeholder-[#555]' : 'text-slate-900 placeholder-slate-400'}`}
+                className={`py-1 bg-transparent text-xs focus:outline-none w-20 ${isDarkMode ? 'text-white placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'}`}
               />
             </div>
 
@@ -203,7 +203,7 @@ export function AllPlayersView({
                     selectedScoring === option
                       ? 'bg-blue-600 text-white'
                       : isDarkMode
-                        ? 'bg-[#1a1a1a] text-[#a3a3a3] hover:bg-[#1a1a1a]'
+                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-800'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -224,7 +224,7 @@ export function AllPlayersView({
                     selectedPosition === position
                       ? 'bg-blue-600 text-white'
                       : isDarkMode
-                        ? 'bg-[#1a1a1a] text-[#a3a3a3] hover:bg-[#1a1a1a]'
+                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-800'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -239,13 +239,13 @@ export function AllPlayersView({
             <div className="relative">
               <button
                 onClick={() => setShowWeekDropdown(!showWeekDropdown)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors ${isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3] hover:bg-[#1a1a1a]' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 <span className="text-xs">Wk {currentWeek}</span>
                 <ChevronDown className={`w-3 h-3 transition-transform ${showWeekDropdown ? 'rotate-180' : ''}`} />
               </button>
               {showWeekDropdown && (
-                <div className={`absolute top-8 left-0 w-20 rounded-lg border shadow-xl z-50 overflow-hidden max-h-48 overflow-y-auto ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-white border-slate-200'}`}>
+                <div className={`absolute top-8 left-0 w-20 rounded-lg border shadow-xl z-50 overflow-hidden max-h-48 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                   {NFL_WEEKS.map(week => (
                     <button
                       key={week}
@@ -254,7 +254,7 @@ export function AllPlayersView({
                         currentWeek === week
                           ? 'bg-blue-600 text-white'
                           : isDarkMode
-                            ? 'text-[#a3a3a3] hover:bg-[#1a1a1a]'
+                            ? 'text-slate-300 hover:bg-slate-800'
                             : 'text-slate-600 hover:bg-slate-100'
                       }`}
                     >
@@ -267,7 +267,7 @@ export function AllPlayersView({
 
             <div className="flex-1"></div>
 
-            <span className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+            <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
               {sortedAndFilteredPlayers.length} players
             </span>
           </div>
@@ -292,11 +292,11 @@ export function AllPlayersView({
             </div>
           ) : (
             <table className="w-full border-collapse">
-              <thead className={`sticky top-0 z-10 ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-50'}`}>
-                <tr className={`border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+              <thead className={`sticky top-0 z-10 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                <tr className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   <th
                     onClick={() => handleSort('rank')}
-                    className={`text-left px-4 py-2 text-xs font-semibold cursor-pointer transition-colors w-12 ${isDarkMode ? 'text-[#737373] hover:text-white' : 'text-[#555] hover:text-slate-900'}`}
+                    className={`text-left px-4 py-2 text-xs font-semibold cursor-pointer transition-colors w-12 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1">
                       #
@@ -305,7 +305,7 @@ export function AllPlayersView({
                   </th>
                   <th
                     onClick={() => handleSort('name')}
-                    className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${isDarkMode ? 'text-[#737373] hover:text-white' : 'text-[#555] hover:text-slate-900'}`}
+                    className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1">
                       PLAYER
@@ -314,17 +314,17 @@ export function AllPlayersView({
                   </th>
                   <th
                     onClick={() => handleSort('position')}
-                    className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-14 ${isDarkMode ? 'text-[#737373] hover:text-white' : 'text-[#555] hover:text-slate-900'}`}
+                    className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-14 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1">
                       POS
                       {getSortIcon('position')}
                     </div>
                   </th>
-                  <th className={`text-left px-3 py-2 text-xs font-semibold w-40 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>STATS</th>
+                  <th className={`text-left px-3 py-2 text-xs font-semibold w-40 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>STATS</th>
                   <th
                     onClick={() => handleSort('projectedPoints')}
-                    className={`text-right px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-16 ${isDarkMode ? 'text-[#737373] hover:text-white' : 'text-[#555] hover:text-slate-900'}`}
+                    className={`text-right px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-16 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1 justify-end">
                       PROJ
@@ -339,13 +339,13 @@ export function AllPlayersView({
                   <tr>
                     <td colSpan={5} className="py-16 text-center">
                       <div className="flex flex-col items-center gap-3">
-                        <SearchX className={`w-10 h-10 ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`} />
-                        <p className={`text-sm font-semibold ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+                        <SearchX className={`w-10 h-10 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
+                        <p className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           {searchQuery.trim()
                             ? `No players found for "${searchQuery}"`
                             : `No player data available for Week ${currentWeek}`}
                         </p>
-                        <p className={`text-xs max-w-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                        <p className={`text-xs max-w-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                           {searchQuery.trim()
                             ? 'Check the spelling or try a different player name or team abbreviation.'
                             : 'Projections for this week may not be available yet. Try selecting a different week.'}
@@ -373,24 +373,24 @@ export function AllPlayersView({
                         onPlayerClick(player);
                       }
                     }}
-                    className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-[#161616] hover:bg-[#1a1a1a]' : 'border-slate-100 hover:bg-slate-50'}`}
+                    className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
                   >
                     <td className="px-4 py-2">
-                      <span className={`text-xs font-medium ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.rank}</span>
+                      <span className={`text-xs font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
                     </td>
                     <td className="px-3 py-2">
                       <div>
                         <div className={`text-sm font-semibold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
-                        <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.team}</div>
+                        <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.team}</div>
                       </div>
                     </td>
                     <td className="px-3 py-2">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3] border-[#222]' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                         {player.position}
                       </span>
                     </td>
                     <td className="px-3 py-2">
-                      <span className={`text-xs ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>{player.keyLine}</span>
+                      <span className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
                     </td>
                     <td className="px-3 py-2 text-right">
                       <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
@@ -405,11 +405,11 @@ export function AllPlayersView({
         </div>
 
         {/* Table Footer */}
-        <div className={`px-4 py-3 border-t flex items-center justify-between ${isDarkMode ? 'bg-[#1a1a1a]/50 border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-          <span className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+        <div className={`px-4 py-3 border-t flex items-center justify-between ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+          <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Stats from current season
           </span>
-          <span className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+          <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             Click row for details
           </span>
         </div>

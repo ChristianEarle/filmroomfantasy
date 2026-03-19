@@ -20,7 +20,7 @@ export function ComingSoonView({ title, description, icon, isDarkMode }: ComingS
         {title}
       </h2>
 
-      <p className={`text-base mb-6 max-w-md ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+      <p className={`text-base mb-6 max-w-md ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
         {description}
       </p>
 

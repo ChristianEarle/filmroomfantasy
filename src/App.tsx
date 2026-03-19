@@ -339,7 +339,7 @@ function AppContent() {
   }
 
   return (
-    <div className={`flex h-screen ${isDarkMode ? 'dark bg-[#0a0a0a]' : 'bg-slate-100'}`}>
+    <div className={`flex h-screen ${isDarkMode ? 'dark bg-slate-950' : 'bg-slate-100'}`}>
       <Sidebar
         activeView={activeView}
         onViewChange={setActiveView}
@@ -364,7 +364,7 @@ function AppContent() {
           onMenuToggle={() => setSidebarOpen(prev => !prev)}
         />
 
-        <main className={`flex-1 overflow-y-auto p-6 ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-white'}`}>
+        <main className={`flex-1 overflow-y-auto p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
           <PageTransition viewKey={activeView}>
             {activeView === 'Home' ? (
               showLoginGate ? (

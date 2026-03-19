@@ -187,9 +187,9 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Main Content - 2/3 width */}
         <div className="xl:col-span-2">
-          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             {/* Header */}
-            <div className={`p-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+            <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <div className="flex items-center justify-between mb-1">
                 <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   Waiver Wire (Week {currentWeek})
@@ -197,12 +197,12 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                 <button
                   onClick={fetchPlayers}
                   disabled={loading}
-                  className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-[#1a1a1a] text-[#737373]' : 'hover:bg-slate-100 text-[#555]'}`}
+                  className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
                 >
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 </button>
               </div>
-              <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+              <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {pointsType === 'actual'
                   ? `Sorted by Week ${currentWeek} scores (${selectedScoring})`
                   : `Sorted by Week ${currentWeek} projections (${selectedScoring})`
@@ -213,15 +213,15 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
               <div className="flex items-center gap-3 mt-4 flex-wrap">
                 {/* Search */}
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Search:</span>
-                  <div className={`flex items-center rounded-lg px-3 gap-2 ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-100'}`}>
-                    <Search className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`} />
+                  <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Search:</span>
+                  <div className={`flex items-center rounded-lg px-3 gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                    <Search className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
                     <input
                       type="text"
                       placeholder="Player or team..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className={`py-1.5 bg-transparent text-sm focus:outline-none w-28 ${isDarkMode ? 'text-white placeholder-[#555]' : 'text-slate-900 placeholder-slate-400'}`}
+                      className={`py-1.5 bg-transparent text-sm focus:outline-none w-28 ${isDarkMode ? 'text-white placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'}`}
                     />
                   </div>
                 </div>
@@ -230,7 +230,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
 
                 {/* Scoring Type */}
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Score:</span>
+                  <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Score:</span>
                   {scoringOptions.map((option) => (
                     <button
                       key={option}
@@ -239,7 +239,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                         selectedScoring === option
                           ? 'bg-blue-600 text-white'
                           : isDarkMode
-                            ? 'bg-[#1a1a1a] text-[#a3a3a3] hover:bg-slate-700'
+                            ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                     >
@@ -252,7 +252,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
 
                 {/* Position Filter */}
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Position:</span>
+                  <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Position:</span>
                   {positions.map((position) => (
                     <button
                       key={position}
@@ -261,7 +261,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                         selectedPosition === position
                           ? 'bg-blue-600 text-white'
                           : isDarkMode
-                            ? 'bg-[#1a1a1a] text-[#a3a3a3] hover:bg-slate-700'
+                            ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                     >
@@ -290,7 +290,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                   <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
                 </div>
               ) : sortedPlayers.length === 0 ? (
-                <div className={`text-center py-12 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <div className={`text-center py-12 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   <User className="w-12 h-12 mx-auto mb-3 opacity-50" />
                   <p>No available players found.</p>
                   <p className="text-sm mt-1">Try changing the position filter or sync your league.</p>
@@ -298,13 +298,13 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
               ) : (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className={`border-b ${isDarkMode ? 'bg-[#1a1a1a]/50 border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                      <th className={`px-6 py-4 text-xs font-medium w-12 text-center ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>#</th>
-                      <th className={`px-4 py-4 text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Player</th>
-                      <th className={`px-4 py-4 text-xs font-medium w-16 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Pos</th>
-                      <th className={`px-4 py-4 text-xs font-medium text-right w-16 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>GP</th>
-                      <th className={`px-4 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Avg</th>
-                      <th className={`px-6 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                    <tr className={`border-b ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <th className={`px-6 py-4 text-xs font-medium w-12 text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>#</th>
+                      <th className={`px-4 py-4 text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Player</th>
+                      <th className={`px-4 py-4 text-xs font-medium w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Pos</th>
+                      <th className={`px-4 py-4 text-xs font-medium text-right w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>GP</th>
+                      <th className={`px-4 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Avg</th>
+                      <th className={`px-6 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {pointsType === 'actual' ? 'Pts' : 'Proj'}
                       </th>
                     </tr>
@@ -319,9 +319,9 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                         <tr
                           key={player.id}
                           onClick={() => onPlayerClick(convertToPlayer(player, index))}
-                          className={`group cursor-pointer transition-colors ${isDarkMode ? 'hover:bg-[#1a1a1a]' : 'hover:bg-slate-50'}`}
+                          className={`group cursor-pointer transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
                         >
-                          <td className={`px-6 py-4 text-sm text-center font-mono ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                          <td className={`px-6 py-4 text-sm text-center font-mono ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                             {index + 1}
                           </td>
                           <td className="px-4 py-4">
@@ -330,7 +330,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                                 <div className={`font-bold text-sm group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                                   {player.name}
                                 </div>
-                                <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                   {player.team}
                                   {player.byeWeek && ` • Bye: ${player.byeWeek}`}
                                 </div>
@@ -338,14 +338,14 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                             </div>
                           </td>
                           <td className="px-4 py-4">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3]' : 'bg-slate-100 text-slate-600'}`}>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
                               {player.position}
                             </span>
                           </td>
-                          <td className={`px-4 py-4 text-right text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                          <td className={`px-4 py-4 text-right text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                             {gamesPlayed || '-'}
                           </td>
-                          <td className={`px-4 py-4 text-right text-sm font-medium ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>
+                          <td className={`px-4 py-4 text-right text-sm font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             {avgPoints > 0 ? avgPoints.toFixed(1) : '-'}
                           </td>
                           <td className="px-6 py-4 text-right">
@@ -362,9 +362,9 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
             </div>
 
             {/* Footer */}
-            <div className={`px-6 py-4 border-t ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+            <div className={`px-6 py-4 border-t ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
               <div className="flex items-center justify-between">
-                <p className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   Showing {Math.min(12, sortedPlayers.length)} available players
                 </p>
                 <button
@@ -381,21 +381,21 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
         {/* Right Sidebar */}
         <div className="space-y-6">
           {/* Waiver Priority */}
-          <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Waiver Priority</h3>
             <div className="space-y-3">
-              <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                <div className={`text-xs mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Your Priority</div>
+              <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Priority</div>
                 <div className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   {userTeam?.waiverPriority ? `#${userTeam.waiverPriority}` : '-'}
                 </div>
-                <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   {league?.waiverType === 'faab' ? 'FAAB Budget' : 'Resets weekly'}
                 </div>
               </div>
               {league?.waiverType === 'faab' && userTeam && (
-                <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                  <div className={`text-xs mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FAAB Remaining</div>
+                <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FAAB Remaining</div>
                   <div className={`text-2xl font-bold text-green-500`}>
                     ${userTeam?.faabBudget ?? league?.waiverBudget ?? 100}
                   </div>
@@ -405,19 +405,19 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
           </div>
 
           {/* Top Available */}
-          <div className={`rounded-lg p-6 border ${isDarkMode ? 'bg-[#111] border-[#222] text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+          <div className={`rounded-lg p-6 border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
             <h3 className="font-bold mb-4">Top Available</h3>
             <div className="space-y-3">
               {sortedPlayers.slice(0, 5).map((player, index) => (
                 <button
                   key={player.id}
                   onClick={() => onPlayerClick(convertToPlayer(player, index))}
-                  className={`w-full rounded-lg p-3 border text-left transition-colors ${isDarkMode ? 'bg-[#1a1a1a] border-[#222] hover:border-slate-600' : 'bg-slate-50 border-slate-200 hover:border-slate-300'}`}
+                  className={`w-full rounded-lg p-3 border text-left transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-slate-600' : 'bg-slate-50 border-slate-200 hover:border-slate-300'}`}
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-sm font-semibold">{player.name}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {player.team} • {player.position}
                       </div>
                     </div>
@@ -425,7 +425,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                       <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                         {(player.projectedPoints || 0) > 0 ? player.projectedPoints.toFixed(1) : '-'}
                       </div>
-                      <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                         {pointsType === 'actual' ? 'pts' : 'proj'}
                       </div>
                     </div>
@@ -433,7 +433,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                 </button>
               ))}
               {sortedPlayers.length === 0 && !loading && (
-                <p className={`text-sm text-center py-4 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                <p className={`text-sm text-center py-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   Sync your league to see available players
                 </p>
               )}

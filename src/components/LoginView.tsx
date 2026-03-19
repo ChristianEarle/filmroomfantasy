@@ -73,32 +73,32 @@ export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDar
   };
 
   const inputWrap = `flex h-12 items-center gap-3 rounded-lg border text-sm transition-all focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${
-    isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-slate-50 border-slate-200'
+    isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'
   }`;
-  const iconSlot = `flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-[#555]' : 'text-slate-400'}`;
+  const iconSlot = `flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`;
   const inputClass = `min-w-0 flex-1 bg-transparent py-0 pr-4 text-sm focus:outline-none placeholder:text-sm ${
-    isDarkMode ? 'text-white placeholder:text-[#555]' : 'text-slate-900 placeholder:text-slate-400'
+    isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
   }`;
 
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-slate-100'}`}>
+    <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${isDarkMode ? 'bg-[#1a1a1a] border border-[#222]' : 'bg-white border border-slate-200'}`}>
+          <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-slate-200'}`}>
             <span className="text-xl font-bold text-blue-600">FR</span>
           </div>
           <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Welcome back</h1>
-          <p className={`mt-2 text-sm ${isDarkMode ? 'text-[#737373]' : 'text-slate-500'}`}>Sign in to your FilmRoom account</p>
+          <p className={`mt-2 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Sign in to your FilmRoom account</p>
         </div>
 
-        <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <form onSubmit={handleSubmit} className="space-y-6">
             {displayError && (
               <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{displayError}</div>
             )}
 
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>Email address</label>
+              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
               <div className={inputWrap}>
                 <div className={iconSlot}><Mail className="h-5 w-5" strokeWidth={1.5} /></div>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required />
@@ -107,7 +107,7 @@ export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDar
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className={`text-sm font-medium ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>Password</label>
+                <label className={`text-sm font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Password</label>
                 {onForgotPassword && (
                   <button type="button" onClick={onForgotPassword} className="text-xs text-blue-500 hover:text-blue-400 transition-colors">Forgot password?</button>
                 )}
@@ -122,7 +122,7 @@ export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDar
                   placeholder="Enter your password"
                   required
                 />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-[#555] hover:text-[#a3a3a3]' : 'text-slate-400 hover:text-slate-600'} transition-colors`}>
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}>
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
@@ -141,7 +141,7 @@ export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDar
 
         </div>
 
-        <p className={`text-center mt-6 text-sm ${isDarkMode ? 'text-[#737373]' : 'text-slate-500'}`}>
+        <p className={`text-center mt-6 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
           Don&apos;t have an account?{' '}
           <button onClick={onSwitchToRegister} className="text-blue-500 hover:text-blue-400 font-medium transition-colors">Sign up for free</button>
         </p>

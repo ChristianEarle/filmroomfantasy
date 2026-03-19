@@ -74,9 +74,9 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
 
   if (!isAuthenticated) {
     return (
-      <div className={`p-4 border-t ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
-        <div className={`rounded-lg p-4 text-center ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-100'}`}>
-          <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+      <div className={`p-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+        <div className={`rounded-lg p-4 text-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Sign in to connect leagues
           </p>
         </div>
@@ -87,7 +87,7 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
   const dropdownMenu = dropdownOpen && position ? createPortal(
     <div
       id="league-dropdown-portal"
-      className={`rounded-lg border shadow-lg overflow-hidden ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-white border-slate-200'}`}
+      className={`rounded-lg border shadow-lg overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
       style={{
         position: 'fixed',
         bottom: position.bottom,
@@ -99,7 +99,7 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
     >
       {leagues.length > 0 && (
         <div
-          className={`overflow-y-auto border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}
+          className={`overflow-y-auto border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}
           style={{ maxHeight: position.maxHeight - 52 }}
         >
           {leagues.map((league) => (
@@ -121,7 +121,7 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
                 <div className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   {league.name}
                 </div>
-                <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   {league.scoringFormat.toUpperCase()} • {league.teamCount} teams
                 </div>
               </div>
@@ -151,15 +151,15 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
   ) : null;
 
   return (
-    <div className={`p-4 border-t ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+    <div className={`p-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
       {/* League Selector */}
       <div className="mb-3">
         <button
           ref={triggerRef}
           onClick={() => setDropdownOpen(!dropdownOpen)}
-          className={`w-full rounded-lg p-3 text-left transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'}`}
+          className={`w-full rounded-lg p-3 text-left transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'}`}
         >
-          <div className={`text-xs mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+          <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Current League
           </div>
           <div className="flex items-center justify-between">
@@ -177,10 +177,10 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
                 'No leagues connected'
               )}
             </div>
-            <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${dropdownOpen ? 'rotate-180' : ''} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} />
+            <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${dropdownOpen ? 'rotate-180' : ''} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
           </div>
           {selectedLeague && (
-            <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+            <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               {selectedLeague.scoringFormat.toUpperCase()} • {selectedLeague.teamCount} teams
             </div>
           )}

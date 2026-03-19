@@ -64,15 +64,15 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
   });
 
   return (
-    <header className={`h-16 border-b flex items-center justify-between px-6 relative ${isDarkMode ? 'bg-[#0a0a0a] border-[#222]' : 'bg-white border-slate-200'}`}>
+    <header className={`h-16 border-b flex items-center justify-between px-6 relative ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-white border-slate-200'}`}>
       <div className="flex items-center gap-2">
         {onMenuToggle && (
           <button
             onClick={onMenuToggle}
             aria-label="Toggle navigation menu"
-            className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors mobile-only focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'hover:bg-[#1a1a1a]' : 'hover:bg-slate-100'}`}
+            className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors mobile-only focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
           >
-            <Menu aria-hidden="true" className={`w-5 h-5 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} />
+            <Menu aria-hidden="true" className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
           </button>
         )}
         <h1 className={isDarkMode ? 'text-white' : 'text-slate-900'}>FilmRoom</h1>
@@ -88,13 +88,13 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
             onClick={() => setSearchOpen(!searchOpen)}
             aria-label="Search players"
             aria-expanded={searchOpen}
-            className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'hover:bg-[#1a1a1a]' : 'hover:bg-slate-100'}`}
+            className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
           >
-            <Search className={`w-5 h-5 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} />
+            <Search className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
           </button>
 
           {searchOpen && (
-            <div role="combobox" aria-label="Player search results" className={`absolute top-12 right-0 w-[calc(100vw-2rem)] sm:w-96 rounded-lg border shadow-xl z-50 ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div role="combobox" aria-label="Player search results" className={`absolute top-12 right-0 w-[calc(100vw-2rem)] sm:w-96 rounded-lg border shadow-xl z-50 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="p-4">
                 <div className="relative">
                   <input
@@ -102,7 +102,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                     placeholder="Search players by name or team..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg text-sm focus:outline-none focus:border-blue-500 ${isDarkMode ? 'bg-[#0a0a0a] border-[#222] text-white placeholder-[#555]' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                    className={`w-full px-4 py-2 border rounded-lg text-sm focus:outline-none focus:border-blue-500 ${isDarkMode ? 'bg-slate-950 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
                     autoFocus
                   />
                   {isSearching && (
@@ -112,7 +112,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
               </div>
 
               {searchResults.length > 0 && (
-                <div className={`max-h-96 overflow-y-auto border-t ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+                <div className={`max-h-96 overflow-y-auto border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   {searchResults.map((player) => (
                     <button
                       key={player.id}
@@ -122,12 +122,12 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                         setSearchQuery('');
                         clearResults();
                       }}
-                      className={`w-full px-4 py-3 transition-colors text-left border-b last:border-b-0 ${isDarkMode ? 'hover:bg-[#1a1a1a] border-[#222]' : 'hover:bg-slate-50 border-slate-200'}`}
+                      className={`w-full px-4 py-3 transition-colors text-left border-b last:border-b-0 ${isDarkMode ? 'hover:bg-slate-800 border-slate-700' : 'hover:bg-slate-50 border-slate-200'}`}
                     >
                       <div className="flex items-center justify-between">
                         <div>
                           <div className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
-                          <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.team} • {player.position}</div>
+                          <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.team} • {player.position}</div>
                         </div>
                         <div className="text-right">
                           <span className={`text-xs px-2 py-0.5 rounded ${
@@ -154,13 +154,13 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
               )}
 
               {searchQuery.length >= 2 && !isSearching && searchResults.length === 0 && (
-                <div className={`p-4 text-center text-sm border-t ${isDarkMode ? 'text-[#737373] border-[#222]' : 'text-[#555] border-slate-200'}`}>
+                <div className={`p-4 text-center text-sm border-t ${isDarkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>
                   No players found
                 </div>
               )}
 
               {searchQuery.length > 0 && searchQuery.length < 2 && (
-                <div className={`p-4 text-center text-sm border-t ${isDarkMode ? 'text-[#737373] border-[#222]' : 'text-[#555] border-slate-200'}`}>
+                <div className={`p-4 text-center text-sm border-t ${isDarkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>
                   Type at least 2 characters to search
                 </div>
               )}
@@ -172,10 +172,10 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
         <button
           onClick={onProfileClick}
           aria-label={isAuthenticated ? 'View profile' : 'Sign in'}
-          className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a]' : 'bg-slate-100 hover:bg-slate-200'} ${onProfileClick ? 'cursor-pointer' : ''}`}
+          className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800' : 'bg-slate-100 hover:bg-slate-200'} ${onProfileClick ? 'cursor-pointer' : ''}`}
           title={isAuthenticated ? 'Profile' : 'Sign in'}
         >
-          <User aria-hidden="true" className={`w-5 h-5 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} />
+          <User aria-hidden="true" className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
         </button>
       </div>
     </header>

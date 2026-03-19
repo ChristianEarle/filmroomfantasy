@@ -509,9 +509,9 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
   if (standingsLoading || allMatchupsLoading) {
     return (
       <div className="max-w-[1600px] mx-auto">
-        <div className={`rounded-lg border p-12 flex flex-col items-center justify-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`rounded-lg border p-12 flex flex-col items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
-          <p className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Loading playoff data...</p>
+          <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Loading playoff data...</p>
         </div>
       </div>
     );
@@ -521,13 +521,13 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
   if (leagueTeamsData.length === 0) {
     return (
       <div className="max-w-[1600px] mx-auto">
-        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-          <Trophy className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`} />
+        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <Trophy className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
           <h2 className={`text-xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No Playoff Data</h2>
-          <p className={`text-sm mb-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+          <p className={`text-sm mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Sync your league to view playoff predictions and run simulations.
           </p>
-          <p className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+          <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             Go to Settings and click "Sync" on your league.
           </p>
         </div>
@@ -552,15 +552,15 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
   return (
     <div className="max-w-[1600px] mx-auto space-y-6">
       {/* Header */}
-      <div className={`border rounded-lg p-8 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+      <div className={`border rounded-lg p-8 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Trophy className="w-5 h-5 text-blue-500" />
-              <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Fantasy Playoffs{playoffWeekLabel ? ` • ${playoffWeekLabel}` : ''}</span>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Fantasy Playoffs{playoffWeekLabel ? ` • ${playoffWeekLabel}` : ''}</span>
             </div>
             <h1 className={`text-3xl mb-2 font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Playoff Predictor</h1>
-            <p className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>
+            <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
               {seasonComplete
                 ? 'Final regular season standings'
                 : activeTab === 'predictor'
@@ -569,17 +569,17 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
               }
             </p>
           </div>
-          <div className={`rounded-lg px-6 py-4 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-200'}`}>
-            <div className={`text-xs mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Top {playoffTeamCount} Make Playoffs</div>
+          <div className={`rounded-lg px-6 py-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+            <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Top {playoffTeamCount} Make Playoffs</div>
             <div className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               {seasonComplete ? 'Season Over' : `${weeksRemaining} Weeks Left`}
             </div>
-            <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{league?.name || 'Regular Season'}</div>
+            <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{league?.name || 'Regular Season'}</div>
           </div>
         </div>
 
         {/* Tab Switcher */}
-        <div role="tablist" aria-label="Playoff predictor views" className={`mt-6 flex gap-2 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+        <div role="tablist" aria-label="Playoff predictor views" className={`mt-6 flex gap-2 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <button
             role="tab"
             aria-selected={activeTab === 'predictor'}
@@ -589,7 +589,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
             className={`px-4 py-2 font-semibold text-sm transition-all relative ${
               activeTab === 'predictor'
                 ? 'text-blue-500'
-                : isDarkMode ? 'text-[#737373] hover:text-[#a3a3a3]' : 'text-[#555] hover:text-slate-700'
+                : isDarkMode ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -609,7 +609,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
             className={`px-4 py-2 font-semibold text-sm transition-all relative ${
               activeTab === 'simulator'
                 ? 'text-blue-500'
-                : isDarkMode ? 'text-[#737373] hover:text-[#a3a3a3]' : 'text-[#555] hover:text-slate-700'
+                : isDarkMode ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -635,13 +635,13 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
         <div id="panel-predictor" role="tabpanel" aria-labelledby="tab-predictor" className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Main Standings Table */}
           <div className="xl:col-span-2">
-            <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               {/* Table Header */}
-              <div className={`p-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+              <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                 <h2 className={`font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   {seasonComplete ? 'Final Standings' : 'Playoff Chances'}
                 </h2>
-                <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   {seasonComplete
                     ? 'Regular season complete — final playoff picture'
                     : 'Probability of making playoffs based on current standings and remaining schedule'
@@ -653,15 +653,15 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className={`border-b ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                      <th className={`text-left px-6 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Rank</th>
-                      <th className={`text-left px-6 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Team</th>
-                      <th className={`text-center px-6 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Record</th>
-                      <th className={`text-right px-6 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Points For</th>
-                      <th className={`text-right px-6 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                    <tr className={`border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <th className={`text-left px-6 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Rank</th>
+                      <th className={`text-left px-6 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Team</th>
+                      <th className={`text-center px-6 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Record</th>
+                      <th className={`text-right px-6 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Points For</th>
+                      <th className={`text-right px-6 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {seasonComplete ? 'Final Wins' : 'Proj. Wins'}
                       </th>
-                      <th className={`text-right px-6 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                      <th className={`text-right px-6 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {seasonComplete ? 'Status' : 'Playoff %'}
                       </th>
                     </tr>
@@ -671,12 +671,12 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                       <tr
                         key={team.id}
                         className={`border-b transition-colors ${
-                          isDarkMode ? 'border-slate-800 hover:bg-[#1a1a1a]' : 'border-slate-100 hover:bg-slate-50'
+                          isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'
                         } ${team.isUserTeam ? 'bg-blue-500/5' : ''}`}
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <span className={`text-sm ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{index + 1}</span>
+                            <span className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{index + 1}</span>
                             {index < playoffTeamCount && (
                               <Award className="w-4 h-4 text-yellow-500" aria-label="Playoff position" />
                             )}
@@ -685,7 +685,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                         <td className="px-6 py-4">
                           <div>
                             <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{team.name}</div>
-                            <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{team.owner}</div>
+                            <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{team.owner}</div>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-center">
@@ -694,7 +694,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <span className={`text-sm ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>{team.pointsFor.toFixed(1)}</span>
+                          <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{team.pointsFor.toFixed(1)}</span>
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-1">
@@ -728,8 +728,8 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
               </div>
 
               {/* Footer Note */}
-              <div className={`px-6 py-4 border-t ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                <p className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+              <div className={`px-6 py-4 border-t ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   <Award className="w-3 h-3 inline text-yellow-500" aria-hidden="true" /> = Currently in playoff position
                 </p>
               </div>
@@ -739,7 +739,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
           {/* Right Sidebar */}
           <div className="space-y-6">
             {/* Your Team Status */}
-            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Your Playoff Status</h3>
               <div className={`rounded-lg p-4 border ${getPlayoffChanceBg(userTeamData?.playoffChance || 0)}`}>
                 <div className="text-center">
@@ -748,7 +748,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                       <div className={`text-4xl font-bold mb-2 ${(userTeamData?.playoffChance || 0) === 100 ? 'text-green-500' : 'text-red-500'}`}>
                         {(userTeamData?.playoffChance || 0) === 100 ? 'IN' : 'OUT'}
                       </div>
-                      <div className={`text-sm ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+                      <div className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                         {(userTeamData?.playoffChance || 0) === 100 ? 'Made the Playoffs!' : 'Eliminated from Playoffs'}
                       </div>
                     </>
@@ -757,8 +757,8 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                       <div className={`text-4xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                         {userTeamData?.playoffChance || 0}%
                       </div>
-                      <div className={`text-sm mb-3 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>Chance to Make Playoffs</div>
-                      <div className={`h-2 rounded-full overflow-hidden ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-200'}`}>
+                      <div className={`text-sm mb-3 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Chance to Make Playoffs</div>
+                      <div className={`h-2 rounded-full overflow-hidden ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`}>
                         <div
                           className="h-full bg-blue-600 transition-all duration-500"
                           style={{ width: `${userTeamData?.playoffChance || 0}%` }}
@@ -771,7 +771,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
 
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>
+                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
                     {seasonComplete ? 'Final Rank:' : 'Current Rank:'}
                   </span>
                   <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -780,14 +780,14 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                 </div>
                 {!seasonComplete && (
                   <div className="flex justify-between text-sm">
-                    <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Projected Wins:</span>
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Projected Wins:</span>
                     <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       {userTeamData?.projectedWins != null ? Math.round(userTeamData.projectedWins) : '-'}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
-                  <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>
+                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
                     {seasonComplete ? 'Final Record:' : 'Games Remaining:'}
                   </span>
                   <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -801,13 +801,13 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
             </div>
 
             {/* Remaining Schedule */}
-            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 {seasonComplete ? 'Season Summary' : 'Your Remaining Games'}
               </h3>
               <div className="space-y-3">
                 {userRemainingMatchups.length === 0 ? (
-                  <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                  <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     {seasonComplete
                       ? 'The regular season is complete. Check standings for final playoff picture.'
                       : 'No remaining games scheduled.'
@@ -815,17 +815,17 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                   </p>
                 ) : (
                   userRemainingMatchups.map((game) => (
-                      <div key={`${game.week}-${game.opponentId}`} className={`rounded-lg p-3 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                      <div key={`${game.week}-${game.opponentId}`} className={`rounded-lg p-3 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Calendar className={`w-4 h-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} aria-hidden="true" />
+                            <Calendar className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} aria-hidden="true" />
                             <div>
                               <div className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Week {game.week}</div>
-                              <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>vs {game.opponent}</div>
+                              <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>vs {game.opponent}</div>
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Win Prob</div>
+                            <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Win Prob</div>
                             <div className={`text-sm font-bold ${game.winProb >= 50 ? 'text-green-500' : 'text-red-500'}`}>
                               {game.winProb}%
                             </div>
@@ -838,26 +838,26 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
             </div>
 
             {/* Key Insights */}
-            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Key Insights</h3>
               <div className="space-y-3 text-sm">
                 {userRemainingMatchups[0] && (
                   <div className="flex items-start gap-2">
                     <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5"></div>
-                    <p className={isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}>
+                    <p className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>
                       Next game: <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Week {userRemainingMatchups[0].week}</span> vs {userRemainingMatchups[0].opponent}
                     </p>
                   </div>
                 )}
                 <div className="flex items-start gap-2">
                   <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5"></div>
-                  <p className={isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}>
+                  <p className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>
                     <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{weeksRemaining} games</span> remaining in regular season
                   </p>
                 </div>
                 <div className="flex items-start gap-2">
                   <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5"></div>
-                  <p className={isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}>
+                  <p className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>
                     Your points for ranks <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       {userPointsForRank != null ? `#${userPointsForRank}` : '-'}
                     </span> in the league
@@ -866,7 +866,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                 {userTeamData && (
                   <div className="flex items-start gap-2">
                     <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5"></div>
-                    <p className={isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}>
+                    <p className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>
                       Current record: <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{formatRecord(userTeamData.wins, userTeamData.losses, userTeamData.ties)}</span> ({userTeamData.pointsFor.toFixed(1)} PF)
                     </p>
                   </div>
@@ -882,18 +882,18 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
           <div className="xl:col-span-2 space-y-6">
             {/* Controls Row */}
             <div className="flex justify-between items-center">
-              <label className={`flex items-center gap-2 text-sm cursor-pointer ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+              <label className={`flex items-center gap-2 text-sm cursor-pointer ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                 <input
                   type="checkbox"
                   checked={showPointsInput}
                   onChange={(e) => setShowPointsInput(e.target.checked)}
-                  className={`w-4 h-4 rounded text-blue-600 focus:ring-blue-600 focus:ring-offset-0 ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]' : 'border-slate-300 bg-white'}`}
+                  className={`w-4 h-4 rounded text-blue-600 focus:ring-blue-600 focus:ring-offset-0 ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-white'}`}
                 />
                 <span>Include Points Scored</span>
               </label>
               <button
                 onClick={resetSimulator}
-                className={`px-4 py-2 border rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-slate-700 border-[#222] text-white' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-900'}`}
+                className={`px-4 py-2 border rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-white' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-900'}`}
               >
                 <Shuffle className="w-4 h-4" aria-hidden="true" />
                 Reset All
@@ -902,9 +902,9 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
 
             {/* Dynamic Week Matchups */}
             {matchupWeeks.length === 0 ? (
-              <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-                <Calendar className={`w-12 h-12 mx-auto mb-3 ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`} aria-hidden="true" />
-                <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+              <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <Calendar className={`w-12 h-12 mx-auto mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} aria-hidden="true" />
+                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   No matchups found. Sync your league to load matchup data.
                 </p>
               </div>
@@ -916,7 +916,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                 return (
                   <div
                     key={week}
-                    className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'} ${isWeekComplete ? 'opacity-60' : ''}`}
+                    className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} ${isWeekComplete ? 'opacity-60' : ''}`}
                   >
                     <div className="flex items-center justify-between mb-4">
                       <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -934,8 +934,8 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                           key={matchup.id}
                           className={`rounded-lg p-4 border ${
                             matchup.isComplete
-                              ? isDarkMode ? 'bg-[#1a1a1a]/50 border-[#222]/50' : 'bg-slate-100/50 border-slate-200/50'
-                              : isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'
+                              ? isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-100/50 border-slate-200/50'
+                              : isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'
                           }`}
                         >
                           <div className="grid grid-cols-2 gap-3">
@@ -950,8 +950,8 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                                     ? 'bg-green-600/80 border-green-500 text-white cursor-default'
                                     : 'bg-blue-600 border-blue-500 text-white'
                                   : matchup.isComplete
-                                    ? isDarkMode ? 'bg-[#111]/50 border-[#222]/50 text-[#555] cursor-default' : 'bg-white/50 border-slate-200/50 text-[#737373] cursor-default'
-                                    : isDarkMode ? 'bg-[#111] border-[#222] text-[#a3a3a3] hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                                    ? isDarkMode ? 'bg-slate-900/50 border-slate-700/50 text-slate-500 cursor-default' : 'bg-white/50 border-slate-200/50 text-slate-400 cursor-default'
+                                    : isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                               }`}
                             >
                               <div className="flex items-center justify-between">
@@ -961,7 +961,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                                 )}
                               </div>
                               {matchup.isComplete && matchup.team1Points !== undefined && (
-                                <div className={`text-xs mt-1 ${matchup.winner === matchup.team1Id ? 'text-white/80' : isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                                <div className={`text-xs mt-1 ${matchup.winner === matchup.team1Id ? 'text-white/80' : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                   {matchup.team1Points.toFixed(1)} pts
                                 </div>
                               )}
@@ -977,8 +977,8 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                                     ? 'bg-green-600/80 border-green-500 text-white cursor-default'
                                     : 'bg-blue-600 border-blue-500 text-white'
                                   : matchup.isComplete
-                                    ? isDarkMode ? 'bg-[#111]/50 border-[#222]/50 text-[#555] cursor-default' : 'bg-white/50 border-slate-200/50 text-[#737373] cursor-default'
-                                    : isDarkMode ? 'bg-[#111] border-[#222] text-[#a3a3a3] hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                                    ? isDarkMode ? 'bg-slate-900/50 border-slate-700/50 text-slate-500 cursor-default' : 'bg-white/50 border-slate-200/50 text-slate-400 cursor-default'
+                                    : isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                               }`}
                             >
                               <div className="flex items-center justify-between">
@@ -988,7 +988,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                                 )}
                               </div>
                               {matchup.isComplete && matchup.team2Points !== undefined && (
-                                <div className={`text-xs mt-1 ${matchup.winner === matchup.team2Id ? 'text-white/80' : isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                                <div className={`text-xs mt-1 ${matchup.winner === matchup.team2Id ? 'text-white/80' : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                   {matchup.team2Points.toFixed(1)} pts
                                 </div>
                               )}
@@ -1001,7 +1001,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                                 aria-label={`Points for ${matchup.team1}`}
                                 value={matchup.team1Points?.toString() || ''}
                                 onChange={(e) => handlePointsChange(matchup.id, 'team1', e.target.value)}
-                                className={`p-2 rounded-lg border text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isDarkMode ? 'border-[#222] text-[#a3a3a3] bg-[#111]' : 'border-slate-200 text-slate-900 bg-white'}`}
+                                className={`p-2 rounded-lg border text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isDarkMode ? 'border-slate-700 text-slate-300 bg-slate-900' : 'border-slate-200 text-slate-900 bg-white'}`}
                                 placeholder={`${matchup.team1} Points`}
                               />
                               <input
@@ -1009,7 +1009,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                                 aria-label={`Points for ${matchup.team2}`}
                                 value={matchup.team2Points?.toString() || ''}
                                 onChange={(e) => handlePointsChange(matchup.id, 'team2', e.target.value)}
-                                className={`p-2 rounded-lg border text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isDarkMode ? 'border-[#222] text-[#a3a3a3] bg-[#111]' : 'border-slate-200 text-slate-900 bg-white'}`}
+                                className={`p-2 rounded-lg border text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isDarkMode ? 'border-slate-700 text-slate-300 bg-slate-900' : 'border-slate-200 text-slate-900 bg-white'}`}
                                 placeholder={`${matchup.team2} Points`}
                               />
                             </div>
@@ -1025,7 +1025,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
 
           {/* Simulated Standings */}
           <div className="space-y-6">
-            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Simulated Final Standings</h3>
               <div className="space-y-3">
                 {simulatedStandings.map((team, index) => (
@@ -1034,12 +1034,12 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                     className={`p-3 rounded-lg border transition-all ${
                       index < playoffTeamCount
                         ? 'bg-green-500/10 border-green-500/30'
-                        : isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'
+                        : isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'
                     } ${team.isUserTeam ? 'ring-2 ring-blue-500' : ''}`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>#{index + 1}</span>
+                        <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>#{index + 1}</span>
                         {index < playoffTeamCount && <Award className="w-4 h-4 text-yellow-500" aria-label="Playoff position" />}
                       </div>
                       <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -1047,7 +1047,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                       </span>
                     </div>
                     <div className={`font-semibold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{team.name}</div>
-                    <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                    <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       {team.simulatedPointsFor.toFixed(1)} PF
                     </div>
                   </div>
@@ -1056,17 +1056,17 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
             </div>
 
             {/* Simulation Insights */}
-            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Simulation Results</h3>
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Your Simulated Rank:</span>
+                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Your Simulated Rank:</span>
                   <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {userSimulatedRank != null ? `#${userSimulatedRank}` : '-'}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Your Final Record:</span>
+                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Your Final Record:</span>
                   <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {userSimulatedTeam
                       ? formatRecord(userSimulatedTeam.simulatedWins, userSimulatedTeam.simulatedLosses, userSimulatedTeam.ties)
@@ -1074,7 +1074,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Playoff Status:</span>
+                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Playoff Status:</span>
                   <span className={`font-semibold ${
                     userSimulatedRank != null && userSimulatedRank <= playoffTeamCount
                       ? 'text-green-500'

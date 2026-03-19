@@ -65,20 +65,20 @@ function WeatherIcon({ condition, className }: { condition?: string; className?:
 function TopPerformerDisplay({ performer, isDarkMode }: { performer: TopPerformer; isDarkMode: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${isDarkMode ? 'bg-slate-700 text-[#a3a3a3]' : 'bg-slate-200 text-slate-600'}`}>
+      <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'}`}>
         {performer.position}
       </div>
       <div className="flex-1 min-w-0">
         <div className={`text-sm font-semibold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
           {performer.playerName}
         </div>
-        <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+        <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
           {performer.statLine || '—'}
         </div>
       </div>
       <div className="text-right flex-shrink-0">
         <div className="text-sm font-bold text-emerald-500">{performer.fantasyPoints.toFixed(1)}</div>
-        <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>PTS</div>
+        <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>PTS</div>
       </div>
     </div>
   );
@@ -128,18 +128,18 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
-      <div className={`border rounded-lg p-8 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+      <div className={`border rounded-lg p-8 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Calendar className="w-5 h-5 text-blue-500" />
-              <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {week != null ? `${weekLabel || `Week ${week}`}` : 'NFL Schedule'}
               </span>
               <select
                 value={selectedWeek ?? ''}
                 onChange={(e) => setSelectedWeek(e.target.value ? parseInt(e.target.value, 10) : undefined)}
-                className={`ml-2 rounded px-2 py-1 text-sm border ${isDarkMode ? 'bg-[#1a1a1a] border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                className={`ml-2 rounded px-2 py-1 text-sm border ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
               >
                 <option value="">Current week</option>
                 {Array.from({ length: 18 }, (_, i) => i + 1).map((w) => (
@@ -148,7 +148,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
               </select>
             </div>
             <h1 className={`text-3xl mb-2 font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>NFL Game Slate</h1>
-            <p className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>
+            <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
               {allFinal
                 ? 'Final scores and top fantasy performers'
                 : allScheduled
@@ -156,12 +156,12 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                   : 'Matchups with Vegas lines, spreads & projected weather'}
             </p>
           </div>
-          <div className={`rounded-lg px-6 py-4 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-            <div className={`text-xs mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Total Games</div>
+          <div className={`rounded-lg px-6 py-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+            <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Total Games</div>
             <div className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               {isLoading ? '—' : displayGames.length}
             </div>
-            <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>This Week</div>
+            <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>This Week</div>
           </div>
         </div>
       </div>
@@ -179,12 +179,12 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
       )}
 
       {isLoading ? (
-        <div className={`flex items-center justify-center py-24 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+        <div className={`flex items-center justify-center py-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
           <Loader2 className="w-8 h-8 animate-spin mr-2" />
           Loading games…
         </div>
       ) : displayGames.length === 0 ? (
-        <div className={`flex flex-col items-center justify-center py-24 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+        <div className={`flex flex-col items-center justify-center py-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
           <Calendar className="w-12 h-12 mb-4 opacity-40" />
           <p className="text-lg font-semibold mb-1">No games scheduled</p>
           <p className="text-sm opacity-70">There are no games listed for this week. Check back closer to game day.</p>
@@ -200,13 +200,13 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
           <div
             key={game.id}
             onClick={() => handleGameClick(game, espnGames[idx])}
-            className={`rounded-lg border overflow-hidden hover:shadow-lg transition-all cursor-pointer hover:border-blue-500 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}
+            className={`rounded-lg border overflow-hidden hover:shadow-lg transition-all cursor-pointer hover:border-blue-500 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
           >
             {/* Game Header */}
-            <div className={`px-6 py-3 border-b flex items-center justify-between ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+            <div className={`px-6 py-3 border-b flex items-center justify-between ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
               <div className="flex items-center gap-2">
-                <Calendar className={`w-4 h-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} />
-                <span className={`text-sm ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>{game.gameTimeFormatted}</span>
+                <Calendar className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+                <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{game.gameTimeFormatted}</span>
               </div>
               <div className="flex items-center gap-2">
                 {isFinal && (
@@ -219,7 +219,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                     LIVE
                   </span>
                 )}
-                <span className={`text-xs px-2 py-1 rounded border ${isDarkMode ? 'text-[#a3a3a3] bg-slate-700 border-slate-600' : 'text-slate-600 bg-slate-100 border-slate-200'}`}>
+                <span className={`text-xs px-2 py-1 rounded border ${isDarkMode ? 'text-slate-300 bg-slate-700 border-slate-600' : 'text-slate-600 bg-slate-100 border-slate-200'}`}>
                   {game.tvNetwork}
                 </span>
               </div>
@@ -228,33 +228,33 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
             {/* Teams */}
             <div className="p-6">
               {/* Away Team */}
-              <div className={`flex items-center justify-between mb-4 pb-4 border-b ${isDarkMode ? 'border-[#161616]' : 'border-slate-100'}`}>
+              <div className={`flex items-center justify-between mb-4 pb-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                 <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-200'}`}>
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                     <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeamLogo}</span>
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className={`font-bold ${winner === 'away' ? (isDarkMode ? 'text-white' : 'text-slate-900') : isFinal && winner !== 'tie' ? (isDarkMode ? 'text-[#555]' : 'text-[#737373]') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                      <span className={`font-bold ${winner === 'away' ? (isDarkMode ? 'text-white' : 'text-slate-900') : isFinal && winner !== 'tie' ? (isDarkMode ? 'text-slate-500' : 'text-slate-400') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                         {game.awayTeam}
                       </span>
                       {winner === 'away' && (
                         <CheckCircle className="w-4 h-4 text-emerald-500" />
                       )}
                     </div>
-                    <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Away</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Away</div>
                   </div>
                 </div>
                 <div className="text-right flex items-center gap-3">
                   {(isFinal || game.status === 'in_progress') && game.awayScore != null && (
-                    <div className={`text-2xl font-bold ${winner === 'away' || winner === 'tie' || game.status === 'in_progress' ? (isDarkMode ? 'text-white' : 'text-slate-900') : (isDarkMode ? 'text-[#555]' : 'text-[#737373]')}`}>
+                    <div className={`text-2xl font-bold ${winner === 'away' || winner === 'tie' || game.status === 'in_progress' ? (isDarkMode ? 'text-white' : 'text-slate-900') : (isDarkMode ? 'text-slate-500' : 'text-slate-400')}`}>
                       {game.awayScore}
                     </div>
                   )}
                   {game.favoredTeam === 'away' && game.status === 'scheduled' && game.spread != null && (
                     <div>
                       <div className="text-sm font-bold text-green-500">-{game.spread}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Favored</div>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
                     </div>
                   )}
                 </div>
@@ -263,31 +263,31 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
               {/* Home Team */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-200'}`}>
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                     <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.homeTeamLogo}</span>
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className={`font-bold ${winner === 'home' ? (isDarkMode ? 'text-white' : 'text-slate-900') : isFinal && winner !== 'tie' ? (isDarkMode ? 'text-[#555]' : 'text-[#737373]') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                      <span className={`font-bold ${winner === 'home' ? (isDarkMode ? 'text-white' : 'text-slate-900') : isFinal && winner !== 'tie' ? (isDarkMode ? 'text-slate-500' : 'text-slate-400') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                         {game.homeTeam}
                       </span>
                       {winner === 'home' && (
                         <CheckCircle className="w-4 h-4 text-emerald-500" />
                       )}
                     </div>
-                    <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Home</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Home</div>
                   </div>
                 </div>
                 <div className="text-right flex items-center gap-3">
                   {(isFinal || game.status === 'in_progress') && game.homeScore != null && (
-                    <div className={`text-2xl font-bold ${winner === 'home' || winner === 'tie' || game.status === 'in_progress' ? (isDarkMode ? 'text-white' : 'text-slate-900') : (isDarkMode ? 'text-[#555]' : 'text-[#737373]')}`}>
+                    <div className={`text-2xl font-bold ${winner === 'home' || winner === 'tie' || game.status === 'in_progress' ? (isDarkMode ? 'text-white' : 'text-slate-900') : (isDarkMode ? 'text-slate-500' : 'text-slate-400')}`}>
                       {game.homeScore}
                     </div>
                   )}
                   {game.favoredTeam === 'home' && game.status === 'scheduled' && game.spread != null && (
                     <div>
                       <div className="text-sm font-bold text-green-500">-{game.spread}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Favored</div>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
                     </div>
                   )}
                 </div>
@@ -307,8 +307,8 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
               {/* Bottom section: Top Performers / Spread+OU / Final Score Summary */}
               {isFinal && hasTopPerformers ? (
                 /* Final game WITH top performers */
-                <div className={`rounded-lg p-4 mt-4 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                  <div className={`text-xs font-semibold mb-3 uppercase tracking-wide flex items-center gap-1.5 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <div className={`rounded-lg p-4 mt-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className={`text-xs font-semibold mb-3 uppercase tracking-wide flex items-center gap-1.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     <Star className="w-3 h-3" />
                     Top Performers
                   </div>
@@ -317,7 +317,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                       <TopPerformerDisplay performer={game.topPerformers!.away} isDarkMode={isDarkMode} />
                     )}
                     {game.topPerformers!.home && game.topPerformers!.away && (
-                      <div className={`border-t ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`} />
+                      <div className={`border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
                     )}
                     {game.topPerformers!.home && (
                       <TopPerformerDisplay performer={game.topPerformers!.home} isDarkMode={isDarkMode} />
@@ -326,10 +326,10 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                 </div>
               ) : isFinal ? (
                 /* Final game WITHOUT top performers — show score summary with spread result */
-                <div className={`rounded-lg p-4 mt-4 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                <div className={`rounded-lg p-4 mt-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <div className={`text-xs mb-1 flex items-center gap-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                      <div className={`text-xs mb-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         <Trophy className="w-3 h-3" />
                         Final Score
                       </div>
@@ -339,11 +339,11 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                     </div>
                     {game.spread != null && (
                       <div>
-                        <div className={`text-xs mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Closing Line</div>
+                        <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Closing Line</div>
                         <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                           {game.favoredTeam === 'home' ? game.homeTeamLogo : game.awayTeamLogo} -{game.spread}
                           {game.overUnder != null && (
-                            <span className={`ml-2 font-normal ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                            <span className={`ml-2 font-normal ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                               O/U {game.overUnder}
                             </span>
                           )}
@@ -354,10 +354,10 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                 </div>
               ) : (
                 /* Scheduled/In-progress — show betting lines */
-                <div className={`rounded-lg p-4 mt-4 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                <div className={`rounded-lg p-4 mt-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <div className={`text-xs mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Spread</div>
+                      <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Spread</div>
                       <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                         {game.spread != null
                           ? `${game.favoredTeam === 'home' ? game.homeTeamLogo : game.awayTeamLogo} -${game.spread}`
@@ -365,7 +365,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                       </div>
                     </div>
                     <div>
-                      <div className={`text-xs mb-1 flex items-center gap-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                      <div className={`text-xs mb-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         <TrendingUp className="w-3 h-3" />
                         Over/Under
                       </div>
@@ -384,7 +384,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
       )}
 
       {/* Info Footer — contextual based on whether games are final or scheduled */}
-      <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+      <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="flex items-start gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
             {allFinal ? <Trophy className="w-4 h-4 text-white" /> : <TrendingUp className="w-4 h-4 text-white" />}
@@ -393,7 +393,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
             <h3 className={`font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               {allFinal ? 'Week Results' : 'How to Use This Information'}
             </h3>
-            <p className={`text-sm ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+            <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
               {allFinal
                 ? 'Top performers show the highest-scoring fantasy player from each team. Use this to spot breakout performances and evaluate player trends.'
                 : 'The spread indicates the favored team and by how many points. Over/Under represents the total combined points expected in the game. Use these lines to identify high-scoring game environments for your fantasy players.'}

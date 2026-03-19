@@ -55,7 +55,7 @@ export const PlayerAvatar = memo(function PlayerAvatar({
     );
   }
 
-  const colorClass = fallbackColorClass ?? (isDarkMode ? 'text-[#737373]' : 'text-[#555]');
+  const colorClass = fallbackColorClass ?? (isDarkMode ? 'text-slate-400' : 'text-slate-500');
   return (
     <span
       role="img"

@@ -312,7 +312,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
       case 'sleeper': return 'bg-blue-500/20 text-blue-500';
       case 'espn': return 'bg-red-500/20 text-red-500';
       case 'yahoo': return 'bg-purple-500/20 text-purple-500';
-      default: return isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3]' : 'bg-slate-200 text-slate-600';
+      default: return isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-600';
     }
   };
 
@@ -321,15 +321,15 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
       {/* Header */}
       <div>
         <h1 className={`text-3xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Settings</h1>
-        <p className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Manage your connected leagues and application preferences</p>
+        <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Manage your connected leagues and application preferences</p>
       </div>
 
       {/* Connected Leagues */}
-      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <div>
             <h2 className={`text-lg font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Connected Leagues</h2>
-            <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Manage your fantasy league connections</p>
+            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Manage your fantasy league connections</p>
           </div>
           <button
             onClick={() => setShowConnectModal(true)}
@@ -358,7 +358,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
             </div>
           ) : leagues.length === 0 ? (
-            <div className={`text-center py-8 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+            <div className={`text-center py-8 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               <Globe className="w-12 h-12 mx-auto mb-3 opacity-50" aria-hidden="true" />
               <p className="text-sm">No leagues connected yet.</p>
               <p className="text-xs mt-1">Click "Connect League" to get started.</p>
@@ -366,14 +366,14 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
           ) : (
             <div className="space-y-4">
               {leagues.map((league) => (
-                <div key={league.id} className={`rounded-lg p-4 border flex items-center justify-between ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                <div key={league.id} className={`rounded-lg p-4 border flex items-center justify-between ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${getPlatformColor(league.platform)}`}>
                       <Globe className="w-5 h-5" aria-hidden="true" />
                     </div>
                     <div>
                       <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{league.name}</div>
-                      <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                      <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {league.platform ? league.platform.charAt(0).toUpperCase() + league.platform.slice(1) : 'FilmRoom'} • {league.seasonYear} • {league.teamCount} Teams • {league.scoringFormat.toUpperCase()}
                       </div>
                     </div>
@@ -390,7 +390,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                       className={`text-sm px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 ${
                         syncingLeagueId === league.id
                           ? 'text-blue-500 bg-blue-500/10'
-                          : isDarkMode ? 'text-[#737373] hover:text-white hover:bg-[#1a1a1a]' : 'text-[#555] hover:text-slate-900 hover:bg-slate-200'
+                          : isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200'
                       } disabled:cursor-not-allowed`}
                     >
                       {syncingLeagueId === league.id ? (
@@ -426,10 +426,10 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
       </div>
 
       {/* Application Preferences */}
-      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <h2 className={`text-lg font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Application Preferences</h2>
-          <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Customize your FilmRoom experience</p>
+          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Customize your FilmRoom experience</p>
         </div>
 
         <div className="p-6 space-y-6">
@@ -443,13 +443,13 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
           <div className="flex items-center justify-between">
             <div>
               <label htmlFor="scoring-format" className={`font-medium mb-1 block ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Default Scoring Format</label>
-              <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Set your preferred scoring for projections</div>
+              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Set your preferred scoring for projections</div>
             </div>
             <select
               id="scoring-format"
               value={preferredScoring}
               onChange={(e) => handleUpdatePreference({ preferredScoring: e.target.value as ScoringFormat })}
-              className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 ${isDarkMode ? 'bg-[#1a1a1a] border-[#222] text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+              className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
             >
               {SCORING_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -460,7 +460,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
           <div className="flex items-center justify-between">
             <div>
               <div id="notifications-label" className={`font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Notifications</div>
-              <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Receive alerts for injuries and lineup changes</div>
+              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Receive alerts for injuries and lineup changes</div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -472,14 +472,14 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                 role="switch"
                 aria-checked={notificationsEnabled}
               />
-              <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-300'}`}></div>
+              <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-300'}`}></div>
             </label>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
               <div id="darkmode-label" className={`font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Dark Mode</div>
-              <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Toggle dark mode appearance</div>
+              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Toggle dark mode appearance</div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -491,7 +491,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                 role="switch"
                 aria-checked={isDarkMode}
               />
-              <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-300'}`}></div>
+              <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-300'}`}></div>
             </label>
           </div>
         </div>
@@ -511,13 +511,13 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
             role="dialog"
             aria-modal="true"
             aria-labelledby="connect-league-title"
-            className={`rounded-lg max-w-lg w-full overflow-hidden shadow-2xl ${isDarkMode ? 'bg-[#111] border border-[#222]' : 'bg-white border border-slate-200'}`}
+            className={`rounded-lg max-w-lg w-full overflow-hidden shadow-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}
           >
             {/* Modal Header */}
-            <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+            <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <div>
                 <h3 id="connect-league-title" className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Connect League</h3>
-                <p className={`text-sm mt-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <p className={`text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   {connectionStep === 'select-platform' && 'Select your fantasy platform'}
                   {connectionStep === 'sleeper-username' && 'Enter your Sleeper username'}
                   {connectionStep === 'sleeper-leagues' && 'Select a league to connect'}
@@ -530,9 +530,9 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               <button
                 onClick={handleCloseModal}
                 aria-label="Close dialog"
-                className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-[#1a1a1a]' : 'hover:bg-slate-100'}`}
+                className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
               >
-                <X className={`w-5 h-5 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} aria-hidden="true" />
+                <X className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} aria-hidden="true" />
               </button>
             </div>
 
@@ -557,7 +557,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                         }}
                         className={`flex flex-col items-center justify-center p-4 border rounded-lg transition-all group ${
                           isDarkMode
-                            ? 'bg-[#1a1a1a] border-[#222] hover:border-blue-500'
+                            ? 'bg-slate-800 border-slate-700 hover:border-blue-500'
                             : 'bg-slate-50 border-slate-200 hover:border-blue-500'
                         }`}
                       >
@@ -565,7 +565,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                           <Globe className="w-6 h-6" />
                         </div>
                         <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{platform.name}</span>
-                        <span className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{platform.description}</span>
+                        <span className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{platform.description}</span>
                       </button>
                     ))}
                   </div>
@@ -576,7 +576,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               {connectionStep === 'sleeper-username' && (
                 <div className="space-y-4">
                   <div>
-                    <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>
+                    <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       Sleeper Username
                     </label>
                     <input
@@ -585,7 +585,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                       onChange={(e) => setSleeperUsername(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleFetchSleeperLeagues()}
                       placeholder="Enter your Sleeper username"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-[#1a1a1a] border-[#222] text-white placeholder-[#555]' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'}`}
                     />
                   </div>
 
@@ -599,7 +599,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                   <div className="flex gap-3">
                     <button
                       onClick={() => setConnectionStep('select-platform')}
-                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
                     >
                       Back
                     </button>
@@ -614,10 +614,10 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                   </div>
 
                   {/* Manual League ID option */}
-                  <div className={`pt-4 border-t ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+                  <div className={`pt-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                     <button
                       onClick={() => setConnectionStep('enter-league-id')}
-                      className={`w-full text-sm text-center ${isDarkMode ? 'text-[#737373] hover:text-white' : 'text-[#555] hover:text-slate-900'}`}
+                      className={`w-full text-sm text-center ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                     >
                       Or enter League ID directly →
                     </button>
@@ -639,13 +639,13 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                           className={`w-full p-4 border rounded-lg text-left transition-all relative ${
                             isThisConnecting
                               ? (isDarkMode ? 'bg-blue-500/10 border-blue-500 ring-1 ring-blue-500/50' : 'bg-blue-50 border-blue-500 ring-1 ring-blue-500/50')
-                              : (isDarkMode ? 'bg-[#1a1a1a] border-[#222] hover:border-blue-500' : 'bg-slate-50 border-slate-200 hover:border-blue-500')
+                              : (isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-blue-500' : 'bg-slate-50 border-slate-200 hover:border-blue-500')
                           } ${connecting && !isThisConnecting ? 'opacity-40 cursor-not-allowed' : ''}`}
                         >
                           <div className="flex items-center justify-between">
                             <div>
                               <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{league.name}</div>
-                              <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                                 {league.seasonYear} • {league.teamCount} Teams • {league.scoringFormat.toUpperCase()}
                               </div>
                             </div>
@@ -670,7 +670,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
                   <button
                     onClick={() => setConnectionStep('sleeper-username')}
-                    className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                    className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
                   >
                     Back
                   </button>
@@ -681,7 +681,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               {connectionStep === 'enter-league-id' && (
                 <div className="space-y-4">
                   <div>
-                    <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}`}>
+                    <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       League ID
                     </label>
                     <input
@@ -690,9 +690,9 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                       onChange={(e) => setManualLeagueId(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleFetchLeagueById()}
                       placeholder={`Enter your ${selectedPlatform?.toUpperCase() || ''} league ID`}
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-[#1a1a1a] border-[#222] text-white placeholder-[#555]' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'}`}
                     />
-                    <p className={`text-xs mt-2 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                    <p className={`text-xs mt-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                       {selectedPlatform === 'sleeper' && 'Find your league ID in the Sleeper app under League Settings'}
                       {selectedPlatform === 'espn' && 'Find your league ID in the URL: fantasy.espn.com/football/league?leagueId=XXXXXX'}
                       {selectedPlatform === 'yahoo' && 'Find your league ID in the URL: football.fantasysports.yahoo.com/f1/XXXXXX'}
@@ -709,7 +709,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                   <div className="flex gap-3">
                     <button
                       onClick={() => setConnectionStep(selectedPlatform === 'sleeper' ? 'sleeper-username' : 'select-platform')}
-                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
                     >
                       Back
                     </button>
@@ -729,10 +729,10 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               {connectionStep === 'yahoo-connecting' && (
                 <div className="flex flex-col items-center justify-center py-8 space-y-4">
                   <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
-                  <p className={isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700'}>
+                  <p className={isDarkMode ? 'text-slate-300' : 'text-slate-700'}>
                     Waiting for Yahoo authorization...
                   </p>
-                  <p className={`text-sm ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                  <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                     Complete the sign-in in the popup window.
                   </p>
                 </div>
@@ -757,13 +757,13 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                             className={`w-full p-4 border rounded-lg text-left transition-all ${
                               isThisConnecting
                                 ? (isDarkMode ? 'bg-purple-500/10 border-purple-500 ring-1 ring-purple-500/50' : 'bg-purple-50 border-purple-500 ring-1 ring-purple-500/50')
-                                : (isDarkMode ? 'bg-[#1a1a1a] border-[#222] hover:border-purple-500' : 'bg-slate-50 border-slate-200 hover:border-purple-500')
+                                : (isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-purple-500' : 'bg-slate-50 border-slate-200 hover:border-purple-500')
                             } ${connecting && !isThisConnecting ? 'opacity-40 cursor-not-allowed' : ''}`}
                           >
                             <div className="flex items-center justify-between">
                               <div>
                                 <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{league.name}</div>
-                                <div className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                                <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                                   {league.seasonYear} • {league.teamCount} Teams • {league.scoringFormat.toUpperCase()}
                                 </div>
                               </div>
@@ -796,7 +796,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
                   <button
                     onClick={() => setConnectionStep('select-platform')}
-                    className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                    className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
                   >
                     Back
                   </button>
@@ -806,11 +806,11 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               {/* Confirm Connection */}
               {connectionStep === 'confirm' && fetchedLeague && (
                 <div className="space-y-4">
-                  <div className={`p-4 border rounded-lg ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className={`p-4 border rounded-lg ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                     <div className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       {fetchedLeague.name}
                     </div>
-                    <div className={`text-sm space-y-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                    <div className={`text-sm space-y-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       <p>Platform: {fetchedLeague.platform.charAt(0).toUpperCase() + fetchedLeague.platform.slice(1)}</p>
                       <p>Season: {fetchedLeague.seasonYear}</p>
                       <p>Teams: {fetchedLeague.teamCount}</p>
@@ -828,7 +828,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                   <div className="flex gap-3">
                     <button
                       onClick={() => setConnectionStep('enter-league-id')}
-                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-[#1a1a1a] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
                     >
                       Back
                     </button>
@@ -847,10 +847,10 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
             {/* Info Banner */}
             {connectionStep === 'select-platform' && (
-              <div className={`p-4 border-t ${isDarkMode ? 'bg-[#0a0a0a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+              <div className={`p-4 border-t ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                 <div className="flex items-start gap-3">
                   <AlertCircle className={`w-5 h-5 flex-shrink-0 ${isDarkMode ? 'text-blue-400' : 'text-blue-500'}`} aria-hidden="true" />
-                  <p className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                  <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     By connecting your league, FilmRoom will access your roster, matchups, and league settings to provide personalized insights. Your data is never shared.
                   </p>
                 </div>

@@ -51,7 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
-          <div className={`max-w-md w-full rounded-lg border p-8 text-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`max-w-md w-full rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/10 flex items-center justify-center" role="alert">
               <AlertTriangle className="w-8 h-8 text-red-500" aria-hidden="true" />
             </div>
@@ -60,7 +60,7 @@ export class ErrorBoundary extends Component<Props, State> {
               Something went wrong
             </h1>
 
-            <p className={`text-sm mb-6 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+            <p className={`text-sm mb-6 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               We encountered an unexpected error. Please try refreshing the page.
             </p>
 

@@ -72,9 +72,9 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
   }, [league?.id, currentWeek, seasonYear]);
 
   return (
-    <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+    <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
       <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Biggest Movers (Week {currentWeek})</h3>
-      <p className={`text-sm mb-6 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+      <p className={`text-sm mb-6 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
         Players whose projections have moved the most.
       </p>
 
@@ -87,7 +87,7 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
           <p className="text-sm">{error || 'Failed to load projection movers'}</p>
         </div>
       ) : moversData.length === 0 ? (
-        <div className={`text-center py-8 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+        <div className={`text-center py-8 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
           <p className="text-sm">No projection movement this week</p>
           <p className="text-xs mt-1">Sync your league to import projections.</p>
         </div>
@@ -96,14 +96,14 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
           {moversData.map((mover, index) => (
             <div
               key={`${mover.name}-${mover.team}-${index}`}
-              className={`flex items-center justify-between p-4 rounded-lg border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}
+              className={`flex items-center justify-between p-4 rounded-lg border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
             >
               <div className="flex-1">
                 <div className={`text-sm mb-1 font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{mover.name}</div>
-                <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   {mover.team}{mover.position ? ` · ${mover.position}` : ''}
                 </div>
-                <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   {(mover.movement ?? 0) !== 0
                     ? `${(mover.previousProjectedPoints ?? 0).toFixed(1)} → ${(mover.projectedPoints ?? 0).toFixed(1)} PPR (${(mover.movement ?? 0) >= 0 ? '+' : ''}${(mover.movement ?? 0).toFixed(1)})`
                     : `Proj: ${(mover.projectedPoints ?? 0).toFixed(1)} PPR`}

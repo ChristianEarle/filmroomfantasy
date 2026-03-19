@@ -43,9 +43,9 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
         />
       )}
 
-      <aside className={`w-64 border-r z-50 ${mobileOpen ? 'sidebar-open' : 'sidebar-responsive'} ${isDarkMode ? 'bg-[#0a0a0a] border-[#222]' : 'bg-white border-slate-200'}`}>
+      <aside className={`w-64 border-r z-50 ${mobileOpen ? 'sidebar-open' : 'sidebar-responsive'} ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Logo */}
-        <div className={`h-16 flex items-center px-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+        <div className={`h-16 flex items-center px-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <LayoutDashboard className="w-5 h-5 text-white" />
@@ -65,7 +65,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
                     item.view === activeView
                       ? 'bg-blue-600 text-white shadow-sm'
                       : isDarkMode
-                        ? 'text-[#737373] hover:bg-[#1a1a1a] hover:text-white'
+                        ? 'text-slate-400 hover:bg-slate-800 hover:text-white'
                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
                 >

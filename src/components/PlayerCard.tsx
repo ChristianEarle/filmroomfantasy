@@ -69,8 +69,8 @@ function formatTimeAgo(dateString: string | Date): string {
 }
 
 // Neutral text and border for stat tables (no green/red coloring)
-const statText = (isDarkMode: boolean) => isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600';
-const statMuted = (isDarkMode: boolean) => isDarkMode ? 'text-[#737373]' : 'text-[#555]';
+const statText = (isDarkMode: boolean) => isDarkMode ? 'text-slate-300' : 'text-slate-600';
+const statMuted = (isDarkMode: boolean) => isDarkMode ? 'text-slate-400' : 'text-slate-500';
 const colBorder = (isDarkMode: boolean) => isDarkMode ? 'border-r border-slate-600' : 'border-r border-slate-200';
 
 export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeasonYear, currentWeek: propsCurrentWeek, scoringFormat: propsScoringFormat }: PlayerCardProps) {
@@ -302,7 +302,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
   return (
     <div
-      className={`fixed inset-0 backdrop-blur-sm z-[100] flex items-start justify-center overflow-y-auto p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-[#0a0a0a]/80' : 'bg-[#111]/50'} ${
+      className={`fixed inset-0 backdrop-blur-sm z-[100] flex items-start justify-center overflow-y-auto p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-900/50'} ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
@@ -314,30 +314,30 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
         <div className="mb-4 flex items-center justify-between">
           <button
             onClick={handleClose}
-            className={`flex items-center gap-2 transition-colors group ${isDarkMode ? 'text-[#737373] hover:text-white' : 'text-[#555] hover:text-slate-900'}`}
+            className={`flex items-center gap-2 transition-colors group ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             <span className="text-sm">Back</span>
-            <span className={isDarkMode ? 'text-slate-600' : 'text-[#737373]'}>/</span>
-            <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Player Card</span>
+            <span className={isDarkMode ? 'text-slate-600' : 'text-slate-400'}>/</span>
+            <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Player Card</span>
           </button>
           <button
             onClick={handleClose}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isDarkMode ? 'bg-[#1a1a1a] hover:bg-slate-700' : 'bg-white hover:bg-slate-100 border border-slate-200'}`}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-white hover:bg-slate-100 border border-slate-200'}`}
           >
-            <X className={`w-4 h-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} />
+            <X className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
           </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Card */}
-          <div className={`lg:col-span-2 rounded-lg border overflow-hidden shadow-2xl ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`lg:col-span-2 rounded-lg border overflow-hidden shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             {/* Player Header */}
-            <div className={`p-6 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-[#222]' : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'}`}>
+            <div className={`p-6 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700' : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'}`}>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
-                  <div className={`w-24 aspect-[3/4] flex-shrink-0 rounded-lg flex items-center justify-center border shadow-lg overflow-hidden ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-200'}`}>
-                    <span className={`text-xl font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                  <div className={`w-24 aspect-[3/4] flex-shrink-0 rounded-lg flex items-center justify-center border shadow-lg overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                    <span className={`text-xl font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                   </div>
                   <div>
                     <div className="flex items-center gap-4 mb-1">
@@ -352,12 +352,12 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                         </span>
                       )}
                     </div>
-                    <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.team} • {player.position}{propsCurrentWeek ? ` • Week ${propsCurrentWeek}` : ''}</p>
+                    <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.team} • {player.position}{propsCurrentWeek ? ` • Week ${propsCurrentWeek}` : ''}</p>
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <div className={`text-xs mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Projection ({scoringLabel})</div>
+                  <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Projection ({scoringLabel})</div>
                   <div className={`text-4xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints ?? '—'}</div>
                   <div className={`text-sm mt-1 flex items-center gap-1 justify-end ${
                     (player.weekChange ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
@@ -374,21 +374,21 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             </div>
 
             {/* News Section */}
-            <div className={`p-4 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+            <div className={`p-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <div className="flex items-center gap-2 mb-3">
-                <svg className={`w-4 h-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} viewBox="0 0 24 24" fill="currentColor">
+                <svg className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} viewBox="0 0 24 24" fill="currentColor">
                   <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
                 </svg>
-                <span className={`text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Latest News</span>
+                <span className={`text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Latest News</span>
               </div>
               {newsLoading ? (
                 <div className="space-y-3">
                   {[1, 2].map((i) => (
-                    <div key={i} className={`animate-pulse ${isDarkMode ? 'bg-[#1a1a1a]' : 'bg-slate-100'} rounded-lg h-16`} />
+                    <div key={i} className={`animate-pulse ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'} rounded-lg h-16`} />
                   ))}
                 </div>
               ) : news.length === 0 ? (
-                <p className={`text-sm ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>No recent news</p>
+                <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>No recent news</p>
               ) : (
                 <div className="space-y-3">
                   {news.slice(0, 3).map((item, index) => (
@@ -398,12 +398,12 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                           <span className={`text-xs font-medium ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                             {item.source || 'News'}
                           </span>
-                          <span className={`text-xs flex items-center gap-1 ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>
+                          <span className={`text-xs flex items-center gap-1 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                             <Clock className="w-3 h-3" />
                             {formatTimeAgo(item.publishedAt)}
                           </span>
                         </div>
-                        <p className={`text-sm leading-relaxed ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+                        <p className={`text-sm leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           <NewsSnippet item={item} />
                         </p>
                       </div>
@@ -414,7 +414,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             </div>
 
             {/* Tabs */}
-            <div className={`flex border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+            <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               {(['props', 'breakdown', 'history'] as const).map((tab) => (
                 <button
                   key={tab}
@@ -422,7 +422,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
                     activeTab === tab
                       ? isDarkMode ? 'text-white' : 'text-slate-900'
-                      : isDarkMode ? 'text-[#737373] hover:text-[#a3a3a3]' : 'text-[#555] hover:text-slate-700'
+                      : isDarkMode ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   {tab === 'props' && 'Props'}
@@ -442,10 +442,10 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   <div className="flex items-center justify-between mb-4">
                     <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Vegas Prop Lines</h3>
                   </div>
-                  <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                    <div className={`text-3xl mb-3 ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`}>📊</div>
+                  <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className={`text-3xl mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>📊</div>
                     <p className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Props Coming Soon</p>
-                    <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Live Vegas prop lines will be available in a future update. Check the History tab for real performance data.</p>
+                    <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Live Vegas prop lines will be available in a future update. Check the History tab for real performance data.</p>
                   </div>
                 </div>
               )}
@@ -460,8 +460,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                 };
 
                 const BreakdownRow = ({ label, value }: { label: string; value: string }) => (
-                  <div className={`flex items-center justify-between py-2 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
-                    <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{label}</span>
+                  <div className={`flex items-center justify-between py-2 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                    <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{label}</span>
                     <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{value}</span>
                   </div>
                 );
@@ -470,12 +470,12 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                 <div className="space-y-4">
                   <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Season Averages</h3>
                   {!weeklyStats || gp === 0 ? (
-                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                      <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{statsLoading ? 'Loading stats...' : 'No stats available to compute averages.'}</p>
+                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{statsLoading ? 'Loading stats...' : 'No stats available to compute averages.'}</p>
                     </div>
                   ) : (
-                  <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                    <p className={`text-xs mb-3 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>Per-game averages based on {gp} games played</p>
+                  <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                    <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Per-game averages based on {gp} games played</p>
                     <div className="space-y-0">
                       {player.position === 'QB' ? (
                         <>
@@ -562,37 +562,37 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                     return (
                   <div>
                     <h3 className={`font-bold mb-3 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Season Stats</h3>
-                    <p className={`text-xs mb-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Year-over-year totals</p>
-                    <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                    <p className={`text-xs mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Year-over-year totals</p>
+                    <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm min-w-[500px]">
                           {player.position === 'QB' ? (
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Season</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Fantasy</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={5}>Passing</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Rushing</th>
+                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Season</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Fantasy</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={5}>Passing</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Rushing</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
                                   <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>YR</th>
-                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TM</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>GP</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>AVG</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>SNAP%</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>CMP</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>ATT</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>INT</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
+                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TM</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>GP</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>AVG</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>SNAP%</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>CMP</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>ATT</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>INT</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                   <td className={`px-4 py-3 font-semibold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>'{(weeklyStats[0]?.seasonYear ?? new Date().getFullYear()).toString().slice(2)}</td>
                                   <td className={`px-4 py-3 font-medium ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{player.team}</td>
                                   <td className={`px-4 py-3 text-center font-bold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tot.fpts.toFixed(1)}</td>
@@ -613,26 +613,26 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}></th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Fantasy</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={4}>Field Goals</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Extra Pts</th>
+                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Fantasy</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={4}>Field Goals</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Extra Pts</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
                                   <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>YR</th>
-                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TM</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>G</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FGM</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FGA</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FG%</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>LNG</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>XPM</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>XPA</th>
+                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TM</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>G</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FGM</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FGA</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FG%</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>LNG</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>XPM</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>XPA</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                   <td className={`px-4 py-3 font-semibold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>'{(weeklyStats[0]?.seasonYear ?? new Date().getFullYear()).toString().slice(2)}</td>
                                   <td className={`px-4 py-3 font-medium ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{player.team}</td>
                                   <td className={`px-4 py-3 text-center font-bold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tot.fpts.toFixed(1)}</td>
@@ -650,24 +650,24 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}></th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Fantasy</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={5}>Defense</th>
+                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Fantasy</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={5}>Defense</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
                                   <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>YR</th>
-                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TM</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>G</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>SACK</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>INT</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FR</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>PA</th>
+                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TM</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>G</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>SACK</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>INT</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FR</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>PA</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                   <td className={`px-4 py-3 font-semibold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>'{(weeklyStats[0]?.seasonYear ?? new Date().getFullYear()).toString().slice(2)}</td>
                                   <td className={`px-4 py-3 font-medium ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{player.team}</td>
                                   <td className={`px-4 py-3 text-center font-bold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tot.fpts.toFixed(1)}</td>
@@ -684,29 +684,29 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}></th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={3}>Fantasy</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={5}>Receiving</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={3}>Rushing</th>
+                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Fantasy</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={5}>Receiving</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Rushing</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
                                   <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>YR</th>
-                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TM</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>G</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>SNAP%</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TGT</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>REC</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Y/R</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>ATT</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
+                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TM</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>G</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>SNAP%</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TGT</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>REC</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Y/R</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>ATT</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                   <td className={`px-4 py-3 font-semibold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>'{(weeklyStats[0]?.seasonYear ?? new Date().getFullYear()).toString().slice(2)}</td>
                                   <td className={`px-4 py-3 font-medium ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{player.team}</td>
                                   <td className={`px-4 py-3 text-center font-bold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tot.fpts.toFixed(1)}</td>
@@ -727,29 +727,29 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}></th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={3}>Fantasy</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={4}>Rushing</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={4}>Receiving</th>
+                                  <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Fantasy</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={4}>Rushing</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={4}>Receiving</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
                                   <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>YR</th>
-                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TM</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>G</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>SNAP%</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>ATT</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Y/A</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>REC</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Y/R</th>
-                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
+                                  <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TM</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>G</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>SNAP%</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>ATT</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Y/A</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>REC</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Y/R</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                <tr className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                   <td className={`px-4 py-3 font-semibold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>'{(weeklyStats[0]?.seasonYear ?? new Date().getFullYear()).toString().slice(2)}</td>
                                   <td className={`px-4 py-3 font-medium ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{player.team}</td>
                                   <td className={`px-4 py-3 text-center font-bold ${colBorder(isDarkMode)} ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tot.fpts.toFixed(1)}</td>
@@ -770,7 +770,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                         </table>
                       </div>
                       {/* Timeline slider */}
-                      <div className={`px-4 py-3 border-t ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+                      <div className={`px-4 py-3 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                         <div className="flex items-center gap-2">
                           <div className={`w-2 h-2 rounded-full ${isDarkMode ? 'bg-slate-600' : 'bg-slate-300'}`}></div>
                           <div className={`flex-1 h-1 rounded-full ${isDarkMode ? 'bg-gradient-to-r from-slate-600 via-slate-500 to-slate-600' : 'bg-gradient-to-r from-slate-300 via-slate-200 to-slate-300'}`}></div>
@@ -787,7 +787,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Game Logs</h3>
-                        <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Week-by-week performance</p>
+                        <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Week-by-week performance</p>
                       </div>
                       <select
                         value={selectedSeason}
@@ -795,7 +795,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                           const v = e.target.value;
                           setSelectedSeason(v === 'latest' ? 'latest' : Number(v));
                         }}
-                        className={`border rounded-lg px-3 py-2 text-sm font-medium ${isDarkMode ? 'bg-[#1a1a1a] border-slate-600 text-white' : 'bg-white border-slate-300 text-slate-900'}`}
+                        className={`border rounded-lg px-3 py-2 text-sm font-medium ${isDarkMode ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-slate-300 text-slate-900'}`}
                       >
                         <option value="latest">
                           Most recent{seasonOptions[0] ? ` (${seasonOptions[0]})` : ''}
@@ -805,7 +805,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                         ))}
                       </select>
                     </div>
-                    <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                       {apiGameLogs && apiGameLogs.length > 0 ? (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm min-w-[400px]">
@@ -813,28 +813,28 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}></th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Fantasy</th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={5}>Passing</th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Rushing</th>
+                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Fantasy</th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={5}>Passing</th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Rushing</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>WK</th>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>OPP</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FIN</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>CMP</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>ATT</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>INT</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>WK</th>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>OPP</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FIN</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>CMP</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>ATT</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>INT</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; fin: string; cmp: number; att: number; passYds: number; passTd: number; int: number; rushYds: number; rushTd: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}
@@ -856,26 +856,26 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}></th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Fantasy</th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={3}>Field Goals</th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Extra Pts</th>
+                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Fantasy</th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Field Goals</th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Extra Pts</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>WK</th>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>OPP</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FIN</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FGM</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FGA</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>LNG</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>XPM</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>XPA</th>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>WK</th>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>OPP</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FIN</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FGM</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FGA</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>LNG</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>XPM</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>XPA</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; fin: string; fgm: number; fga: number; lng: number; xpm: number; xpa: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}
@@ -895,25 +895,25 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}></th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}>Fantasy</th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={5}>Defense</th>
+                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}>Fantasy</th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={5}>Defense</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>WK</th>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>OPP</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FIN</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>SACK</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>INT</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FR</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>PA</th>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>WK</th>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>OPP</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FIN</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>SACK</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>INT</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FR</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>PA</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; fin: string; sack: number; int: number; fr: number; td: number; pa: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}
@@ -933,29 +933,29 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}></th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={3}>Fantasy</th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={4}>Receiving</th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={3}>Rushing</th>
+                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Fantasy</th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={4}>Receiving</th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Rushing</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>WK</th>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>OPP</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>SNP%</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FIN</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TGT</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>REC</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>ATT</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>WK</th>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>OPP</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>SNP%</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FIN</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TGT</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>REC</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>ATT</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; snpPct: number | null; fin: string; tgt: number; rec: number; recYds: number; recTd: number; rushAtt: number; rushYds: number; rushTd: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}
@@ -978,31 +978,31 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                             <>
                               <thead>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
-                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={2}></th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={3}>Fantasy</th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={4}>Rushing</th>
-                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} colSpan={5}>Receiving</th>
+                                  <th className={`px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Fantasy</th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={4}>Rushing</th>
+                                  <th className={`px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={5}>Receiving</th>
                                 </tr>
-                                <tr className={`border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/80' : 'border-slate-200 bg-slate-100/80'}`}>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>WK</th>
-                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>OPP</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FPTS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>SNP%</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>FIN</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>ATT</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Y/A</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TGT</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>REC</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>YDS</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Y/R</th>
-                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>TD</th>
+                                <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium w-10 ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>WK</th>
+                                  <th className={`px-3 py-2 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>OPP</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FPTS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>SNP%</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FIN</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>ATT</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Y/A</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TGT</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>REC</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Y/R</th>
+                                  <th className={`px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; snpPct: number | null; fin: string; rushAtt: number; rushYds: number; rushYpa: string | number; rushTd: number; tgt: number; rec: number; recYds: number; recYpr: string | number; recTd: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-[#222]/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}
@@ -1027,7 +1027,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                         </table>
                       </div>
                       ) : (
-                        <div className={`px-6 py-12 text-center ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                        <div className={`px-6 py-12 text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                           {statsLoading ? 'Loading...' : `No game log data available for ${typeof selectedSeason === 'number' ? selectedSeason : (seasonOptions[0] ?? 'this season')}.`}
                         </div>
                       )}
@@ -1041,7 +1041,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           {/* Right Sidebar */}
           <div className="space-y-6">
             {/* FilmRoom Insights */}
-            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center gap-2 mb-4">
                 <Zap className="w-4 h-4 text-yellow-500" />
                 <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom Insights</h3>
@@ -1051,7 +1051,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   <>
                     <div className="flex items-start gap-2">
                       <Target className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: getGradeStyle(matchupGrade).color }} />
-                      <p className={`text-sm ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                         {matchupData.opponent ? (
                           <>
                             <strong style={{ color: getGradeStyle(matchupGrade).color }}>{getMatchupGradeLabel(matchupGrade)} matchup vs {matchupData.opponent}</strong>
@@ -1068,7 +1068,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                     {matchupData.gameBreakdown && matchupData.gameBreakdown.length > 0 && (
                       <div className="flex items-start gap-2">
                         <Calendar className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
-                        <div className={`text-sm ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+                        <div className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           <span className="font-medium">Last {matchupData.gamesAnalyzed} games vs {matchupData.position}s:</span>
                           <div className="flex gap-2 mt-1.5 flex-wrap">
                             {matchupData.gameBreakdown.map((g) => (
@@ -1091,7 +1091,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                     {matchupData.ratio !== undefined && (
                       <div className="flex items-start gap-2">
                         <Star className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <p className={`text-sm ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+                        <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           {matchupData.ratio >= 1.10
                             ? <>This defense gives up <strong className="text-green-500">{Math.round((matchupData.ratio - 1) * 100)}% more</strong> than league average to {matchupData.position}s.</>
                             : matchupData.ratio <= 0.90
@@ -1104,8 +1104,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   </>
                 ) : (
                   <div className="flex items-start gap-2">
-                    <Target className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`} />
-                    <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                    <Target className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+                    <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       {matchupData === null ? 'No matchup data available.' : 'Loading matchup analysis...'}
                     </p>
                   </div>

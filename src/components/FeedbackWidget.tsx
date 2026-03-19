@@ -98,23 +98,23 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
             aria-modal="true"
             aria-labelledby="feedback-dialog-title"
             className={`relative w-full max-w-md rounded-lg shadow-2xl overflow-hidden ${
-              isDarkMode ? 'bg-[#111] border border-[#222]' : 'bg-white border border-slate-200'
+              isDarkMode ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'
             }`}
           >
             {/* Header */}
-            <div className={`p-4 border-b flex items-center justify-between ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+            <div className={`p-4 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <div>
                 <h3 id="feedback-dialog-title" className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   Send Feedback
                 </h3>
-                <p className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   Help us improve FilmRoom
                 </p>
               </div>
               <button
                 onClick={handleClose}
                 aria-label="Close feedback dialog"
-                className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-[#1a1a1a] text-[#737373]' : 'hover:bg-slate-100 text-[#555]'}`}
+                className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
               >
                 <X className="w-5 h-5" aria-hidden="true" />
               </button>
@@ -127,7 +127,7 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
                 <h4 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   Thank you!
                 </h4>
-                <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   Your feedback has been submitted.
                 </p>
               </div>
@@ -148,11 +148,11 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
                           type === ft.value
                             ? 'border-blue-500 bg-blue-500/10'
                             : isDarkMode
-                              ? 'border-[#222] hover:border-slate-600'
+                              ? 'border-slate-700 hover:border-slate-600'
                               : 'border-slate-200 hover:border-slate-300'
                         }`}
                       >
-                        <span className={type === ft.value ? 'text-blue-500' : isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>
+                        <span className={type === ft.value ? 'text-blue-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
                           {ft.icon}
                         </span>
                         <span className={`text-xs mt-1 font-medium ${
@@ -186,11 +186,11 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
                     rows={4}
                     className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none ${
                       isDarkMode
-                        ? 'bg-[#1a1a1a] border-[#222] text-white placeholder-[#555]'
+                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500'
                         : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                     }`}
                   />
-                  <p className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                  <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                     {message.length}/5000 characters
                   </p>
                 </div>
@@ -198,7 +198,7 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
                 {/* Email (optional) */}
                 <div>
                   <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                    Email <span className={isDarkMode ? 'text-[#555]' : 'text-[#737373]'}>(optional)</span>
+                    Email <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>(optional)</span>
                   </label>
                   <input
                     type="email"
@@ -207,11 +207,11 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
                     placeholder="your@email.com"
                     className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                       isDarkMode
-                        ? 'bg-[#1a1a1a] border-[#222] text-white placeholder-[#555]'
+                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500'
                         : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                     }`}
                   />
-                  <p className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                  <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                     We'll only use this to follow up if needed
                   </p>
                 </div>
@@ -246,17 +246,17 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
 
   if (embedded) {
     return (
-      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <h2 className={`text-lg font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Feedback</h2>
-          <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Help us improve FilmRoom</p>
+          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Help us improve FilmRoom</p>
         </div>
         <div className="p-6">
           {isSuccess ? (
             <div className="text-center py-4">
               <CheckCircle className="w-10 h-10 mx-auto mb-2 text-green-500" />
               <h4 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Thanks!</h4>
-              <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Your feedback has been submitted.</p>
+              <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your feedback has been submitted.</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -271,11 +271,11 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
                       type === ft.value
                         ? 'border-blue-500 bg-blue-500/10'
                         : isDarkMode
-                          ? 'border-[#222] hover:border-slate-600'
+                          ? 'border-slate-700 hover:border-slate-600'
                           : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
-                    <span className={type === ft.value ? 'text-blue-500' : isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>
+                    <span className={type === ft.value ? 'text-blue-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
                       {ft.icon}
                     </span>
                     <span className={`text-xs mt-1 font-medium ${
@@ -301,11 +301,11 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
                   rows={3}
                   className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none ${
                     isDarkMode
-                      ? 'bg-[#1a1a1a] border-[#222] text-white placeholder-[#555]'
+                      ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500'
                       : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                   }`}
                 />
-                <p className={`text-xs mt-1 text-right ${message.length > 4500 ? 'text-orange-500' : isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                <p className={`text-xs mt-1 text-right ${message.length > 4500 ? 'text-orange-500' : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   {message.length}/5000
                 </p>
               </div>
@@ -318,7 +318,7 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
                 placeholder="Email (optional — for follow-up)"
                 className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                   isDarkMode
-                    ? 'bg-[#1a1a1a] border-[#222] text-white placeholder-[#555]'
+                    ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500'
                     : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                 }`}
               />

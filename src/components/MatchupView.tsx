@@ -102,9 +102,9 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
   if (matchupLoading) {
     return (
       <div className="max-w-[1600px] mx-auto">
-        <div className={`rounded-lg border p-12 flex flex-col items-center justify-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`rounded-lg border p-12 flex flex-col items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" aria-hidden="true" aria-label="Loading matchup" />
-          <p className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Loading matchup...</p>
+          <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Loading matchup...</p>
         </div>
       </div>
     );
@@ -157,13 +157,13 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
   if (!hasValidData && !matchupLoading) {
     return (
       <div className="max-w-[1600px] mx-auto">
-        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-          <Target className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`} aria-hidden="true" />
+        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <Target className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} aria-hidden="true" />
           <h2 className={`text-xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No Matchup Data</h2>
-          <p className={`text-sm mb-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+          <p className={`text-sm mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Sync your league to import matchup data from Sleeper.
           </p>
-          <p className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+          <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             Go to Settings and click "Sync" on your league.
           </p>
         </div>
@@ -197,14 +197,14 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
       )}
 
       {/* Header Card */}
-      <div className={`rounded-lg border p-8 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+      <div className={`rounded-lg border p-8 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className={`text-2xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fantasy Matchup</h1>
-            <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Side-by-side projections and biggest edges</p>
+            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Side-by-side projections and biggest edges</p>
           </div>
           <div
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3] border-[#222]' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
             aria-label={`Current week: ${currentWeek}`}
           >
             <span className="text-sm font-medium">Week {currentWeek}</span>
@@ -212,31 +212,31 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
         </div>
 
         {/* Matchup Overview */}
-        <div className={`rounded-lg p-6 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
+        <div className={`rounded-lg p-6 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
           <div className="flex items-center justify-between mb-6">
             {/* Your Team */}
             <div className="text-center flex-1">
-              <div className={`text-sm mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>You</div>
+              <div className={`text-sm mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>You</div>
               <div className={`text-4xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{yourTotal.toFixed(1)}</div>
-              <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>Projected Points</div>
+              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Projected Points</div>
             </div>
 
             {/* VS Badge */}
             <div className="px-8">
-              <div className={`w-16 h-16 rounded-full border-2 flex items-center justify-center ${isDarkMode ? 'bg-[#111] border-slate-600' : 'bg-white border-slate-300'}`}>
-                <span className={`font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>VS</span>
+              <div className={`w-16 h-16 rounded-full border-2 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-600' : 'bg-white border-slate-300'}`}>
+                <span className={`font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>VS</span>
               </div>
             </div>
 
             {/* Opponent */}
             <div className="text-center flex-1">
-              <div className={`text-sm mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-600' : 'text-[#737373]') : (isDarkMode ? 'text-[#737373]' : 'text-[#555]')}`}>
+              <div className={`text-sm mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-600' : 'text-slate-400') : (isDarkMode ? 'text-slate-400' : 'text-slate-500')}`}>
                 {opponentName}
               </div>
-              <div className={`text-4xl font-bold mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-700' : 'text-[#a3a3a3]') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+              <div className={`text-4xl font-bold mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-700' : 'text-slate-300') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                 {hasMatchup ? opponentTotal.toFixed(1) : '-'}
               </div>
-              <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                 {hasMatchup ? 'Projected Points' : 'No opponent'}
               </div>
             </div>
@@ -247,7 +247,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
             <div className="mb-4">
               <div className="flex items-center justify-between text-xs mb-2">
                 <span className="text-blue-500 font-semibold">{winProbability.toFixed(0)}% Win</span>
-                <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>{(100 - winProbability).toFixed(0)}% Win</span>
+                <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{(100 - winProbability).toFixed(0)}% Win</span>
               </div>
               <div className={`h-3 rounded-full overflow-hidden flex ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} role="progressbar" aria-valuenow={winProbability} aria-valuemin={0} aria-valuemax={100} aria-label="Win probability">
                 <div
@@ -261,8 +261,8 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
               </div>
             </div>
           ) : (
-            <div className={`mb-4 p-3 rounded-lg text-center ${isDarkMode ? 'bg-[#111]' : 'bg-slate-100'}`}>
-              <p className={`text-sm ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+            <div className={`mb-4 p-3 rounded-lg text-center ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
+              <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                 Bye week or no opponent scheduled
               </p>
             </div>
@@ -270,26 +270,26 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
 
           {/* Quick Stats */}
           <div className="grid grid-cols-3 gap-4 mt-6">
-            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-center gap-1 mb-1">
                 <Target className="w-4 h-4 text-blue-500" aria-hidden="true" />
-                <span className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Proj. Margin</span>
+                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Proj. Margin</span>
               </div>
               <div className={`text-lg font-bold ${projDiff >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 {projDiff >= 0 ? '+' : ''}{projDiff.toFixed(1)}
               </div>
             </div>
-            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-center gap-1 mb-1">
                 <Zap className="w-4 h-4 text-green-500" aria-hidden="true" />
-                <span className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Your Edges</span>
+                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Edges</span>
               </div>
               <div className="text-lg font-bold text-green-500">{yourAdvantages}</div>
             </div>
-            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-center gap-1 mb-1">
                 <Shield className="w-4 h-4 text-red-500" aria-hidden="true" />
-                <span className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Their Edges</span>
+                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Their Edges</span>
               </div>
               <div className="text-lg font-bold text-red-500">{oppAdvantages}</div>
             </div>
@@ -298,29 +298,29 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
       </div>
 
       {/* Position-by-Position Comparison */}
-      <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b ${isDarkMode ? 'border-[#222]' : 'border-slate-200'}`}>
+      <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Position-by-Position Breakdown</h2>
-          <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Compare projections at each roster spot</p>
+          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Compare projections at each roster spot</p>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className={`border-b ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                <th scope="col" className={`text-left px-6 py-3 text-xs w-16 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>POS</th>
-                <th scope="col" className={`text-left px-4 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Your Player</th>
-                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Proj</th>
-                <th scope="col" className={`text-center px-4 py-3 text-xs w-20 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Edge</th>
-                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Proj</th>
-                <th scope="col" className={`text-right px-4 py-3 text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Their Player</th>
+              <tr className={`border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                <th scope="col" className={`text-left px-6 py-3 text-xs w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>POS</th>
+                <th scope="col" className={`text-left px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Player</th>
+                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Proj</th>
+                <th scope="col" className={`text-center px-4 py-3 text-xs w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Edge</th>
+                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Proj</th>
+                <th scope="col" className={`text-right px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Their Player</th>
               </tr>
             </thead>
             <tbody>
               {positionComparison.map((comp, index) => (
-                <tr key={`${comp.yourPlayer.id || comp.position}-${index}`} className={`border-b transition-colors ${isDarkMode ? 'border-slate-800 hover:bg-[#1a1a1a]/50' : 'border-slate-100 hover:bg-slate-50'}`}>
+                <tr key={`${comp.yourPlayer.id || comp.position}-${index}`} className={`border-b transition-colors ${isDarkMode ? 'border-slate-800 hover:bg-slate-800/50' : 'border-slate-100 hover:bg-slate-50'}`}>
                   <td className="px-6 py-4">
-                    <span className={`text-xs font-medium px-2 py-1 rounded ${isDarkMode ? 'text-[#555] bg-[#1a1a1a]' : 'text-[#555] bg-slate-100'}`}>
+                    <span className={`text-xs font-medium px-2 py-1 rounded ${isDarkMode ? 'text-slate-500 bg-slate-800' : 'text-slate-500 bg-slate-100'}`}>
                       {comp.position}
                     </span>
                   </td>
@@ -330,8 +330,8 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                       className="text-left hover:text-blue-500 transition-colors group"
                     >
                       <div className="flex items-center gap-2">
-                        <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-[#1a1a1a] text-[#737373] border-[#222]' : 'bg-slate-100 text-[#555] border-slate-200'}`}>
-                          <span className={`text-sm font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{comp.yourPlayer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                        <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                          <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{comp.yourPlayer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                         </div>
                         <div>
                           <div className="flex items-center gap-4">
@@ -343,7 +343,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                               Matchup {comp.yourPlayer.matchupGrade || '—'}
                             </span>
                           </div>
-                          <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{comp.yourPlayer.team}</div>
+                          <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{comp.yourPlayer.team}</div>
                         </div>
                       </div>
                     </button>
@@ -355,24 +355,24 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                     <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${
                       comp.diff > 1 ? 'bg-green-500/20 text-green-500' :
                       comp.diff < -1 ? 'bg-red-500/20 text-red-500' :
-                      isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'
+                      isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'
                     }`}>
                       {comp.diff > 0 ? <TrendingUp className="w-3 h-3" aria-hidden="true" /> : comp.diff < 0 ? <TrendingDown className="w-3 h-3" aria-hidden="true" /> : null}
                       {comp.diff > 0 ? '+' : ''}{comp.diff.toFixed(1)}
                     </div>
                   </td>
                   <td className="px-4 py-4 text-center">
-                    <span className={`font-bold ${comp.oppPlayer.name === EMPTY_SLOT_NAME ? (isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                    <span className={`font-bold ${comp.oppPlayer.name === EMPTY_SLOT_NAME ? (isDarkMode ? 'text-slate-600' : 'text-slate-300') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                       {comp.oppPlayer.name === EMPTY_SLOT_NAME ? '-' : comp.oppPlayer.projection.toFixed(1)}
                     </span>
                   </td>
                   <td className="px-4 py-4 text-right">
                     {comp.oppPlayer.name === EMPTY_SLOT_NAME ? (
                       <div className="text-right">
-                        <div className={`flex items-center gap-2 justify-end ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`}>
+                        <div className={`flex items-center gap-2 justify-end ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>
                           <span className="font-bold italic">{EMPTY_SLOT_NAME}</span>
                         </div>
-                        <div className={`text-xs ${isDarkMode ? 'text-slate-700' : 'text-[#a3a3a3]'}`}>No opponent</div>
+                        <div className={`text-xs ${isDarkMode ? 'text-slate-700' : 'text-slate-300'}`}>No opponent</div>
                       </div>
                     ) : (
                       <button
@@ -390,10 +390,10 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                               </span>
                               <span className={`font-bold group-hover:text-blue-500 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.oppPlayer.name}</span>
                             </div>
-                            <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{comp.oppPlayer.team}</div>
+                            <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{comp.oppPlayer.team}</div>
                           </div>
-                          <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-[#1a1a1a] text-[#737373] border-[#222]' : 'bg-slate-100 text-[#555] border-slate-200'}`}>
-                            <span className={`text-sm font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{comp.oppPlayer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                          <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                            <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{comp.oppPlayer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                           </div>
                         </div>
                       </button>
@@ -409,13 +409,13 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
       {/* Bench Comparison */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Your Bench */}
-        <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-          <div className={`p-4 border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/50' : 'border-slate-200 bg-slate-50'}`}>
+        <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <div className={`p-4 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
             <h3 className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Your Bench</h3>
           </div>
           <div className="p-4 space-y-2">
             {yourBench.length === 0 ? (
-              <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>
+              <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                 <p className="text-sm">No bench players</p>
               </div>
             ) : (
@@ -423,17 +423,17 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                 <button
                   key={player.id || `bench-${player.name}-${player.team}`}
                   onClick={() => onPlayerClick(convertToPlayer(player, yourStarters.length))}
-                  className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}
+                  className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.position}</span>
-                      <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'}`}>
-                        <span className={`text-xs font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                      <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.position}</span>
+                      <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        <span className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                       </div>
                       <div>
-                        <span className={`font-bold transition-colors ${isDarkMode ? 'text-[#a3a3a3] group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
-                        <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.team}</div>
+                        <span className={`font-bold transition-colors ${isDarkMode ? 'text-slate-300 group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
+                        <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.team}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -443,7 +443,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                       >
                         Matchup {player.matchupGrade || '—'}
                       </span>
-                      <span className={`text-sm font-semibold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.projection.toFixed(1)}</span>
+                      <span className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.projection.toFixed(1)}</span>
                     </div>
                   </div>
                 </button>
@@ -453,17 +453,17 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
         </div>
 
         {/* Opponent Bench */}
-        <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-          <div className={`p-4 border-b ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/50' : 'border-slate-200 bg-slate-50'}`}>
+        <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <div className={`p-4 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
             <h3 className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Opponent's Bench</h3>
           </div>
           <div className="p-4 space-y-2">
             {!hasMatchup ? (
-              <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>
+              <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                 <p className="text-sm">No opponent this week</p>
               </div>
             ) : opponentBench.length === 0 ? (
-              <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-[#737373]'}`}>
+              <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                 <p className="text-sm">No bench players</p>
               </div>
             ) : (
@@ -471,17 +471,17 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                 <button
                   key={player.id || `opp-bench-${player.name}-${player.team}`}
                   onClick={() => onPlayerClick(convertToPlayer(player, yourStarters.length + opponentStarters.length))}
-                  className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}
+                  className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.position}</span>
-                      <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'}`}>
-                        <span className={`text-xs font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                      <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.position}</span>
+                      <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        <span className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                       </div>
                       <div>
-                        <span className={`font-bold transition-colors ${isDarkMode ? 'text-[#a3a3a3] group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
-                        <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.team}</div>
+                        <span className={`font-bold transition-colors ${isDarkMode ? 'text-slate-300 group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
+                        <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.team}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -491,7 +491,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                       >
                         Matchup {player.matchupGrade || '—'}
                       </span>
-                      <span className={`text-sm font-semibold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.projection.toFixed(1)}</span>
+                      <span className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.projection.toFixed(1)}</span>
                     </div>
                   </div>
                 </button>

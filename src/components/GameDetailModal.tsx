@@ -83,34 +83,34 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
 
   return (
     <div
-      className={`fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${isDarkMode ? 'bg-[#0a0a0a]/80' : 'bg-black/20'}`}
+      className={`fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950/80' : 'bg-black/20'}`}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
       aria-label={`${game.awayTeam} at ${game.homeTeam} game details`}
     >
-      <div className={`rounded-2xl border shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+      <div className={`rounded-2xl border shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
-        <div className={`border-b p-6 flex-shrink-0 ${isDarkMode ? 'bg-gradient-to-r from-slate-800 to-slate-900 border-[#222]' : 'bg-gradient-to-r from-slate-50 to-white border-slate-200'}`}>
+        <div className={`border-b p-6 flex-shrink-0 ${isDarkMode ? 'bg-gradient-to-r from-slate-800 to-slate-900 border-slate-700' : 'bg-gradient-to-r from-slate-50 to-white border-slate-200'}`}>
           <div className="flex items-start justify-between mb-4">
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <button
                   onClick={onClose}
                   aria-label="Back to game slate"
-                  className={`flex items-center gap-2 transition-colors ${isDarkMode ? 'text-[#737373] hover:text-white' : 'text-[#555] hover:text-slate-900'}`}
+                  className={`flex items-center gap-2 transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span className="text-sm">Back to Slate</span>
                 </button>
               </div>
-              <div className={`text-sm mb-1 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{game.gameTime} • {game.tvNetwork}</div>
+              <div className={`text-sm mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{game.gameTime} • {game.tvNetwork}</div>
               <h2 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeam} @ {game.homeTeam}</h2>
             </div>
             <button
               onClick={onClose}
               aria-label="Close game details"
-              className={`transition-colors ${isDarkMode ? 'text-[#737373] hover:text-white' : 'text-[#555] hover:text-slate-900'}`}
+              className={`transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
             >
               <X className="w-6 h-6" />
             </button>
@@ -118,14 +118,14 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
           
           {/* Game Info */}
           <div className="flex items-center gap-6 text-sm flex-wrap">
-            <div className={`rounded-lg px-4 py-2 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-300'}`}>
-              <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Spread:</span>{' '}
+            <div className={`rounded-lg px-4 py-2 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
+              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Spread:</span>{' '}
               <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 {game.favoredTeam === 'home' ? game.homeTeamLogo : game.awayTeamLogo} -{game.spread}
               </span>
             </div>
-            <div className={`rounded-lg px-4 py-2 border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-300'}`}>
-              <span className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Over/Under:</span>{' '}
+            <div className={`rounded-lg px-4 py-2 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
+              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Over/Under:</span>{' '}
               <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.overUnder || '—'}</span>
             </div>
             {game.weather && (
@@ -141,14 +141,14 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
         </div>
 
         {/* Content */}
-        <div className={`flex-1 overflow-y-auto p-6 relative ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-slate-100'}`}>
+        <div className={`flex-1 overflow-y-auto p-6 relative ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
           {isLoading && (
-            <div className={`absolute inset-0 flex items-center justify-center z-10 ${isDarkMode ? 'bg-[#0a0a0a]/80' : 'bg-slate-100/80'}`}>
+            <div className={`absolute inset-0 flex items-center justify-center z-10 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-100/80'}`}>
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
             </div>
           )}
           {!isLoading && awayPlayers.length === 0 && homePlayers.length === 0 && (
-            <div className={`text-center py-12 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+            <div className={`text-center py-12 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               <p className="text-lg font-medium mb-2">No player data available</p>
               <p className="text-sm">Player projections and stats will appear here during the NFL season.</p>
             </div>
@@ -156,21 +156,21 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
           <div className="grid grid-cols-2 gap-6">
             {/* Away Team */}
             <div>
-              <div className={`rounded-lg p-4 mb-4 border shadow-sm ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-300'}`}>
+              <div className={`rounded-lg p-4 mb-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-300'}`}>
+                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
                       <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeamLogo}</span>
                     </div>
                     <div>
                       <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeam}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Away Team</div>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Away Team</div>
                     </div>
                   </div>
                   {game.favoredTeam === 'away' && (
                     <div className="text-right">
                       <div className="text-sm font-bold text-green-500">-{game.spread}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Favored</div>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
                     </div>
                   )}
                 </div>
@@ -179,28 +179,28 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               <div className="space-y-2">
                 {positions.map(position => (
                   <div key={position}>
-                    <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-[#555]' : 'text-slate-600'}`}>{position}</div>
+                    <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>{position}</div>
                     <div className="space-y-2">
                       {awayPlayersByPosition[position].map((player) => (
                         <div
                           key={player.id}
                           onClick={() => onPlayerClick(player)}
-                          className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-[#111] border-[#222] hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                          className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
                         >
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1">
                               <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{player.name}</div>
-                              <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-[#555]' : 'text-slate-600'}`}>
+                              <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
                                 {player.position}{player.rank > 0 ? ` • #${player.rank}` : ''}
                               </div>
                             </div>
                             <div className="text-right">
                               <div className="text-lg font-bold text-blue-600">{player.projectedPoints}</div>
-                              <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-slate-600'}`}>pts</div>
+                              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
                             </div>
                           </div>
                           {player.projectedPoints > 0 && (
-                            <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-slate-600'}`}>
+                            <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
                               {player.position} pts
                             </div>
                           )}
@@ -214,21 +214,21 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
 
             {/* Home Team */}
             <div>
-              <div className={`rounded-lg p-4 mb-4 border shadow-sm ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-300'}`}>
+              <div className={`rounded-lg p-4 mb-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-300'}`}>
+                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
                       <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.homeTeamLogo}</span>
                     </div>
                     <div>
                       <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.homeTeam}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Home Team</div>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Home Team</div>
                     </div>
                   </div>
                   {game.favoredTeam === 'home' && (
                     <div className="text-right">
                       <div className="text-sm font-bold text-green-500">-{game.spread}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Favored</div>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
                     </div>
                   )}
                 </div>
@@ -237,28 +237,28 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               <div className="space-y-2">
                 {positions.map(position => (
                   <div key={position}>
-                    <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-[#555]' : 'text-slate-600'}`}>{position}</div>
+                    <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>{position}</div>
                     <div className="space-y-2">
                       {homePlayersByPosition[position].map((player) => (
                         <div
                           key={player.id}
                           onClick={() => onPlayerClick(player)}
-                          className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-[#111] border-[#222] hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                          className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
                         >
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1">
                               <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{player.name}</div>
-                              <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-[#555]' : 'text-slate-600'}`}>
+                              <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
                                 {player.position}
                               </div>
                             </div>
                             <div className="text-right">
                               <div className="text-lg font-bold text-blue-600">{player.projectedPoints}</div>
-                              <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-slate-600'}`}>pts</div>
+                              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
                             </div>
                           </div>
                           {player.projectedPoints > 0 && (
-                            <div className={`text-xs mt-1 ${isDarkMode ? 'text-[#555]' : 'text-slate-600'}`}>
+                            <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
                               {player.position} pts
                             </div>
                           )}

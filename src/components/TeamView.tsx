@@ -62,9 +62,9 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   if (rosterLoading) {
     return (
       <div className="max-w-[1600px] mx-auto">
-        <div className={`rounded-lg border p-12 flex flex-col items-center justify-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+        <div className={`rounded-lg border p-12 flex flex-col items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
-          <p className={isDarkMode ? 'text-[#737373]' : 'text-[#555]'}>Loading your team...</p>
+          <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Loading your team...</p>
         </div>
       </div>
     );
@@ -74,13 +74,13 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   if (!roster || roster.length === 0) {
     return (
       <div className="max-w-[1600px] mx-auto">
-        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-          <User className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? 'text-slate-600' : 'text-[#a3a3a3]'}`} />
+        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <User className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
           <h2 className={`text-xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No Roster Yet</h2>
-          <p className={`text-sm mb-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+          <p className={`text-sm mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             {viewedTeam?.name ? `${viewedTeam.name}'s roster` : 'Your roster'} will appear here once your league is synced.
           </p>
-          <p className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+          <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             Go to Settings and click "Sync" on your league to import rosters from Sleeper.
           </p>
         </div>
@@ -143,7 +143,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   return (
     <div className="max-w-[1600px] mx-auto space-y-6">
       {/* Header Section */}
-      <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+      <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             {/* Team Selector Dropdown */}
@@ -158,7 +158,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 )}
               </button>
               {showTeamDropdown && league?.teams && league.teams.length > 1 && (
-                <div className={`absolute top-full left-0 mt-2 w-64 rounded-lg border shadow-xl z-50 overflow-hidden max-h-80 overflow-y-auto ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-white border-slate-200'}`}>
+                <div className={`absolute top-full left-0 mt-2 w-64 rounded-lg border shadow-xl z-50 overflow-hidden max-h-80 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                   {league.teams.map(team => (
                     <button
                       key={team.id}
@@ -169,11 +169,11 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                       className={`w-full px-4 py-3 text-left transition-colors border-b last:border-b-0 ${
                         viewedTeamId === team.id
                           ? 'bg-blue-600 text-white'
-                          : isDarkMode ? 'text-[#a3a3a3] hover:bg-slate-700 border-[#222]' : 'text-slate-600 hover:bg-slate-100 border-slate-100'
+                          : isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-100 border-slate-100'
                       }`}
                     >
                       <div className="font-semibold">{team.name}</div>
-                      <div className={`text-xs ${viewedTeamId === team.id ? 'text-blue-200' : isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                      <div className={`text-xs ${viewedTeamId === team.id ? 'text-blue-200' : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                         {team.wins}-{team.losses}{team.ties > 0 ? `-${team.ties}` : ''} • {team.pointsFor.toFixed(1)} PF
                       </div>
                     </button>
@@ -181,7 +181,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 </div>
               )}
             </div>
-            <p className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               {league?.name ? `${league.name} • ` : ''}Week {selectedWeek} roster and projections
             </p>
           </div>
@@ -191,19 +191,19 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
             <div className="flex items-center gap-6 mr-4">
               <div className="text-center">
                 <div className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{starterProjection.toFixed(1)}</div>
-                <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Projected</div>
+                <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Projected</div>
               </div>
               <div className={`w-px h-10 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-500">
                   {viewedTeam ? `${viewedTeam.wins}-${viewedTeam.losses}${viewedTeam.ties > 0 ? `-${viewedTeam.ties}` : ''}` : '-'}
                 </div>
-                <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Record</div>
+                <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Record</div>
               </div>
               <div className={`w-px h-10 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-blue-500">#{standingRank}</div>
-                <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Standing</div>
+                <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Standing</div>
               </div>
             </div>
 
@@ -211,13 +211,13 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
             <div className="relative" ref={weekDropdownRef}>
               <button
                 onClick={() => setShowWeekDropdown(!showWeekDropdown)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors border ${isDarkMode ? 'bg-[#1a1a1a] text-[#a3a3a3] hover:bg-slate-700 border-[#222]' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors border ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
               >
                 <span className="text-sm font-medium">Week {selectedWeek}</span>
                 <ChevronDown className={`w-4 h-4 transition-transform ${showWeekDropdown ? 'rotate-180' : ''}`} />
               </button>
               {showWeekDropdown && (
-                <div className={`absolute top-12 right-0 w-32 rounded-lg border shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-white border-slate-200'}`}>
+                <div className={`absolute top-12 right-0 w-32 rounded-lg border shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                   {Array.from({ length: 18 }, (_, i) => i + 1).map(week => (
                     <button
                       key={week}
@@ -225,7 +225,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                       className={`w-full px-4 py-2 text-sm text-left transition-colors ${
                         selectedWeek === week
                           ? 'bg-blue-600 text-white'
-                          : isDarkMode ? 'text-[#a3a3a3] hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'
+                          : isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'
                       }`}
                     >
                       Week {week}
@@ -242,25 +242,25 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
         {/* Starters Section */}
         <div className="xl:col-span-2 space-y-6">
           {/* Starters Table */}
-          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-            <div className={`p-4 border-b flex items-center justify-between ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/50' : 'border-slate-200 bg-slate-50'}`}>
+          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`p-4 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
               <div className="flex items-center gap-2">
                 <Star className="w-4 h-4 text-yellow-500" />
                 <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Starting Lineup</h2>
               </div>
-              <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{starterProjection.toFixed(1)} projected pts</span>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{starterProjection.toFixed(1)} projected pts</span>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className={`border-b ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}>
-                    <th className={`text-left px-4 py-3 text-xs font-semibold w-16 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>SLOT</th>
-                    <th className={`text-left px-4 py-3 text-xs font-semibold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>PLAYER</th>
-                    <th className={`text-right px-4 py-3 text-xs font-semibold w-16 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>AVG</th>
-                    <th className={`text-right px-4 py-3 text-xs font-semibold w-16 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>LAST</th>
-                    <th className={`text-center px-4 py-3 text-xs font-semibold w-20 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>MATCHUP</th>
-                    <th className={`text-right px-4 py-3 text-xs font-semibold w-20 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>PROJ</th>
+                  <tr className={`border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                    <th className={`text-left px-4 py-3 text-xs font-semibold w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>SLOT</th>
+                    <th className={`text-left px-4 py-3 text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>PLAYER</th>
+                    <th className={`text-right px-4 py-3 text-xs font-semibold w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>AVG</th>
+                    <th className={`text-right px-4 py-3 text-xs font-semibold w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>LAST</th>
+                    <th className={`text-center px-4 py-3 text-xs font-semibold w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>MATCHUP</th>
+                    <th className={`text-right px-4 py-3 text-xs font-semibold w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>PROJ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -271,17 +271,17 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                       <tr
                         key={player.id || index}
                         onClick={() => onPlayerClick(convertToPlayer(player, index))}
-                        className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-[#1a1a1a]/70' : 'border-slate-100 hover:bg-slate-50'}`}
+                        className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800/70' : 'border-slate-100 hover:bg-slate-50'}`}
                       >
                         <td className="px-4 py-3">
-                          <span className={`text-xs font-medium px-2 py-1 rounded ${isDarkMode ? 'text-[#555] bg-[#1a1a1a]' : 'text-[#555] bg-slate-100'}`}>
+                          <span className={`text-xs font-medium px-2 py-1 rounded ${isDarkMode ? 'text-slate-500 bg-slate-800' : 'text-slate-500 bg-slate-100'}`}>
                             {player.slot}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-[#1a1a1a] text-[#737373] border-[#222]' : 'bg-slate-100 text-[#555] border-slate-200'}`}>
-                              <span className={`text-sm font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                            <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                              <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <div>
@@ -289,7 +289,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                                   <span className={`font-bold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</span>
                                   {getStatusIndicator(player.status)}
                                 </div>
-                                <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                   {player.team} • {player.position}
                                   {player.seasonStats?.gamesPlayed ?? player.seasonStats?.games ? ` • ${(player.seasonStats?.gamesPlayed ?? player.seasonStats?.games)} GP` : ''}
                                 </div>
@@ -298,12 +298,12 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className={`text-sm ${avgPoints ? (isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700') : (isDarkMode ? 'text-slate-600' : 'text-[#737373]')}`}>
+                          <span className={`text-sm ${avgPoints ? (isDarkMode ? 'text-slate-300' : 'text-slate-700') : (isDarkMode ? 'text-slate-600' : 'text-slate-400')}`}>
                             {avgPoints ? avgPoints.toFixed(1) : '-'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className={`text-sm ${player.lastWeekPoints !== null && player.lastWeekPoints !== undefined ? (isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-700') : (isDarkMode ? 'text-slate-600' : 'text-[#737373]')}`}>
+                          <span className={`text-sm ${player.lastWeekPoints !== null && player.lastWeekPoints !== undefined ? (isDarkMode ? 'text-slate-300' : 'text-slate-700') : (isDarkMode ? 'text-slate-600' : 'text-slate-400')}`}>
                             {player.lastWeekPoints !== null && player.lastWeekPoints !== undefined ? player.lastWeekPoints.toFixed(1) : '-'}
                           </span>
                         </td>
@@ -323,7 +323,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                   })}
                   {starters.length === 0 && (
                     <tr>
-                      <td colSpan={6} className={`px-4 py-8 text-center ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                      <td colSpan={6} className={`px-4 py-8 text-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                         No starters set yet
                       </td>
                     </tr>
@@ -334,13 +334,13 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
           </div>
 
           {/* Bench Section */}
-          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
-            <div className={`p-4 border-b flex items-center justify-between ${isDarkMode ? 'border-[#222] bg-[#1a1a1a]/50' : 'border-slate-200 bg-slate-50'}`}>
+          <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`p-4 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
               <div className="flex items-center gap-2">
-                <ArrowUpDown className={`w-4 h-4 ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`} />
+                <ArrowUpDown className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
                 <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Bench</h2>
               </div>
-              <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{bench.length} players</span>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{bench.length} players</span>
             </div>
 
             <div className="p-4 space-y-2">
@@ -351,22 +351,22 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                   <button
                     key={player.id || index}
                     onClick={() => onPlayerClick(convertToPlayer(player, starters.length + index))}
-                    className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-50 border-slate-200'}`}
+                    className={`w-full rounded-lg px-4 py-3 border hover:border-blue-500 transition-all text-left group ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'}`}>
-                          <span className={`text-xs font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                        <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                          <span className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className={`font-bold transition-colors ${isDarkMode ? 'text-[#a3a3a3] group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
+                            <span className={`font-bold transition-colors ${isDarkMode ? 'text-slate-300 group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
                             {matchupGrade.startsWith('A') && (
                               <Sparkles className="w-3 h-3 text-green-500" />
                             )}
                             {getStatusIndicator(player.status)}
                           </div>
-                          <div className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                          <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                             {player.team} • {player.position}
                             {avgPoints ? ` • Avg: ${avgPoints.toFixed(1)}` : ''}
                           </div>
@@ -374,7 +374,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                       </div>
                       <div className="flex items-center gap-4">
                         {player.lastWeekPoints !== null && player.lastWeekPoints !== undefined && (
-                          <span className={`text-xs ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                          <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                             Last: {player.lastWeekPoints.toFixed(1)}
                           </span>
                         )}
@@ -384,14 +384,14 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                         >
                           Matchup {matchupGrade}
                         </span>
-                        <span className={`text-sm font-semibold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{(player.projectedPoints || 0).toFixed(1)}</span>
+                        <span className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{(player.projectedPoints || 0).toFixed(1)}</span>
                       </div>
                     </div>
                   </button>
                 );
               })}
               {bench.length === 0 && (
-                <div className={`text-center py-4 ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>
+                <div className={`text-center py-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   No bench players
                 </div>
               )}
@@ -402,11 +402,11 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
         {/* Right Sidebar */}
         <div className="space-y-6">
           {/* Weekly Performance Chart */}
-          <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Weekly Points</h3>
-                <p className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Season performance trend</p>
+                <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Season performance trend</p>
               </div>
               <TrendingUp className="w-5 h-5 text-green-500" />
             </div>
@@ -467,25 +467,25 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
             </div>
 
             {/* Week labels */}
-            <div className="flex items-center justify-between mt-2 text-xs text-[#555]">
+            <div className="flex items-center justify-between mt-2 text-xs text-slate-500">
               <span>Week 1</span>
               <span>Week {weeklyPoints.length}</span>
             </div>
           </div>
 
           {/* Season Stats */}
-          <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-white border-slate-200'}`}>
+          <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             <div className="flex items-center gap-2 mb-4">
               <Trophy className="w-4 h-4 text-yellow-500" />
               <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Season Stats</h3>
             </div>
             <div className="space-y-4">
               <div className={`flex items-center justify-between py-2 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Total Points</span>
+                <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Total Points</span>
                 <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{(viewedTeam?.pointsFor || 0).toFixed(1)}</span>
               </div>
               <div className={`flex items-center justify-between py-2 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Points Per Game</span>
+                <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Points Per Game</span>
                 <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   {viewedTeam && (viewedTeam.wins + viewedTeam.losses + viewedTeam.ties) > 0
                     ? (viewedTeam.pointsFor / (viewedTeam.wins + viewedTeam.losses + viewedTeam.ties)).toFixed(1)
@@ -493,11 +493,11 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 </span>
               </div>
               <div className={`flex items-center justify-between py-2 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Points Against</span>
+                <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Points Against</span>
                 <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{(viewedTeam?.pointsAgainst || 0).toFixed(1)}</span>
               </div>
               <div className="flex items-center justify-between py-2">
-                <span className={`text-sm ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>Scoring Format</span>
+                <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Scoring Format</span>
                 <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{league?.scoringFormat?.toUpperCase() || 'PPR'}</span>
               </div>
             </div>
@@ -512,7 +512,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 </div>
                 <div>
                   <h4 className="text-green-500 font-bold text-sm mb-1">Roster Alert</h4>
-                  <p className={`text-xs ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+                  <p className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                     <strong className={isDarkMode ? 'text-white' : 'text-slate-900'}>{bestBenchPlayer.name}</strong> has a great projection this week. Consider starting them!
                   </p>
                 </div>
@@ -535,7 +535,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                       </div>
                       <div>
                         <h4 className="text-red-500 font-bold text-sm mb-1">Inactive Players</h4>
-                        <p className={`text-xs ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+                        <p className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           {outPlayers.map(p => (
                             <span key={p.id}>
                               <strong className={isDarkMode ? 'text-white' : 'text-slate-900'}>{p.name}</strong>
@@ -557,7 +557,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                       </div>
                       <div>
                         <h4 className="text-yellow-500 font-bold text-sm mb-1">Injury Watch</h4>
-                        <p className={`text-xs ${isDarkMode ? 'text-[#a3a3a3]' : 'text-slate-600'}`}>
+                        <p className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           {questionablePlayers.map(p => (
                             <span key={p.id}>
                               <strong className={isDarkMode ? 'text-white' : 'text-slate-900'}>{p.name}</strong>
