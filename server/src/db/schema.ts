@@ -18,6 +18,10 @@ export const users = sqliteTable('users', {
   preferredScoring: text('preferred_scoring').default('ppr'),
   darkMode: integer('dark_mode', { mode: 'boolean' }).default(true),
   notificationsEnabled: integer('notifications_enabled', { mode: 'boolean' }).default(true),
+  subscriptionTier: text('subscription_tier').notNull().default('free'),
+  stripeCustomerId: text('stripe_customer_id'),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  subscriptionExpiresAt: text('subscription_expires_at'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });

@@ -374,6 +374,25 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
       return c.json({ error: 'Platform, external ID, and name are required' }, 400);
     }
 
+    // Check league limit for free users (max 1 league)
+    if (user.subscriptionTier === 'free') {
+      const userLeagues = await db.query.leagueMembers.findMany({
+        where: eq(schema.leagueMembers.userId, user.id),
+      });
+
+      if (userLeagues.length >= 1) {
+        return c.json(
+          {
+            error: 'Upgrade to Pro to connect multiple leagues',
+            code: 'LEAGUE_LIMIT_EXCEEDED',
+            tier: 'free',
+            maxLeagues: 1,
+          },
+          402
+        );
+      }
+    }
+
     // Check if league is already connected
     const existingLeague = await db.query.leagues.findFirst({
       where: and(

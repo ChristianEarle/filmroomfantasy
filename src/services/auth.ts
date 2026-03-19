@@ -15,6 +15,8 @@ export interface User {
   notificationsEnabled?: boolean;
   hasGoogle?: boolean;
   hasPassword?: boolean;
+  subscriptionTier?: 'free' | 'pro';
+  subscriptionExpiresAt?: string;
 }
 
 export interface UpdateProfileData {

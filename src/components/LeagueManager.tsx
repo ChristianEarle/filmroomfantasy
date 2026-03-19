@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Link2, Loader2, ChevronDown, Check } from 'lucide-react';
 import { useLeaguesContext } from '../context/LeaguesContext';
+import { UpgradeModal } from './UpgradeModal';
 
 interface LeagueManagerProps {
   isDarkMode: boolean;
@@ -9,6 +10,7 @@ interface LeagueManagerProps {
   selectedLeagueId: string | null;
   isAuthenticated: boolean;
   onConnectLeague: () => void;
+  userTier?: 'free' | 'pro';
 }
 
 interface DropdownPosition {
@@ -18,9 +20,10 @@ interface DropdownPosition {
   maxHeight: number;
 }
 
-export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, isAuthenticated, onConnectLeague }: LeagueManagerProps) {
+export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, isAuthenticated, onConnectLeague, userTier = 'free' }: LeagueManagerProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [position, setPosition] = useState<DropdownPosition | null>(null);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const { leagues, isLoading: leaguesLoading } = useLeaguesContext();
@@ -137,7 +140,12 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
       <div className="p-2">
         <button
           onClick={() => {
-            onConnectLeague();
+            // Check if free user is at limit
+            if (userTier === 'free' && leagues.length >= 1) {
+              setUpgradeModalOpen(true);
+            } else {
+              onConnectLeague();
+            }
             setDropdownOpen(false);
           }}
           className={`w-full px-3 py-2 rounded-lg text-left transition-colors flex items-center gap-2 ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-100'}`}
@@ -149,6 +157,45 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
     </div>,
     document.body
   ) : null;
+
+  const handleUpgradeClick = async (priceId: string) => {
+    try {
+      // Get auth token from localStorage
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        alert('Please sign in first');
+        return;
+      }
+
+      // Create checkout session
+      const response = await fetch('/api/billing/create-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          priceId,
+          successUrl: `${window.location.origin}?billing=success`,
+          cancelUrl: `${window.location.origin}?billing=cancel`,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        alert(error.error || 'Failed to create checkout session');
+        return;
+      }
+
+      const { url } = await response.json() as { url: string };
+      if (url) {
+        window.location.href = url;
+      }
+    } catch (error) {
+      console.error('Error creating checkout:', error);
+      alert('Failed to start checkout');
+    }
+  };
 
   return (
     <div className={`p-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
@@ -189,6 +236,14 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
 
       {/* Dropdown rendered via portal */}
       {dropdownMenu}
+
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        isOpen={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        isDarkMode={isDarkMode}
+        onUpgradeClick={handleUpgradeClick}
+      />
     </div>
   );
 }

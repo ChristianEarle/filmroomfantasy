@@ -17,6 +17,7 @@ import { gameRoutes } from './routes/games';
 import { adminRoutes } from './routes/admin';
 import { feedbackRoutes } from './routes/feedback';
 import { yahooRoutes } from './routes/yahoo';
+import { billingRoutes } from './routes/billing';
 
 // Types
 export type Env = {
@@ -32,6 +33,8 @@ export type Env = {
   RESEND_API_KEY?: string; // Optional: Resend API key for password reset emails — get from https://resend.com
   APP_URL?: string; // Frontend URL for password reset links (defaults to http://localhost:5173)
   FEEDBACK_EMAIL?: string; // Optional: Email address to receive feedback notifications via Resend
+  STRIPE_SECRET_KEY?: string; // Optional: Stripe secret key for billing
+  STRIPE_WEBHOOK_SECRET?: string; // Optional: Stripe webhook signing secret
 };
 
 export type Variables = {
@@ -153,6 +156,7 @@ app.route('/api/games', gameRoutes);
 app.route('/api/admin', adminRoutes);
 app.route('/api/feedback', feedbackRoutes);
 app.route('/api/yahoo', yahooRoutes);
+app.route('/api/billing', billingRoutes);
 
 // 404 handler
 app.notFound((c) => {

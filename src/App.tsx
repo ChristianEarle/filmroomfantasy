@@ -350,6 +350,7 @@ function AppContent() {
         onConnectLeague={() => setActiveView('Settings')}
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
+        userTier={(user?.subscriptionTier as 'free' | 'pro' | undefined) || 'free'}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">

@@ -13,9 +13,10 @@ interface SidebarProps {
   onConnectLeague: () => void;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  userTier?: 'free' | 'pro';
 }
 
-export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated = false, selectedLeagueId, onLeagueSelect, onConnectLeague, mobileOpen = false, onMobileClose }: SidebarProps) {
+export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated = false, selectedLeagueId, onLeagueSelect, onConnectLeague, mobileOpen = false, onMobileClose, userTier = 'free' }: SidebarProps) {
   const menuItems = [
     { icon: Home, label: 'Home', view: 'Home' as const },
     { icon: LayoutDashboard, label: 'Board', view: 'Board' as const },
@@ -84,6 +85,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
           selectedLeagueId={selectedLeagueId}
           onLeagueSelect={onLeagueSelect}
           onConnectLeague={onConnectLeague}
+          userTier={userTier}
         />
       </aside>
     </>
