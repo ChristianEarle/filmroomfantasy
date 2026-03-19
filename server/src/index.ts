@@ -227,9 +227,21 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-news');
     await callSync('/api/admin/sync-games');
   } else if (event.cron === '0 */4 * * *') {
-    // Every 4 hours: sync stats and projections (all weeks so the board has data for every week)
-    await callSync('/api/admin/sync-stats');
-    await callSync('/api/admin/sync-projections', { allWeeks: true });
+    // Every 4 hours: sync stats and projections for current week only (not all 18)
+    // This keeps us within subrequest limits while keeping data fresh
+    const db = drizzle(env.DB, { schema });
+    const anyLeague = await db.query.leagues.findFirst({
+      columns: { currentWeek: true },
+      orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
+    });
+    const currentWeek = anyLeague?.currentWeek || 1;
+
+    // Sync stats for current week + previous week (for late-breaking plays)
+    const previousWeek = Math.max(1, currentWeek - 1);
+    const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
+
+    await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
+    await callSync('/api/admin/sync-projections', { week: currentWeek });
   } else if (event.cron === '0 */6 * * *') {
     // Every 6 hours: sync RSS sports news
     await callSync('/api/admin/sync-twitter-news');

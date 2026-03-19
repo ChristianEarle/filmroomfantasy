@@ -25,6 +25,7 @@ adminRoutes.use('*', async (c, next) => {
 /**
  * POST /api/admin/sync-players
  * Fetches all NFL players from Sleeper API and upserts into the database.
+ * Uses db.batch() to perform inserts/updates in groups of 50 to stay under subrequest limits.
  * Requires X-Admin-Key header matching SYNC_SECRET env var.
  */
 adminRoutes.post('/sync-players', async (c) => {
@@ -40,59 +41,80 @@ adminRoutes.post('/sync-players', async (c) => {
 
     const now = new Date();
 
-    for (const player of mapped) {
-      const existing = await db.query.nflPlayers.findFirst({
-        where: eq(schema.nflPlayers.externalId, player.externalId),
-      });
+    // Fetch all existing players from DB once (1 subrequest)
+    const existing = await db.query.nflPlayers.findMany({
+      columns: { id: true, externalId: true },
+    });
+    const existingMap = new Map(existing.map(p => [p.externalId, p.id]));
 
-      if (existing) {
-        await db
-          .update(schema.nflPlayers)
-          .set({
-            name: player.name,
-            firstName: player.firstName,
-            lastName: player.lastName,
-            team: player.team,
-            position: player.position,
-            status: player.status,
-            injuryNote: player.injuryNote,
-            injuryBodyPart: player.injuryBodyPart,
-            headshotUrl: player.headshotUrl,
-            age: player.age,
-            height: player.height,
-            weight: player.weight,
-            college: player.college,
-            yearsExp: player.yearsExp,
-            jerseyNumber: player.jerseyNumber,
-            depthChartOrder: player.depthChartOrder,
-            updatedAt: now,
-          })
-          .where(eq(schema.nflPlayers.id, existing.id));
-        updated++;
-      } else {
-        await db.insert(schema.nflPlayers).values({
-          id: player.id,
-          externalId: player.externalId,
-          name: player.name,
-          firstName: player.firstName,
-          lastName: player.lastName,
-          team: player.team,
-          position: player.position,
-          status: player.status,
-          injuryNote: player.injuryNote,
-          injuryBodyPart: player.injuryBodyPart,
-          headshotUrl: player.headshotUrl,
-          age: player.age,
-          height: player.height,
-          weight: player.weight,
-          college: player.college,
-          yearsExp: player.yearsExp,
-          jerseyNumber: player.jerseyNumber,
-          depthChartOrder: player.depthChartOrder,
-          createdAt: now,
-          updatedAt: now,
-        });
-        inserted++;
+    // Split into batches of 50 to stay under subrequest limits
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < mapped.length; i += BATCH_SIZE) {
+      const batch = mapped.slice(i, i + BATCH_SIZE);
+      const statements: any[] = [];
+
+      for (const player of batch) {
+        const existingId = existingMap.get(player.externalId);
+        if (existingId) {
+          // Build UPDATE statement
+          statements.push(
+            db
+              .update(schema.nflPlayers)
+              .set({
+                name: player.name,
+                firstName: player.firstName,
+                lastName: player.lastName,
+                team: player.team,
+                position: player.position,
+                status: player.status,
+                injuryNote: player.injuryNote,
+                injuryBodyPart: player.injuryBodyPart,
+                headshotUrl: player.headshotUrl,
+                age: player.age,
+                height: player.height,
+                weight: player.weight,
+                college: player.college,
+                yearsExp: player.yearsExp,
+                jerseyNumber: player.jerseyNumber,
+                depthChartOrder: player.depthChartOrder,
+                updatedAt: now,
+              })
+              .where(eq(schema.nflPlayers.id, existingId))
+          );
+          updated++;
+        } else {
+          // Build INSERT statement
+          statements.push(
+            db.insert(schema.nflPlayers).values({
+              id: player.id,
+              externalId: player.externalId,
+              name: player.name,
+              firstName: player.firstName,
+              lastName: player.lastName,
+              team: player.team,
+              position: player.position,
+              status: player.status,
+              injuryNote: player.injuryNote,
+              injuryBodyPart: player.injuryBodyPart,
+              headshotUrl: player.headshotUrl,
+              age: player.age,
+              height: player.height,
+              weight: player.weight,
+              college: player.college,
+              yearsExp: player.yearsExp,
+              jerseyNumber: player.jerseyNumber,
+              depthChartOrder: player.depthChartOrder,
+              createdAt: now,
+              updatedAt: now,
+            })
+          );
+          inserted++;
+        }
+      }
+
+      // Execute all statements in this batch as one subrequest
+      if (statements.length > 0) {
+        await db.batch(statements as any);
       }
     }
 
@@ -105,16 +127,28 @@ adminRoutes.post('/sync-players', async (c) => {
       columns: { id: true },
     });
     let cleaned = 0;
-    for (const p of invalidPlayers) {
-      await db.delete(schema.rosterSpots).where(eq(schema.rosterSpots.playerId, p.id));
-      await db.update(schema.transactions).set({ playerId: null })
-        .where(eq(schema.transactions.playerId, p.id));
-      await db.update(schema.transactions).set({ dropPlayerId: null })
-        .where(eq(schema.transactions.dropPlayerId, p.id));
-      await db.update(schema.tradeItems).set({ playerId: null })
-        .where(eq(schema.tradeItems.playerId, p.id));
-      await db.delete(schema.nflPlayers).where(eq(schema.nflPlayers.id, p.id));
-      cleaned++;
+    if (invalidPlayers.length > 0) {
+      // Batch cleanup operations (50 at a time)
+      for (let i = 0; i < invalidPlayers.length; i += BATCH_SIZE) {
+        const cleanBatch = invalidPlayers.slice(i, i + BATCH_SIZE);
+        const cleanStatements: any[] = [];
+
+        for (const p of cleanBatch) {
+          cleanStatements.push(db.delete(schema.rosterSpots).where(eq(schema.rosterSpots.playerId, p.id)));
+          cleanStatements.push(db.update(schema.transactions).set({ playerId: null })
+            .where(eq(schema.transactions.playerId, p.id)));
+          cleanStatements.push(db.update(schema.transactions).set({ dropPlayerId: null })
+            .where(eq(schema.transactions.dropPlayerId, p.id)));
+          cleanStatements.push(db.update(schema.tradeItems).set({ playerId: null })
+            .where(eq(schema.tradeItems.playerId, p.id)));
+          cleanStatements.push(db.delete(schema.nflPlayers).where(eq(schema.nflPlayers.id, p.id)));
+          cleaned++;
+        }
+
+        if (cleanStatements.length > 0) {
+          await db.batch(cleanStatements as any);
+        }
+      }
     }
 
     return c.json({
@@ -140,7 +174,7 @@ adminRoutes.post('/sync-players', async (c) => {
 /**
  * POST /api/admin/sync-headshots
  * Fetches Sleeper player data and updates headshotUrl for existing players in the database.
- * Lighter weight than full sync-players - only updates headshot_url.
+ * Uses db.batch() to perform updates in groups of 50 to stay under subrequest limits.
  */
 adminRoutes.post('/sync-headshots', async (c) => {
   const db = c.get('db');
@@ -148,23 +182,42 @@ adminRoutes.post('/sync-headshots', async (c) => {
 
   try {
     const raw = await fetchSleeperPlayers();
+
+    // Fetch all existing players once (1 subrequest)
+    const existing = await db.query.nflPlayers.findMany({
+      columns: { id: true, externalId: true, headshotUrl: true },
+    });
+    const existingMap = new Map(existing.map(p => [p.externalId, { id: p.id, headshotUrl: p.headshotUrl }]));
+
     let updated = 0;
+    const updateStatements: any[] = [];
+    const BATCH_SIZE = 50;
 
     for (const [sleeperId, player] of Object.entries(raw)) {
       const headshotUrl = buildHeadshotUrl(player, sleeperId);
       if (headshotUrl == null) continue;
 
-      const existing = await db.query.nflPlayers.findFirst({
-        where: eq(schema.nflPlayers.externalId, sleeperId),
-      });
-
-      if (existing && existing.headshotUrl !== headshotUrl) {
-        await db
-          .update(schema.nflPlayers)
-          .set({ headshotUrl, updatedAt: new Date() })
-          .where(eq(schema.nflPlayers.id, existing.id));
+      const existingPlayer = existingMap.get(sleeperId);
+      if (existingPlayer && existingPlayer.headshotUrl !== headshotUrl) {
+        updateStatements.push(
+          db
+            .update(schema.nflPlayers)
+            .set({ headshotUrl, updatedAt: new Date() })
+            .where(eq(schema.nflPlayers.id, existingPlayer.id))
+        );
         updated++;
+
+        // Flush batch when reaching size
+        if (updateStatements.length >= BATCH_SIZE) {
+          await db.batch(updateStatements as any);
+          updateStatements.length = 0;
+        }
       }
+    }
+
+    // Flush remaining statements
+    if (updateStatements.length > 0) {
+      await db.batch(updateStatements as any);
     }
 
     return c.json({
@@ -188,6 +241,7 @@ adminRoutes.post('/sync-headshots', async (c) => {
  * POST /api/admin/sync-news
  * Derives player news from Sleeper injury/status data and upserts into player_news.
  * Creates news for players with injury_status (Out, Doubtful, Questionable, IR) or injury_notes.
+ * Uses db.batch() to perform deletes and inserts in groups.
  */
 adminRoutes.post('/sync-news', async (c) => {
   const db = c.get('db');
@@ -198,6 +252,15 @@ adminRoutes.post('/sync-news', async (c) => {
     const INJURY_STATUSES = new Set(['out', 'doubtful', 'questionable', 'ir', 'injured_reserve', 'inactive', 'probable']);
     const EXCLUDED_STATUSES = new Set(['invalid']);
     let inserted = 0;
+
+    // Fetch all players once (1 subrequest)
+    const allPlayers = await db.query.nflPlayers.findMany({
+      columns: { id: true, externalId: true },
+    });
+    const playerMap = new Map(allPlayers.map(p => [p.externalId, p.id]));
+
+    const newsStatements: any[] = [];
+    const BATCH_SIZE = 50;
 
     for (const [sleeperId, p] of Object.entries(raw)) {
       if (!p) continue;
@@ -219,11 +282,8 @@ adminRoutes.post('/sync-news', async (c) => {
 
       if (!hasMeaningfulStatus) continue;
 
-      const existingPlayer = await db.query.nflPlayers.findFirst({
-        where: eq(schema.nflPlayers.externalId, sleeperId),
-      });
-
-      if (!existingPlayer) continue;
+      const existingPlayerId = playerMap.get(sleeperId);
+      if (!existingPlayerId) continue;
 
       // Skip inactive-only (no notes, no body part) - not relevant for Important Updates
       const isInactiveOnly =
@@ -231,64 +291,80 @@ adminRoutes.post('/sync-news', async (c) => {
         injuryNotes.length === 0 &&
         injuryBodyPart.length === 0;
       if (isInactiveOnly) {
-        await db
-          .delete(schema.playerNews)
-          .where(
-            and(
-              eq(schema.playerNews.playerId, existingPlayer.id),
-              eq(schema.playerNews.source, 'Sleeper')
+        newsStatements.push(
+          db
+            .delete(schema.playerNews)
+            .where(
+              and(
+                eq(schema.playerNews.playerId, existingPlayerId),
+                eq(schema.playerNews.source, 'Sleeper')
+              )
             )
-          );
-        continue;
-      }
+        );
+      } else {
+        const name = p.full_name || [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Player';
+        const statusLabel = injuryStatus || status || 'Update';
+        const headline =
+          injuryNotes.length > 0
+            ? `${name} - ${statusLabel}: ${injuryNotes}`
+            : injuryBodyPart.length > 0
+              ? `${name} - ${statusLabel} (${injuryBodyPart})`
+              : `${name} - ${statusLabel}`;
+        const content =
+          injuryNotes.length > 0
+            ? injuryNotes
+            : injuryBodyPart.length > 0
+              ? `${name} is listed as ${statusLabel}, ${injuryBodyPart}.`
+              : `${name} is listed as ${statusLabel}.`;
 
-      const name = p.full_name || [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Player';
-      const statusLabel = injuryStatus || status || 'Update';
-      const headline =
-        injuryNotes.length > 0
-          ? `${name} - ${statusLabel}: ${injuryNotes}`
-          : injuryBodyPart.length > 0
-            ? `${name} - ${statusLabel} (${injuryBodyPart})`
-            : `${name} - ${statusLabel}`;
-      const content =
-        injuryNotes.length > 0
-          ? injuryNotes
-          : injuryBodyPart.length > 0
-            ? `${name} is listed as ${statusLabel}, ${injuryBodyPart}.`
-            : `${name} is listed as ${statusLabel}.`;
+        const impactLevel =
+          injuryStatus === 'out' || injuryStatus === 'ir' || status === 'injured_reserve' || status === 'ir'
+            ? 'high'
+            : injuryStatus === 'doubtful' || injuryStatus === 'questionable'
+              ? 'medium'
+              : 'low';
 
-      const impactLevel =
-        injuryStatus === 'out' || injuryStatus === 'ir' || status === 'injured_reserve' || status === 'ir'
-          ? 'high'
-          : injuryStatus === 'doubtful' || injuryStatus === 'questionable'
-            ? 'medium'
-            : 'low';
+        const newsUpdated = (p as any).news_updated;
+        const publishedAt = newsUpdated
+          ? new Date(typeof newsUpdated === 'number' ? newsUpdated : parseInt(String(newsUpdated), 10) || Date.now())
+          : new Date();
 
-      const newsUpdated = (p as any).news_updated;
-      const publishedAt = newsUpdated
-        ? new Date(typeof newsUpdated === 'number' ? newsUpdated : parseInt(String(newsUpdated), 10) || Date.now())
-        : new Date();
-
-      await db
-        .delete(schema.playerNews)
-        .where(
-          and(
-            eq(schema.playerNews.playerId, existingPlayer.id),
-            eq(schema.playerNews.source, 'Sleeper')
-          )
+        newsStatements.push(
+          db
+            .delete(schema.playerNews)
+            .where(
+              and(
+                eq(schema.playerNews.playerId, existingPlayerId),
+                eq(schema.playerNews.source, 'Sleeper')
+              )
+            )
         );
 
-      await db.insert(schema.playerNews).values({
-        id: generateId(),
-        playerId: existingPlayer.id,
-        headline,
-        content,
-        source: 'Sleeper',
-        sourceUrl: null,
-        impactLevel,
-        publishedAt,
-      });
-      inserted++;
+        newsStatements.push(
+          db.insert(schema.playerNews).values({
+            id: generateId(),
+            playerId: existingPlayerId,
+            headline,
+            content,
+            source: 'Sleeper',
+            sourceUrl: null,
+            impactLevel,
+            publishedAt,
+          })
+        );
+        inserted++;
+      }
+
+      // Flush batch when reaching size
+      if (newsStatements.length >= BATCH_SIZE) {
+        await db.batch(newsStatements as any);
+        newsStatements.length = 0;
+      }
+    }
+
+    // Flush remaining statements
+    if (newsStatements.length > 0) {
+      await db.batch(newsStatements as any);
     }
 
     return c.json({
@@ -552,14 +628,18 @@ adminRoutes.post('/sync-games', async (c) => {
  * POST /api/admin/sync-stats
  * Fetches weekly NFL stats from Sleeper for ALL players in the database.
  * Requires X-Admin-Key header matching SYNC_SECRET env var.
- * Body: { seasonYear?: number, weeks?: number } - seasonYear defaults to current NFL season, weeks defaults to 18
+ * Body: { seasonYear?: number, week?: number, weeks?: number[] }
+ * - seasonYear defaults to current NFL season
+ * - week: sync a single specific week
+ * - weeks: sync multiple specific weeks
+ * - if neither specified, defaults to week 1
  */
 adminRoutes.post('/sync-stats', async (c) => {
   const db = c.get('db');
 
 
   try {
-    let body: { seasonYear?: number; weeks?: number } = {};
+    let body: { seasonYear?: number; week?: number; weeks?: number[] } = {};
     try {
       const raw = await c.req.json();
       body = raw && typeof raw === 'object' ? raw : {};
@@ -573,18 +653,38 @@ adminRoutes.post('/sync-stats', async (c) => {
     if (seasonYear < 2000 || seasonYear > 2100) {
       return c.json({ error: 'Invalid season year' }, 400);
     }
-    const maxWeeks = body.weeks ?? 18;
-    if (typeof maxWeeks !== 'number' || maxWeeks < 1 || maxWeeks > 22) {
-      return c.json({ error: 'Invalid weeks value' }, 400);
+
+    // Determine which weeks to sync
+    let weeksToSync: number[] = [];
+    if (body.weeks && Array.isArray(body.weeks)) {
+      weeksToSync = body.weeks.filter(w => typeof w === 'number' && w >= 1 && w <= 22);
+    } else if (typeof body.week === 'number' && body.week >= 1 && body.week <= 22) {
+      weeksToSync = [body.week];
+    } else {
+      // Default to week 1 (not all 18)
+      weeksToSync = [1];
+    }
+
+    if (weeksToSync.length === 0) {
+      return c.json({ error: 'No valid weeks specified' }, 400);
     }
 
     let statsImported = 0;
     let statsUpdated = 0;
 
-    for (let week = 1; week <= maxWeeks; week++) {
+    // Fetch all players once (1 subrequest)
+    const allPlayers = await db.query.nflPlayers.findMany({
+      columns: { id: true, externalId: true },
+    });
+    const playerMap = new Map(allPlayers.map(p => [p.externalId, p.id]));
+
+    const statsStatements: any[] = [];
+    const BATCH_SIZE = 50;
+
+    for (const week of weeksToSync) {
       try {
         // Throttle: 150ms delay between sequential stats fetches
-        if (week > 1) await sleep(150);
+        if (week > weeksToSync[0]) await sleep(150);
 
         const statsResponse = await fetch(
           `https://api.sleeper.com/stats/nfl/${seasonYear}/${week}?season_type=regular`
@@ -616,23 +716,20 @@ adminRoutes.post('/sync-stats', async (c) => {
         }
 
         for (const { sleeperPlayerId, playerStats } of weekEntries) {
+          const playerId = playerMap.get(sleeperPlayerId);
+          if (!playerId) continue;
 
-          const player = await db.query.nflPlayers.findFirst({
-            where: eq(schema.nflPlayers.externalId, sleeperPlayerId),
-          });
-
-          if (!player) continue;
-
+          // Check if stats already exist for this week
           const existingStats = await db.query.playerWeeklyStats.findFirst({
             where: and(
-              eq(schema.playerWeeklyStats.playerId, player.id),
+              eq(schema.playerWeeklyStats.playerId, playerId),
               eq(schema.playerWeeklyStats.week, week),
               eq(schema.playerWeeklyStats.seasonYear, seasonYear)
             ),
           });
 
           const statsData = {
-            playerId: player.id,
+            playerId,
             week,
             seasonYear,
             opponent: playerStats.opponent || null,
@@ -675,17 +772,27 @@ adminRoutes.post('/sync-stats', async (c) => {
           };
 
           if (existingStats) {
-            await db
-              .update(schema.playerWeeklyStats)
-              .set(statsData)
-              .where(eq(schema.playerWeeklyStats.id, existingStats.id));
+            statsStatements.push(
+              db
+                .update(schema.playerWeeklyStats)
+                .set(statsData)
+                .where(eq(schema.playerWeeklyStats.id, existingStats.id))
+            );
             statsUpdated++;
           } else {
-            await db.insert(schema.playerWeeklyStats).values({
-              id: generateId(),
-              ...statsData,
-            });
+            statsStatements.push(
+              db.insert(schema.playerWeeklyStats).values({
+                id: generateId(),
+                ...statsData,
+              })
+            );
             statsImported++;
+          }
+
+          // Flush batch when reaching size
+          if (statsStatements.length >= BATCH_SIZE) {
+            await db.batch(statsStatements as any);
+            statsStatements.length = 0;
           }
         }
       } catch (e) {
@@ -693,10 +800,16 @@ adminRoutes.post('/sync-stats', async (c) => {
       }
     }
 
+    // Flush remaining statements
+    if (statsStatements.length > 0) {
+      await db.batch(statsStatements as any);
+    }
+
     return c.json({
       success: true,
       message: 'Stats sync completed',
       seasonYear,
+      weeks: weeksToSync,
       inserted: statsImported,
       updated: statsUpdated,
       total: statsImported + statsUpdated,
@@ -716,7 +829,7 @@ adminRoutes.post('/sync-stats', async (c) => {
 /**
  * POST /api/admin/sync-projections
  * Fetches weekly player projections from Sleeper and upserts into player_projections.
- * Body: { seasonYear?: number, week?: number, allWeeks?: boolean, scoringFormats?: string[] }
+ * Body: { seasonYear?: number, week?: number, weeks?: number[], allWeeks?: boolean, scoringFormats?: string[] }
  * Defaults to current NFL week, all 3 scoring formats.
  * Set allWeeks: true to sync all 18 regular-season weeks (used for initial data population).
  */
@@ -725,7 +838,7 @@ adminRoutes.post('/sync-projections', async (c) => {
 
 
   try {
-    let body: { seasonYear?: number; week?: number; allWeeks?: boolean; scoringFormats?: string[] } = {};
+    let body: { seasonYear?: number; week?: number; weeks?: number[]; allWeeks?: boolean; scoringFormats?: string[] } = {};
     try {
       const raw = await c.req.json();
       body = raw && typeof raw === 'object' ? raw : {};
@@ -736,11 +849,12 @@ adminRoutes.post('/sync-projections', async (c) => {
     const seasonYear = body.seasonYear ?? new Date().getFullYear();
     const scoringFormats = body.scoringFormats ?? ['ppr', 'half_ppr', 'standard'];
 
-    // BUG-005 FIX: Support syncing all weeks so the board has data for every week.
-    // When allWeeks is true, sync weeks 1-18. Otherwise sync just the requested/current week.
+    // Determine which weeks to sync
     let weeksToSync: number[] = [];
     if (body.allWeeks) {
       weeksToSync = Array.from({ length: 18 }, (_, i) => i + 1);
+    } else if (body.weeks && Array.isArray(body.weeks)) {
+      weeksToSync = body.weeks.filter(w => typeof w === 'number' && w >= 1 && w <= 22);
     } else if (body.week) {
       weeksToSync = [body.week];
     } else {
@@ -750,6 +864,10 @@ adminRoutes.post('/sync-projections', async (c) => {
       });
       const currentWeek = anyLeague?.currentWeek || 1;
       weeksToSync = [currentWeek];
+    }
+
+    if (weeksToSync.length === 0) {
+      return c.json({ error: 'No valid weeks specified' }, 400);
     }
 
     let inserted = 0;
@@ -764,9 +882,12 @@ adminRoutes.post('/sync-projections', async (c) => {
       allPlayers.filter(p => p.externalId).map(p => [p.externalId!, p.id])
     );
 
+    const BATCH_SIZE = 50;
+
     for (const weekNum of weeksToSync) {
       let weekInserted = 0;
       let weekUpdated = 0;
+      const projStatements: any[] = [];
 
       try {
         // Fetch projections from Sleeper for this week
@@ -826,18 +947,33 @@ adminRoutes.post('/sync-projections', async (c) => {
             };
 
             if (existingProj) {
-              await db.update(schema.playerProjections)
-                .set(projData)
-                .where(eq(schema.playerProjections.id, existingProj.id));
+              projStatements.push(
+                db.update(schema.playerProjections)
+                  .set(projData)
+                  .where(eq(schema.playerProjections.id, existingProj.id))
+              );
               weekUpdated++;
             } else {
-              await db.insert(schema.playerProjections).values({
-                id: generateId(),
-                ...projData,
-              });
+              projStatements.push(
+                db.insert(schema.playerProjections).values({
+                  id: generateId(),
+                  ...projData,
+                })
+              );
               weekInserted++;
             }
+
+            // Flush batch when reaching size
+            if (projStatements.length >= BATCH_SIZE) {
+              await db.batch(projStatements as any);
+              projStatements.length = 0;
+            }
           }
+        }
+
+        // Flush remaining statements for this week
+        if (projStatements.length > 0) {
+          await db.batch(projStatements as any);
         }
       } catch (weekErr) {
         console.error(`[sync-projections] Error syncing week ${weekNum}:`, weekErr);
