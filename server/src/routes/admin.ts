@@ -6,6 +6,7 @@ import { fetchTwitterTweets } from '../services/twitter';
 import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
+import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse } from '../services/odds';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -1013,6 +1014,230 @@ adminRoutes.post('/sync-projections', async (c) => {
     });
   } catch (err) {
     console.error('Sync projections error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-odds
+ * Fetches current NFL odds from The Odds API and stores them in game_odds table.
+ * Uses batched DB writes (groups of 50) to stay under Worker subrequest limits.
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ */
+adminRoutes.post('/sync-odds', async (c) => {
+  const db = c.get('db');
+  const oddsApiKey = c.env.ODDS_API_KEY;
+
+  if (!oddsApiKey) {
+    return c.json({
+      error: 'ODDS_API_KEY not configured',
+    }, 500);
+  }
+
+  try {
+    const games = await fetchCurrentOdds(oddsApiKey);
+    const parsed = parseOddsResponse(games);
+
+    let inserted = 0;
+    let skipped = 0;
+
+    // Fetch all existing games to map to game IDs
+    const existingGames = await db.query.nflGames.findMany({
+      columns: {
+        id: true,
+        homeTeam: true,
+        awayTeam: true,
+      },
+    });
+    const gameMap = new Map(
+      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g.id])
+    );
+
+    const BATCH_SIZE = 50;
+    const statements: any[] = [];
+
+    for (const odds of parsed) {
+      const gameId = gameMap.get(odds.game_id);
+      if (!gameId) {
+        skipped++;
+        continue;
+      }
+
+      statements.push(
+        db.insert(schema.gameOdds).values({
+          id: odds.id,
+          gameId,
+          sportKey: odds.sport_key,
+          homeTeam: odds.home_team,
+          awayTeam: odds.away_team,
+          commenceTime: odds.commence_time,
+          bookmaker: odds.bookmaker,
+          market: odds.market,
+          homePoint: odds.home_point ?? null,
+          awayPoint: odds.away_point ?? null,
+          homePrice: odds.home_price ?? null,
+          awayPrice: odds.away_price ?? null,
+          overPoint: odds.over_point ?? null,
+          underPoint: odds.under_point ?? null,
+          overPrice: odds.over_price ?? null,
+          underPrice: odds.under_price ?? null,
+          snapshotTime: odds.snapshot_time,
+          season: odds.season,
+          week: odds.week ?? null,
+          createdAt: new Date(),
+        }).onConflictDoNothing()
+      );
+      inserted++;
+
+      // Flush batch when reaching size
+      if (statements.length >= BATCH_SIZE) {
+        await db.batch(statements as any);
+        statements.length = 0;
+      }
+    }
+
+    // Flush remaining statements
+    if (statements.length > 0) {
+      await db.batch(statements as any);
+    }
+
+    invalidateCache('game-odds:', true);
+
+    return c.json({
+      success: true,
+      message: 'Odds sync completed',
+      inserted,
+      skipped,
+      total: parsed.length,
+    });
+  } catch (err) {
+    console.error('Sync odds error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-historical-odds
+ * Fetches historical NFL odds from The Odds API for a specific date.
+ * Body: { date: "2025-09-04T18:00:00Z", week?: number }
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ */
+adminRoutes.post('/sync-historical-odds', async (c) => {
+  const db = c.get('db');
+  const oddsApiKey = c.env.ODDS_API_KEY;
+
+  if (!oddsApiKey) {
+    return c.json({
+      error: 'ODDS_API_KEY not configured',
+    }, 500);
+  }
+
+  try {
+    let body: { date?: string; week?: number } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body
+    }
+
+    if (!body.date) {
+      return c.json({
+        error: 'Missing required field: date (ISO 8601 format)',
+      }, 400);
+    }
+
+    const games = await fetchHistoricalOdds(oddsApiKey, body.date);
+    const parsed = parseOddsResponse(games, body.week);
+
+    let inserted = 0;
+    let skipped = 0;
+
+    // Fetch all existing games to map to game IDs
+    const existingGames = await db.query.nflGames.findMany({
+      columns: {
+        id: true,
+        homeTeam: true,
+        awayTeam: true,
+      },
+    });
+    const gameMap = new Map(
+      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g.id])
+    );
+
+    const BATCH_SIZE = 50;
+    const statements: any[] = [];
+
+    for (const odds of parsed) {
+      const gameId = gameMap.get(odds.game_id);
+      if (!gameId) {
+        skipped++;
+        continue;
+      }
+
+      statements.push(
+        db.insert(schema.gameOdds).values({
+          id: odds.id,
+          gameId,
+          sportKey: odds.sport_key,
+          homeTeam: odds.home_team,
+          awayTeam: odds.away_team,
+          commenceTime: odds.commence_time,
+          bookmaker: odds.bookmaker,
+          market: odds.market,
+          homePoint: odds.home_point ?? null,
+          awayPoint: odds.away_point ?? null,
+          homePrice: odds.home_price ?? null,
+          awayPrice: odds.away_price ?? null,
+          overPoint: odds.over_point ?? null,
+          underPoint: odds.under_point ?? null,
+          overPrice: odds.over_price ?? null,
+          underPrice: odds.under_price ?? null,
+          snapshotTime: odds.snapshot_time,
+          season: odds.season,
+          week: odds.week ?? null,
+          createdAt: new Date(),
+        }).onConflictDoNothing()
+      );
+      inserted++;
+
+      // Flush batch when reaching size
+      if (statements.length >= BATCH_SIZE) {
+        await db.batch(statements as any);
+        statements.length = 0;
+      }
+    }
+
+    // Flush remaining statements
+    if (statements.length > 0) {
+      await db.batch(statements as any);
+    }
+
+    invalidateCache('game-odds:', true);
+
+    return c.json({
+      success: true,
+      message: 'Historical odds sync completed',
+      date: body.date,
+      week: body.week,
+      inserted,
+      skipped,
+      total: parsed.length,
+    });
+  } catch (err) {
+    console.error('Sync historical odds error:', err);
     return c.json(
       {
         error: 'Sync failed',

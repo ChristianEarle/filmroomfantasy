@@ -254,6 +254,35 @@ export const gameLineSnapshots = sqliteTable('game_line_snapshots', {
   snapGameIdx: uniqueIndex('game_snap_game').on(table.gameId, table.snapshotAt),
 }));
 
+// Game odds from The Odds API
+export const gameOdds = sqliteTable('game_odds', {
+  id: text('id').primaryKey(),
+  gameId: text('game_id').notNull().references(() => nflGames.id, { onDelete: 'cascade' }),
+  sportKey: text('sport_key').notNull().default('americanfootball_nfl'),
+  homeTeam: text('home_team').notNull(),
+  awayTeam: text('away_team').notNull(),
+  commenceTime: text('commence_time').notNull(),
+  bookmaker: text('bookmaker').notNull(),
+  market: text('market').notNull(),
+  homePoint: real('home_point'),
+  awayPoint: real('away_point'),
+  homePrice: integer('home_price'),
+  awayPrice: integer('away_price'),
+  overPoint: real('over_point'),
+  underPoint: real('under_point'),
+  overPrice: integer('over_price'),
+  underPrice: integer('under_price'),
+  snapshotTime: text('snapshot_time').notNull(),
+  season: integer('season').notNull().default(2025),
+  week: integer('week'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  gameOddsUnique: uniqueIndex('game_odds_unique').on(table.gameId, table.bookmaker, table.market, table.snapshotTime),
+  gameOddsGameIdx: uniqueIndex('idx_game_odds_game_id').on(table.gameId),
+  gameOddsWeekIdx: uniqueIndex('idx_game_odds_week').on(table.week),
+  gameOddsCommenceIdx: uniqueIndex('idx_game_odds_commence').on(table.commenceTime),
+}));
+
 // ============================================
 // MATCHUPS
 // ============================================
@@ -427,6 +456,10 @@ export const playerNewsRelations = relations(playerNews, ({ one }) => ({
   player: one(nflPlayers, { fields: [playerNews.playerId], references: [nflPlayers.id] }),
 }));
 
+export const gameOddsRelations = relations(gameOdds, ({ one }) => ({
+  game: one(nflGames, { fields: [gameOdds.gameId], references: [nflGames.id] }),
+}));
+
 // ============================================
 // PASSWORD RESET TOKENS
 // ============================================
@@ -478,3 +511,5 @@ export type PlayerNews = typeof playerNews.$inferSelect;
 export type UserFeedback = typeof userFeedback.$inferSelect;
 export type NewUserFeedback = typeof userFeedback.$inferInsert;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+export type GameOdds = typeof gameOdds.$inferSelect;
+export type NewGameOdds = typeof gameOdds.$inferInsert;

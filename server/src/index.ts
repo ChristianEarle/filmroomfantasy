@@ -25,6 +25,7 @@ export type Env = {
   JWT_SECRET: string;
   ENVIRONMENT: string;
   SYNC_SECRET?: string; // Optional: required for POST /api/admin/sync-players
+  ODDS_API_KEY?: string; // Optional: The Odds API key for fetching NFL odds
   TWITTER_RSS_URLS?: string; // Comma-separated RSS URLs, e.g. https://nitter.net/AdamSchefter/rss
   OPENAI_API_KEY?: string; // For AI relevance filtering of player news
   GOOGLE_CLIENT_ID?: string; // Google OAuth client ID — get from https://console.cloud.google.com/apis/credentials
@@ -227,7 +228,7 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-news');
     await callSync('/api/admin/sync-games');
   } else if (event.cron === '0 */4 * * *') {
-    // Every 4 hours: sync stats and projections for current week only (not all 18)
+    // Every 4 hours: sync stats, projections, and odds for current week only (not all 18)
     // This keeps us within subrequest limits while keeping data fresh
     const db = drizzle(env.DB, { schema });
     const anyLeague = await db.query.leagues.findFirst({
@@ -242,6 +243,11 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
 
     await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
     await callSync('/api/admin/sync-projections', { week: currentWeek });
+
+    // Sync current odds during NFL season
+    if (currentWeek <= 18) {
+      await callSync('/api/admin/sync-odds');
+    }
   } else if (event.cron === '0 */6 * * *') {
     // Every 6 hours: sync RSS sports news
     await callSync('/api/admin/sync-twitter-news');
