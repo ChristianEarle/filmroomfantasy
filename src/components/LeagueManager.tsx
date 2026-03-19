@@ -78,11 +78,14 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
   if (!isAuthenticated) {
     return (
       <div className={`p-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-        <div className={`rounded-lg p-4 text-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        <button
+          onClick={onConnectLeague}
+          className={`w-full rounded-lg p-4 text-center transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'}`}
+        >
+          <p className={`text-sm font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
             Sign in to connect leagues
           </p>
-        </div>
+        </button>
       </div>
     );
   }

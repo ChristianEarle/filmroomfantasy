@@ -1,31 +1,29 @@
-// FilmRoom Service Worker — cache-first for static assets, network-first for API
-const CACHE_NAME = 'filmroom-v1';
-const STATIC_ASSETS = [
-  '/',
-  '/favicon.svg',
-  '/apple-touch-icon.png',
-  '/manifest.json',
-];
+// FilmRoom Service Worker — unregister to prevent serving stale builds
+// This SW is disabled to ensure users always get fresh builds from the server.
+// Previously it was caching HTML/JS/CSS aggressively, causing stale content to be served.
 
-// Install: pre-cache shell assets
+// Unregister all service workers to clear any old caches
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
   self.skipWaiting();
 });
 
-// Activate: clean old caches
 self.addEventListener('activate', (event) => {
+  // Clean up all caches
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(keys.map((k) => caches.delete(k)))
     )
   );
+  // Unregister this SW so next page load gets fresh content
+  self.clients.matchAll().then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage({ type: 'UNREGISTER_SW' });
+    });
+  });
   self.clients.claim();
 });
 
-// Fetch: network-first for API, cache-first for static assets
+// Fetch: network-first strategy — always try network, fall back to cache for offline
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -33,21 +31,48 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return;
 
-  // API requests: network only (don't cache dynamic data)
+  // HTML files: network-first to always get latest
+  if (url.pathname.endsWith('.html') || url.pathname === '/') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => response)
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Images and fonts: cache-first
+  if (/\.(png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)$/.test(url.pathname)) {
+    event.respondWith(
+      caches.open('filmroom-assets').then((cache) =>
+        cache.match(request).then((cached) => {
+          const fetched = fetch(request).then((response) => {
+            if (response.ok) {
+              cache.put(request, response.clone());
+            }
+            return response;
+          });
+          return cached || fetched;
+        })
+      )
+    );
+    return;
+  }
+
+  // API: network-only (never cache API responses)
   if (url.pathname.startsWith('/api/')) return;
 
-  // Static assets: stale-while-revalidate
+  // JS/CSS: network-first, but cache for offline
   event.respondWith(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      const cached = await cache.match(request);
-      const fetched = fetch(request).then((response) => {
+    fetch(request)
+      .then((response) => {
         if (response.ok) {
-          cache.put(request, response.clone());
+          caches.open('filmroom-assets').then((cache) => {
+            cache.put(request, response.clone());
+          });
         }
         return response;
-      }).catch(() => cached);
-
-      return cached || fetched;
-    })
+      })
+      .catch(() => caches.match(request))
   );
 });

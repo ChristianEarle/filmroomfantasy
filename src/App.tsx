@@ -158,6 +158,7 @@ const VIEW_TO_PATH: Record<string, string> = {
   Settings: '/settings',
   Profile: '/profile',
   Login: '/login',
+  Register: '/register',
   AllPlayers: '/all-players',
   Pricing: '/pricing',
 };
@@ -255,6 +256,15 @@ function AppContent() {
       setActiveView('Login');
       // Clean the URL immediately to remove token from browser history
       window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // Handle /register URL — set activeView to Login and authView to register
+  useEffect(() => {
+    const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
+    if (path === '/register') {
+      setActiveView('Login');
+      setAuthView('register');
     }
   }, []);
 
