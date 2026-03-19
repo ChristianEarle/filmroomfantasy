@@ -22,6 +22,7 @@ import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswo
 import { ProfileView } from './components/ProfileView';
 import { AllPlayersView } from './components/AllPlayersView';
 import { ComingSoonView } from './components/ComingSoonView';
+import { PricingView } from './components/PricingView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LeagueProvider, useLeagueContext } from './context/LeagueContext';
@@ -158,6 +159,7 @@ const VIEW_TO_PATH: Record<string, string> = {
   Profile: '/profile',
   Login: '/login',
   AllPlayers: '/all-players',
+  Pricing: '/pricing',
 };
 
 const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
@@ -188,7 +190,7 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works (BUG-002 fix)
-  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const isDarkMode = user?.darkMode ?? true;
   const [allPlayersSource, setAllPlayersSource] = useState<'board' | 'waivers'>('board');
@@ -233,6 +235,7 @@ function AppContent() {
       Profile: 'Profile | FilmRoom',
       Login: 'Sign In | FilmRoom',
       AllPlayers: 'All Players | FilmRoom',
+      Pricing: 'Pricing | FilmRoom',
     };
     document.title = titles[activeView] || 'FilmRoom - Fantasy Football Analysis & Management';
   }, [activeView]);
@@ -526,6 +529,8 @@ function AppContent() {
               <ComingSoonView title="Draft Rankings" description="AI-powered draft rankings with ADP tracking, tier breakdowns, and custom scoring projections." icon="draft" isDarkMode={isDarkMode} />
             ) : activeView === 'TradeAnalyzer' ? (
               <ComingSoonView title="AI Trade Analyzer" description="Evaluate trade offers with AI analysis, player value comparisons, and roster impact projections." icon="trade" isDarkMode={isDarkMode} />
+            ) : activeView === 'Pricing' ? (
+              <PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} />
             ) : (
               <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
                 <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Page Not Found</h2>
