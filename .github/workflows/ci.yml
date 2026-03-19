@@ -15,7 +15,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -32,13 +32,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
 
       - name: Install dependencies
         working-directory: server
-        run: npm ci
+        run: npm ci || npm ci
 
       - name: Type-check
         working-directory: server
@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install frontend dependencies
@@ -74,7 +74,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: server
-        run: npm ci
+        run: npm ci || npm ci
 
       - name: Apply migrations
         working-directory: server
