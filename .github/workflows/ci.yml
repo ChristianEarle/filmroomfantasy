@@ -66,6 +66,12 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Set up landing page as homepage
+        run: |
+          cd build
+          cp index.html app.html
+          cp ../landing.html index.html
+
       - name: Install backend dependencies
         working-directory: server
         run: npm ci
@@ -77,3 +83,6 @@ jobs:
       - name: Deploy Worker
         working-directory: server
         run: npx wrangler deploy --env=""
+
+      - name: Deploy Pages
+        run: npx wrangler pages deploy build --project-name=filmroom --commit-message="CI deploy ${{ github.sha }}"
