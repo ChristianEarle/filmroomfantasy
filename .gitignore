@@ -24,6 +24,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Wrangler local state
+.wrangler/
+
 # Local settings
 .claude/
 nul
