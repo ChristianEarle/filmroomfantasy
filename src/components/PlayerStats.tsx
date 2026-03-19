@@ -1,6 +1,5 @@
 import { Player } from '../App';
 import { X, TrendingUp, Target, Activity } from 'lucide-react';
-import { PlayerAvatar } from './PlayerAvatar';
 
 // Extended stats shape that may be available on player objects from the stats API
 interface PlayerDetailStats {
@@ -90,16 +89,10 @@ export function PlayerStats({ player, onClose }: PlayerStatsProps) {
           </button>
           
           <div className="flex items-start gap-6">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-purple-400/50 flex-shrink-0 bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-              <PlayerAvatar
-                name={player.name}
-                headshotUrl={player.headshotUrl}
-                imageUrl={player.imageUrl}
-                className="w-full h-full object-cover"
-                fallbackClassName="text-2xl font-bold"
-                fallbackColorClass="text-purple-300"
-                isDarkMode={true}
-              />
+            <div className="w-24 h-24 rounded-full border-2 border-purple-400/50 flex-shrink-0 bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+              <span className="text-white text-2xl font-bold">
+                {player.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              </span>
             </div>
             
             <div className="flex-1">

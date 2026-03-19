@@ -5,7 +5,6 @@ import api from '../services/api';
 import { playerService } from '../services';
 import type { PlayerNews, MatchupGradeResponse } from '../services';
 import { NewsSnippet } from './NewsSnippet';
-import { PlayerAvatar } from './PlayerAvatar';
 
 interface PlayerCardProps {
   player: Player;
@@ -76,7 +75,6 @@ const colBorder = (isDarkMode: boolean) => isDarkMode ? 'border-r border-slate-6
 export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeasonYear, currentWeek: propsCurrentWeek, scoringFormat: propsScoringFormat }: PlayerCardProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'props' | 'breakdown' | 'history'>('props');
-  const [headshotUrl, setHeadshotUrl] = useState<string | null>(player.headshotUrl ?? null);
   const [weeklyStats, setWeeklyStats] = useState<APIWeeklyStat[] | null>(null);
   const [seasonTotals, setSeasonTotals] = useState<{ games?: number; gamesPlayed?: number; fantasyPointsPPR?: number; fantasyPointsHalf?: number; fantasyPointsStd?: number; averageSnapPct?: number | null } | null>(null);
   const [averagePoints, setAveragePoints] = useState<{ ppr: number | null; half: number | null; std: number | null }>({ ppr: null, half: null, std: null });
@@ -159,19 +157,13 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     return () => { cancelled = true; };
   }, [player.id, propsSeasonYear, propsCurrentWeek]);
 
-  // Fetch player details (for headshot) and stats when card opens or season changes
+  // Fetch player stats when card opens or season changes
   useEffect(() => {
     if (!player?.id) return;
     let cancelled = false;
     setStatsLoading(true);
     const loadPlayerData = async () => {
       try {
-        if (!player.headshotUrl) {
-          const playerRes = await api.get<{ player: { headshotUrl?: string | null } }>(`/players/${player.id}`);
-          if (!cancelled && playerRes?.player?.headshotUrl) {
-            setHeadshotUrl(playerRes.player.headshotUrl);
-          }
-        }
         const seasonParam = selectedSeason === 'latest'
           ? (seasonOptions[0] ?? new Date().getFullYear())
           : selectedSeason;
@@ -217,7 +209,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     };
     loadPlayerData();
     return () => { cancelled = true; };
-  }, [player.id, player.headshotUrl, selectedSeason, seasonOptions]);
+  }, [player.id, selectedSeason, seasonOptions]);
 
   // Transform API weekly stats into game log format for each position
   const apiGameLogs = useMemo(() => {
@@ -342,14 +334,10 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             <div className={`p-6 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-[#222]' : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'}`}>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
-                  <div className={`w-24 aspect-[3/4] flex-shrink-0 rounded-lg flex items-center justify-center border shadow-lg overflow-hidden ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-200'}`}>
-                    <PlayerAvatar
-                      name={player.name}
-                      headshotUrl={headshotUrl ?? player.headshotUrl}
-                      className="w-full h-full object-cover object-top"
-                      fallbackClassName="text-xl font-bold"
-                      isDarkMode={isDarkMode}
-                    />
+                  <div className={`w-16 h-16 flex-shrink-0 rounded-lg flex items-center justify-center border shadow-lg ${isDarkMode ? 'bg-[#1a1a1a] border-[#222]' : 'bg-slate-100 border-slate-200'}`}>
+                    <span className={`text-xl font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>
+                      {player.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                    </span>
                   </div>
                   <div>
                     <div className="flex items-center gap-4 mb-1">
