@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { User, TrendingUp, ArrowUpDown, Star, Sparkles, Trophy, Target, ChevronDown, AlertCircle, Loader2 } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
-import { PlayerAvatar } from './PlayerAvatar';
+
 import { sortByPosition } from '../utils/rosterPositions';
 import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
 
@@ -281,7 +281,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-[#1a1a1a] text-[#737373] border-[#222]' : 'bg-slate-100 text-[#555] border-slate-200'}`}>
-                              <PlayerAvatar name={player.name} imageUrl={player.imageUrl} fallbackClassName="text-sm font-bold" isDarkMode={isDarkMode} />
+                              <span className={`text-sm font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <div>
@@ -356,7 +356,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'}`}>
-                          <PlayerAvatar name={player.name} imageUrl={player.imageUrl} fallbackClassName="text-xs font-bold" isDarkMode={isDarkMode} />
+                          <span className={`text-xs font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                         </div>
                         <div>
                           <div className="flex items-center gap-2">

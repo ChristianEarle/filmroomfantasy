@@ -3,7 +3,7 @@ import { TrendingUp, TrendingDown, Zap, Shield, Target, Loader2 } from 'lucide-r
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import type { RosterPlayer } from '../context/LeagueContext';
-import { PlayerAvatar } from './PlayerAvatar';
+
 import { sortByPosition } from '../utils/rosterPositions';
 import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
 
@@ -331,7 +331,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                     >
                       <div className="flex items-center gap-2">
                         <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-[#1a1a1a] text-[#737373] border-[#222]' : 'bg-slate-100 text-[#555] border-slate-200'}`}>
-                          <PlayerAvatar name={comp.yourPlayer.name} headshotUrl={comp.yourPlayer.headshotUrl} fallbackClassName="text-sm font-bold" isDarkMode={isDarkMode} />
+                          <span className={`text-sm font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{comp.yourPlayer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                         </div>
                         <div>
                           <div className="flex items-center gap-4">
@@ -393,7 +393,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                             <div className={`text-xs ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{comp.oppPlayer.team}</div>
                           </div>
                           <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-[#1a1a1a] text-[#737373] border-[#222]' : 'bg-slate-100 text-[#555] border-slate-200'}`}>
-                            <PlayerAvatar name={comp.oppPlayer.name} headshotUrl={comp.oppPlayer.headshotUrl} fallbackClassName="text-sm font-bold" isDarkMode={isDarkMode} />
+                            <span className={`text-sm font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{comp.oppPlayer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                           </div>
                         </div>
                       </button>
@@ -429,7 +429,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                     <div className="flex items-center gap-3">
                       <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.position}</span>
                       <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'}`}>
-                        <PlayerAvatar name={player.name} headshotUrl={player.headshotUrl} fallbackClassName="text-xs font-bold" isDarkMode={isDarkMode} />
+                        <span className={`text-xs font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                       </div>
                       <div>
                         <span className={`font-bold transition-colors ${isDarkMode ? 'text-[#a3a3a3] group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
@@ -477,7 +477,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                     <div className="flex items-center gap-3">
                       <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-[#555]' : 'text-[#737373]'}`}>{player.position}</span>
                       <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-[#737373]' : 'bg-slate-200 text-[#555]'}`}>
-                        <PlayerAvatar name={player.name} headshotUrl={player.headshotUrl} fallbackClassName="text-xs font-bold" isDarkMode={isDarkMode} />
+                        <span className={`text-xs font-bold ${isDarkMode ? 'text-[#737373]' : 'text-[#555]'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                       </div>
                       <div>
                         <span className={`font-bold transition-colors ${isDarkMode ? 'text-[#a3a3a3] group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{player.name}</span>
