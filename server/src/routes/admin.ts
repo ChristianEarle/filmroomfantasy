@@ -1262,8 +1262,8 @@ adminRoutes.post('/sync-player-props', async (c) => {
     return c.json({ error: 'ODDS_API_KEY not configured' }, 500);
   }
 
-  const body = await c.req.json<{ week: number; date?: string }>();
-  const { week, date } = body;
+  const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string }>();
+  const { week, date, gameIndex, eventId } = body;
 
   if (!week || week < 1 || week > 18) {
     return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
@@ -1272,111 +1272,129 @@ adminRoutes.post('/sync-player-props', async (c) => {
   try {
     c.header('Content-Type', 'application/json');
 
-    // Fetch all games for the date/current
-    const oddsData = date
-      ? await fetchHistoricalOdds(apiKey, date)
-      : { games: await fetchCurrentOdds(apiKey) };
+    let gamesToProcess: any[] = [];
+    let snapshotTime = new Date().toISOString();
 
-    const games = oddsData.games || [];
-    const snapshotTime = oddsData.timestamp || new Date().toISOString();
+    // If eventId is provided directly, fetch props for that event only
+    if (eventId) {
+      console.log(`Fetching player props for event ${eventId}`);
+      const propsGame = await fetchPlayerProps(apiKey, eventId, date);
+      if (propsGame) {
+        gamesToProcess = [propsGame];
+        // Use event data if available
+        if (date) {
+          const oddsData = await fetchHistoricalOdds(apiKey, date);
+          snapshotTime = oddsData.timestamp || snapshotTime;
+        }
+      } else {
+        return c.json({ error: 'Failed to fetch props for event ' + eventId }, 400);
+      }
+    } else {
+      // Fetch all games for the date/current
+      const oddsData = date
+        ? await fetchHistoricalOdds(apiKey, date)
+        : { games: await fetchCurrentOdds(apiKey) };
 
-    console.log(`Starting player props sync for week ${week}, found ${games.length} games`);
+      const games = oddsData.games || [];
+      snapshotTime = oddsData.timestamp || snapshotTime;
+
+      // Filter to valid games
+      const now = new Date();
+      const maxFutureTime = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      const validGames = games.filter((game) => {
+        const commenceTime = new Date(game.commence_time);
+        return commenceTime <= maxFutureTime;
+      }).slice(0, 16);
+
+      console.log(`Starting player props sync for week ${week}, found ${games.length} games, ${validGames.length} valid`);
+
+      // If gameIndex is specified, fetch only that game
+      if (typeof gameIndex === 'number' && gameIndex >= 0 && gameIndex < validGames.length) {
+        console.log(`Processing game at index ${gameIndex}`);
+        const selectedGame = validGames[gameIndex];
+        const propsGame = await fetchPlayerProps(apiKey, selectedGame.id, date);
+        if (propsGame) {
+          gamesToProcess = [propsGame];
+        }
+      } else if (typeof gameIndex === 'number') {
+        return c.json({ error: `Invalid gameIndex (must be 0-${validGames.length - 1})` }, 400);
+      } else {
+        // Default: process first game only to avoid subrequest limits
+        console.log('No gameIndex specified, processing first game only');
+        if (validGames.length > 0) {
+          const propsGame = await fetchPlayerProps(apiKey, validGames[0].id, date);
+          if (propsGame) {
+            gamesToProcess = [propsGame];
+          }
+        }
+      }
+    }
 
     let inserted = 0;
     let propsFound = 0;
-    let eventsFailed = 0;
-    let eventsFetched = 0;
     const statements: any[] = [];
     const BATCH_SIZE = 50;
 
-    // Limit to first 16 real games, skip if commence_time is too far in future
-    const now = new Date();
-    const maxFutureTime = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
-    const validGames = games.filter((game) => {
-      const commenceTime = new Date(game.commence_time);
-      return commenceTime <= maxFutureTime;
-    }).slice(0, 16);
+    // Process the selected game(s)
+    for (const game of gamesToProcess) {
+      // Parse player props
+      const propRecords = parsePlayerProps(game, week, snapshotTime);
+      console.log(`Event ${game.id}: parsed ${propRecords.length} player props`);
+      propsFound += propRecords.length;
 
-    console.log(`Processing ${validGames.length} valid games`);
+      // Match player names to our database player IDs
+      for (const prop of propRecords) {
+        // Match by first + last name in our database
+        const parts = prop.player_name.split(' ');
+        let playerExternalId: string | null = null;
 
-    // For each game, fetch player props
-    for (const game of validGames) {
-      const eventId = game.id;
+        if (parts.length >= 2) {
+          // Try exact match first
+          const firstName = parts[0];
+          const lastName = parts.slice(1).join(' ');
 
-      try {
-        // Fetch player props for this event
-        const propsGame = await fetchPlayerProps(apiKey, eventId, date);
-        if (!propsGame) {
-          console.warn(`No player props data for event ${eventId} (${game.home_team} vs ${game.away_team})`);
-          eventsFailed++;
-          continue;
-        }
-
-        eventsFetched++;
-
-        // Parse player props
-        const propRecords = parsePlayerProps(propsGame, week, snapshotTime);
-        console.log(`Event ${eventId}: parsed ${propRecords.length} player props`);
-        propsFound += propRecords.length;
-
-        // Match player names to our database player IDs
-        for (const prop of propRecords) {
-          // Match by first + last name in our database
-          const parts = prop.player_name.split(' ');
-          let playerExternalId: string | null = null;
-
-          if (parts.length >= 2) {
-            // Try exact match first
-            const firstName = parts[0];
-            const lastName = parts.slice(1).join(' ');
-
-            const dbPlayer = await db.query.nflPlayers.findFirst({
-              where: and(
-                eq(schema.nflPlayers.firstName, firstName),
-                eq(schema.nflPlayers.lastName, lastName)
-              ),
-              columns: { externalId: true },
-            });
-            if (dbPlayer) {
-              playerExternalId = dbPlayer.externalId || null;
-            }
-          }
-
-          const propId = generateId();
-          statements.push(
-            db.insert(schema.playerProps).values({
-              id: propId,
-              eventId: prop.event_id,
-              playerName: prop.player_name,
-              playerExternalId,
-              market: prop.market,
-              bookmaker: prop.bookmaker,
-              overPoint: prop.over_point ?? null,
-              overPrice: prop.over_price ?? null,
-              underPoint: prop.under_point ?? null,
-              underPrice: prop.under_price ?? null,
-              yesPrice: prop.yes_price ?? null,
-              noPrice: prop.no_price ?? null,
-              snapshotTime: prop.snapshot_time,
-              season: 2025,
-              week,
-              homeTeam: prop.home_team,
-              awayTeam: prop.away_team,
-              createdAt: new Date(),
-            }).onConflictDoNothing()
-          );
-          inserted++;
-
-          // Flush batch when reaching size
-          if (statements.length >= BATCH_SIZE) {
-            await db.batch(statements as any);
-            statements.length = 0;
+          const dbPlayer = await db.query.nflPlayers.findFirst({
+            where: and(
+              eq(schema.nflPlayers.firstName, firstName),
+              eq(schema.nflPlayers.lastName, lastName)
+            ),
+            columns: { externalId: true },
+          });
+          if (dbPlayer) {
+            playerExternalId = dbPlayer.externalId || null;
           }
         }
-      } catch (eventErr) {
-        console.error(`Error fetching props for event ${eventId}:`, eventErr);
-        eventsFailed++;
-        // Continue with next event
+
+        const propId = generateId();
+        statements.push(
+          db.insert(schema.playerProps).values({
+            id: propId,
+            eventId: prop.event_id,
+            playerName: prop.player_name,
+            playerExternalId,
+            market: prop.market,
+            bookmaker: prop.bookmaker,
+            overPoint: prop.over_point ?? null,
+            overPrice: prop.over_price ?? null,
+            underPoint: prop.under_point ?? null,
+            underPrice: prop.under_price ?? null,
+            yesPrice: prop.yes_price ?? null,
+            noPrice: prop.no_price ?? null,
+            snapshotTime: prop.snapshot_time,
+            season: 2025,
+            week,
+            homeTeam: prop.home_team,
+            awayTeam: prop.away_team,
+            createdAt: new Date(),
+          }).onConflictDoNothing()
+        );
+        inserted++;
+
+        // Flush batch when reaching size
+        if (statements.length >= BATCH_SIZE) {
+          await db.batch(statements as any);
+          statements.length = 0;
+        }
       }
     }
 
@@ -1392,10 +1410,7 @@ adminRoutes.post('/sync-player-props', async (c) => {
       message: 'Player props sync completed',
       week,
       date: date || new Date().toISOString(),
-      games_requested: games.length,
-      games_valid: validGames.length,
-      games_fetched: eventsFetched,
-      games_failed: eventsFailed,
+      games_processed: gamesToProcess.length,
       props_found: propsFound,
       props_inserted: inserted,
     };
