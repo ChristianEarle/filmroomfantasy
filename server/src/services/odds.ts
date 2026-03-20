@@ -57,6 +57,7 @@ interface OddsOutcome {
   name: string;
   price: number;
   point?: number;
+  description?: string;
 }
 
 interface OddsGame {
@@ -290,36 +291,19 @@ export function parsePlayerProps(
       }
 
       // Parse outcomes for this market
-      // Outcomes: {"name": "Jalen Hurts Over 217.5", "price": -113, "point": 217.5}
-      //           {"name": "Jalen Hurts Under 217.5", "price": -113, "point": 217.5}
-      // Or for yes/no: {"name": "Saquon Barkley Yes", "price": -150}
-      //                {"name": "Saquon Barkley No", "price": 120}
+      // API returns outcomes where:
+      // - outcome.description contains the player name (e.g., "Jalen Hurts")
+      // - outcome.name contains "Over"/"Under" (for point-based) or "Yes"/"No" (for binary)
+      // - outcome.point is the threshold (only for over/under)
+      // - outcome.price is the odds
 
-      // Group outcomes by player
+      // Group outcomes by player + outcome type
       const playerOutcomes: Record<string, any> = {};
 
       for (const outcome of market.outcomes) {
-        const name = outcome.name;
-
-        // Parse player name and over/under/yes/no indicator
-        let playerName = '';
-        let type = '';
-
-        if (name.includes(' Over ')) {
-          const parts = name.split(' Over ');
-          playerName = parts[0];
-          type = 'over';
-        } else if (name.includes(' Under ')) {
-          const parts = name.split(' Under ');
-          playerName = parts[0];
-          type = 'under';
-        } else if (name.endsWith(' Yes')) {
-          playerName = name.replace(' Yes', '');
-          type = 'yes';
-        } else if (name.endsWith(' No')) {
-          playerName = name.replace(' No', '');
-          type = 'no';
-        }
+        // Player name is in outcome.description, not outcome.name
+        const playerName = outcome.description || '';
+        const type = outcome.name; // "Over", "Under", "Yes", "No"
 
         if (!playerName) {
           continue;
@@ -329,15 +313,15 @@ export function parsePlayerProps(
           playerOutcomes[playerName] = {};
         }
 
-        if (type === 'over') {
+        if (type === 'Over') {
           playerOutcomes[playerName].over_point = outcome.point;
           playerOutcomes[playerName].over_price = outcome.price;
-        } else if (type === 'under') {
+        } else if (type === 'Under') {
           playerOutcomes[playerName].under_point = outcome.point;
           playerOutcomes[playerName].under_price = outcome.price;
-        } else if (type === 'yes') {
+        } else if (type === 'Yes') {
           playerOutcomes[playerName].yes_price = outcome.price;
-        } else if (type === 'no') {
+        } else if (type === 'No') {
           playerOutcomes[playerName].no_price = outcome.price;
         }
       }

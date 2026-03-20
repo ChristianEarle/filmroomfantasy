@@ -1280,25 +1280,44 @@ adminRoutes.post('/sync-player-props', async (c) => {
     const games = oddsData.games || [];
     const snapshotTime = oddsData.timestamp || new Date().toISOString();
 
+    console.log(`Starting player props sync for week ${week}, found ${games.length} games`);
+
     let inserted = 0;
-    let updated = 0;
+    let propsFound = 0;
+    let eventsFailed = 0;
+    let eventsFetched = 0;
     const statements: any[] = [];
-    const BATCH_SIZE = 100;
+    const BATCH_SIZE = 50;
+
+    // Limit to first 16 real games, skip if commence_time is too far in future
+    const now = new Date();
+    const maxFutureTime = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    const validGames = games.filter((game) => {
+      const commenceTime = new Date(game.commence_time);
+      return commenceTime <= maxFutureTime;
+    }).slice(0, 16);
+
+    console.log(`Processing ${validGames.length} valid games`);
 
     // For each game, fetch player props
-    for (const game of games) {
+    for (const game of validGames) {
       const eventId = game.id;
 
       try {
-        // Fetch player props for this event (10 credits per event)
+        // Fetch player props for this event
         const propsGame = await fetchPlayerProps(apiKey, eventId, date);
         if (!propsGame) {
-          console.warn(`No player props for event ${eventId}`);
+          console.warn(`No player props data for event ${eventId} (${game.home_team} vs ${game.away_team})`);
+          eventsFailed++;
           continue;
         }
 
+        eventsFetched++;
+
         // Parse player props
         const propRecords = parsePlayerProps(propsGame, week, snapshotTime);
+        console.log(`Event ${eventId}: parsed ${propRecords.length} player props`);
+        propsFound += propRecords.length;
 
         // Match player names to our database player IDs
         for (const prop of propRecords) {
@@ -1356,6 +1375,7 @@ adminRoutes.post('/sync-player-props', async (c) => {
         }
       } catch (eventErr) {
         console.error(`Error fetching props for event ${eventId}:`, eventErr);
+        eventsFailed++;
         // Continue with next event
       }
     }
@@ -1367,14 +1387,22 @@ adminRoutes.post('/sync-player-props', async (c) => {
 
     invalidateCache('player-props:', true);
 
-    return c.json({
+    const summary = {
       success: true,
       message: 'Player props sync completed',
       week,
       date: date || new Date().toISOString(),
-      games: games.length,
+      games_requested: games.length,
+      games_valid: validGames.length,
+      games_fetched: eventsFetched,
+      games_failed: eventsFailed,
+      props_found: propsFound,
       props_inserted: inserted,
-    });
+    };
+
+    console.log('Sync summary:', summary);
+
+    return c.json(summary);
   } catch (err) {
     console.error('Sync player props error:', err);
     return c.json(
