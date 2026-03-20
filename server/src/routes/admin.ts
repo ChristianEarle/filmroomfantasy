@@ -1159,8 +1159,8 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
       }, 400);
     }
 
-    const games = await fetchHistoricalOdds(oddsApiKey, body.date);
-    const parsed = parseOddsResponse(games, body.week);
+    const historicalOdds = await fetchHistoricalOdds(oddsApiKey, body.date);
+    const parsed = parseOddsResponse(historicalOdds.games, body.week, historicalOdds.timestamp);
 
     let inserted = 0;
     let skipped = 0;

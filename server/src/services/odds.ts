@@ -106,10 +106,15 @@ export async function fetchCurrentOdds(apiKey: string): Promise<OddsGame[]> {
   return response.json();
 }
 
+interface HistoricalOddsResponse {
+  games: OddsGame[];
+  timestamp?: string;
+}
+
 export async function fetchHistoricalOdds(
   apiKey: string,
   date: string
-): Promise<OddsGame[]> {
+): Promise<HistoricalOddsResponse> {
   const url = new URL(
     `${ODDS_API_BASE}/historical/sports/americanfootball_nfl/odds`
   );
@@ -124,15 +129,28 @@ export async function fetchHistoricalOdds(
     throw new Error(`Failed to fetch historical odds: ${response.statusText}`);
   }
 
-  return response.json();
+  const json = await response.json() as {
+    data?: OddsGame[];
+    timestamp?: string;
+    previous_timestamp?: string;
+  };
+  // Historical API wraps games in a 'data' key and provides a timestamp
+  const games = json.data || (Array.isArray(json) ? json : []);
+  const timestamp = json.timestamp || json.previous_timestamp;
+
+  return {
+    games,
+    timestamp,
+  };
 }
 
 export function parseOddsResponse(
   games: OddsGame[],
-  week?: number
+  week?: number,
+  snapshotTime?: string
 ): ParsedOdds[] {
   const parsed: ParsedOdds[] = [];
-  const snapshotTime = new Date().toISOString();
+  const timestamp = snapshotTime || new Date().toISOString();
 
   for (const game of games) {
     const homeTeamAbbr = teamNameToAbbr(game.home_team);
@@ -142,7 +160,7 @@ export function parseOddsResponse(
     for (const bookmaker of game.bookmakers) {
       for (const market of bookmaker.markets) {
         let oddsRecord: ParsedOdds = {
-          id: `${gameId}_${bookmaker.key}_${market.key}_${snapshotTime}`,
+          id: `${gameId}_${bookmaker.key}_${market.key}_${timestamp}`,
           game_id: gameId,
           sport_key: game.sport_key,
           home_team: homeTeamAbbr,
@@ -150,7 +168,7 @@ export function parseOddsResponse(
           commence_time: game.commence_time,
           bookmaker: bookmaker.key,
           market: market.key,
-          snapshot_time: snapshotTime,
+          snapshot_time: timestamp,
           season: 2025,
           week,
         };
