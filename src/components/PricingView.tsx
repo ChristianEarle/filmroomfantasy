@@ -52,8 +52,8 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
   }, [isAuthenticated, isAnnual]);
 
   const savings = {
-    pro: '50%',
-    elite: '50%',
+    pro: '17%',
+    elite: '17%',
   };
 
   const tiers = [
@@ -78,7 +78,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
     {
       name: 'Pro',
       monthlyPrice: 4.99,
-      yearlyPrice: 29.99,
+      yearlyPrice: 49.99,
       description: 'Everything you need to dominate your league.',
       features: [
         { text: 'Everything in Free', highlight: true },
@@ -93,7 +93,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
     {
       name: 'Elite',
       monthlyPrice: 9.99,
-      yearlyPrice: 59.99,
+      yearlyPrice: 99.99,
       description: 'Advanced tools for serious competitors.',
       features: [
         { text: 'Everything in Pro', highlight: true },
