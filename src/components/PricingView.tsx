@@ -23,10 +23,18 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
 
     try {
       const interval = isAnnual ? 'year' : 'month';
-      const response = await fetch('/api/billing/create-checkout', {
+      const apiBase = import.meta.env.VITE_API_URL || '/api';
+      const response = await fetch(`${apiBase}/billing/create-checkout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier, interval }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('filmroom_token') ? { Authorization: `Bearer ${localStorage.getItem('filmroom_token')}` } : {}),
+        },
+        body: JSON.stringify({
+          priceId: tier === 'elite' ? (interval === 'year' ? 'elite_yearly' : 'elite_monthly') : (interval === 'year' ? 'pro_yearly' : 'pro_monthly'),
+          successUrl: `${window.location.origin}/pricing?billing=success`,
+          cancelUrl: `${window.location.origin}/pricing?billing=cancel`,
+        }),
       });
 
       if (!response.ok) {

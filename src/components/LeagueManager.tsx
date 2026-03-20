@@ -171,7 +171,8 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
       }
 
       // Create checkout session
-      const response = await fetch('/api/billing/create-checkout', {
+      const apiBase = import.meta.env.VITE_API_URL || '/api';
+      const response = await fetch(`${apiBase}/billing/create-checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
