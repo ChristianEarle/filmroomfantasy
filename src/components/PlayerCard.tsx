@@ -347,58 +347,53 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           {/* Main Card */}
           <div className={`lg:col-span-2 rounded-lg border overflow-hidden shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             {/* Player Header — FantasyPros style */}
-            <div className={`relative border-b overflow-hidden ${isDarkMode ? 'bg-blue-900 border-slate-700' : 'bg-blue-800 border-slate-200'}`} style={{ minHeight: '180px' }}>
-              <div className="flex items-center h-full">
-                {/* Photo on left — fixed size */}
-                <div className="w-28 h-36 flex-shrink-0 ml-4 rounded-lg overflow-hidden bg-blue-800 flex items-center justify-center">
+            <div className={`relative border-b overflow-hidden ${isDarkMode ? 'bg-blue-900 border-slate-700' : 'bg-blue-800 border-slate-200'}`}>
+              <div className="flex items-center py-4 px-4 gap-4">
+                {/* Headshot — small, circular */}
+                <div className="w-14 h-14 flex-shrink-0 rounded-full overflow-hidden bg-blue-800 border-2 border-blue-600">
                   {player.headshotUrl ? (
-                    <img
-                      src={player.headshotUrl}
-                      alt={player.name}
-                      className={`w-full h-full ${player.headshotUrl.includes('espncdn') ? 'object-cover object-top' : 'object-cover object-center scale-125'}`}
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    />
+                    <img src={player.headshotUrl} alt={player.name} className="w-full h-full object-cover object-top" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <span className="text-3xl font-bold text-blue-300/50">{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                      <span className="text-lg font-bold text-blue-300/50">{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                     </div>
                   )}
                 </div>
                 {/* Player info */}
-                <div className="flex-1 py-5 px-6 flex flex-col items-center justify-center text-center">
-                  {/* Health badge */}
-                  {player.status && (
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full mb-2 ${
-                      player.status === 'active' ? 'bg-green-500 text-white' :
-                      player.status === 'injured_reserve' || player.status === 'out' ? 'bg-red-500 text-white' :
-                      player.status === 'questionable' ? 'bg-yellow-500 text-black' :
-                      player.status === 'doubtful' ? 'bg-orange-500 text-white' :
-                      'bg-slate-500 text-white'
-                    }`}>
-                      {player.status === 'active' ? 'HEALTHY' : player.status === 'injured_reserve' ? 'IR' : player.status === 'out' ? 'OUT' : player.status === 'questionable' ? 'QUESTIONABLE' : player.status === 'doubtful' ? 'DOUBTFUL' : player.status.toUpperCase()}
-                    </span>
-                  )}
-                  {/* Name */}
-                  <h1 className="text-2xl font-bold text-white mb-1">{player.name}</h1>
-                  {/* Position - Team | Age */}
-                  <p className="text-sm text-blue-200 mb-4">{player.position} – {player.team}{player.age ? ` | Age ${player.age}` : ''}</p>
+                <div className="flex-1 flex flex-col justify-center">
+                  {/* Name + health badge */}
+                  <div className="flex items-center gap-2 mb-1">
+                    <h1 className="text-xl font-bold text-white">{player.name}</h1>
+                    {player.status && (
+                      <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        player.status === 'active' ? 'bg-green-500 text-white' :
+                        player.status === 'injured_reserve' || player.status === 'out' ? 'bg-red-500 text-white' :
+                        player.status === 'questionable' ? 'bg-yellow-500 text-black' :
+                        player.status === 'doubtful' ? 'bg-orange-500 text-white' :
+                        'bg-slate-500 text-white'
+                      }`}>
+                        {player.status === 'active' ? 'HEALTHY' : player.status === 'injured_reserve' ? 'IR' : player.status === 'out' ? 'OUT' : player.status === 'questionable' ? 'Q' : player.status === 'doubtful' ? 'D' : player.status.toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-blue-200 mb-3">{player.position} – {player.team}{player.age ? `  |  Age ${player.age}` : ''}</p>
                   {/* Stat boxes row */}
-                  <div className="flex items-stretch border border-blue-700/50 rounded-lg overflow-hidden">
-                    <div className="px-5 py-2 text-center border-r border-blue-700/50">
-                      <div className="text-[10px] font-medium text-blue-300 uppercase">PTS</div>
-                      <div className="text-lg font-bold text-white">{player.projectedPoints?.toFixed(1) ?? '—'}</div>
+                  <div className="flex items-stretch border border-blue-700/40 rounded overflow-hidden text-center">
+                    <div className="px-3 py-1.5 border-r border-blue-700/40">
+                      <div className="text-[9px] font-medium text-blue-300/70 uppercase">PTS</div>
+                      <div className="text-sm font-bold text-white">{player.projectedPoints?.toFixed(1) ?? '—'}</div>
                     </div>
-                    <div className="px-5 py-2 text-center border-r border-blue-700/50">
-                      <div className="text-[10px] font-medium text-blue-300 uppercase">RANK</div>
-                      <div className="text-lg font-bold text-white">{player.rank ? `#${player.rank}` : '—'}</div>
+                    <div className="px-3 py-1.5 border-r border-blue-700/40">
+                      <div className="text-[9px] font-medium text-blue-300/70 uppercase">RANK</div>
+                      <div className="text-sm font-bold text-white">{player.rank ? `#${player.rank}` : '—'}</div>
                     </div>
-                    <div className="px-5 py-2 text-center border-r border-blue-700/50">
-                      <div className="text-[10px] font-medium text-blue-300 uppercase">TREND</div>
-                      <div className={`text-lg font-bold ${(player.weekChange ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>{(player.weekChange ?? 0) >= 0 ? '+' : ''}{(player.weekChange ?? 0).toFixed(1)}</div>
+                    <div className="px-3 py-1.5 border-r border-blue-700/40">
+                      <div className="text-[9px] font-medium text-blue-300/70 uppercase">TREND</div>
+                      <div className={`text-sm font-bold ${(player.weekChange ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>{(player.weekChange ?? 0) >= 0 ? '+' : ''}{(player.weekChange ?? 0).toFixed(1)}</div>
                     </div>
-                    <div className="px-5 py-2 text-center">
-                      <div className="text-[10px] font-medium text-blue-300 uppercase">BYE</div>
-                      <div className="text-lg font-bold text-white">{player.byeWeek ?? '—'}</div>
+                    <div className="px-3 py-1.5">
+                      <div className="text-[9px] font-medium text-blue-300/70 uppercase">BYE</div>
+                      <div className="text-sm font-bold text-white">{player.byeWeek ?? '—'}</div>
                     </div>
                   </div>
                   {matchupGrade && (
