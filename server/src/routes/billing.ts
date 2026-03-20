@@ -13,8 +13,16 @@ billingRoutes.use('*', billingRateLimit);
 
 const STRIPE_API_URL = 'https://api.stripe.com/v1';
 
+// Map internal price IDs to Stripe Price IDs
+const PRICE_MAP: Record<string, string> = {
+  pro_monthly: 'price_1TCzKbKcWZmDI9ul6vSQmJai',
+  pro_yearly: 'price_1TD9fkKcWZmDI9ulddloDohc',
+  elite_monthly: 'price_1TCzMMKcWZmDI9ulav5tWax6',
+  elite_yearly: 'price_1TD9h3KcWZmDI9ulKippuUB8',
+};
+
 // POST /api/billing/create-checkout
-// Creates a Stripe Checkout session for Pro subscription
+// Creates a Stripe Checkout session for Pro/Elite subscription
 billingRoutes.post('/create-checkout', authMiddleware, async (c) => {
   const user = c.get('user');
   const db = c.get('db');
@@ -30,7 +38,7 @@ billingRoutes.post('/create-checkout', authMiddleware, async (c) => {
 
   try {
     const body = await c.req.json<{ priceId: string; successUrl: string; cancelUrl: string }>();
-    const { priceId, successUrl, cancelUrl } = body;
+    let { priceId, successUrl, cancelUrl } = body;
 
     if (!priceId || !successUrl || !cancelUrl) {
       return c.json(
@@ -38,6 +46,9 @@ billingRoutes.post('/create-checkout', authMiddleware, async (c) => {
         400
       );
     }
+
+    // Resolve internal price ID to Stripe Price ID
+    const stripePriceId = PRICE_MAP[priceId] || priceId;
 
     // Create or retrieve Stripe customer
     let stripeCustomerId = user.stripeCustomerId;
@@ -82,7 +93,7 @@ billingRoutes.post('/create-checkout', authMiddleware, async (c) => {
         customer: stripeCustomerId,
         line_items: JSON.stringify([
           {
-            price: priceId,
+            price: stripePriceId,
             quantity: 1,
           },
         ]),
