@@ -347,15 +347,15 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           {/* Main Card */}
           <div className={`lg:col-span-2 rounded-lg border overflow-hidden shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             {/* Player Header — FantasyPros style */}
-            <div className={`relative border-b overflow-hidden ${isDarkMode ? 'bg-blue-900 border-slate-700' : 'bg-blue-800 border-slate-200'}`}>
-              <div className="flex items-stretch">
-                {/* Large photo on left */}
-                <div className="w-36 flex-shrink-0 relative overflow-hidden">
+            <div className={`relative border-b overflow-hidden ${isDarkMode ? 'bg-blue-900 border-slate-700' : 'bg-blue-800 border-slate-200'}`} style={{ minHeight: '180px' }}>
+              <div className="flex items-center h-full">
+                {/* Photo on left — fixed size, head+shoulders crop */}
+                <div className="w-28 h-36 flex-shrink-0 ml-4 rounded-lg overflow-hidden bg-blue-800">
                   {player.headshotUrl ? (
                     <img src={player.headshotUrl} alt={player.name} className="w-full h-full object-cover object-top" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-blue-800">
-                      <span className="text-4xl font-bold text-blue-300/50">{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                    <div className="w-full h-full flex items-center justify-center">
+                      <span className="text-3xl font-bold text-blue-300/50">{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                     </div>
                   )}
                 </div>
