@@ -350,7 +350,15 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
                   <div className={`w-24 aspect-[3/4] flex-shrink-0 rounded-lg flex items-center justify-center border shadow-lg overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
-                    <span className={`text-xl font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                    {player.headshotUrl ? (
+                      <img
+                        src={player.headshotUrl}
+                        alt={`${player.name} headshot`}
+                        className="w-full h-full object-cover object-top"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }}
+                      />
+                    ) : null}
+                    <span className={`text-xl font-bold ${player.headshotUrl ? 'hidden' : ''} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                   </div>
                   <div>
                     <div className="flex items-center gap-4 mb-1">
