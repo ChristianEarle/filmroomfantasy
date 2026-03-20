@@ -5,16 +5,21 @@ interface PricingViewProps {
   isDarkMode: boolean;
   userTier?: 'free' | 'pro' | 'elite';
   isAuthenticated?: boolean;
+  onNavigate?: (view: string) => void;
 }
 
-export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = false }: PricingViewProps) {
+export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = false, onNavigate }: PricingViewProps) {
   const [isAnnual, setIsAnnual] = useState(false);
   const [loading, setLoading] = useState<'pro' | 'elite' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleUpgrade = useCallback(async (tier: 'pro' | 'elite') => {
     if (!isAuthenticated) {
-      window.location.href = '/login';
+      if (onNavigate) {
+        onNavigate('Login');
+      } else {
+        window.location.href = '/login';
+      }
       return;
     }
 
@@ -74,7 +79,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: '1 league sync', highlight: false },
         { text: 'Current week projections', highlight: false },
       ],
-      cta: userTier === 'free' ? 'Current Plan' : 'Downgrade',
+      cta: !isAuthenticated ? 'Sign Up Free' : userTier === 'free' ? 'Current Plan' : 'Downgrade',
       featured: false,
       badge: null,
     },
@@ -89,7 +94,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: 'Trending players & add/drop data', highlight: true },
         { text: 'Deeper player research — stats, Vegas props, game logs, matchup grades', highlight: true },
       ],
-      cta: userTier === 'pro' ? 'Current Plan' : 'Upgrade to Pro',
+      cta: !isAuthenticated ? 'Sign Up' : userTier === 'pro' ? 'Current Plan' : 'Upgrade to Pro',
       featured: true,
       badge: 'Most Popular',
     },
@@ -107,7 +112,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: 'Priority support', highlight: false, comingSoon: true },
         { text: 'Early access to new features', highlight: false, comingSoon: true },
       ],
-      cta: userTier === 'elite' ? 'Current Plan' : 'Upgrade to Elite',
+      cta: !isAuthenticated ? 'Sign Up' : userTier === 'elite' ? 'Current Plan' : 'Upgrade to Elite',
       featured: false,
       badge: null,
     },
@@ -242,15 +247,19 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                 {/* CTA Button */}
                 <button
                   onClick={() => {
-                    if (tier.name === 'Free') {
-                      window.location.href = '/login';
+                    if (!isAuthenticated) {
+                      if (onNavigate) {
+                        onNavigate('Login');
+                      } else {
+                        window.location.href = '/login';
+                      }
                     } else if (tier.name !== 'Free') {
                       handleUpgrade(tier.name.toLowerCase() as 'pro' | 'elite');
                     }
                   }}
-                  disabled={loading === (tier.name.toLowerCase() as 'pro' | 'elite') || tier.name === userTier}
+                  disabled={isAuthenticated && (loading === (tier.name.toLowerCase() as 'pro' | 'elite') || (tier.name.toLowerCase() === userTier))}
                   className={`w-full py-3 rounded-lg font-semibold transition-all ${
-                    tier.name === userTier
+                    isAuthenticated && tier.name.toLowerCase() === userTier
                       ? isDarkMode
                         ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
                         : 'bg-slate-100 text-slate-500 cursor-not-allowed'
@@ -329,6 +338,8 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
             onClick={() => {
               if (isAuthenticated) {
                 handleUpgrade('pro');
+              } else if (onNavigate) {
+                onNavigate('Login');
               } else {
                 window.location.href = '/login';
               }
@@ -336,7 +347,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
             className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all inline-flex items-center gap-2"
           >
             <CreditCard className="w-5 h-5" />
-            Start with Pro
+            {isAuthenticated ? 'Start with Pro' : 'Sign Up Free'}
           </button>
         </div>
       </div>

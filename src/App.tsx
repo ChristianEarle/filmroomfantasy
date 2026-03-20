@@ -558,7 +558,7 @@ function AppContent() {
             ) : activeView === 'TradeAnalyzer' ? (
               <ComingSoonView title="AI Trade Analyzer" description="Evaluate trade offers with AI analysis, player value comparisons, and roster impact projections." icon="trade" isDarkMode={isDarkMode} />
             ) : activeView === 'Pricing' ? (
-              <PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} />
+              <PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} onNavigate={(view) => setActiveView(view as any)} />
             ) : (
               <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
                 <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Page Not Found</h2>
