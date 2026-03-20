@@ -349,10 +349,15 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             {/* Player Header — FantasyPros style */}
             <div className={`relative border-b overflow-hidden ${isDarkMode ? 'bg-blue-900 border-slate-700' : 'bg-blue-800 border-slate-200'}`} style={{ minHeight: '180px' }}>
               <div className="flex items-center h-full">
-                {/* Photo on left — fixed size, head+shoulders crop */}
-                <div className="w-28 h-36 flex-shrink-0 ml-4 rounded-lg overflow-hidden bg-blue-800">
+                {/* Photo on left — fixed size */}
+                <div className="w-28 h-36 flex-shrink-0 ml-4 rounded-lg overflow-hidden bg-blue-800 flex items-center justify-center">
                   {player.headshotUrl ? (
-                    <img src={player.headshotUrl} alt={player.name} className="w-full h-full object-cover object-top" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    <img
+                      src={player.headshotUrl}
+                      alt={player.name}
+                      className={`w-full h-full ${player.headshotUrl.includes('espncdn') ? 'object-cover object-top' : 'object-cover object-center scale-125'}`}
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <span className="text-3xl font-bold text-blue-300/50">{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
