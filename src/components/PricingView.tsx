@@ -79,7 +79,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: 'Everything in Free', highlight: true },
         { text: 'Unlimited league syncs', highlight: true },
         { text: 'Trending players & add/drop data', highlight: true },
-        { text: 'Player research — full stats, Vegas props, game logs, matchup grades', highlight: true },
+        { text: 'Deeper player research — stats, Vegas props, game logs, matchup grades', highlight: true },
       ],
       cta: userTier === 'pro' ? 'Current Plan' : 'Upgrade to Pro',
       featured: true,
