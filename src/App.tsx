@@ -15,6 +15,7 @@ import { GameDetailModal } from './components/GameDetailModal';
 // Lazy load heavy views for better initial bundle size
 const TrendsView = lazy(() => import('./components/TrendsView').then(m => ({ default: m.TrendsView })));
 const PlayoffPredictorView = lazy(() => import('./components/PlayoffPredictorView').then(m => ({ default: m.PlayoffPredictorView })));
+const ResearchView = lazy(() => import('./components/ResearchView').then(m => ({ default: m.ResearchView })));
 import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
@@ -153,6 +154,7 @@ const VIEW_TO_PATH: Record<string, string> = {
   Waivers: '/waivers',
   GameSlate: '/game-slate',
   Trends: '/trends',
+  Research: '/research',
   Playoffs: '/playoff-predictor',
   DraftRankings: '/draft-rankings',
   TradeAnalyzer: '/trade-analyzer',
@@ -195,7 +197,7 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works (BUG-002 fix)
-  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const isDarkMode = user?.darkMode ?? true;
   const [allPlayersSource, setAllPlayersSource] = useState<'board' | 'waivers'>('board');
@@ -233,6 +235,7 @@ function AppContent() {
       Waivers: 'Waivers | FilmRoom',
       GameSlate: 'NFL Games | FilmRoom',
       Trends: 'Trends | FilmRoom',
+      Research: 'Player Research | FilmRoom',
       Playoffs: 'Playoff Predictor | FilmRoom',
       DraftRankings: 'Draft Rankings | FilmRoom',
       TradeAnalyzer: 'AI Trade Analyzer | FilmRoom',
@@ -459,6 +462,17 @@ function AppContent() {
                   <TrendsView
                     onPlayerClick={handlePlayerClick}
                     isDarkMode={isDarkMode}
+                  />
+                </Suspense>
+              </ErrorBoundary>
+            ) : activeView === 'Research' ? (
+              <ErrorBoundary isDarkMode={isDarkMode}>
+                <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+                  <ResearchView
+                    isDarkMode={isDarkMode}
+                    userSubscriptionTier={user?.subscriptionTier}
+                    isAuthenticated={isAuthenticated}
+                    onPlayerClick={handlePlayerClick}
                   />
                 </Suspense>
               </ErrorBoundary>
