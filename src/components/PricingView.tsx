@@ -96,12 +96,12 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
       description: 'Advanced tools for serious competitors.',
       features: [
         { text: 'Everything in Pro', highlight: true },
-        { text: 'Trade analyzer', highlight: true },
-        { text: 'Lineup optimizer', highlight: true },
-        { text: 'Custom scoring models', highlight: false },
-        { text: 'Season-long projections', highlight: false },
-        { text: 'Priority support', highlight: false },
-        { text: 'Early access to new features', highlight: false },
+        { text: 'Trade analyzer', highlight: true, comingSoon: true },
+        { text: 'Lineup optimizer', highlight: true, comingSoon: true },
+        { text: 'Custom scoring models', highlight: false, comingSoon: true },
+        { text: 'Season-long projections', highlight: false, comingSoon: true },
+        { text: 'Priority support', highlight: false, comingSoon: true },
+        { text: 'Early access to new features', highlight: false, comingSoon: true },
       ],
       cta: userTier === 'elite' ? 'Current Plan' : 'Upgrade to Elite',
       featured: false,
@@ -225,6 +225,11 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                       <Check className={`w-5 h-5 flex-shrink-0 mt-0.5 ${feature.highlight ? 'text-blue-600' : isDarkMode ? 'text-slate-600' : 'text-slate-400'}`} />
                       <span className={`text-sm ${feature.highlight ? (isDarkMode ? 'text-white font-semibold' : 'text-slate-900 font-semibold') : isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                         {feature.text}
+                        {'comingSoon' in feature && feature.comingSoon && (
+                          <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${isDarkMode ? 'bg-amber-900/30 text-amber-400 border border-amber-800/50' : 'bg-amber-100 text-amber-700 border border-amber-200'}`}>
+                            Coming Soon
+                          </span>
+                        )}
                       </span>
                     </li>
                   ))}

@@ -153,7 +153,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               <p className="text-sm">Player projections and stats will appear here during the NFL season.</p>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {/* Away Team */}
             <div>
               <div className={`rounded-lg p-4 mb-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>

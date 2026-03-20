@@ -158,7 +158,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 )}
               </button>
               {showTeamDropdown && league?.teams && league.teams.length > 1 && (
-                <div className={`absolute top-full left-0 mt-2 w-64 rounded-lg border shadow-xl z-50 overflow-hidden max-h-80 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className={`absolute top-full left-0 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border shadow-xl z-50 overflow-hidden max-h-80 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                   {league.teams.map(team => (
                     <button
                       key={team.id}

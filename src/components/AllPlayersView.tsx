@@ -164,7 +164,7 @@ export function AllPlayersView({
           <div>
             <div className={`text-sm font-semibold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
             <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-              {player.team}
+              {player.team} <span className="sm:hidden">• {player.position}</span>
               {oddsDisplay && (
                 <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                   {oddsDisplay}
@@ -173,12 +173,12 @@ export function AllPlayersView({
             </div>
           </div>
         </td>
-        <td className="px-3 py-2">
+        <td className="px-3 py-2 hidden sm:table-cell">
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
             {player.position}
           </span>
         </td>
-        <td className="px-3 py-2">
+        <td className="px-3 py-2 hidden md:table-cell">
           <span className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
         </td>
         <td className="px-3 py-2 text-right">
@@ -390,14 +390,14 @@ export function AllPlayersView({
                   </th>
                   <th
                     onClick={() => handleSort('position')}
-                    className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-14 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-14 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1">
                       POS
                       {getSortIcon('position')}
                     </div>
                   </th>
-                  <th className={`text-left px-3 py-2 text-xs font-semibold w-40 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>STATS</th>
+                  <th className={`text-left px-3 py-2 text-xs font-semibold w-40 hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>STATS</th>
                   <th
                     onClick={() => handleSort('projectedPoints')}
                     className={`text-right px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-16 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
