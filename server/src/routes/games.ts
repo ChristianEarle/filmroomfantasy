@@ -1,10 +1,9 @@
 import { Hono } from 'hono';
-import { eq, and, asc, inArray, like } from 'drizzle-orm';
+import { eq, and, asc, desc, inArray, like } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { fetchEspnScoreboard, getNflSeasonContext, getTeamDisplayName, getStaticNetwork } from '../services/espn';
-import { desc, limit } from 'drizzle-orm';
 import type { Env, Variables } from '../index';
 
 export const gameRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
