@@ -346,94 +346,65 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Card */}
           <div className={`lg:col-span-2 rounded-lg border overflow-hidden shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-            {/* Player Header */}
-            <div className={`p-5 border-b ${isDarkMode ? 'bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-slate-700' : 'bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 border-slate-200'}`}>
-              <div className="flex items-center gap-4">
-                {/* Headshot */}
-                <div className={`w-16 h-16 flex-shrink-0 rounded-full overflow-hidden border-2 ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-slate-100 border-slate-300'}`}>
+            {/* Player Header — FantasyPros style */}
+            <div className={`relative border-b overflow-hidden ${isDarkMode ? 'bg-blue-900 border-slate-700' : 'bg-blue-800 border-slate-200'}`}>
+              <div className="flex items-stretch">
+                {/* Large photo on left */}
+                <div className="w-36 flex-shrink-0 relative overflow-hidden">
                   {player.headshotUrl ? (
-                    <img
-                      src={player.headshotUrl}
-                      alt={`${player.name} headshot`}
-                      className="w-full h-full object-cover object-top"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; if ((e.target as HTMLImageElement).nextElementSibling) (e.target as HTMLImageElement).nextElementSibling.classList.remove('hidden'); }}
-                    />
-                  ) : null}
-                  <span className={`${player.headshotUrl ? 'hidden' : ''} w-full h-full flex items-center justify-center text-lg font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
-                </div>
-
-                {/* Name + Meta */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-1">
-                    <h1 className={`text-xl font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</h1>
-                      {/* Health Status Badge */}
-                      {player.status && (
-                        <span className={`text-xs font-semibold px-3 py-1.5 rounded-md shrink-0 ml-2 ${
-                          player.status === 'active' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
-                          player.status === 'injured_reserve' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
-                          player.status === 'out' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
-                          player.status === 'questionable' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
-                          player.status === 'doubtful' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
-                          'bg-slate-500/20 text-slate-400 border border-slate-500/30'
-                        }`}>
-                          {player.status === 'active' ? 'HEALTHY' :
-                           player.status === 'injured_reserve' ? 'IR' :
-                           player.status === 'out' ? 'OUT' :
-                           player.status === 'questionable' ? 'QUESTIONABLE' :
-                           player.status === 'doubtful' ? 'DOUBTFUL' :
-                           player.status.toUpperCase()}
-                        </span>
-                      )}
+                    <img src={player.headshotUrl} alt={player.name} className="w-full h-full object-cover object-top" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-blue-800">
+                      <span className="text-4xl font-bold text-blue-300/50">{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                     </div>
-                    <div className={`flex items-center gap-3 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                      <span className="font-medium">{player.position} – {player.team}</span>
-                      {player.age && <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>|</span>}
-                      {player.age && <span>Age {player.age}</span>}
+                  )}
+                </div>
+                {/* Player info */}
+                <div className="flex-1 py-5 px-6 flex flex-col items-center justify-center text-center">
+                  {/* Health badge */}
+                  {player.status && (
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full mb-2 ${
+                      player.status === 'active' ? 'bg-green-500 text-white' :
+                      player.status === 'injured_reserve' || player.status === 'out' ? 'bg-red-500 text-white' :
+                      player.status === 'questionable' ? 'bg-yellow-500 text-black' :
+                      player.status === 'doubtful' ? 'bg-orange-500 text-white' :
+                      'bg-slate-500 text-white'
+                    }`}>
+                      {player.status === 'active' ? 'HEALTHY' : player.status === 'injured_reserve' ? 'IR' : player.status === 'out' ? 'OUT' : player.status === 'questionable' ? 'QUESTIONABLE' : player.status === 'doubtful' ? 'DOUBTFUL' : player.status.toUpperCase()}
+                    </span>
+                  )}
+                  {/* Name */}
+                  <h1 className="text-2xl font-bold text-white mb-1">{player.name}</h1>
+                  {/* Position - Team | Age */}
+                  <p className="text-sm text-blue-200 mb-4">{player.position} – {player.team}{player.age ? ` | Age ${player.age}` : ''}</p>
+                  {/* Stat boxes row */}
+                  <div className="flex items-stretch border border-blue-700/50 rounded-lg overflow-hidden">
+                    <div className="px-5 py-2 text-center border-r border-blue-700/50">
+                      <div className="text-[10px] font-medium text-blue-300 uppercase">PTS</div>
+                      <div className="text-lg font-bold text-white">{player.projectedPoints?.toFixed(1) ?? '—'}</div>
+                    </div>
+                    <div className="px-5 py-2 text-center border-r border-blue-700/50">
+                      <div className="text-[10px] font-medium text-blue-300 uppercase">RANK</div>
+                      <div className="text-lg font-bold text-white">{player.rank ? `#${player.rank}` : '—'}</div>
+                    </div>
+                    <div className="px-5 py-2 text-center border-r border-blue-700/50">
+                      <div className="text-[10px] font-medium text-blue-300 uppercase">TREND</div>
+                      <div className={`text-lg font-bold ${(player.weekChange ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>{(player.weekChange ?? 0) >= 0 ? '+' : ''}{(player.weekChange ?? 0).toFixed(1)}</div>
+                    </div>
+                    <div className="px-5 py-2 text-center">
+                      <div className="text-[10px] font-medium text-blue-300 uppercase">BYE</div>
+                      <div className="text-lg font-bold text-white">{player.byeWeek ?? '—'}</div>
                     </div>
                   </div>
-                </div>
-
-              {/* Quick Stats Grid */}
-              <div className={`mt-4 grid grid-cols-4 gap-px rounded-lg overflow-hidden border ${isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-slate-50'}`}>
-                      {/* PTS */}
-                      <div className={`px-3 py-2 flex flex-col items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-white'}`}>
-                        <div className={`text-[10px] font-semibold uppercase ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>PTS</div>
-                        <div className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints?.toFixed(1) ?? '—'}</div>
-                      </div>
-
-                      {/* RANK */}
-                      <div className={`px-3 py-2 flex flex-col items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-white'}`}>
-                        <div className={`text-[10px] font-semibold uppercase ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>RANK</div>
-                        <div className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.rank ? `#${player.rank}` : '—'}</div>
-                      </div>
-
-                      {/* TREND */}
-                      <div className={`px-3 py-2 flex flex-col items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-white'}`}>
-                        <div className={`text-[10px] font-semibold uppercase ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>TREND</div>
-                        <div className={`text-lg font-bold flex items-center gap-1 ${(player.weekChange ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          {(player.weekChange ?? 0) >= 0 ? '+' : ''}{(player.weekChange ?? 0).toFixed(1)}
-                        </div>
-                      </div>
-
-                      {/* BYE */}
-                      <div className={`px-3 py-2 flex flex-col items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-white'}`}>
-                        <div className={`text-[10px] font-semibold uppercase ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>BYE</div>
-                        <div className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.byeWeek ?? '—'}</div>
-                      </div>
+                  {matchupGrade && (
+                    <div className="mt-3">
+                      <span className="text-xs font-medium px-3 py-1 rounded-md border" style={getGradeStyle(matchupGrade)} title={matchupData?.message || `${getMatchupGradeLabel(matchupGrade)} matchup`}>
+                        {matchupData?.opponent ? `vs ${matchupData.opponent} ` : 'Matchup '}{matchupGrade}
+                      </span>
                     </div>
-
-                    {/* Matchup Grade Badge */}
-              {matchupGrade && (
-                <div className="mt-3 flex justify-end">
-                  <span
-                    className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                    style={getGradeStyle(matchupGrade)}
-                    title={matchupData?.message || `${getMatchupGradeLabel(matchupGrade)} matchup`}
-                  >
-                    {matchupData?.opponent ? `vs ${matchupData.opponent} ` : 'Matchup '}{matchupGrade}
-                  </span>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
 
             {/* News Section */}
