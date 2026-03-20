@@ -460,6 +460,34 @@ export const gameOddsRelations = relations(gameOdds, ({ one }) => ({
   game: one(nflGames, { fields: [gameOdds.gameId], references: [nflGames.id] }),
 }));
 
+// Player props from The Odds API
+export const playerProps = sqliteTable('player_props', {
+  id: text('id').primaryKey(),
+  eventId: text('event_id').notNull(),
+  playerName: text('player_name').notNull(),
+  playerExternalId: text('player_external_id'),
+  market: text('market').notNull(), // 'player_pass_yds', 'player_rush_yds', etc.
+  bookmaker: text('bookmaker').notNull(),
+  overPoint: real('over_point'),
+  overPrice: integer('over_price'),
+  underPoint: real('under_point'),
+  underPrice: integer('under_price'),
+  yesPrice: integer('yes_price'),
+  noPrice: integer('no_price'),
+  snapshotTime: text('snapshot_time').notNull(),
+  season: integer('season').notNull().default(2025),
+  week: integer('week').notNull(),
+  homeTeam: text('home_team'),
+  awayTeam: text('away_team'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  playerPropsUnique: uniqueIndex('player_props_unique').on(table.eventId, table.playerName, table.market, table.bookmaker, table.snapshotTime),
+  playerPropsNameIdx: uniqueIndex('idx_player_props_name').on(table.playerName),
+  playerPropsWeekIdx: uniqueIndex('idx_player_props_week').on(table.week),
+  playerPropsMarketIdx: uniqueIndex('idx_player_props_market').on(table.market),
+  playerPropsExternalIdIdx: uniqueIndex('idx_player_props_external_id').on(table.playerExternalId),
+}));
+
 // ============================================
 // PASSWORD RESET TOKENS
 // ============================================
@@ -513,3 +541,5 @@ export type NewUserFeedback = typeof userFeedback.$inferInsert;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type GameOdds = typeof gameOdds.$inferSelect;
 export type NewGameOdds = typeof gameOdds.$inferInsert;
+export type PlayerProps = typeof playerProps.$inferSelect;
+export type NewPlayerProps = typeof playerProps.$inferInsert;

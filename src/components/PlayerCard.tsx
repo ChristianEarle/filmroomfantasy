@@ -102,6 +102,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [matchupData, setMatchupData] = useState<MatchupGradeResponse | null>(null);
   const [projectionAccuracy, setProjectionAccuracy] = useState<any>(null);
   const [accuracyLoading, setAccuracyLoading] = useState(false);
+  const [playerProps, setPlayerProps] = useState<any>(null);
+  const [propsLoading, setPropsLoading] = useState(false);
 
   // Fetch years for which this player has data (dropdown only shows years with stats)
   useEffect(() => {
@@ -422,8 +424,16 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   key={tab}
                   onClick={() => {
                     setActiveTab(tab);
-                    // Fetch projection accuracy data when switching to that tab
-                    if (tab === 'accuracy' && !projectionAccuracy && !accuracyLoading) {
+                    // Fetch data when switching tabs
+                    if (tab === 'props' && !playerProps && !propsLoading) {
+                      setPropsLoading(true);
+                      const season = propsSeasonYear || new Date().getFullYear();
+                      const week = propsCurrentWeek || 1;
+                      api.get(`/players/${player.id}/props?week=${week}&season=${season}`)
+                        .then(setPlayerProps)
+                        .catch(err => console.error('Failed to fetch props:', err))
+                        .finally(() => setPropsLoading(false));
+                    } else if (tab === 'accuracy' && !projectionAccuracy && !accuracyLoading) {
                       setAccuracyLoading(true);
                       const season = propsSeasonYear || new Date().getFullYear();
                       api.get(`/players/${player.id}/projection-accuracy?season=${season}`)
@@ -456,11 +466,73 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   <div className="flex items-center justify-between mb-4">
                     <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Vegas Prop Lines</h3>
                   </div>
-                  <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                    <div className={`text-3xl mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>📊</div>
-                    <p className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Props Coming Soon</p>
-                    <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Live Vegas prop lines will be available in a future update. Check the History tab for real performance data.</p>
-                  </div>
+                  {propsLoading ? (
+                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <Loader2 className="inline-block animate-spin mb-2" size={24} />
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading props...</p>
+                    </div>
+                  ) : !playerProps || Object.keys(playerProps.props || {}).length === 0 ? (
+                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <div className={`text-3xl mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>📊</div>
+                      <p className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No Props Available</p>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Vegas prop lines not yet available for this week.</p>
+                    </div>
+                  ) : (
+                    <div className={`rounded-lg border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-750' : 'border-slate-200 bg-slate-100'}`}>
+                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Market</th>
+                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Vegas Line</th>
+                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Actual</th>
+                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Result</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(playerProps.props || {}).map(([market, prop]: [string, any]) => {
+                              const actualKey = market === 'passyds' ? 'passYds' : market === 'passtds' ? 'passTds' : market === 'rushyds' ? 'rushYds' : market === 'rushtds' ? 'rushTds' : market === 'recyds' ? 'recYds' : market === 'recs' ? 'recs' : market === 'anytimetd' ? 'scoredTd' : '';
+                              const actual = playerProps.actual?.[actualKey];
+                              const line = prop.line || prop.overPoint || prop.underPoint;
+
+                              let result = '';
+                              let resultColor = '';
+                              if (actual !== undefined && line !== undefined && market !== 'anytimetd') {
+                                if (actual > line) {
+                                  result = 'OVER';
+                                  resultColor = 'text-green-500';
+                                } else if (actual < line) {
+                                  result = 'UNDER';
+                                  resultColor = 'text-red-500';
+                                } else {
+                                  result = 'PUSH';
+                                  resultColor = 'text-slate-400';
+                                }
+                              } else if (market === 'anytimetd' && actual !== undefined) {
+                                result = actual ? 'YES' : 'NO';
+                                resultColor = actual ? 'text-green-500' : 'text-red-500';
+                              }
+
+                              const marketLabel = market === 'passyds' ? 'Pass Yards' : market === 'passtds' ? 'Pass TDs' : market === 'rushyds' ? 'Rush Yards' : market === 'rushtds' ? 'Rush TDs' : market === 'recyds' ? 'Rec Yards' : market === 'recs' ? 'Receptions' : market === 'anytimetd' ? 'Anytime TD' : market;
+
+                              return (
+                                <tr key={market} className={`border-b ${isDarkMode ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-100'} transition-colors`}>
+                                  <td className={`px-4 py-3 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{marketLabel}</td>
+                                  <td className={`px-4 py-3 font-mono ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                                    {market === 'anytimetd' ? `${prop.yesPrice || '—'} / ${prop.noPrice || '—'}` : `O/U ${line || '—'}`}
+                                  </td>
+                                  <td className={`px-4 py-3 font-mono ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                                    {actual !== undefined && actual !== null ? actual : '—'}
+                                  </td>
+                                  <td className={`px-4 py-3 font-semibold ${resultColor}`}>{result || '—'}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

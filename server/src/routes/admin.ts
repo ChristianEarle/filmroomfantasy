@@ -6,7 +6,7 @@ import { fetchTwitterTweets } from '../services/twitter';
 import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
-import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse } from '../services/odds';
+import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -1238,6 +1238,145 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
     });
   } catch (err) {
     console.error('Sync historical odds error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-player-props
+ * Fetches player prop lines from The Odds API for a given week/date.
+ * Stores Vegas O/U lines for individual player stat props.
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ */
+adminRoutes.post('/sync-player-props', async (c) => {
+  const db = c.get('db');
+  const apiKey = c.env.ODDS_API_KEY;
+
+  if (!apiKey) {
+    return c.json({ error: 'ODDS_API_KEY not configured' }, 500);
+  }
+
+  const body = await c.req.json<{ week: number; date?: string }>();
+  const { week, date } = body;
+
+  if (!week || week < 1 || week > 18) {
+    return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
+  }
+
+  try {
+    c.header('Content-Type', 'application/json');
+
+    // Fetch all games for the date/current
+    const oddsData = date
+      ? await fetchHistoricalOdds(apiKey, date)
+      : { games: await fetchCurrentOdds(apiKey) };
+
+    const games = oddsData.games || [];
+    const snapshotTime = oddsData.timestamp || new Date().toISOString();
+
+    let inserted = 0;
+    let updated = 0;
+    const statements: any[] = [];
+    const BATCH_SIZE = 100;
+
+    // For each game, fetch player props
+    for (const game of games) {
+      const eventId = game.id;
+
+      try {
+        // Fetch player props for this event (10 credits per event)
+        const propsGame = await fetchPlayerProps(apiKey, eventId, date);
+        if (!propsGame) {
+          console.warn(`No player props for event ${eventId}`);
+          continue;
+        }
+
+        // Parse player props
+        const propRecords = parsePlayerProps(propsGame, week, snapshotTime);
+
+        // Match player names to our database player IDs
+        for (const prop of propRecords) {
+          // Match by first + last name in our database
+          const parts = prop.player_name.split(' ');
+          let playerExternalId: string | null = null;
+
+          if (parts.length >= 2) {
+            // Try exact match first
+            const firstName = parts[0];
+            const lastName = parts.slice(1).join(' ');
+
+            const dbPlayer = await db.query.nflPlayers.findFirst({
+              where: and(
+                eq(schema.nflPlayers.firstName, firstName),
+                eq(schema.nflPlayers.lastName, lastName)
+              ),
+              columns: { externalId: true },
+            });
+            if (dbPlayer) {
+              playerExternalId = dbPlayer.externalId || null;
+            }
+          }
+
+          const propId = generateId();
+          statements.push(
+            db.insert(schema.playerProps).values({
+              id: propId,
+              eventId: prop.event_id,
+              playerName: prop.player_name,
+              playerExternalId,
+              market: prop.market,
+              bookmaker: prop.bookmaker,
+              overPoint: prop.over_point ?? null,
+              overPrice: prop.over_price ?? null,
+              underPoint: prop.under_point ?? null,
+              underPrice: prop.under_price ?? null,
+              yesPrice: prop.yes_price ?? null,
+              noPrice: prop.no_price ?? null,
+              snapshotTime: prop.snapshot_time,
+              season: 2025,
+              week,
+              homeTeam: prop.home_team,
+              awayTeam: prop.away_team,
+              createdAt: new Date(),
+            }).onConflictDoNothing()
+          );
+          inserted++;
+
+          // Flush batch when reaching size
+          if (statements.length >= BATCH_SIZE) {
+            await db.batch(statements as any);
+            statements.length = 0;
+          }
+        }
+      } catch (eventErr) {
+        console.error(`Error fetching props for event ${eventId}:`, eventErr);
+        // Continue with next event
+      }
+    }
+
+    // Flush remaining statements
+    if (statements.length > 0) {
+      await db.batch(statements as any);
+    }
+
+    invalidateCache('player-props:', true);
+
+    return c.json({
+      success: true,
+      message: 'Player props sync completed',
+      week,
+      date: date || new Date().toISOString(),
+      games: games.length,
+      props_inserted: inserted,
+    });
+  } catch (err) {
+    console.error('Sync player props error:', err);
     return c.json(
       {
         error: 'Sync failed',

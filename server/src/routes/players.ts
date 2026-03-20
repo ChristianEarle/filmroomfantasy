@@ -1124,6 +1124,177 @@ playerRoutes.get('/:id/news', optionalAuthMiddleware, async (c) => {
   }
 });
 
+// Get player prop lines for a specific week
+playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const playerId = c.req.param('id');
+  const week = parseInt(c.req.query('week') || '1', 10);
+  const season = parseInt(c.req.query('season') || '2025', 10);
+
+  if (!week || week < 1 || week > 18) {
+    return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
+  }
+
+  try {
+    // Get player info
+    const player = await db.query.nflPlayers.findFirst({
+      where: eq(schema.nflPlayers.id, playerId),
+    });
+
+    if (!player) {
+      return c.json({ error: 'Player not found' }, 404);
+    }
+
+    // Get player's weekly stats for actual values
+    const weeklyStats = await db.query.playerWeeklyStats.findFirst({
+      where: and(
+        eq(schema.playerWeeklyStats.playerId, playerId),
+        eq(schema.playerWeeklyStats.week, week),
+        eq(schema.playerWeeklyStats.seasonYear, season)
+      ),
+    });
+
+    // Get player props for this week
+    const props = await db.query.playerProps.findMany({
+      where: and(
+        eq(schema.playerProps.playerName, player.name),
+        eq(schema.playerProps.week, week),
+        eq(schema.playerProps.season, season)
+      ),
+      orderBy: asc(schema.playerProps.market),
+    });
+
+    // Transform to more readable format
+    const propsByMarket: Record<string, any> = {};
+    for (const prop of props) {
+      const marketKey = prop.market.replace('player_', '').replace('_', '');
+
+      if (!propsByMarket[marketKey]) {
+        propsByMarket[marketKey] = {
+          line: prop.overPoint || prop.underPoint,
+          overPrice: prop.overPrice,
+          underPrice: prop.underPrice,
+          yesPrice: prop.yesPrice,
+          noPrice: prop.noPrice,
+        };
+      }
+    }
+
+    // Build response with actual values from stats
+    const actual: Record<string, any> = {};
+    if (weeklyStats) {
+      actual.passYds = weeklyStats.passYards;
+      actual.passTds = weeklyStats.passTDs;
+      actual.rushYds = weeklyStats.rushYards;
+      actual.rushTds = weeklyStats.rushTDs;
+      actual.recYds = weeklyStats.receivingYards;
+      actual.recs = weeklyStats.receptions;
+      actual.scoredTd = (weeklyStats.passTDs || 0) + (weeklyStats.rushTDs || 0) + (weeklyStats.receivingTDs || 0) > 0;
+    }
+
+    return c.json({
+      player: {
+        name: player.name,
+        team: player.team,
+        position: player.position,
+      },
+      props: propsByMarket,
+      actual,
+      week,
+      season,
+    });
+  } catch (error) {
+    console.error('Get player props error:', error);
+    return c.json({ error: 'Failed to fetch player props' }, 500);
+  }
+});
+
+// Get props for all players in a week (for rankings/table view)
+playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const week = parseInt(c.req.query('week') || '1', 10);
+  const season = parseInt(c.req.query('season') || '2025', 10);
+  const position = c.req.query('position')?.toUpperCase();
+
+  if (!week || week < 1 || week > 18) {
+    return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
+  }
+
+  try {
+    // Get all props for this week
+    const allProps = await db.query.playerProps.findMany({
+      where: and(
+        eq(schema.playerProps.week, week),
+        eq(schema.playerProps.season, season)
+      ),
+      orderBy: [
+        asc(schema.playerProps.playerName),
+        asc(schema.playerProps.market),
+      ],
+    });
+
+    // Group by player
+    const propsByPlayer: Record<string, any> = {};
+    for (const prop of allProps) {
+      if (!propsByPlayer[prop.playerName]) {
+        propsByPlayer[prop.playerName] = {
+          playerName: prop.playerName,
+          externalId: prop.playerExternalId,
+          team: prop.homeTeam, // Will be overwritten if we find the player
+          position: 'UNK',
+          props: {},
+        };
+      }
+
+      const marketKey = prop.market.replace('player_', '').replace('_', '');
+      if (!propsByPlayer[prop.playerName].props[marketKey]) {
+        propsByPlayer[prop.playerName].props[marketKey] = {
+          line: prop.overPoint || prop.underPoint,
+          overPrice: prop.overPrice,
+          underPrice: prop.underPrice,
+          yesPrice: prop.yesPrice,
+          noPrice: prop.noPrice,
+        };
+      }
+    }
+
+    // Enrich with player info
+    const playerNames = Object.keys(propsByPlayer);
+    if (playerNames.length > 0) {
+      const players = await db.query.nflPlayers.findMany({
+        where: inArray(schema.nflPlayers.name, playerNames),
+      });
+
+      const playerMap = new Map(players.map(p => [p.name, p]));
+      for (const [name, propData] of Object.entries(propsByPlayer)) {
+        const player = playerMap.get(name);
+        if (player) {
+          propData.team = player.team;
+          propData.position = player.position;
+          propData.externalId = player.externalId;
+        }
+      }
+    }
+
+    // Filter by position if requested
+    let result = Object.values(propsByPlayer);
+    if (position) {
+      result = result.filter((p: any) => p.position === position);
+    }
+
+    return c.json({
+      week,
+      season,
+      position: position || null,
+      count: result.length,
+      players: result,
+    });
+  } catch (error) {
+    console.error('Get all props error:', error);
+    return c.json({ error: 'Failed to fetch props' }, 500);
+  }
+});
+
 // Get available players for a league (not on any roster)
 playerRoutes.get('/available/:leagueId', authMiddleware, async (c) => {
   const user = c.get('user');
@@ -1686,7 +1857,7 @@ playerRoutes.get('/projection-accuracy', async (c) => {
 
       if (!player) continue;
 
-      const actual = stat.fantasyPointsPPR;
+      const actual = stat.fantasyPointsPPR || 0;
       const diff = actual - proj.projectedPoints;
 
       // Find odds context for this player's team

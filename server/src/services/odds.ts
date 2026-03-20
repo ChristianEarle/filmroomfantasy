@@ -210,3 +210,162 @@ export function parseOddsResponse(
 
   return parsed;
 }
+
+// Player props from The Odds API
+interface PlayerPropMarket {
+  key: string;
+  last_update: string;
+  outcomes: Array<{
+    name: string;
+    description?: string;
+    price: number;
+    point?: number;
+  }>;
+}
+
+export interface ParsedPlayerProp {
+  id: string;
+  event_id: string;
+  player_name: string;
+  market: string;
+  bookmaker: string;
+  over_point?: number;
+  over_price?: number;
+  under_point?: number;
+  under_price?: number;
+  yes_price?: number;
+  no_price?: number;
+  snapshot_time: string;
+  home_team: string;
+  away_team: string;
+  week?: number;
+}
+
+export async function fetchPlayerProps(
+  apiKey: string,
+  eventId: string,
+  date?: string
+): Promise<OddsGame | null> {
+  const markets = 'player_pass_yds,player_rush_yds,player_reception_yds,player_pass_tds,player_rush_tds,player_receptions,player_anytime_td';
+
+  const base = date
+    ? `${ODDS_API_BASE}/historical/sports/americanfootball_nfl/events/${eventId}/odds`
+    : `${ODDS_API_BASE}/sports/americanfootball_nfl/events/${eventId}/odds`;
+
+  const url = new URL(base);
+  url.searchParams.set('apiKey', apiKey);
+  url.searchParams.set('regions', 'us');
+  url.searchParams.set('markets', markets);
+  url.searchParams.set('oddsFormat', 'american');
+  if (date) {
+    url.searchParams.set('date', date);
+  }
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    console.error(`Failed to fetch player props for event ${eventId}: ${response.statusText}`);
+    return null;
+  }
+
+  const json = await response.json() as any;
+  // Historical endpoint wraps in 'data', current endpoint returns directly
+  return date ? (json.data || null) : json;
+}
+
+export function parsePlayerProps(
+  game: OddsGame,
+  week: number,
+  snapshotTime?: string
+): ParsedPlayerProp[] {
+  const parsed: ParsedPlayerProp[] = [];
+  const timestamp = snapshotTime || new Date().toISOString();
+  const homeTeamAbbr = teamNameToAbbr(game.home_team);
+  const awayTeamAbbr = teamNameToAbbr(game.away_team);
+
+  for (const bookmaker of game.bookmakers) {
+    for (const market of bookmaker.markets) {
+      // Player props have format like "player_pass_yds"
+      if (!market.key.startsWith('player_')) {
+        continue;
+      }
+
+      // Parse outcomes for this market
+      // Outcomes: {"name": "Jalen Hurts Over 217.5", "price": -113, "point": 217.5}
+      //           {"name": "Jalen Hurts Under 217.5", "price": -113, "point": 217.5}
+      // Or for yes/no: {"name": "Saquon Barkley Yes", "price": -150}
+      //                {"name": "Saquon Barkley No", "price": 120}
+
+      // Group outcomes by player
+      const playerOutcomes: Record<string, any> = {};
+
+      for (const outcome of market.outcomes) {
+        const name = outcome.name;
+
+        // Parse player name and over/under/yes/no indicator
+        let playerName = '';
+        let type = '';
+
+        if (name.includes(' Over ')) {
+          const parts = name.split(' Over ');
+          playerName = parts[0];
+          type = 'over';
+        } else if (name.includes(' Under ')) {
+          const parts = name.split(' Under ');
+          playerName = parts[0];
+          type = 'under';
+        } else if (name.endsWith(' Yes')) {
+          playerName = name.replace(' Yes', '');
+          type = 'yes';
+        } else if (name.endsWith(' No')) {
+          playerName = name.replace(' No', '');
+          type = 'no';
+        }
+
+        if (!playerName) {
+          continue;
+        }
+
+        if (!playerOutcomes[playerName]) {
+          playerOutcomes[playerName] = {};
+        }
+
+        if (type === 'over') {
+          playerOutcomes[playerName].over_point = outcome.point;
+          playerOutcomes[playerName].over_price = outcome.price;
+        } else if (type === 'under') {
+          playerOutcomes[playerName].under_point = outcome.point;
+          playerOutcomes[playerName].under_price = outcome.price;
+        } else if (type === 'yes') {
+          playerOutcomes[playerName].yes_price = outcome.price;
+        } else if (type === 'no') {
+          playerOutcomes[playerName].no_price = outcome.price;
+        }
+      }
+
+      // Create a record for each player in this market
+      for (const playerName of Object.keys(playerOutcomes)) {
+        const outcome = playerOutcomes[playerName];
+        const prop: ParsedPlayerProp = {
+          id: `${game.id}_${bookmaker.key}_${market.key}_${playerName}_${timestamp}`,
+          event_id: game.id,
+          player_name: playerName,
+          market: market.key,
+          bookmaker: bookmaker.key,
+          over_point: outcome.over_point,
+          over_price: outcome.over_price,
+          under_point: outcome.under_point,
+          under_price: outcome.under_price,
+          yes_price: outcome.yes_price,
+          no_price: outcome.no_price,
+          snapshot_time: timestamp,
+          home_team: homeTeamAbbr,
+          away_team: awayTeamAbbr,
+          week,
+        };
+        parsed.push(prop);
+      }
+    }
+  }
+
+  return parsed;
+}
