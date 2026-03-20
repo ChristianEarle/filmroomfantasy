@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { CreditCard, Check, AlertCircle } from 'lucide-react';
+import { api } from '../services/api';
 
 interface PricingViewProps {
   isDarkMode: boolean;
@@ -28,25 +29,16 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
 
     try {
       const interval = isAnnual ? 'year' : 'month';
-      const apiBase = import.meta.env.VITE_API_URL || '/api';
-      const response = await fetch(`${apiBase}/billing/create-checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(localStorage.getItem('filmroom_token') ? { Authorization: `Bearer ${localStorage.getItem('filmroom_token')}` } : {}),
-        },
-        body: JSON.stringify({
-          priceId: tier === 'elite' ? (interval === 'year' ? 'elite_yearly' : 'elite_monthly') : (interval === 'year' ? 'pro_yearly' : 'pro_monthly'),
-          successUrl: `${window.location.origin}/pricing?billing=success`,
-          cancelUrl: `${window.location.origin}/pricing?billing=cancel`,
-        }),
+      const priceId = tier === 'elite'
+        ? (interval === 'year' ? 'elite_yearly' : 'elite_monthly')
+        : (interval === 'year' ? 'pro_yearly' : 'pro_monthly');
+
+      const data = await api.post<{ url: string }>('/billing/create-checkout', {
+        priceId,
+        successUrl: `${window.location.origin}/pricing?billing=success`,
+        cancelUrl: `${window.location.origin}/pricing?billing=cancel`,
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to create checkout session');
-      }
-
-      const data = await response.json();
       if (data.url) {
         window.location.href = data.url;
       } else {
