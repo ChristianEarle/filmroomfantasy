@@ -12,9 +12,10 @@ interface PlayerRowProps {
   onClick: (player: Player) => void;
   isDarkMode: boolean;
   oddsData?: { homeTeam: string; awayTeam: string; homeSpread: number | null; total: number | null } | null;
+  pointsType?: 'actual' | 'projected';
 }
 
-const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData }: PlayerRowProps) {
+const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData, pointsType = 'projected' }: PlayerRowProps) {
   // Format odds display for this player's game
   const formatOdds = () => {
     if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
@@ -69,20 +70,39 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
         <span className={`font-bold text-lg ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
       </td>
       <td className="px-6 py-4 text-right hidden sm:table-cell">
-        <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-semibold ${
-          player.weekChange >= 0
-            ? 'bg-green-500/20 text-green-500'
-            : 'bg-red-500/20 text-red-500'
-        }`}>
-          {player.weekChange >= 0 ? (
-            <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
-          ) : (
-            <TrendingDown className="w-3.5 h-3.5" aria-hidden="true" />
-          )}
-          <span aria-label={`${player.weekChange >= 0 ? 'up' : 'down'} ${Math.abs(player.weekChange).toFixed(1)} points`}>
-            {player.weekChange >= 0 ? '+' : ''}{player.weekChange.toFixed(1)}
-          </span>
-        </div>
+        {pointsType === 'actual' && player.weeklyProjectedPoints !== undefined ? (
+          // Show proj vs actual diff when viewing finalized week
+          <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-semibold ${
+            player.projectedPoints - player.weeklyProjectedPoints >= 0
+              ? 'bg-green-500/20 text-green-500'
+              : 'bg-red-500/20 text-red-500'
+          }`}>
+            {player.projectedPoints - player.weeklyProjectedPoints >= 0 ? (
+              <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
+            ) : (
+              <TrendingDown className="w-3.5 h-3.5" aria-hidden="true" />
+            )}
+            <span aria-label={`${player.projectedPoints - player.weeklyProjectedPoints >= 0 ? 'overperformed' : 'underperformed'} by ${Math.abs(player.projectedPoints - player.weeklyProjectedPoints).toFixed(1)} points`}>
+              {player.projectedPoints - player.weeklyProjectedPoints >= 0 ? '+' : ''}{(player.projectedPoints - player.weeklyProjectedPoints).toFixed(1)}
+            </span>
+          </div>
+        ) : (
+          // Show projection movement when viewing projections
+          <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-semibold ${
+            player.weekChange >= 0
+              ? 'bg-green-500/20 text-green-500'
+              : 'bg-red-500/20 text-red-500'
+          }`}>
+            {player.weekChange >= 0 ? (
+              <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
+            ) : (
+              <TrendingDown className="w-3.5 h-3.5" aria-hidden="true" />
+            )}
+            <span aria-label={`${player.weekChange >= 0 ? 'up' : 'down'} ${Math.abs(player.weekChange).toFixed(1)} points`}>
+              {player.weekChange >= 0 ? '+' : ''}{player.weekChange.toFixed(1)}
+            </span>
+          </div>
+        )}
       </td>
     </tr>
   );
@@ -494,6 +514,7 @@ export function PlayerTable({
                       onClick={onPlayerClick}
                       isDarkMode={isDarkMode}
                       oddsData={getOddsForTeam(player.team)}
+                      pointsType={pointsType}
                     />
                   ))
                 )}

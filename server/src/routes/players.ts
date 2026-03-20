@@ -255,6 +255,19 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         statsByPlayer.set(s.playerId, s);
       }
 
+      // Fetch projections for this week to show proj vs actual diff
+      const projectionsByPlayer = new Map<string, number>();
+      const projectionsForWeek = await db.query.playerProjections.findMany({
+        where: and(
+          eq(schema.playerProjections.week, week),
+          eq(schema.playerProjections.seasonYear, season),
+          eq(schema.playerProjections.scoringFormat, scoringFormat)
+        ),
+      });
+      for (const proj of projectionsForWeek) {
+        projectionsByPlayer.set(proj.playerId, proj.projectedPoints);
+      }
+
       let enriched = playersPast.map(p => {
         const pts = ptsByPlayer.get(p.id) ?? 0;
         const s = statsByPlayer.get(p.id);
@@ -283,10 +296,12 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           receivingTDs: s.receivingTDs ?? 0,
           averageSnapPct: snapPct != null ? Math.round(snapPct * 10) / 10 : null,
         } : undefined;
+        const projPts = projectionsByPlayer.get(p.id) ?? 0;
         return {
           ...p,
           projectedPoints: pts,
           avgPointsPPR: pts,
+          weeklyProjectedPoints: projPts,
           seasonStats,
           isRostered: false as boolean,
         };
@@ -1469,5 +1484,257 @@ playerRoutes.get('/:id/matchup-grade', optionalAuthMiddleware, async (c) => {
   } catch (error) {
     console.error('Matchup grade error:', error);
     return c.json({ error: 'Failed to calculate matchup grade' }, 500);
+  }
+});
+
+// GET /api/players/:id/projection-accuracy
+// Returns projection vs actual performance for a single player across all weeks
+playerRoutes.get('/:id/projection-accuracy', async (c) => {
+  const db = c.get('db');
+  const playerId = c.req.param('id');
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+
+  try {
+    // Get player info
+    const player = await db.query.nflPlayers.findFirst({
+      where: eq(schema.nflPlayers.id, playerId),
+    });
+
+    if (!player) {
+      return c.json({ error: 'Player not found' }, 404);
+    }
+
+    // Get all projections for this player for the season
+    const projections = await db.query.playerProjections.findMany({
+      where: and(
+        eq(schema.playerProjections.playerId, playerId),
+        eq(schema.playerProjections.seasonYear, season),
+        eq(schema.playerProjections.scoringFormat, 'ppr') // Use PPR for consistency
+      ),
+    });
+
+    // Get all actual stats for this player for the season
+    const stats = await db.query.playerWeeklyStats.findMany({
+      where: and(
+        eq(schema.playerWeeklyStats.playerId, playerId),
+        eq(schema.playerWeeklyStats.seasonYear, season)
+      ),
+    });
+
+    // Get all games for this season
+    const games = await db.query.nflGames.findMany({
+      where: eq(schema.nflGames.seasonYear, season),
+    });
+
+    // Get odds data for all games
+    const allOdds = await db.query.gameOdds.findMany({
+      where: eq(schema.gameOdds.season, season),
+    });
+
+    // Build week-by-week comparison
+    const weekData = [];
+    for (const proj of projections) {
+      const stat = stats.find(s => s.week === proj.week);
+      const actual = stat ? stat.fantasyPointsPPR : null;
+
+      // Find the game for this week to get team and odds
+      const playerTeam = player.team;
+      const game = games.find(
+        g => g.week === proj.week && (g.homeTeam === playerTeam || g.awayTeam === playerTeam)
+      );
+
+      // Get odds for this game (most recent snapshot)
+      let spread: number | null = null;
+      let total: number | null = null;
+      let impliedTeamTotal: number | null = null;
+
+      if (game) {
+        const gameOdds = allOdds.filter(o => o.gameId === game.id);
+        if (gameOdds.length > 0) {
+          // Use most recent odds
+          const odds = gameOdds.sort((a, b) =>
+            new Date(b.snapshotTime).getTime() - new Date(a.snapshotTime).getTime()
+          )[0];
+
+          // Store spread and total
+          if (odds.homeTeam === playerTeam && odds.homePoint !== null) {
+            spread = odds.homePoint;
+          } else if (odds.awayTeam === playerTeam && odds.awayPoint !== null) {
+            spread = odds.awayPoint;
+          }
+
+          if (odds.overPoint !== null) {
+            total = odds.overPoint;
+          }
+
+          // Calculate implied team total: if favored, use (total + spread) / 2; if underdog, use (total - spread) / 2
+          if (total !== null && spread !== null) {
+            if (spread < 0) {
+              // This team is favored
+              impliedTeamTotal = (total + Math.abs(spread)) / 2;
+            } else {
+              // This team is underdog
+              impliedTeamTotal = (total - spread) / 2;
+            }
+          }
+        }
+      }
+
+      weekData.push({
+        week: proj.week,
+        projected: Math.round(proj.projectedPoints * 10) / 10,
+        actual: actual !== null ? Math.round(actual * 10) / 10 : null,
+        diff: actual !== null ? Math.round((actual - proj.projectedPoints) * 10) / 10 : null,
+        gameOdds: {
+          spread: spread !== null ? Math.round(spread * 10) / 10 : null,
+          total: total !== null ? Math.round(total * 10) / 10 : null,
+          impliedTeamTotal: impliedTeamTotal !== null ? Math.round(impliedTeamTotal * 10) / 10 : null,
+        },
+      });
+    }
+
+    // Calculate season stats (only for weeks with actual data)
+    const weeksWithActual = weekData.filter(w => w.actual !== null);
+    const avgProjected = weekData.length > 0
+      ? Math.round((weekData.reduce((a, w) => a + w.projected, 0) / weekData.length) * 10) / 10
+      : 0;
+    const avgActual = weeksWithActual.length > 0
+      ? Math.round((weeksWithActual.reduce((a, w) => a + (w.actual ?? 0), 0) / weeksWithActual.length) * 10) / 10
+      : 0;
+    const totalOverperformance = weeksWithActual.length > 0
+      ? Math.round((weeksWithActual.reduce((a, w) => a + (w.diff ?? 0), 0)) * 10) / 10
+      : 0;
+
+    // Hit rate: % of weeks within 3 pts of projection
+    const hitRate = weeksWithActual.length > 0
+      ? Math.round((weeksWithActual.filter(w => Math.abs(w.diff ?? 0) <= 3).length / weeksWithActual.length) * 100)
+      : 0;
+
+    return c.json({
+      player: {
+        name: player.name,
+        team: player.team,
+        position: player.position,
+      },
+      weeks: weekData.sort((a, b) => a.week - b.week),
+      season: {
+        avgProjected,
+        avgActual,
+        accuracy: hitRate,
+        totalOverperformance,
+        gamesPlayed: weeksWithActual.length,
+      },
+    });
+  } catch (error) {
+    console.error('Projection accuracy error:', error);
+    return c.json({ error: 'Failed to calculate projection accuracy' }, 500);
+  }
+});
+
+// GET /api/players/projection-accuracy
+// Returns top over/underperformers for a specific week
+playerRoutes.get('/projection-accuracy', async (c) => {
+  const db = c.get('db');
+  const week = parseInt(c.req.query('week') || '1');
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
+  const scoringFormatParam = c.req.query('scoringFormat') || 'ppr';
+
+  try {
+    // Get all projections for this week/season
+    const projections = await db.query.playerProjections.findMany({
+      where: and(
+        eq(schema.playerProjections.week, week),
+        eq(schema.playerProjections.seasonYear, season),
+        eq(schema.playerProjections.scoringFormat, scoringFormatParam === 'half_ppr' || scoringFormatParam === 'half-ppr' ? 'half-ppr' : 'ppr')
+      ),
+    });
+
+    // Get actual stats for this week
+    const stats = await db.query.playerWeeklyStats.findMany({
+      where: and(
+        eq(schema.playerWeeklyStats.week, week),
+        eq(schema.playerWeeklyStats.seasonYear, season)
+      ),
+    });
+
+    // Get game for this week to find all teams playing
+    const games = await db.query.nflGames.findMany({
+      where: and(
+        eq(schema.nflGames.week, week),
+        eq(schema.nflGames.seasonYear, season)
+      ),
+    });
+
+    // Get odds for all games this week
+    const weekOdds = await db.query.gameOdds.findMany({
+      where: and(
+        eq(schema.gameOdds.week, week),
+        eq(schema.gameOdds.season, season)
+      ),
+    });
+
+    // Build comparison data
+    const comparisons = [];
+    for (const proj of projections) {
+      const stat = stats.find(s => s.playerId === proj.playerId);
+      if (!stat) continue; // Only include players with actual stats
+
+      const player = await db.query.nflPlayers.findFirst({
+        where: eq(schema.nflPlayers.id, proj.playerId),
+      });
+
+      if (!player) continue;
+
+      const actual = stat.fantasyPointsPPR;
+      const diff = actual - proj.projectedPoints;
+
+      // Find odds context for this player's team
+      const game = games.find(g => g.homeTeam === player.team || g.awayTeam === player.team);
+      let spread: number | null = null;
+      let total: number | null = null;
+
+      if (game) {
+        const odds = weekOdds.find(o => o.gameId === game.id);
+        if (odds) {
+          if (odds.homeTeam === player.team && odds.homePoint !== null) {
+            spread = odds.homePoint;
+          } else if (odds.awayTeam === player.team && odds.awayPoint !== null) {
+            spread = odds.awayPoint;
+          }
+          if (odds.overPoint !== null) {
+            total = odds.overPoint;
+          }
+        }
+      }
+
+      comparisons.push({
+        playerId: player.id,
+        name: player.name,
+        team: player.team,
+        position: player.position,
+        projected: Math.round(proj.projectedPoints * 10) / 10,
+        actual: Math.round(actual * 10) / 10,
+        diff: Math.round(diff * 10) / 10,
+        gameSpread: spread !== null ? Math.round(spread * 10) / 10 : null,
+        gameTotal: total !== null ? Math.round(total * 10) / 10 : null,
+      });
+    }
+
+    // Sort by overperformance (largest positive diff first), limit results
+    const sorted = comparisons
+      .sort((a, b) => b.diff - a.diff)
+      .slice(0, limit);
+
+    return c.json({
+      week,
+      season,
+      scoringFormat: scoringFormatParam,
+      count: sorted.length,
+      players: sorted,
+    });
+  } catch (error) {
+    console.error('Weekly accuracy error:', error);
+    return c.json({ error: 'Failed to fetch weekly accuracy data' }, 500);
   }
 });

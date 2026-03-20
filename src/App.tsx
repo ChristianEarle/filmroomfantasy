@@ -140,6 +140,7 @@ export interface Player {
   keyLine: string;
   projectedPoints: number;
   weekChange: number;
+  weeklyProjectedPoints?: number;
   headshotUrl?: string | null;
 }
 

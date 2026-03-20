@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
-import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock } from 'lucide-react';
+import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Loader2 } from 'lucide-react';
 import { Player } from '../App';
 import api from '../services/api';
 import { playerService } from '../services';
@@ -75,7 +75,7 @@ const colBorder = (isDarkMode: boolean) => isDarkMode ? 'border-r border-slate-6
 
 export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeasonYear, currentWeek: propsCurrentWeek, scoringFormat: propsScoringFormat }: PlayerCardProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [activeTab, setActiveTab] = useState<'props' | 'breakdown' | 'history'>('props');
+  const [activeTab, setActiveTab] = useState<'props' | 'breakdown' | 'history' | 'accuracy'>('props');
 
   const [weeklyStats, setWeeklyStats] = useState<APIWeeklyStat[] | null>(null);
   const [seasonTotals, setSeasonTotals] = useState<{ games?: number; gamesPlayed?: number; fantasyPointsPPR?: number; fantasyPointsHalf?: number; fantasyPointsStd?: number; averageSnapPct?: number | null } | null>(null);
@@ -100,6 +100,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [news, setNews] = useState<PlayerNews[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
   const [matchupData, setMatchupData] = useState<MatchupGradeResponse | null>(null);
+  const [projectionAccuracy, setProjectionAccuracy] = useState<any>(null);
+  const [accuracyLoading, setAccuracyLoading] = useState(false);
 
   // Fetch years for which this player has data (dropdown only shows years with stats)
   useEffect(() => {
@@ -415,10 +417,21 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
             {/* Tabs */}
             <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-              {(['props', 'breakdown', 'history'] as const).map((tab) => (
+              {(['props', 'breakdown', 'history', 'accuracy'] as const).map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => {
+                    setActiveTab(tab);
+                    // Fetch projection accuracy data when switching to that tab
+                    if (tab === 'accuracy' && !projectionAccuracy && !accuracyLoading) {
+                      setAccuracyLoading(true);
+                      const season = propsSeasonYear || new Date().getFullYear();
+                      api.get(`/players/${player.id}/projection-accuracy?season=${season}`)
+                        .then(setProjectionAccuracy)
+                        .catch(err => console.error('Failed to fetch projection accuracy:', err))
+                        .finally(() => setAccuracyLoading(false));
+                    }
+                  }}
                   className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
                     activeTab === tab
                       ? isDarkMode ? 'text-white' : 'text-slate-900'
@@ -428,6 +441,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   {tab === 'props' && 'Props'}
                   {tab === 'breakdown' && 'Averages'}
                   {tab === 'history' && 'History'}
+                  {tab === 'accuracy' && 'Accuracy'}
                   {activeTab === tab && (
                     <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500"></div>
                   )}
@@ -1111,6 +1125,92 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   </div>
                 )}
               </div>
+
+              {activeTab === 'accuracy' && (
+                <div className="space-y-6">
+                  {accuracyLoading ? (
+                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading accuracy data...</p>
+                    </div>
+                  ) : projectionAccuracy ? (
+                    <>
+                      {/* Season Summary */}
+                      <div className={`rounded-lg p-6 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                        <h4 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Season Summary</h4>
+                        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                          <div>
+                            <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Avg Projected</p>
+                            <p className="font-bold text-lg mt-1">{projectionAccuracy.season.avgProjected}</p>
+                          </div>
+                          <div>
+                            <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Avg Actual</p>
+                            <p className="font-bold text-lg mt-1">{projectionAccuracy.season.avgActual}</p>
+                          </div>
+                          <div>
+                            <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Hit Rate</p>
+                            <p className="font-bold text-lg mt-1 text-blue-500">{projectionAccuracy.season.accuracy}%</p>
+                          </div>
+                          <div>
+                            <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Total Over/Under</p>
+                            <p className={`font-bold text-lg mt-1 ${projectionAccuracy.season.totalOverperformance >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {projectionAccuracy.season.totalOverperformance >= 0 ? '+' : ''}{projectionAccuracy.season.totalOverperformance}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Week by Week Table */}
+                      <div className={`rounded-lg border overflow-x-auto ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className={`${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'} border-b`}>
+                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Week</th>
+                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Proj</th>
+                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Actual</th>
+                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>+/-</th>
+                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Game Line</th>
+                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Implied Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {projectionAccuracy.weeks.map((w: any) => (
+                              <tr key={w.week} className={`border-b ${isDarkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-slate-100 hover:bg-slate-50'}`}>
+                                <td className={`px-4 py-3 font-medium ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                  {w.week}
+                                </td>
+                                <td className={`px-4 py-3 text-right ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                                  {w.projected}
+                                </td>
+                                <td className={`px-4 py-3 text-right font-semibold ${w.actual !== null ? (isDarkMode ? 'text-white' : 'text-slate-900') : (isDarkMode ? 'text-slate-500' : 'text-slate-400')}`}>
+                                  {w.actual !== null ? w.actual : '—'}
+                                </td>
+                                <td className={`px-4 py-3 text-right font-semibold ${
+                                  w.diff === null ? (isDarkMode ? 'text-slate-500' : 'text-slate-400')
+                                    : w.diff > 0 ? 'text-green-500'
+                                    : 'text-red-500'
+                                }`}>
+                                  {w.diff !== null ? (w.diff > 0 ? '+' : '') + w.diff : '—'}
+                                </td>
+                                <td className={`px-4 py-3 text-right text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                                  {w.gameOdds.spread !== null ? (w.gameOdds.spread > 0 ? '+' : '') + w.gameOdds.spread : '—'}
+                                </td>
+                                <td className={`px-4 py-3 text-right text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                                  {w.gameOdds.total !== null ? w.gameOdds.total : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : (
+                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No projection accuracy data available.</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
             </div>
 

@@ -11,6 +11,7 @@ export interface APIPlayer {
   headshotUrl?: string | null;
   avgPointsPPR: number;
   projectedPoints: number;
+  weeklyProjectedPoints?: number;
   isRostered: boolean;
   seasonStats?: {
     games: number;
@@ -71,6 +72,7 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
     keyLine,
     projectedPoints: projPts > 0 ? projPts : avgPts,
     weekChange: 0,
+    weeklyProjectedPoints: player.weeklyProjectedPoints,
     headshotUrl: player.headshotUrl ?? null,
   };
 }
