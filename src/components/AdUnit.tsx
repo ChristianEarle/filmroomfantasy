@@ -20,7 +20,7 @@ export function AdUnit({ slot, format = 'auto', className = '', isDarkMode }: Ad
     <div className={`ad-unit ${className}`} ref={adRef}>
       <ins className="adsbygoogle"
         style={{ display: 'block' }}
-        data-ad-client="ca-pub-0000000000000000"
+        data-ad-client="ca-pub-6355054767351119"
         data-ad-slot={slot}
         data-ad-format={format}
         data-full-width-responsive="true"
