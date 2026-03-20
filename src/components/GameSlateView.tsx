@@ -4,6 +4,7 @@ import { Player } from '../App';
 import { useEspnScoreboard } from '../hooks';
 import { useOdds } from '../hooks/useOdds';
 import type { TopPerformer } from '../services/games';
+import { AdUnit } from './AdUnit';
 
 export interface Game {
   id: string;
@@ -201,13 +202,14 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
           <p className="text-sm opacity-70">There are no games listed for this week. Check back closer to game day.</p>
         </div>
       ) : (
+        <div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {displayGames.map((game, idx) => {
           const winner = getWinner(game);
           const isFinal = game.status === 'final';
           const hasTopPerformers = game.topPerformers && (game.topPerformers.home || game.topPerformers.away);
 
-          return (
+          const gameElement = (
           <div
             key={game.id}
             onClick={() => handleGameClick(game, espnGames[idx])}
@@ -408,7 +410,23 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
             </div>
           </div>
           );
+
+          // Show ad after every 4th game
+          const showAd = (idx + 1) % 4 === 0 && idx !== displayGames.length - 1;
+
+          return (
+            <div key={`game-${idx}`} className="contents">
+              {gameElement}
+              {showAd && (
+                <div className="lg:col-span-2 my-4 rounded-lg overflow-hidden">
+                  <div className={`text-[10px] text-slate-600 text-center mb-1`}>Ad</div>
+                  <AdUnit slot="gameslate-inline" isDarkMode={isDarkMode} />
+                </div>
+              )}
+            </div>
+          );
         })}
+        </div>
         </div>
       )}
 

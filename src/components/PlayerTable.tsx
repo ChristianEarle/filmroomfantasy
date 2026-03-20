@@ -5,6 +5,7 @@ import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
 import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+import { AdUnit } from './AdUnit';
 
 // Memoized table row component to prevent unnecessary re-renders
 interface PlayerRowProps {
@@ -542,6 +543,14 @@ export function PlayerTable({
                 View more players →
               </button>
             </div>
+          </div>
+        )}
+
+        {/* AdSense Ad Unit */}
+        {!error && totalPlayers > 0 && (
+          <div className="my-4 rounded-lg overflow-hidden px-6">
+            <div className={`text-[10px] text-slate-600 text-center mb-1`}>Ad</div>
+            <AdUnit slot="board-below-table" isDarkMode={isDarkMode} />
           </div>
         )}
       </div>
