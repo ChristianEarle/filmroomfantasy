@@ -47,8 +47,8 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
       }
 
       const data = await response.json();
-      if (data.sessionUrl) {
-        window.location.href = data.sessionUrl;
+      if (data.url) {
+        window.location.href = data.url;
       } else {
         setError('Could not redirect to payment. Please try again.');
       }
