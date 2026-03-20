@@ -4,6 +4,7 @@ import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
+import { usePlayerProps, formatPropLine } from '../hooks/usePlayerProps';
 import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 import { AdUnit } from './AdUnit';
 
@@ -14,9 +15,10 @@ interface PlayerRowProps {
   isDarkMode: boolean;
   oddsData?: { homeTeam: string; awayTeam: string; homeSpread: number | null; total: number | null } | null;
   pointsType?: 'actual' | 'projected';
+  propLine?: string | null;
 }
 
-const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData, pointsType = 'projected' }: PlayerRowProps) {
+const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData, pointsType = 'projected', propLine }: PlayerRowProps) {
   // Format odds display for this player's game
   const formatOdds = () => {
     if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
@@ -66,6 +68,11 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
       </td>
       <td className="px-4 py-4 hidden md:table-cell">
         <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
+        {propLine && (
+          <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+            {propLine}
+          </div>
+        )}
       </td>
       <td className="px-4 py-4 text-right">
         <span className={`font-bold text-lg ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
@@ -150,9 +157,10 @@ export function PlayerTable({
   const [pointsType, setPointsType] = useState<'actual' | 'projected'>('projected');
   const weekDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch odds for the current week
+  // Fetch odds and player props for the current week
   const season = 2025;
   const { odds } = useOdds(currentWeek, season);
+  const { getPropsForPlayer } = usePlayerProps(currentWeek, season);
 
   // Helper to find odds for a player's team
   const getOddsForTeam = (teamAbbr: string) => {
@@ -508,16 +516,21 @@ export function PlayerTable({
                     </td>
                   </tr>
                 ) : (
-                  sortedAndFilteredPlayers.map((player) => (
-                    <PlayerRow
-                      key={player.id}
-                      player={player}
-                      onClick={onPlayerClick}
-                      isDarkMode={isDarkMode}
-                      oddsData={getOddsForTeam(player.team)}
-                      pointsType={pointsType}
-                    />
-                  ))
+                  sortedAndFilteredPlayers.map((player) => {
+                    const playerProps = getPropsForPlayer(player.name);
+                    const propLine = playerProps ? formatPropLine(playerProps.props, player.position) : null;
+                    return (
+                      <PlayerRow
+                        key={player.id}
+                        player={player}
+                        onClick={onPlayerClick}
+                        isDarkMode={isDarkMode}
+                        oddsData={getOddsForTeam(player.team)}
+                        pointsType={pointsType}
+                        propLine={propLine}
+                      />
+                    );
+                  })
                 )}
               </tbody>
             </table>

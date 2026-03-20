@@ -171,7 +171,10 @@ const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
 /** Read the current URL pathname and return the matching view, defaulting to 'Board'. */
 function getViewFromURL(): string {
   const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
-  return PATH_TO_VIEW[path] ?? 'Board';
+  const view = PATH_TO_VIEW[path] ?? 'Board';
+  // /register is handled within the Login view via authView state
+  if (view === 'Register') return 'Login';
+  return view;
 }
 
 // Main App content component that uses auth context
@@ -235,7 +238,7 @@ function AppContent() {
       TradeAnalyzer: 'AI Trade Analyzer | FilmRoom',
       Settings: 'Settings | FilmRoom',
       Profile: 'Profile | FilmRoom',
-      Login: 'Sign In | FilmRoom',
+      Login: authView === 'register' ? 'Sign Up | FilmRoom' : 'Sign In | FilmRoom',
       AllPlayers: 'All Players | FilmRoom',
       Pricing: 'Pricing | FilmRoom',
     };
