@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, memo } from 'react';
 import { ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown, Search, ArrowLeft, Loader2, SearchX } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
+import { useOdds } from '../hooks/useOdds';
 import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 
 interface AllPlayersViewProps {
@@ -47,6 +48,15 @@ export function AllPlayersView({
 
   const seasonYear = league?.seasonYear ?? getDefaultSeason();
   const scoringFormat = scoringToFormat(selectedScoring);
+
+  // Fetch odds for the current week
+  const season = 2025;
+  const { odds } = useOdds(currentWeek, season);
+
+  // Helper to find odds for a player's team
+  const getOddsForTeam = (teamAbbr: string) => {
+    return odds.find(o => o.homeTeam === teamAbbr || o.awayTeam === teamAbbr) || null;
+  };
 
   // Fetch players from API (week-specific: past weeks = actual pts, current = projections)
   const fetchPlayers = useCallback(async () => {
@@ -111,6 +121,72 @@ export function AllPlayersView({
       ? <ArrowUp className="w-3 h-3 text-blue-400" />
       : <ArrowDown className="w-3 h-3 text-blue-400" />;
   };
+
+  // Memoized row component
+  const AllPlayerRow = memo(function AllPlayerRow({
+    player,
+    isDarkMode,
+    oddsData,
+  }: {
+    player: Player;
+    isDarkMode: boolean;
+    oddsData?: { homeTeam: string; awayTeam: string; homeSpread: number | null; total: number | null } | null;
+  }) {
+    const formatOdds = () => {
+      if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
+        return null;
+      }
+      const isHome = oddsData.homeTeam === player.team;
+      const spread = Math.abs(oddsData.homeSpread);
+      const spreadSign = (isHome && oddsData.homeSpread < 0) || (!isHome && oddsData.homeSpread > 0) ? '-' : '+';
+      return `${player.team} ${spreadSign}${spread} • O/U ${oddsData.total}`;
+    };
+
+    const oddsDisplay = formatOdds();
+
+    return (
+      <tr
+        tabIndex={0}
+        role="button"
+        onClick={() => onPlayerClick(player)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onPlayerClick(player);
+          }
+        }}
+        className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
+      >
+        <td className="px-4 py-2">
+          <span className={`text-xs font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
+        </td>
+        <td className="px-3 py-2">
+          <div>
+            <div className={`text-sm font-semibold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
+            <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              {player.team}
+              {oddsDisplay && (
+                <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                  {oddsDisplay}
+                </div>
+              )}
+            </div>
+          </div>
+        </td>
+        <td className="px-3 py-2">
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+            {player.position}
+          </span>
+        </td>
+        <td className="px-3 py-2">
+          <span className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
+        </td>
+        <td className="px-3 py-2 text-right">
+          <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+        </td>
+      </tr>
+    );
+  });
 
   const sortedAndFilteredPlayers = useMemo(() => {
     let filtered = players;
@@ -362,41 +438,12 @@ export function AllPlayersView({
                     </td>
                   </tr>
                 ) : sortedAndFilteredPlayers.map((player) => (
-                  <tr
+                  <AllPlayerRow
                     key={player.id}
-                    tabIndex={0}
-                    role="button"
-                    onClick={() => onPlayerClick(player)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        onPlayerClick(player);
-                      }
-                    }}
-                    className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
-                  >
-                    <td className="px-4 py-2">
-                      <span className={`text-xs font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div>
-                        <div className={`text-sm font-semibold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
-                        <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.team}</div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                        {player.position}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
-                    </td>
-                    {/* TREND cell removed — weekChange data not yet available from API */}
-                  </tr>
+                    player={player}
+                    isDarkMode={isDarkMode}
+                    oddsData={getOddsForTeam(player.team)}
+                  />
                 ))}
               </tbody>
 

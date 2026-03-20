@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Calendar, TrendingUp, Cloud, CloudRain, Sun, CloudSnow, Loader2, Warehouse, TreePine, Star, Trophy, CheckCircle } from 'lucide-react';
 import { Player } from '../App';
 import { useEspnScoreboard } from '../hooks';
+import { useOdds } from '../hooks/useOdds';
 import type { TopPerformer } from '../services/games';
 
 export interface Game {
@@ -96,6 +97,16 @@ function getWinner(game: Game): 'home' | 'away' | 'tie' | null {
 export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateViewProps = {}) {
   const [selectedWeek, setSelectedWeek] = useState<number | undefined>(undefined);
   const { games: espnGames, week, weekLabel, isLoading, error, espnUnavailable } = useEspnScoreboard(selectedWeek);
+
+  // Fetch odds data for the current week
+  const currentWeek = week ?? 1;
+  const season = 2025;
+  const { odds, formatSpread, formatTotal } = useOdds(currentWeek, season);
+
+  // Helper to find odds for a game by team abbreviation
+  const getGameOdds = (teamAbbr: string) => {
+    return odds.find(o => o.homeTeam === teamAbbr || o.awayTeam === teamAbbr);
+  };
 
   const displayGames: Game[] = useMemo(() => espnGames.map((g) => ({
     id: g.id,
@@ -353,27 +364,45 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                   </div>
                 </div>
               ) : (
-                /* Scheduled/In-progress — show betting lines */
+                /* Scheduled/In-progress — show betting lines from odds API */
                 <div className={`rounded-lg p-4 mt-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Spread</div>
-                      <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                        {game.spread != null
-                          ? `${game.favoredTeam === 'home' ? game.homeTeamLogo : game.awayTeamLogo} -${game.spread}`
-                          : '—'}
+                  {(() => {
+                    const gameOdds = getGameOdds(game.homeTeam);
+                    return (
+                      <div className="space-y-3">
+                        {/* Spread */}
+                        <div>
+                          <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Spread</div>
+                          <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                            {gameOdds && gameOdds.homeSpread != null
+                              ? `${gameOdds.homeSpread < 0 ? game.homeTeamLogo : game.awayTeamLogo} ${Math.abs(gameOdds.homeSpread)}`
+                              : '—'}
+                          </div>
+                        </div>
+
+                        {/* Over/Under */}
+                        <div>
+                          <div className={`text-xs mb-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                            <TrendingUp className="w-3 h-3" />
+                            Over/Under
+                          </div>
+                          <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                            {gameOdds && gameOdds.total != null ? `O/U ${gameOdds.total}` : '—'}
+                          </div>
+                        </div>
+
+                        {/* Moneyline */}
+                        {gameOdds && gameOdds.homeMoneyline != null && gameOdds.awayMoneyline != null && (
+                          <div>
+                            <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Moneyline</div>
+                            <div className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                              {game.homeTeamLogo} {gameOdds.homeMoneyline > 0 ? '+' : ''}{gameOdds.homeMoneyline} / {game.awayTeamLogo} {gameOdds.awayMoneyline > 0 ? '+' : ''}{gameOdds.awayMoneyline}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <div>
-                      <div className={`text-xs mb-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                        <TrendingUp className="w-3 h-3" />
-                        Over/Under
-                      </div>
-                      <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                        {game.overUnder != null ? game.overUnder : '—'}
-                      </div>
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>

@@ -3,6 +3,7 @@ import { ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown,
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
+import { useOdds } from '../hooks/useOdds';
 import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 
 // Memoized table row component to prevent unnecessary re-renders
@@ -10,9 +11,23 @@ interface PlayerRowProps {
   player: Player;
   onClick: (player: Player) => void;
   isDarkMode: boolean;
+  oddsData?: { homeTeam: string; awayTeam: string; homeSpread: number | null; total: number | null } | null;
 }
 
-const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode }: PlayerRowProps) {
+const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData }: PlayerRowProps) {
+  // Format odds display for this player's game
+  const formatOdds = () => {
+    if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
+      return null;
+    }
+    const isHome = oddsData.homeTeam === player.team;
+    const spread = Math.abs(oddsData.homeSpread);
+    const spreadSign = (isHome && oddsData.homeSpread < 0) || (!isHome && oddsData.homeSpread > 0) ? '-' : '+';
+    return `${player.team} ${spreadSign}${spread} • O/U ${oddsData.total}`;
+  };
+
+  const oddsDisplay = formatOdds();
+
   return (
     <tr
       tabIndex={0}
@@ -32,7 +47,14 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode }: Playe
       <td className="px-4 py-4">
         <div>
           <div className={`font-bold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
-          <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.team} <span className="sm:hidden">• {player.position}</span></div>
+          <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            {player.team} <span className="sm:hidden">• {player.position}</span>
+            {oddsDisplay && (
+              <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                {oddsDisplay}
+              </div>
+            )}
+          </div>
         </div>
       </td>
       <td className="px-4 py-4 hidden sm:table-cell">
@@ -106,6 +128,15 @@ export function PlayerTable({
   const [totalPlayers, setTotalPlayers] = useState(0);
   const [pointsType, setPointsType] = useState<'actual' | 'projected'>('projected');
   const weekDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fetch odds for the current week
+  const season = 2025;
+  const { odds } = useOdds(currentWeek, season);
+
+  // Helper to find odds for a player's team
+  const getOddsForTeam = (teamAbbr: string) => {
+    return odds.find(o => o.homeTeam === teamAbbr || o.awayTeam === teamAbbr) || null;
+  };
 
   // BUG-006 fix: Close week dropdown when clicking outside
   useEffect(() => {
@@ -462,6 +493,7 @@ export function PlayerTable({
                       player={player}
                       onClick={onPlayerClick}
                       isDarkMode={isDarkMode}
+                      oddsData={getOddsForTeam(player.team)}
                     />
                   ))
                 )}
