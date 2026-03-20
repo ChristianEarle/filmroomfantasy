@@ -62,7 +62,7 @@ billingRoutes.post('/create-checkout', authMiddleware, async (c) => {
         },
         body: new URLSearchParams({
           email: user.email,
-          metadata: JSON.stringify({ userId: user.id }),
+          'metadata[userId]': user.id,
         }),
       });
 
@@ -91,12 +91,8 @@ billingRoutes.post('/create-checkout', authMiddleware, async (c) => {
       },
       body: new URLSearchParams({
         customer: stripeCustomerId,
-        line_items: JSON.stringify([
-          {
-            price: stripePriceId,
-            quantity: 1,
-          },
-        ]),
+        'line_items[0][price]': stripePriceId,
+        'line_items[0][quantity]': '1',
         mode: 'subscription',
         success_url: successUrl,
         cancel_url: cancelUrl,
