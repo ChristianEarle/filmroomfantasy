@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
-import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Loader2 } from 'lucide-react';
+import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock } from 'lucide-react';
 import { Player } from '../App';
 import api from '../services/api';
 import { playerService } from '../services';
@@ -75,7 +75,7 @@ const colBorder = (isDarkMode: boolean) => isDarkMode ? 'border-r border-slate-6
 
 export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeasonYear, currentWeek: propsCurrentWeek, scoringFormat: propsScoringFormat }: PlayerCardProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [activeTab, setActiveTab] = useState<'props' | 'breakdown' | 'history' | 'accuracy'>('props');
+  const [activeTab, setActiveTab] = useState<'props' | 'breakdown' | 'history'>('props');
 
   const [weeklyStats, setWeeklyStats] = useState<APIWeeklyStat[] | null>(null);
   const [seasonTotals, setSeasonTotals] = useState<{ games?: number; gamesPlayed?: number; fantasyPointsPPR?: number; fantasyPointsHalf?: number; fantasyPointsStd?: number; averageSnapPct?: number | null } | null>(null);
@@ -100,10 +100,19 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [news, setNews] = useState<PlayerNews[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
   const [matchupData, setMatchupData] = useState<MatchupGradeResponse | null>(null);
-  const [projectionAccuracy, setProjectionAccuracy] = useState<any>(null);
-  const [accuracyLoading, setAccuracyLoading] = useState(false);
-  const [playerProps, setPlayerProps] = useState<any>(null);
-  const [propsLoading, setPropsLoading] = useState(false);
+  const [propsData, setPropsData] = useState<any>(null);
+  const [propsLoading, setPropsLoading] = useState(true);
+
+  // Fetch player props when card opens
+  useEffect(() => {
+    if (!player?.id) return;
+    let cancelled = false;
+    setPropsLoading(true);
+    api.get<any>(`/players/${player.id}/props?week=${propsCurrentWeek || 1}&season=${propsSeasonYear || 2025}`)
+      .then((res) => { if (!cancelled) { setPropsData(res); setPropsLoading(false); } })
+      .catch(() => { if (!cancelled) { setPropsData(null); setPropsLoading(false); } });
+    return () => { cancelled = true; };
+  }, [player.id, propsCurrentWeek, propsSeasonYear]);
 
   // Fetch years for which this player has data (dropdown only shows years with stats)
   useEffect(() => {
@@ -419,29 +428,10 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
             {/* Tabs */}
             <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-              {(['props', 'breakdown', 'history', 'accuracy'] as const).map((tab) => (
+              {(['props', 'breakdown', 'history'] as const).map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => {
-                    setActiveTab(tab);
-                    // Fetch data when switching tabs
-                    if (tab === 'props' && !playerProps && !propsLoading) {
-                      setPropsLoading(true);
-                      const season = propsSeasonYear || new Date().getFullYear();
-                      const week = propsCurrentWeek || 1;
-                      api.get(`/players/${player.id}/props?week=${week}&season=${season}`)
-                        .then(setPlayerProps)
-                        .catch(err => console.error('Failed to fetch props:', err))
-                        .finally(() => setPropsLoading(false));
-                    } else if (tab === 'accuracy' && !projectionAccuracy && !accuracyLoading) {
-                      setAccuracyLoading(true);
-                      const season = propsSeasonYear || new Date().getFullYear();
-                      api.get(`/players/${player.id}/projection-accuracy?season=${season}`)
-                        .then(setProjectionAccuracy)
-                        .catch(err => console.error('Failed to fetch projection accuracy:', err))
-                        .finally(() => setAccuracyLoading(false));
-                    }
-                  }}
+                  onClick={() => setActiveTab(tab)}
                   className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
                     activeTab === tab
                       ? isDarkMode ? 'text-white' : 'text-slate-900'
@@ -451,7 +441,6 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   {tab === 'props' && 'Props'}
                   {tab === 'breakdown' && 'Averages'}
                   {tab === 'history' && 'History'}
-                  {tab === 'accuracy' && 'Accuracy'}
                   {activeTab === tab && (
                     <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500"></div>
                   )}
@@ -461,80 +450,95 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
             {/* Tab Content */}
             <div className="p-6">
-              {activeTab === 'props' && (
+              {activeTab === 'props' && (() => {
+                const MARKET_LABELS: Record<string, string> = {
+                  passyds: 'Passing Yards', rushyds: 'Rushing Yards', receptionyds: 'Receiving Yards',
+                  passtds: 'Passing TDs', rushtds: 'Rushing TDs', receptions: 'Receptions', anytimetd: 'Anytime TD'
+                };
+                const ACTUAL_KEYS: Record<string, string> = {
+                  passyds: 'passYds', rushyds: 'rushYds', receptionyds: 'recYds',
+                  passtds: 'passTds', rushtds: 'rushTds', receptions: 'recs', anytimetd: 'scoredTd'
+                };
+
+                const props = propsData?.props || {};
+                const actual = propsData?.actual || {};
+                const markets = Object.keys(props);
+
+                return (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-2">
                     <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Vegas Prop Lines</h3>
+                    <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>FanDuel • Week {propsCurrentWeek || 1}</span>
                   </div>
                   {propsLoading ? (
-                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                      <Loader2 className="inline-block animate-spin mb-2" size={24} />
-                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading props...</p>
+                    <div className="flex justify-center py-8">
+                      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                     </div>
-                  ) : !playerProps || Object.keys(playerProps.props || {}).length === 0 ? (
-                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                      <div className={`text-3xl mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>📊</div>
-                      <p className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No Props Available</p>
-                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Vegas prop lines not yet available for this week.</p>
+                  ) : markets.length === 0 ? (
+                    <div className={`rounded-lg border p-6 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No prop lines available for this week.</p>
                     </div>
                   ) : (
-                    <div className={`rounded-lg border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-750' : 'border-slate-200 bg-slate-100'}`}>
-                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Market</th>
-                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Vegas Line</th>
-                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Actual</th>
-                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Result</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(playerProps.props || {}).map(([market, prop]: [string, any]) => {
-                              const actualKey = market === 'passyds' ? 'passYds' : market === 'passtds' ? 'passTds' : market === 'rushyds' ? 'rushYds' : market === 'rushtds' ? 'rushTds' : market === 'recyds' ? 'recYds' : market === 'recs' ? 'recs' : market === 'anytimetd' ? 'scoredTd' : '';
-                              const actual = playerProps.actual?.[actualKey];
-                              const line = prop.line || prop.overPoint || prop.underPoint;
+                    <div className="space-y-2">
+                      {markets.map((mkt) => {
+                        const prop = props[mkt];
+                        const label = MARKET_LABELS[mkt] || mkt;
+                        const actualKey = ACTUAL_KEYS[mkt];
+                        const actualVal = actualKey ? actual[actualKey] : null;
+                        const isAnytimeTd = mkt === 'anytimetd';
+                        const line = prop?.line;
 
-                              let result = '';
-                              let resultColor = '';
-                              if (actual !== undefined && line !== undefined && market !== 'anytimetd') {
-                                if (actual > line) {
-                                  result = 'OVER';
-                                  resultColor = 'text-green-500';
-                                } else if (actual < line) {
-                                  result = 'UNDER';
-                                  resultColor = 'text-red-500';
-                                } else {
-                                  result = 'PUSH';
-                                  resultColor = 'text-slate-400';
-                                }
-                              } else if (market === 'anytimetd' && actual !== undefined) {
-                                result = actual ? 'YES' : 'NO';
-                                resultColor = actual ? 'text-green-500' : 'text-red-500';
-                              }
+                        let result = '';
+                        let resultColor = isDarkMode ? 'text-slate-500' : 'text-slate-400';
+                        if (isAnytimeTd && actualVal !== null && actualVal !== undefined) {
+                          result = actualVal ? 'YES' : 'NO';
+                          resultColor = actualVal ? 'text-green-500' : 'text-red-500';
+                        } else if (line != null && actualVal != null) {
+                          const diff = actualVal - line;
+                          if (diff > 0) { result = 'OVER'; resultColor = 'text-green-500'; }
+                          else if (diff < 0) { result = 'UNDER'; resultColor = 'text-red-500'; }
+                          else { result = 'PUSH'; resultColor = isDarkMode ? 'text-slate-300' : 'text-slate-600'; }
+                        }
 
-                              const marketLabel = market === 'passyds' ? 'Pass Yards' : market === 'passtds' ? 'Pass TDs' : market === 'rushyds' ? 'Rush Yards' : market === 'rushtds' ? 'Rush TDs' : market === 'recyds' ? 'Rec Yards' : market === 'recs' ? 'Receptions' : market === 'anytimetd' ? 'Anytime TD' : market;
-
-                              return (
-                                <tr key={market} className={`border-b ${isDarkMode ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-100'} transition-colors`}>
-                                  <td className={`px-4 py-3 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{marketLabel}</td>
-                                  <td className={`px-4 py-3 font-mono ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                                    {market === 'anytimetd' ? `${prop.yesPrice || '—'} / ${prop.noPrice || '—'}` : `O/U ${line || '—'}`}
-                                  </td>
-                                  <td className={`px-4 py-3 font-mono ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                                    {actual !== undefined && actual !== null ? actual : '—'}
-                                  </td>
-                                  <td className={`px-4 py-3 font-semibold ${resultColor}`}>{result || '—'}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                        return (
+                          <div key={mkt} className={`flex items-center justify-between py-3 px-4 rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                            <div className="flex-1">
+                              <div className={`text-xs font-semibold uppercase tracking-wide ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{label}</div>
+                              <div className="flex items-center gap-3 mt-1">
+                                {isAnytimeTd ? (
+                                  <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                    Yes {prop?.yesPrice > 0 ? '+' : ''}{prop?.yesPrice}
+                                  </span>
+                                ) : (
+                                  <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                    O/U {line}
+                                    <span className={`ml-2 text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                      ({prop?.overPrice > 0 ? '+' : ''}{prop?.overPrice}/{prop?.underPrice > 0 ? '+' : ''}{prop?.underPrice})
+                                    </span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {actualVal != null ? (
+                                <>
+                                  <div className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                    {isAnytimeTd ? (actualVal ? 'Yes' : 'No') : actualVal}
+                                  </div>
+                                  {result && <div className={`text-xs font-bold ${resultColor}`}>{result}</div>}
+                                </>
+                              ) : (
+                                <div className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>—</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
-              )}
+                );
+              })()}
 
               {activeTab === 'breakdown' && (() => {
                 // Compute per-game averages from real weekly stats
@@ -1197,92 +1201,6 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   </div>
                 )}
               </div>
-
-              {activeTab === 'accuracy' && (
-                <div className="space-y-6">
-                  {accuracyLoading ? (
-                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                      <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading accuracy data...</p>
-                    </div>
-                  ) : projectionAccuracy ? (
-                    <>
-                      {/* Season Summary */}
-                      <div className={`rounded-lg p-6 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                        <h4 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Season Summary</h4>
-                        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                          <div>
-                            <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Avg Projected</p>
-                            <p className="font-bold text-lg mt-1">{projectionAccuracy.season.avgProjected}</p>
-                          </div>
-                          <div>
-                            <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Avg Actual</p>
-                            <p className="font-bold text-lg mt-1">{projectionAccuracy.season.avgActual}</p>
-                          </div>
-                          <div>
-                            <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Hit Rate</p>
-                            <p className="font-bold text-lg mt-1 text-blue-500">{projectionAccuracy.season.accuracy}%</p>
-                          </div>
-                          <div>
-                            <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Total Over/Under</p>
-                            <p className={`font-bold text-lg mt-1 ${projectionAccuracy.season.totalOverperformance >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                              {projectionAccuracy.season.totalOverperformance >= 0 ? '+' : ''}{projectionAccuracy.season.totalOverperformance}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Week by Week Table */}
-                      <div className={`rounded-lg border overflow-x-auto ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className={`${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'} border-b`}>
-                              <th className={`px-4 py-3 text-left font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Week</th>
-                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Proj</th>
-                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Actual</th>
-                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>+/-</th>
-                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Game Line</th>
-                              <th className={`px-4 py-3 text-right font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Implied Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {projectionAccuracy.weeks.map((w: any) => (
-                              <tr key={w.week} className={`border-b ${isDarkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-slate-100 hover:bg-slate-50'}`}>
-                                <td className={`px-4 py-3 font-medium ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                                  {w.week}
-                                </td>
-                                <td className={`px-4 py-3 text-right ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                                  {w.projected}
-                                </td>
-                                <td className={`px-4 py-3 text-right font-semibold ${w.actual !== null ? (isDarkMode ? 'text-white' : 'text-slate-900') : (isDarkMode ? 'text-slate-500' : 'text-slate-400')}`}>
-                                  {w.actual !== null ? w.actual : '—'}
-                                </td>
-                                <td className={`px-4 py-3 text-right font-semibold ${
-                                  w.diff === null ? (isDarkMode ? 'text-slate-500' : 'text-slate-400')
-                                    : w.diff > 0 ? 'text-green-500'
-                                    : 'text-red-500'
-                                }`}>
-                                  {w.diff !== null ? (w.diff > 0 ? '+' : '') + w.diff : '—'}
-                                </td>
-                                <td className={`px-4 py-3 text-right text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                                  {w.gameOdds.spread !== null ? (w.gameOdds.spread > 0 ? '+' : '') + w.gameOdds.spread : '—'}
-                                </td>
-                                <td className={`px-4 py-3 text-right text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                                  {w.gameOdds.total !== null ? w.gameOdds.total : '—'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  ) : (
-                    <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No projection accuracy data available.</p>
-                    </div>
-                  )}
-                </div>
-              )}
 
             </div>
 
