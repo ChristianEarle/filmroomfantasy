@@ -45,10 +45,10 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
       }}
       className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
     >
-      <td className="px-6 py-4">
-        <span className={`font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
+      <td className="px-2 sm:px-4 md:px-6 py-3 sm:py-4">
+        <span className={`font-medium text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
       </td>
-      <td className="px-4 py-4">
+      <td className="px-2 sm:px-4 py-3 sm:py-4">
         <div>
           <div className={`font-bold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
           <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -61,12 +61,12 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
           </div>
         </div>
       </td>
-      <td className="px-4 py-4 hidden sm:table-cell">
+      <td className="px-2 sm:px-4 py-3 sm:py-4 hidden sm:table-cell">
         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
           {player.position}
         </span>
       </td>
-      <td className="px-4 py-4 hidden md:table-cell">
+      <td className="px-2 sm:px-4 py-3 sm:py-4 hidden md:table-cell">
         <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
         {propLine && (
           <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
@@ -74,10 +74,10 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
           </div>
         )}
       </td>
-      <td className="px-4 py-4 text-right">
-        <span className={`font-bold text-lg ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+      <td className="px-2 sm:px-4 py-3 sm:py-4 text-right">
+        <span className={`font-bold text-base sm:text-lg ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
       </td>
-      <td className="px-6 py-4 text-right hidden sm:table-cell">
+      <td className="px-2 sm:px-4 md:px-6 py-3 sm:py-4 text-right hidden sm:table-cell">
         {pointsType === 'actual' && player.weeklyProjectedPoints !== undefined ? (
           // Show proj vs actual diff when viewing finalized week
           <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-semibold ${
@@ -305,16 +305,16 @@ export function PlayerTable({
       {/* Table with Header */}
       <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
-        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-          <h2 className={`font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+        <div className={`p-3 sm:p-4 md:p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <h2 className={`font-bold mb-1 text-sm sm:text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Player Rankings — Week {currentWeek} {pointsType === 'actual' ? '(Final)' : '(Projections)'}
           </h2>
-          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             {pointsType === 'actual' ? 'Actual points scored' : 'Top players based on season stats and projections'}
           </p>
 
           {/* Filters */}
-          <div className="flex items-center gap-3 mt-4 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-3 mt-3 sm:mt-4 flex-wrap">
             {/* Search */}
             <div className="flex items-center gap-2">
               <label htmlFor="player-search" className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Search:</label>
@@ -331,16 +331,16 @@ export function PlayerTable({
               </div>
             </div>
 
-            <div className={`w-px h-6 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
+            <div className={`w-px h-6 hidden sm:block ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
 
             {/* Scoring Type */}
-            <div className="flex items-center gap-2">
-              <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Score:</span>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <span className={`text-sm flex-shrink-0 hidden sm:inline ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Score:</span>
               {scoringOptions.map((option) => (
                 <button
                   key={option}
                   onClick={() => onScoringChange(option)}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm rounded-lg transition-colors flex-shrink-0 ${
                     selectedScoring === option
                       ? 'bg-blue-600 text-white'
                       : isDarkMode
@@ -353,16 +353,16 @@ export function PlayerTable({
               ))}
             </div>
 
-            <div className={`w-px h-6 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
+            <div className={`w-px h-6 hidden sm:block ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
 
             {/* Position Filter */}
-            <div className="flex items-center gap-2">
-              <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Position:</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto">
+              <span className={`text-sm flex-shrink-0 hidden sm:inline ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Position:</span>
               {positions.map((position) => (
                 <button
                   key={position}
                   onClick={() => onPositionChange(position)}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm rounded-lg transition-colors flex-shrink-0 ${
                     selectedPosition === position
                       ? 'bg-blue-600 text-white'
                       : isDarkMode
@@ -375,7 +375,7 @@ export function PlayerTable({
               ))}
             </div>
 
-            <div className={`w-px h-6 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
+            <div className={`w-px h-6 hidden sm:block ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
 
             {/* Week Selector — BUG-006 fix: ref + click-outside + always show all 18 weeks */}
             <div className="relative" ref={weekDropdownRef}>
@@ -434,7 +434,7 @@ export function PlayerTable({
                     scope="col"
                     onClick={() => handleSort('rank')}
                     aria-sort={sortField === 'rank' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-left px-6 py-4 text-xs font-semibold cursor-pointer transition-colors w-16 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-left px-2 sm:px-4 md:px-6 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-10 sm:w-16 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5">
                       RK
@@ -445,7 +445,7 @@ export function PlayerTable({
                     scope="col"
                     onClick={() => handleSort('name')}
                     aria-sort={sortField === 'name' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-left px-4 py-4 text-xs font-semibold cursor-pointer transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-left px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5">
                       PLAYER
@@ -456,19 +456,19 @@ export function PlayerTable({
                     scope="col"
                     onClick={() => handleSort('position')}
                     aria-sort={sortField === 'position' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-left px-4 py-4 text-xs font-semibold cursor-pointer transition-colors w-20 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-left px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-20 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5">
                       POS
                       {getSortIcon('position')}
                     </div>
                   </th>
-                  <th scope="col" className={`text-left px-4 py-4 text-xs font-semibold hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>STATS</th>
+                  <th scope="col" className={`text-left px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>STATS</th>
                   <th
                     scope="col"
                     onClick={() => handleSort('projectedPoints')}
                     aria-sort={sortField === 'projectedPoints' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-right px-4 py-4 text-xs font-semibold cursor-pointer transition-colors w-24 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-right px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-16 sm:w-24 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5 justify-end">
                       {pointsType === 'actual' ? 'PTS' : 'PROJ'}
@@ -479,7 +479,7 @@ export function PlayerTable({
                     scope="col"
                     onClick={() => handleSort('weekChange')}
                     aria-sort={sortField === 'weekChange' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-right px-6 py-4 text-xs font-semibold cursor-pointer transition-colors w-28 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-right px-2 sm:px-4 md:px-6 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-28 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5 justify-end">
                       TREND

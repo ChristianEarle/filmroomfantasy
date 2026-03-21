@@ -185,6 +185,27 @@ html {
   font-size: var(--font-size);
 }
 
+/* Prevent white bars on mobile in dark mode (safe-area + overscroll) */
+html, body {
+  background-color: var(--background);
+  min-height: 100%;
+  min-height: 100dvh;
+}
+
+html {
+  overscroll-behavior: none;
+}
+
+/* iOS safe areas — fill notch/home-indicator areas with the background */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
 /* Custom micro-interactions and animations */
 @layer utilities {
   /* Smooth button press effect */

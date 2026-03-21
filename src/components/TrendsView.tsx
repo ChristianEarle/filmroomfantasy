@@ -124,8 +124,8 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
     <div className="max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
       <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className={`p-4 sm:p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Activity className="w-5 h-5 text-blue-500" />

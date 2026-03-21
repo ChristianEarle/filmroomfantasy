@@ -189,7 +189,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
         <div className="xl:col-span-2">
           <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             {/* Header */}
-            <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <div className={`p-3 sm:p-4 md:p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <div className="flex items-center justify-between mb-1">
                 <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   Waiver Wire (Week {currentWeek})
@@ -210,7 +210,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
               </p>
 
               {/* Filters */}
-              <div className="flex items-center gap-3 mt-4 flex-wrap">
+              <div className="flex items-center gap-2 sm:gap-3 mt-3 sm:mt-4 flex-wrap">
                 {/* Search */}
                 <div className="flex items-center gap-2">
                   <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Search:</span>
@@ -379,9 +379,9 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
         </div>
 
         {/* Right Sidebar */}
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Waiver Priority */}
-          <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <div className={`rounded-lg border p-4 sm:p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Waiver Priority</h3>
             <div className="space-y-3">
               <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
@@ -405,7 +405,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
           </div>
 
           {/* Top Available */}
-          <div className={`rounded-lg p-6 border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+          <div className={`rounded-lg p-4 sm:p-6 border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
             <h3 className="font-bold mb-4">Top Available</h3>
             <div className="space-y-3">
               {sortedPlayers.slice(0, 5).map((player, index) => (

@@ -165,13 +165,13 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
   return (
     <div className="space-y-6">
       {/* Hero Section - Simplified */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 relative">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-white mb-1">
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-4 sm:p-6 relative">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-white mb-1 truncate">
               {userTeam ? `Welcome back, ${userTeam.name}` : 'Welcome back to FilmRoom'}
             </h1>
-            <p className="text-blue-100">
+            <p className="text-blue-100 text-sm sm:text-base">
               {starterProjection > 0
                 ? <>Your team is projected to score <span className="font-bold text-white">{starterProjection.toFixed(1)} points</span> this week</>
                 : <>Check your lineup for this week's projections</>}
@@ -180,11 +180,11 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           </div>
 
           {/* Record Badge */}
-          <div className="bg-slate-900/80 rounded-lg px-4 py-2 text-center">
-            <div className="text-2xl font-bold text-white">
+          <div className="bg-slate-900/80 rounded-lg px-3 py-1.5 sm:px-4 sm:py-2 text-center flex-shrink-0">
+            <div className="text-lg sm:text-2xl font-bold text-white">
               {userTeam ? `${userTeam.wins}-${userTeam.losses}${userTeam.ties > 0 ? `-${userTeam.ties}` : ''}` : '-'}
             </div>
-            <div className="text-xs text-slate-400">
+            <div className="text-[10px] sm:text-xs text-slate-400">
               {standingRank != null ? `${standingRank}${getOrdinal(standingRank)} place` : 'No standings'}
             </div>
           </div>
@@ -312,27 +312,27 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                 Week {league?.currentWeek || 1} Matchup
               </h2>
             </div>
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
                 <div className="text-center flex-1">
-                  <div className={`text-3xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  <div className={`text-2xl sm:text-3xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {starterProjection > 0 ? starterProjection.toFixed(1) : '—'}
                   </div>
-                  <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <div className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     You
                   </div>
                   <div className="text-xs text-green-500 mt-1">Projected</div>
                 </div>
-                <div className="px-6">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-                    <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>VS</span>
+                <div className="px-3 sm:px-6">
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                    <span className={`text-xs sm:text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>VS</span>
                   </div>
                 </div>
                 <div className="text-center flex-1">
-                  <div className={`text-3xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  <div className={`text-2xl sm:text-3xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {opponentProjection != null ? opponentProjection.toFixed(1) : '—'}
                   </div>
-                  <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{opponentName}</div>
+                  <div className={`text-xs sm:text-sm truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{opponentName}</div>
                   <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Projected</div>
                 </div>
               </div>
@@ -348,7 +348,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
         </div>
 
         {/* Right Sidebar */}
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Injury Alerts — your roster only */}
           <div className={`rounded-lg border p-4 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             <div className="flex items-center gap-2 mb-4">
