@@ -252,6 +252,7 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
 
   const seasonYear = team.league?.seasonYear || new Date().getFullYear();
   const scoringFormat = team.league?.scoringFormat || 'ppr';
+  const currentWeek = team.league?.currentWeek || 1;
 
   // Enrich roster with stats and projections
   const enrichedRoster = await Promise.all(roster.map(async (r) => {
@@ -266,6 +267,15 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
         eq(schema.playerProjections.scoringFormat, scoringFormat)
       ),
       orderBy: desc(schema.playerProjections.week),
+    });
+
+    // Get current week's actual stats
+    const currentWeekStats = await db.query.playerWeeklyStats.findFirst({
+      where: and(
+        eq(schema.playerWeeklyStats.playerId, r.player.id),
+        eq(schema.playerWeeklyStats.seasonYear, seasonYear),
+        eq(schema.playerWeeklyStats.week, currentWeek)
+      ),
     });
 
     // Get most recent week's stats (for "Last Week" display)
@@ -309,6 +319,14 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
         } : null,
         // Current week projection
         projectedPoints: projection?.projectedPoints || 0,
+        // Current week actual points
+        actualPoints: currentWeekStats
+          ? (scoringFormat === 'ppr'
+            ? currentWeekStats.fantasyPointsPPR
+            : scoringFormat === 'half_ppr'
+              ? currentWeekStats.fantasyPointsHalf
+              : currentWeekStats.fantasyPointsStd)
+          : null,
         // Last week's actual points
         lastWeekPoints: lastWeekStats
           ? (scoringFormat === 'ppr'

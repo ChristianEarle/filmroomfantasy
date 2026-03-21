@@ -29,6 +29,7 @@ interface MatchupViewProps {
 export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
   const { league, userTeam, roster, matchup, matchupLoading, error } = useLeagueContext();
   const currentWeek = league?.currentWeek || 1;
+  const isComplete = matchup?.isComplete || false;
 
   // Check if we have a real matchup
   const hasMatchup = !!matchup?.opponent?.id;
@@ -36,20 +37,23 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
   // Convert roster to MatchupPlayer format
   const yourTeamData = useMemo(() => {
     if (roster && roster.length > 0) {
-      return roster.map(p => ({
-        id: p?.id,
-        position: p?.slot || p?.position || 'FLEX',
-        name: p?.name || 'Unknown',
-        team: p?.team || '-',
-        projection: p?.projectedPoints || 0,
-        isStarter: p?.isStarter ?? false,
-        matchupGrade: calculateGrade(p?.projectedPoints || 0, p?.position || 'FLEX') as MatchupPlayer['matchupGrade'],
-        headshotUrl: p?.imageUrl || null,
-      }));
+      return roster.map(p => {
+        const pts = isComplete ? (p?.actualPoints ?? p?.projectedPoints ?? 0) : (p?.projectedPoints || 0);
+        return {
+          id: p?.id,
+          position: p?.slot || p?.position || 'FLEX',
+          name: p?.name || 'Unknown',
+          team: p?.team || '-',
+          projection: pts,
+          isStarter: p?.isStarter ?? false,
+          matchupGrade: calculateGrade(pts, p?.position || 'FLEX') as MatchupPlayer['matchupGrade'],
+          headshotUrl: p?.imageUrl || null,
+        };
+      });
     }
     // Return empty array if no roster
     return [];
-  }, [roster]);
+  }, [roster, isComplete]);
 
   // Create empty opponent slots - derive from user's starters when available, else default 9-slot lineup
   const emptyOpponentSlots: MatchupPlayer[] = useMemo(() => {
@@ -72,20 +76,23 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
   // Get opponent data from matchup context or show empty slots
   const opponentTeamData = useMemo(() => {
     if (hasMatchup && matchup?.opponent?.roster && matchup.opponent.roster.length > 0) {
-      return matchup.opponent.roster.map((p: RosterPlayer) => ({
-        id: p?.id,
-        position: p?.slot || p?.position || 'FLEX',
-        name: p?.name || 'Unknown',
-        team: p?.team || '-',
-        projection: p?.projectedPoints || 0,
-        isStarter: p?.isStarter ?? false,
-        matchupGrade: calculateGrade(p?.projectedPoints || 0, p?.position || 'FLEX') as MatchupPlayer['matchupGrade'],
-        headshotUrl: p?.imageUrl || null,
-      }));
+      return matchup.opponent.roster.map((p: RosterPlayer) => {
+        const pts = isComplete ? (p?.actualPoints ?? p?.projectedPoints ?? 0) : (p?.projectedPoints || 0);
+        return {
+          id: p?.id,
+          position: p?.slot || p?.position || 'FLEX',
+          name: p?.name || 'Unknown',
+          team: p?.team || '-',
+          projection: pts,
+          isStarter: p?.isStarter ?? false,
+          matchupGrade: calculateGrade(pts, p?.position || 'FLEX') as MatchupPlayer['matchupGrade'],
+          headshotUrl: p?.imageUrl || null,
+        };
+      });
     }
     // Return empty slots when no matchup
     return emptyOpponentSlots;
-  }, [matchup, hasMatchup, emptyOpponentSlots]);
+  }, [matchup, hasMatchup, emptyOpponentSlots, isComplete]);
 
   const opponentName = hasMatchup ? (matchup?.opponent?.name || 'Opponent') : 'No Opponent';
 
@@ -201,7 +208,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className={`text-2xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fantasy Matchup</h1>
-            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Side-by-side projections and biggest edges</p>
+            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Final results' : 'Side-by-side projections and biggest edges'}</p>
           </div>
           <div
             className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
@@ -217,8 +224,8 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
             {/* Your Team */}
             <div className="text-center flex-1">
               <div className={`text-sm mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>You</div>
-              <div className={`text-4xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{yourTotal.toFixed(1)}</div>
-              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Projected Points</div>
+              <div className={`text-4xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{isComplete && matchup?.userTeam?.score ? matchup.userTeam.score.toFixed(1) : yourTotal.toFixed(1)}</div>
+              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{isComplete ? 'Final Score' : 'Projected Points'}</div>
             </div>
 
             {/* VS Badge */}
@@ -234,16 +241,31 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                 {opponentName}
               </div>
               <div className={`text-4xl font-bold mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-700' : 'text-slate-300') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
-                {hasMatchup ? opponentTotal.toFixed(1) : '-'}
+                {hasMatchup ? (isComplete && matchup?.opponent?.score ? matchup.opponent.score.toFixed(1) : opponentTotal.toFixed(1)) : '-'}
               </div>
               <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                {hasMatchup ? 'Projected Points' : 'No opponent'}
+                {!hasMatchup ? 'No opponent' : isComplete ? 'Final Score' : 'Projected Points'}
               </div>
             </div>
           </div>
 
-          {/* Win Probability Bar */}
+          {/* Win Probability Bar / Result */}
           {hasMatchup ? (
+            isComplete ? (
+            <div className="mb-4">
+              {(() => {
+                const myScore = matchup?.userTeam?.score || yourTotal;
+                const oppScore = matchup?.opponent?.score || opponentTotal;
+                const won = myScore > oppScore;
+                const tied = myScore === oppScore;
+                return (
+                  <div className={`p-3 rounded-lg text-center font-bold text-lg ${won ? 'bg-green-500/20 text-green-500' : tied ? (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600') : 'bg-red-500/20 text-red-500'}`}>
+                    {won ? 'Victory' : tied ? 'Tie' : 'Defeat'}
+                  </div>
+                );
+              })()}
+            </div>
+            ) : (
             <div className="mb-4">
               <div className="flex items-center justify-between text-xs mb-2">
                 <span className="text-blue-500 font-semibold">{winProbability.toFixed(0)}% Win</span>
@@ -260,6 +282,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                 />
               </div>
             </div>
+            )
           ) : (
             <div className={`mb-4 p-3 rounded-lg text-center ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
               <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -273,7 +296,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
             <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-center gap-1 mb-1">
                 <Target className="w-4 h-4 text-blue-500" aria-hidden="true" />
-                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Proj. Margin</span>
+                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Margin' : 'Proj. Margin'}</span>
               </div>
               <div className={`text-lg font-bold ${projDiff >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 {projDiff >= 0 ? '+' : ''}{projDiff.toFixed(1)}
@@ -301,7 +324,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
       <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Position-by-Position Breakdown</h2>
-          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Compare projections at each roster spot</p>
+          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Final points at each roster spot' : 'Compare projections at each roster spot'}</p>
         </div>
 
         <div className="overflow-x-auto">
@@ -310,9 +333,9 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
               <tr className={`border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                 <th scope="col" className={`text-left px-6 py-3 text-xs w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>POS</th>
                 <th scope="col" className={`text-left px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Player</th>
-                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Proj</th>
+                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Pts' : 'Proj'}</th>
                 <th scope="col" className={`text-center px-4 py-3 text-xs w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Edge</th>
-                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Proj</th>
+                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Pts' : 'Proj'}</th>
                 <th scope="col" className={`text-right px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Their Player</th>
               </tr>
             </thead>

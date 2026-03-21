@@ -382,6 +382,63 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
 
       // Transform API response to Matchup interface
       if (response.matchupId) {
+        const opponentId = response.opponent?.id || '';
+
+        // Fetch opponent roster in parallel
+        let opponentRoster: RosterPlayer[] = [];
+        let opponentProjTotal = 0;
+        if (opponentId) {
+          try {
+            interface OppRosterSpot {
+              slot: string;
+              isStarter: boolean;
+              player: {
+                id: string;
+                name: string;
+                team: string;
+                position: string;
+                projectedPoints?: number;
+                actualPoints?: number;
+                lastWeekPoints?: number;
+                status?: string;
+                injuryNote?: string;
+                injuryBodyPart?: string;
+                byeWeek?: number;
+                headshotUrl?: string;
+                imageUrl?: string;
+                seasonStats?: RosterPlayer['seasonStats'];
+              };
+            }
+            const oppResponse = await api.get<{ roster: { starters: OppRosterSpot[]; bench: OppRosterSpot[]; projectedTotal?: number } }>(`/teams/${opponentId}/roster`);
+            const mapOpp = (spot: OppRosterSpot, isStarter: boolean): RosterPlayer => ({
+              id: spot.player.id,
+              name: spot.player.name,
+              team: spot.player.team,
+              position: spot.player.position,
+              slot: spot.slot,
+              isStarter,
+              projectedPoints: spot.player.projectedPoints || 0,
+              actualPoints: spot.player.actualPoints,
+              lastWeekPoints: spot.player.lastWeekPoints,
+              status: spot.player.status,
+              injuryNote: spot.player.injuryNote,
+              injuryBodyPart: spot.player.injuryBodyPart,
+              byeWeek: spot.player.byeWeek,
+              imageUrl: spot.player.headshotUrl || spot.player.imageUrl,
+              seasonStats: spot.player.seasonStats || undefined,
+            });
+            if (oppResponse.roster.starters) {
+              oppResponse.roster.starters.forEach(spot => { if (spot.player) opponentRoster.push(mapOpp(spot, true)); });
+            }
+            if (oppResponse.roster.bench) {
+              oppResponse.roster.bench.forEach(spot => { if (spot.player) opponentRoster.push(mapOpp(spot, false)); });
+            }
+            opponentProjTotal = oppResponse.roster.projectedTotal || 0;
+          } catch {
+            // Opponent roster fetch failed — continue without it
+          }
+        }
+
         setMatchup({
           id: response.matchupId,
           week: response.week || 1,
@@ -394,12 +451,12 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
             roster: [], // Roster loaded separately through refreshRoster
           },
           opponent: {
-            id: response.opponent?.id || '',
+            id: opponentId,
             name: response.opponent?.name || 'Opponent',
             ownerName: response.opponent?.owner || 'Unknown',
             score: response.opponent?.score || 0,
-            projectedScore: 0,
-            roster: [],
+            projectedScore: opponentProjTotal,
+            roster: opponentRoster,
           },
         });
       } else {
