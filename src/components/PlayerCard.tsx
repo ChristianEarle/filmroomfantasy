@@ -5,7 +5,6 @@ import api from '../services/api';
 import { playerService } from '../services';
 import type { PlayerNews, MatchupGradeResponse } from '../services';
 import { NewsSnippet } from './NewsSnippet';
-import { AdUnit } from './AdUnit';
 
 
 interface PlayerCardProps {
@@ -1224,11 +1223,6 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
               );
             })() : null}
 
-            {/* AdSense Ad Unit */}
-            <div className="my-4 rounded-lg overflow-hidden">
-              <div className={`text-[10px] text-slate-600 text-center mb-1`}>Ad</div>
-              <AdUnit slot="playercard-bottom" isDarkMode={isDarkMode} />
-            </div>
           </div>
         </div>
       </div>

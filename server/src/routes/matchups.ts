@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
@@ -411,7 +411,11 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
     const matchup = await db.query.matchups.findFirst({
       where: and(
         eq(schema.matchups.leagueId, leagueId),
-        eq(schema.matchups.week, league.currentWeek)
+        eq(schema.matchups.week, league.currentWeek),
+        or(
+          eq(schema.matchups.homeTeamId, team.id),
+          eq(schema.matchups.awayTeamId, team.id)
+        )
       ),
       with: {
         homeTeam: { with: { owner: true } },
