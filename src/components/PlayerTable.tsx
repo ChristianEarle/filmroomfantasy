@@ -45,16 +45,16 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
       }}
       className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
     >
-      <td className="px-2 sm:px-6 py-3 sm:py-4">
-        <span className={`text-xs sm:text-sm font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
+      <td className="px-6 py-4">
+        <span className={`font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
       </td>
-      <td className="px-2 sm:px-4 py-3 sm:py-4">
-        <div className="min-w-0">
-          <div className={`text-sm sm:text-base font-bold group-hover:text-blue-500 transition-colors truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
-          <div className={`text-[10px] sm:text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+      <td className="px-4 py-4">
+        <div>
+          <div className={`font-bold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
+          <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             {player.team} <span className="sm:hidden">• {player.position}</span>
             {oddsDisplay && (
-              <div className={`text-[10px] sm:text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+              <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                 {oddsDisplay}
               </div>
             )}
@@ -74,8 +74,8 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
           </div>
         )}
       </td>
-      <td className="px-2 sm:px-4 py-3 sm:py-4 text-right">
-        <span className={`font-bold text-sm sm:text-lg ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+      <td className="px-4 py-4 text-right">
+        <span className={`font-bold text-lg ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
       </td>
       <td className="px-6 py-4 text-right hidden sm:table-cell">
         {pointsType === 'actual' && player.weeklyProjectedPoints !== undefined ? (
@@ -434,7 +434,7 @@ export function PlayerTable({
                     scope="col"
                     onClick={() => handleSort('rank')}
                     aria-sort={sortField === 'rank' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-left px-2 sm:px-6 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-8 sm:w-16 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-left px-6 py-4 text-xs font-semibold cursor-pointer transition-colors w-16 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5">
                       RK
@@ -445,7 +445,7 @@ export function PlayerTable({
                     scope="col"
                     onClick={() => handleSort('name')}
                     aria-sort={sortField === 'name' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-left px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-left px-4 py-4 text-xs font-semibold cursor-pointer transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5">
                       PLAYER
@@ -468,7 +468,7 @@ export function PlayerTable({
                     scope="col"
                     onClick={() => handleSort('projectedPoints')}
                     aria-sort={sortField === 'projectedPoints' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-right px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-16 sm:w-24 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-right px-4 py-4 text-xs font-semibold cursor-pointer transition-colors w-24 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5 justify-end">
                       {pointsType === 'actual' ? 'PTS' : 'PROJ'}

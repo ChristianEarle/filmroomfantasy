@@ -5,6 +5,7 @@ import api from '../services/api';
 import { playerService } from '../services';
 import type { PlayerNews, MatchupGradeResponse } from '../services';
 import { NewsSnippet } from './NewsSnippet';
+import { AdUnit } from './AdUnit';
 
 
 interface PlayerCardProps {
@@ -315,24 +316,24 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
   return (
     <div
-      className={`fixed inset-0 backdrop-blur-sm z-[100] flex items-start justify-center overflow-y-auto p-2 sm:p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-900/50'} ${
+      className={`fixed inset-0 backdrop-blur-sm z-[100] flex items-start justify-center overflow-y-auto p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-900/50'} ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      <div className={`w-full max-w-5xl mt-2 mb-2 sm:mt-8 sm:mb-8 transition-all duration-300 ${
+      <div className={`w-full max-w-5xl mt-8 mb-8 transition-all duration-300 ${
         isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
       }`}>
         {/* Breadcrumb */}
-        <div className="mb-2 sm:mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between">
           <button
             onClick={handleClose}
             className={`flex items-center gap-2 transition-colors group ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             <span className="text-sm">Back</span>
-            <span className={`hidden sm:inline ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>/</span>
-            <span className={`hidden sm:inline text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Player Card</span>
+            <span className={isDarkMode ? 'text-slate-600' : 'text-slate-400'}>/</span>
+            <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Player Card</span>
           </button>
           <button
             onClick={handleClose}
@@ -346,23 +347,23 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           {/* Main Card */}
           <div className={`lg:col-span-2 rounded-lg border overflow-hidden shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             {/* Player Header */}
-            <div className={`p-4 sm:p-6 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700' : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                  <div className={`w-10 h-12 sm:w-14 sm:h-16 flex-shrink-0 rounded-lg overflow-hidden border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+            <div className={`p-6 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700' : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'}`}>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-16 flex-shrink-0 rounded-lg overflow-hidden border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                     {player.headshotUrl ? (
                       <img src={player.headshotUrl} alt={player.name} className="w-full h-full object-contain" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <span className={`text-xs sm:text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                        <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                       </div>
                     )}
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 sm:gap-3 mb-1 flex-wrap">
-                      <h1 className={`text-lg sm:text-2xl font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</h1>
+                  <div>
+                    <div className="flex items-center gap-3 mb-1">
+                      <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</h1>
                       {player.status && player.status !== 'active' && (
-                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded shrink-0 ${
+                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${
                           player.status === 'injured_reserve' || player.status === 'out' ? 'bg-red-500/20 text-red-400' :
                           player.status === 'questionable' ? 'bg-yellow-500/20 text-yellow-400' :
                           player.status === 'doubtful' ? 'bg-orange-500/20 text-orange-400' :
@@ -372,27 +373,19 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                         </span>
                       )}
                     </div>
-                    <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.team} • {player.position}{propsCurrentWeek ? ` • Week ${propsCurrentWeek}` : ''}</p>
+                    <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.team} • {player.position}{propsCurrentWeek ? ` • Week ${propsCurrentWeek}` : ''}</p>
                   </div>
                 </div>
                 {matchupGrade && (
-                  <span className="hidden sm:inline text-xs font-medium px-3 py-1.5 rounded-md border shrink-0" style={getGradeStyle(matchupGrade)} title={matchupData?.message || `${getMatchupGradeLabel(matchupGrade)} matchup`}>
+                  <span className="text-xs font-medium px-3 py-1.5 rounded-md border shrink-0" style={getGradeStyle(matchupGrade)} title={matchupData?.message || `${getMatchupGradeLabel(matchupGrade)} matchup`}>
                     {matchupData?.opponent ? `vs ${matchupData.opponent} ` : 'Matchup '}{matchupGrade}
                   </span>
                 )}
               </div>
-              {/* Matchup grade - shown below on mobile */}
-              {matchupGrade && (
-                <div className="sm:hidden mt-3">
-                  <span className="text-xs font-medium px-3 py-1.5 rounded-md border" style={getGradeStyle(matchupGrade)} title={matchupData?.message || `${getMatchupGradeLabel(matchupGrade)} matchup`}>
-                    {matchupData?.opponent ? `vs ${matchupData.opponent} ` : 'Matchup '}{matchupGrade}
-                  </span>
-                </div>
-              )}
             </div>
 
             {/* News Section */}
-            <div className={`p-3 sm:p-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <div className={`p-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <div className="flex items-center gap-2 mb-3">
                 <svg className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} viewBox="0 0 24 24" fill="currentColor">
                   <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
@@ -454,7 +447,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             </div>
 
             {/* Tab Content */}
-            <div className="p-3 sm:p-6">
+            <div className="p-6">
               {activeTab === 'props' && (() => {
                 const MARKET_LABELS: Record<string, string> = {
                   passyds: 'Passing Yards', rushyds: 'Rushing Yards', receptionyds: 'Receiving Yards',
@@ -1136,7 +1129,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           {/* Right Sidebar */}
           <div className="space-y-6">
             {/* FilmRoom Insights */}
-            <div className={`rounded-lg border p-4 sm:p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center gap-2 mb-4">
                 <Zap className="w-4 h-4 text-yellow-500" />
                 <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom Insights</h3>
@@ -1213,7 +1206,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             {player.keyLine ? (() => {
               const hasActualStats = weeklyStats?.some(s => s.week === propsCurrentWeek);
               return (
-              <div className={`bg-gradient-to-br ${hasActualStats ? 'from-emerald-600 to-emerald-800 border-emerald-500/30' : 'from-blue-600 to-blue-800 border-blue-500/30'} rounded-lg p-4 sm:p-6 border`}>
+              <div className={`bg-gradient-to-br ${hasActualStats ? 'from-emerald-600 to-emerald-800 border-emerald-500/30' : 'from-blue-600 to-blue-800 border-blue-500/30'} rounded-lg p-6 border`}>
                 <h4 className="text-white font-bold mb-2">{hasActualStats ? `Week ${propsCurrentWeek} Stats` : 'Key Line'}</h4>
                 <p className="text-2xl font-bold text-white mb-1">{player.keyLine}</p>
                 <p className={`${hasActualStats ? 'text-emerald-200' : 'text-blue-200'} text-sm`}>
@@ -1223,6 +1216,11 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
               );
             })() : null}
 
+            {/* AdSense Ad Unit */}
+            <div className="my-4 rounded-lg overflow-hidden">
+              <div className={`text-[10px] text-slate-600 text-center mb-1`}>Ad</div>
+              <AdUnit slot="playercard-bottom" isDarkMode={isDarkMode} />
+            </div>
           </div>
         </div>
       </div>

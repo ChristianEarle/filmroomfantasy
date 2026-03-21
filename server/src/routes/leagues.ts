@@ -796,6 +796,7 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
       // ── Fetch Sleeper league metadata to get accurate week & settings ──
       let matchupsImported = 0;
       let regularSeasonWeeks = 14; // fallback
+      let playoffWeeksCount = league.playoffWeeks || 3; // fallback
       let effectiveCurrentWeek = league.currentWeek || 1;
 
       try {
@@ -823,7 +824,7 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
               currentWeek: effectiveCurrentWeek,
               playoffTeams: sleeperPlayoffTeams,
               teamCount: sleeperTeamCount,
-              playoffWeeks: settings.playoff_round_type === 2 ? 2 : 3,
+              playoffWeeks: (playoffWeeksCount = settings.playoff_round_type === 2 ? 2 : 3),
               updatedAt: new Date(),
             })
             .where(eq(schema.leagues.id, league.id));
@@ -832,8 +833,9 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
         console.log('Could not fetch Sleeper league metadata, using stored currentWeek');
       }
 
-      // Fetch matchups for ALL regular season weeks (not just up to currentWeek)
-      const weekNumbers = Array.from({ length: regularSeasonWeeks }, (_, i) => i + 1);
+      // Fetch matchups for ALL weeks including playoffs
+      const totalWeeks = regularSeasonWeeks + playoffWeeksCount;
+      const weekNumbers = Array.from({ length: totalWeeks }, (_, i) => i + 1);
       const matchupUrls = weekNumbers.map(week =>
         `https://api.sleeper.app/v1/league/${league.externalId}/matchups/${week}`
       );
@@ -878,6 +880,9 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
                 ),
               });
 
+              const isPlayoffWeek = week > regularSeasonWeeks;
+              const isChampionshipWeek = week === regularSeasonWeeks + playoffWeeksCount;
+
               if (!existingMatchup) {
                 // Create the matchup
                 await db.insert(schema.matchups).values({
@@ -891,17 +896,19 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
                   homeProjectedScore: team1.projected_points || 0,
                   awayProjectedScore: team2.projected_points || 0,
                   isComplete: week < effectiveCurrentWeek,
-                  isPlayoff: false,
-                  isChampionship: false,
+                  isPlayoff: isPlayoffWeek,
+                  isChampionship: isChampionshipWeek,
                 });
                 matchupsImported++;
               } else {
-                // Update existing matchup scores
+                // Update existing matchup scores and playoff flags
                 await db.update(schema.matchups)
                   .set({
                     homeScore: team1.points || 0,
                     awayScore: team2.points || 0,
                     isComplete: week < effectiveCurrentWeek,
+                    isPlayoff: isPlayoffWeek,
+                    isChampionship: isChampionshipWeek,
                   })
                   .where(eq(schema.matchups.id, existingMatchup.id));
               }
@@ -927,16 +934,17 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
         }
       }
 
-      // Fetch stats for each completed week (with throttling between requests)
-      const statsWeekLimit = Math.min(effectiveCurrentWeek, regularSeasonWeeks);
+      // Fetch stats for each completed week including playoffs (with throttling between requests)
+      const statsWeekLimit = Math.min(effectiveCurrentWeek, totalWeeks);
       for (let week = 1; week <= statsWeekLimit; week++) {
         try {
           // Throttle: 150ms delay between sequential stats fetches
           if (week > 1) await sleep(150);
 
-          // Use api.sleeper.com for stats (different from api.sleeper.app)
+          // Use api.sleeper.com for stats — post-season uses same week numbers
+          const seasonType = week > regularSeasonWeeks ? 'post' : 'regular';
           const statsResponse = await fetch(
-            `https://api.sleeper.com/stats/nfl/${league.seasonYear}/${week}?season_type=regular`
+            `https://api.sleeper.com/stats/nfl/${league.seasonYear}/${week}?season_type=${seasonType}`
           );
 
           if (!statsResponse.ok) {

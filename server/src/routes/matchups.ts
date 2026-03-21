@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, or, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, sql, desc } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
@@ -407,8 +407,8 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
       return c.json({ error: 'Team not found' }, 404);
     }
 
-    // Find matchup where user's team is home or away
-    const matchup = await db.query.matchups.findFirst({
+    // Find matchup where user's team is home or away for the current week
+    let matchup = await db.query.matchups.findFirst({
       where: and(
         eq(schema.matchups.leagueId, leagueId),
         eq(schema.matchups.week, league.currentWeek),
@@ -422,6 +422,25 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
         awayTeam: { with: { owner: true } },
       },
     });
+
+    // If no matchup found for current week (e.g. offseason, currentWeek past last synced week),
+    // fall back to the most recent week that has a matchup for this team
+    if (!matchup) {
+      matchup = await db.query.matchups.findFirst({
+        where: and(
+          eq(schema.matchups.leagueId, leagueId),
+          or(
+            eq(schema.matchups.homeTeamId, team.id),
+            eq(schema.matchups.awayTeamId, team.id)
+          )
+        ),
+        orderBy: desc(schema.matchups.week),
+        with: {
+          homeTeam: { with: { owner: true } },
+          awayTeam: { with: { owner: true } },
+        },
+      });
+    }
 
     if (!matchup) {
       return c.json({ error: 'No matchup found for current week' }, 404);
