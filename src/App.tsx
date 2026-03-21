@@ -200,6 +200,17 @@ function AppContent() {
   const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const isDarkMode = user?.darkMode ?? true;
+
+  // Sync dark class to <html> so CSS variables apply to html/body
+  // (prevents white bars on mobile in dark mode)
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
   const [allPlayersSource, setAllPlayersSource] = useState<'board' | 'waivers'>('board');
   const [authView, setAuthView] = useState<'login' | 'register' | 'forgot' | 'reset'>('login');
   const [resetToken, setResetToken] = useState<string | null>(null);
