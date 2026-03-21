@@ -191,9 +191,16 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       }
 
       // Offseason fallback: if we're in the offseason (Feb-Aug), the entire NFL season is over
+      // But only mark complete if stats actually exist for this season (not a future season with no data)
       if (!weekComplete) {
         const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 7=Aug
-        if (currentMonth >= 1 && currentMonth <= 7) weekComplete = true;
+        if (currentMonth >= 1 && currentMonth <= 7) {
+          const anySeasonStat = await db.query.playerWeeklyStats.findFirst({
+            where: eq(schema.playerWeeklyStats.seasonYear, season),
+            columns: { id: true },
+          });
+          if (anySeasonStat) weekComplete = true;
+        }
       }
     }
 
