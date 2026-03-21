@@ -180,7 +180,7 @@ export function UpgradeModal({
                   isDarkMode ? 'text-white' : 'text-slate-900'
                 }`}
               >
-                $29.99
+                $49.99
               </span>
               <span
                 className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}

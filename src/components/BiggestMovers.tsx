@@ -64,15 +64,16 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
           const players = allPlayersResponse.players || [];
 
           // Calculate actual vs projected for this week
+          // Note: when weekComplete, the server sets projectedPoints = actual pts
+          // and weeklyProjectedPoints = the real pre-game projection
           const performers: PerformerData[] = players
             .filter((p: APIPlayer) => {
-              // Only include players with both projected and actual points
               const actual = p.seasonStats?.fantasyPointsPPR || 0;
-              const projected = p.projectedPoints || 0;
+              const projected = p.weeklyProjectedPoints || 0;
               return actual > 0 && projected > 0;
             })
             .map((p: APIPlayer) => {
-              const projected = p.projectedPoints || 0;
+              const projected = p.weeklyProjectedPoints || 0;
               const actual = p.seasonStats?.fantasyPointsPPR || 0;
               const difference = actual - projected;
               return {

@@ -13,6 +13,7 @@ import {
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
+import { generateProjectionsFromProps } from '../services/projections';
 import type { Env, Variables } from '../index';
 
 // Rate limit for league routes: 60 req/min per IP (all auth-gated)
@@ -1044,12 +1045,35 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
 
       // ========================================
       // STEP 5: Import projections for current/upcoming week (ALL players in DB)
+      // Projections are calculated from book lines (player props) first,
+      // then Sleeper projections fill in any remaining players.
       // ========================================
       let projectionsImported = 0;
+      let propsProjectionsCount = 0;
       // Use the current week for projections (capped to regular season)
       const projectionWeek = Math.min(effectiveCurrentWeek, regularSeasonWeeks);
 
       try {
+        // Step 5a: Generate projections from book lines (player props)
+        const propsResult = await generateProjectionsFromProps(db, projectionWeek, league.seasonYear);
+        propsProjectionsCount = propsResult.generated + propsResult.updated;
+
+        // Track which players already have props-based projections
+        const playersCoveredByProps = new Set<string>();
+        if (propsProjectionsCount > 0) {
+          const propsProjections = await db.query.playerProjections.findMany({
+            where: and(
+              eq(schema.playerProjections.week, projectionWeek),
+              eq(schema.playerProjections.seasonYear, league.seasonYear)
+            ),
+            columns: { playerId: true },
+          });
+          for (const p of propsProjections) {
+            playersCoveredByProps.add(p.playerId);
+          }
+        }
+
+        // Step 5b: Sleeper fallback for players without prop lines
         const projectionsResponse = await fetch(
           `https://api.sleeper.com/projections/nfl/${league.seasonYear}/${projectionWeek}?season_type=regular`
         );
@@ -1064,7 +1088,7 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
           });
           const weekComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
 
-          // Import projections for ALL players that have projections (not just rostered)
+          // Import projections for players NOT already covered by book lines
           for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
             if (!playerProj) continue;
 
@@ -1074,6 +1098,9 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
             });
 
             if (!player) continue;
+
+            // Skip players already covered by book line projections
+            if (playersCoveredByProps.has(player.id)) continue;
 
             // Determine scoring format from league
             const scoringFormat = league.scoringFormat || 'ppr';
@@ -1145,11 +1172,12 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
 
       return c.json({
         success: true,
-        message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, ${statsImported} player stats, and ${projectionsImported} projections updated.`,
+        message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, ${statsImported} player stats, ${propsProjectionsCount} projections from book lines, and ${projectionsImported} projections from Sleeper updated.`,
         teamsUpdated: rosters.length,
         matchupsImported,
         statsImported,
         projectionsImported,
+        propsProjections: propsProjectionsCount,
       });
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));

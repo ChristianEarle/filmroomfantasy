@@ -7,6 +7,7 @@ import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
+import { generateProjectionsFromProps } from '../services/projections';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -840,17 +841,17 @@ adminRoutes.post('/sync-stats', async (c) => {
 
 /**
  * POST /api/admin/sync-projections
- * Fetches weekly player projections from Sleeper and upserts into player_projections.
- * Body: { seasonYear?: number, week?: number, weeks?: number[], allWeeks?: boolean, scoringFormats?: string[] }
- * Defaults to current NFL week, all 3 scoring formats.
- * Set allWeeks: true to sync all 18 regular-season weeks (used for initial data population).
+ * Generates player projections from book lines (player props) first.
+ * Falls back to Sleeper for players without prop lines.
+ * Body: { seasonYear?: number, week?: number, weeks?: number[], allWeeks?: boolean, scoringFormats?: string[], source?: 'props' | 'sleeper' | 'auto' }
+ * Defaults to 'auto' (props first, Sleeper fallback), current NFL week, all 3 scoring formats.
  */
 adminRoutes.post('/sync-projections', async (c) => {
   const db = c.get('db');
 
 
   try {
-    let body: { seasonYear?: number; week?: number; weeks?: number[]; allWeeks?: boolean; scoringFormats?: string[] } = {};
+    let body: { seasonYear?: number; week?: number; weeks?: number[]; allWeeks?: boolean; scoringFormats?: string[]; source?: string } = {};
     try {
       const raw = await c.req.json();
       body = raw && typeof raw === 'object' ? raw : {};
@@ -860,6 +861,7 @@ adminRoutes.post('/sync-projections', async (c) => {
 
     const seasonYear = body.seasonYear ?? new Date().getFullYear();
     const scoringFormats = body.scoringFormats ?? ['ppr', 'half_ppr', 'standard'];
+    const source = body.source || 'auto'; // 'props' | 'sleeper' | 'auto'
 
     // Determine which weeks to sync
     let weeksToSync: number[] = [];
@@ -884,11 +886,13 @@ adminRoutes.post('/sync-projections', async (c) => {
 
     let inserted = 0;
     let updated = 0;
-    const weekResults: { week: number; inserted: number; updated: number; error?: string }[] = [];
+    let propsGenerated = 0;
+    let propsUpdated = 0;
+    const weekResults: { week: number; inserted: number; updated: number; propsProjections?: number; error?: string }[] = [];
 
     // Pre-fetch all players with external IDs for batch lookup (shared across all weeks)
     const allPlayers = await db.query.nflPlayers.findMany({
-      columns: { id: true, externalId: true },
+      columns: { id: true, externalId: true, name: true, firstName: true, lastName: true },
     });
     const playerByExtId = new Map(
       allPlayers.filter(p => p.externalId).map(p => [p.externalId!, p.id])
@@ -899,103 +903,136 @@ adminRoutes.post('/sync-projections', async (c) => {
     for (const weekNum of weeksToSync) {
       let weekInserted = 0;
       let weekUpdated = 0;
+      let weekPropsProjections = 0;
       const projStatements: any[] = [];
 
       try {
-        // Fetch projections from Sleeper for this week
-        const projResponse = await fetch(
-          `https://api.sleeper.com/projections/nfl/${seasonYear}/${weekNum}?season_type=regular`
-        );
+        // Step 1: Generate projections from book lines (player props) if available
+        const playersCoveredByProps = new Set<string>();
 
-        if (!projResponse.ok) {
-          console.error(`[sync-projections] Sleeper API returned ${projResponse.status} for week ${weekNum}`);
-          weekResults.push({ week: weekNum, inserted: 0, updated: 0, error: `API returned ${projResponse.status}` });
-          continue;
-        }
+        if (source !== 'sleeper') {
+          const propsResult = await generateProjectionsFromProps(db, weekNum, seasonYear);
+          propsGenerated += propsResult.generated;
+          propsUpdated += propsResult.updated;
+          weekPropsProjections = propsResult.generated + propsResult.updated;
 
-        const projections = await projResponse.json() as Record<string, any>;
-
-        for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
-          if (!playerProj) continue;
-
-          const playerId = playerByExtId.get(sleeperPlayerId);
-          if (!playerId) continue;
-
-          for (const scoringFormat of scoringFormats) {
-            const projectedPoints = scoringFormat === 'ppr'
-              ? (playerProj.pts_ppr || 0)
-              : scoringFormat === 'half_ppr'
-                ? (playerProj.pts_half_ppr || 0)
-                : (playerProj.pts_std || 0);
-
-            // Skip zero-point projections (player not playing)
-            if (projectedPoints === 0 && !playerProj.pass_yd && !playerProj.rush_yd && !playerProj.rec_yd) continue;
-
-            const dbFormat = scoringFormat === 'half_ppr' ? 'half-ppr' : scoringFormat;
-
-            const existingProj = await db.query.playerProjections.findFirst({
+          // Track which players already have props-based projections
+          if (weekPropsProjections > 0) {
+            const propsProjections = await db.query.playerProjections.findMany({
               where: and(
-                eq(schema.playerProjections.playerId, playerId),
                 eq(schema.playerProjections.week, weekNum),
-                eq(schema.playerProjections.seasonYear, seasonYear),
-                eq(schema.playerProjections.scoringFormat, dbFormat)
+                eq(schema.playerProjections.seasonYear, seasonYear)
               ),
+              columns: { playerId: true },
             });
-
-            const projData = {
-              playerId,
-              week: weekNum,
-              seasonYear,
-              scoringFormat: dbFormat,
-              projectedPoints,
-              projPassYards: playerProj.pass_yd || null,
-              projPassTDs: playerProj.pass_td || null,
-              projRushYards: playerProj.rush_yd || null,
-              projRushTDs: playerProj.rush_td || null,
-              projReceptions: playerProj.rec || null,
-              projRecYards: playerProj.rec_yd || null,
-              projRecTDs: playerProj.rec_td || null,
-              updatedAt: new Date(),
-            };
-
-            if (existingProj) {
-              projStatements.push(
-                db.update(schema.playerProjections)
-                  .set(projData)
-                  .where(eq(schema.playerProjections.id, existingProj.id))
-              );
-              weekUpdated++;
-            } else {
-              projStatements.push(
-                db.insert(schema.playerProjections).values({
-                  id: generateId(),
-                  ...projData,
-                })
-              );
-              weekInserted++;
-            }
-
-            // Flush batch when reaching size
-            if (projStatements.length >= BATCH_SIZE) {
-              await db.batch(projStatements as any);
-              projStatements.length = 0;
+            for (const p of propsProjections) {
+              playersCoveredByProps.add(p.playerId);
             }
           }
         }
 
-        // Flush remaining statements for this week
-        if (projStatements.length > 0) {
-          await db.batch(projStatements as any);
+        // Step 2: Fill in remaining players from Sleeper (fallback)
+        if (source !== 'props') {
+          const projResponse = await fetch(
+            `https://api.sleeper.com/projections/nfl/${seasonYear}/${weekNum}?season_type=regular`
+          );
+
+          if (!projResponse.ok) {
+            console.error(`[sync-projections] Sleeper API returned ${projResponse.status} for week ${weekNum}`);
+            if (weekPropsProjections === 0) {
+              weekResults.push({ week: weekNum, inserted: 0, updated: 0, error: `API returned ${projResponse.status}` });
+              continue;
+            }
+            // Props already generated some, continue with what we have
+          } else {
+            const projections = await projResponse.json() as Record<string, any>;
+
+            for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
+              if (!playerProj) continue;
+
+              const playerId = playerByExtId.get(sleeperPlayerId);
+              if (!playerId) continue;
+
+              // Skip players already covered by book line projections
+              if (source === 'auto' && playersCoveredByProps.has(playerId)) continue;
+
+              for (const scoringFormat of scoringFormats) {
+                const projectedPoints = scoringFormat === 'ppr'
+                  ? (playerProj.pts_ppr || 0)
+                  : scoringFormat === 'half_ppr'
+                    ? (playerProj.pts_half_ppr || 0)
+                    : (playerProj.pts_std || 0);
+
+                // Skip zero-point projections (player not playing)
+                if (projectedPoints === 0 && !playerProj.pass_yd && !playerProj.rush_yd && !playerProj.rec_yd) continue;
+
+                const dbFormat = scoringFormat === 'half_ppr' ? 'half-ppr' : scoringFormat;
+
+                const existingProj = await db.query.playerProjections.findFirst({
+                  where: and(
+                    eq(schema.playerProjections.playerId, playerId),
+                    eq(schema.playerProjections.week, weekNum),
+                    eq(schema.playerProjections.seasonYear, seasonYear),
+                    eq(schema.playerProjections.scoringFormat, dbFormat)
+                  ),
+                });
+
+                const projData = {
+                  playerId,
+                  week: weekNum,
+                  seasonYear,
+                  scoringFormat: dbFormat,
+                  projectedPoints,
+                  projPassYards: playerProj.pass_yd || null,
+                  projPassTDs: playerProj.pass_td || null,
+                  projRushYards: playerProj.rush_yd || null,
+                  projRushTDs: playerProj.rush_td || null,
+                  projReceptions: playerProj.rec || null,
+                  projRecYards: playerProj.rec_yd || null,
+                  projRecTDs: playerProj.rec_td || null,
+                  updatedAt: new Date(),
+                };
+
+                if (existingProj) {
+                  projStatements.push(
+                    db.update(schema.playerProjections)
+                      .set(projData)
+                      .where(eq(schema.playerProjections.id, existingProj.id))
+                  );
+                  weekUpdated++;
+                } else {
+                  projStatements.push(
+                    db.insert(schema.playerProjections).values({
+                      id: generateId(),
+                      ...projData,
+                    })
+                  );
+                  weekInserted++;
+                }
+
+                // Flush batch when reaching size
+                if (projStatements.length >= BATCH_SIZE) {
+                  await db.batch(projStatements as any);
+                  projStatements.length = 0;
+                }
+              }
+            }
+
+            // Flush remaining statements for this week
+            if (projStatements.length > 0) {
+              await db.batch(projStatements as any);
+            }
+          }
         }
       } catch (weekErr) {
         console.error(`[sync-projections] Error syncing week ${weekNum}:`, weekErr);
-        weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated, error: weekErr instanceof Error ? weekErr.message : 'Unknown error' });
+        weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated, propsProjections: weekPropsProjections, error: weekErr instanceof Error ? weekErr.message : 'Unknown error' });
         continue;
       }
 
       inserted += weekInserted;
       updated += weekUpdated;
-      weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated });
+      weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated, propsProjections: weekPropsProjections });
     }
 
     // Invalidate projection-related caches so fresh data is served immediately
@@ -1004,12 +1041,13 @@ adminRoutes.post('/sync-projections', async (c) => {
     return c.json({
       success: true,
       message: 'Projections sync completed',
+      source,
       seasonYear,
       weeks: weeksToSync,
       scoringFormats,
-      inserted,
-      updated,
-      total: inserted + updated,
+      propsProjections: { generated: propsGenerated, updated: propsUpdated },
+      sleeperFallback: { inserted, updated },
+      total: inserted + updated + propsGenerated + propsUpdated,
       weekResults,
     });
   } catch (err) {
@@ -1262,8 +1300,9 @@ adminRoutes.post('/sync-player-props', async (c) => {
     return c.json({ error: 'ODDS_API_KEY not configured' }, 500);
   }
 
-  const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string }>();
+  const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string; season?: number }>();
   const { week, date, gameIndex, eventId } = body;
+  const seasonYear = body.season || 2025;
 
   if (!week || week < 1 || week > 18) {
     return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
@@ -1405,6 +1444,9 @@ adminRoutes.post('/sync-player-props', async (c) => {
 
     invalidateCache('player-props:', true);
 
+    // After storing props, generate projections from the lines
+    const projResult = await generateProjectionsFromProps(db, week, seasonYear);
+
     const summary = {
       success: true,
       message: 'Player props sync completed',
@@ -1413,6 +1455,8 @@ adminRoutes.post('/sync-player-props', async (c) => {
       games_processed: gamesToProcess.length,
       props_found: propsFound,
       props_inserted: inserted,
+      projections_generated: projResult.generated,
+      projections_updated: projResult.updated,
     };
 
     console.log('Sync summary:', summary);
@@ -1423,6 +1467,43 @@ adminRoutes.post('/sync-player-props', async (c) => {
     return c.json(
       {
         error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/generate-projections
+ * Generates/updates player projections from stored book lines (player props).
+ * Use after syncing player props, or to recalculate projections.
+ */
+adminRoutes.post('/generate-projections', async (c) => {
+  const db = c.get('db');
+
+  const body = await c.req.json().catch(() => ({}));
+  const week = body.week;
+  const seasonYear = body.season || 2025;
+
+  if (!week) {
+    return c.json({ error: 'week is required' }, 400);
+  }
+
+  try {
+    const result = await generateProjectionsFromProps(db, week, seasonYear);
+    return c.json({
+      success: true,
+      message: `Projections generated from book lines for week ${week}`,
+      week,
+      season: seasonYear,
+      ...result,
+    });
+  } catch (err) {
+    console.error('Generate projections error:', err);
+    return c.json(
+      {
+        error: 'Projection generation failed',
         message: err instanceof Error ? err.message : 'Unknown error',
       },
       500
