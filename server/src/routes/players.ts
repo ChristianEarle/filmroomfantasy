@@ -191,16 +191,9 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       }
 
       // Offseason fallback: if we're in the offseason (Feb-Aug), the entire NFL season is over
-      // But only mark complete if stats actually exist for this season (not a future season with no data)
       if (!weekComplete) {
         const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 7=Aug
-        if (currentMonth >= 1 && currentMonth <= 7) {
-          const anySeasonStat = await db.query.playerWeeklyStats.findFirst({
-            where: eq(schema.playerWeeklyStats.seasonYear, season),
-            columns: { id: true },
-          });
-          if (anySeasonStat) weekComplete = true;
-        }
+        if (currentMonth >= 1 && currentMonth <= 7) weekComplete = true;
       }
     }
 
@@ -235,13 +228,11 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       const playerIdsFromStats = [...new Set(playedStats.map(s => s.playerId))];
 
       if (playerIdsFromStats.length === 0) {
-        return c.json({
-          players: [],
-          pagination: { page: 1, limit, total: 0, totalPages: 0 },
-          weekComplete: true,
-          pointsType: 'actual',
-        });
-      }
+        // No actual stats for this week — fall through to normal projection path.
+        // This handles the offseason case where weeks are marked complete but
+        // stats haven't been synced yet.
+        weekComplete = false;
+      } else {
 
       const CHUNK = 50;
       const idChunks: string[][] = [];
@@ -340,6 +331,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         weekComplete: true,
         pointsType: 'actual',
       });
+      } // end else (has stats)
     }
 
     // Get sort column safely (DB columns only)
