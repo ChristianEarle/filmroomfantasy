@@ -5,6 +5,7 @@ import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
 import { cached } from '../utils/cache';
+import { buildProjectionsFromProps } from '../services/projections';
 import type { Env, Variables } from '../index';
 
 // Rate limits for player routes
@@ -228,11 +229,13 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       const playerIdsFromStats = [...new Set(playedStats.map(s => s.playerId))];
 
       if (playerIdsFromStats.length === 0) {
-        // No actual stats for this week — fall through to normal projection path.
-        // This handles the offseason case where weeks are marked complete but
-        // stats haven't been synced yet.
-        weekComplete = false;
-      } else {
+        return c.json({
+          players: [],
+          pagination: { page: 1, limit, total: 0, totalPages: 0 },
+          weekComplete: true,
+          pointsType: 'actual',
+        });
+      }
 
       const CHUNK = 50;
       const idChunks: string[][] = [];
@@ -264,6 +267,36 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       });
       for (const proj of projectionsForWeek) {
         projectionsByPlayer.set(proj.playerId, proj.projectedPoints);
+      }
+
+      // Fallback: if no pre-generated projections found, calculate from player props (book lines)
+      if (projectionsByPlayer.size === 0) {
+        const weekProps = await db.query.playerProps.findMany({
+          where: and(
+            eq(schema.playerProps.week, week),
+            eq(schema.playerProps.season, season)
+          ),
+        });
+        if (weekProps.length > 0) {
+          const propProjections = buildProjectionsFromProps(weekProps);
+          // Build lookups from the players we already fetched
+          const nameToId = new Map<string, string>();
+          const extIdToId = new Map<string, string>();
+          for (const p of playersPast) {
+            if (p.name) nameToId.set(p.name.toLowerCase(), p.id);
+            if ((p as any).externalId) extIdToId.set((p as any).externalId, p.id);
+          }
+          for (const proj of propProjections) {
+            const playerId = (proj.playerId && extIdToId.get(proj.playerId))
+              || nameToId.get(proj.playerName.toLowerCase());
+            if (playerId) {
+              const pts = scoringFormat === 'ppr' ? proj.points.ppr
+                : scoringFormat === 'half-ppr' ? proj.points.halfPpr
+                : proj.points.standard;
+              projectionsByPlayer.set(playerId, pts);
+            }
+          }
+        }
       }
 
       let enriched = playersPast.map(p => {
@@ -331,7 +364,6 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         weekComplete: true,
         pointsType: 'actual',
       });
-      } // end else (has stats)
     }
 
     // Get sort column safely (DB columns only)
