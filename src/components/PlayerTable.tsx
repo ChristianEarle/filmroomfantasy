@@ -189,7 +189,7 @@ export function PlayerTable({
     try {
       const params = new URLSearchParams({
         page: '1',
-        limit: '350',
+        limit: '500',
         includeStats: 'true',
         sortBy: 'projectedPoints',
         sortOrder: 'desc',

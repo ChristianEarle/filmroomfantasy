@@ -137,7 +137,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
 
   // Query params
   const page = parseInt(c.req.query('page') || '1');
-  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 200);
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 500);
   const offset = (page - 1) * limit;
 
   const position = c.req.query('position');
@@ -207,7 +207,6 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           eq(schema.playerWeeklyStats.seasonYear, season)
         ),
         orderBy: desc(ptsOrderCol),
-        limit: 500,
       });
       const played = (s: typeof stats[0]) => {
         // DEF: has defensive stats (no offensive involvement)
