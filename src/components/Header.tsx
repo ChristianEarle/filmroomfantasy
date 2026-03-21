@@ -64,7 +64,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
   });
 
   return (
-    <header className={`h-16 border-b flex items-center justify-between px-6 relative ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-white border-slate-200'}`}>
+    <header className={`h-14 sm:h-16 border-b flex items-center justify-between px-3 sm:px-6 relative ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-white border-slate-200'}`}>
       <div className="flex items-center gap-2">
         {onMenuToggle && (
           <button

@@ -349,7 +349,7 @@ function AppContent() {
   // Show loading screen while checking auth
   if (isLoading) {
     return (
-      <div className={`flex h-screen items-center justify-center ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
+      <div className={`flex h-dvh min-h-screen items-center justify-center ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>Loading...</p>
@@ -359,7 +359,7 @@ function AppContent() {
   }
 
   return (
-    <div className={`flex h-screen ${isDarkMode ? 'dark bg-slate-950' : 'bg-slate-100'}`}>
+    <div className={`flex h-dvh min-h-screen ${isDarkMode ? 'dark bg-slate-950' : 'bg-slate-100'}`}>
       <Sidebar
         activeView={activeView}
         onViewChange={setActiveView}
@@ -385,7 +385,7 @@ function AppContent() {
           onMenuToggle={() => setSidebarOpen(prev => !prev)}
         />
 
-        <main className={`flex-1 overflow-y-auto p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
+        <main className={`flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
           <PageTransition viewKey={activeView}>
             {activeView === 'Home' ? (
               showLoginGate ? (

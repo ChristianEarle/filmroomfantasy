@@ -140,10 +140,10 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
-      <div className={`border rounded-lg p-8 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className="flex items-start justify-between flex-wrap gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
+      <div className={`border rounded-lg p-4 sm:p-6 md:p-8 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className="flex items-start justify-between flex-wrap gap-3 sm:gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <Calendar className="w-5 h-5 text-blue-500" />
               <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {week != null ? `${weekLabel || `Week ${week}`}` : 'NFL Schedule'}
@@ -151,7 +151,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
               <select
                 value={selectedWeek ?? ''}
                 onChange={(e) => setSelectedWeek(e.target.value ? parseInt(e.target.value, 10) : undefined)}
-                className={`ml-2 rounded px-2 py-1 text-sm border ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                className={`rounded px-2 py-1 text-sm border ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
               >
                 <option value="">Current week</option>
                 {Array.from({ length: 18 }, (_, i) => i + 1).map((w) => (
@@ -159,8 +159,8 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                 ))}
               </select>
             </div>
-            <h1 className={`text-3xl mb-2 font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>NFL Game Slate</h1>
-            <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
+            <h1 className={`text-xl sm:text-3xl mb-2 font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>NFL Game Slate</h1>
+            <p className={`text-sm sm:text-base ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               {allFinal
                 ? 'Final scores and top fantasy performers'
                 : allScheduled
@@ -168,9 +168,9 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                   : 'Matchups with Vegas lines, spreads & projected weather'}
             </p>
           </div>
-          <div className={`rounded-lg px-6 py-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+          <div className={`rounded-lg px-4 py-3 sm:px-6 sm:py-4 border flex-shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
             <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Total Games</div>
-            <div className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            <div className={`text-xl sm:text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               {isLoading ? '—' : displayGames.length}
             </div>
             <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>This Week</div>
@@ -216,10 +216,10 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
             className={`rounded-lg border overflow-hidden hover:shadow-lg transition-all cursor-pointer hover:border-blue-500 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
           >
             {/* Game Header */}
-            <div className={`px-6 py-3 border-b flex items-center justify-between ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+            <div className={`px-3 sm:px-6 py-2 sm:py-3 border-b flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
               <div className="flex items-center gap-2">
                 <Calendar className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
-                <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{game.gameTimeFormatted}</span>
+                <span className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{game.gameTimeFormatted}</span>
               </div>
               <div className="flex items-center gap-2">
                 {isFinal && (
@@ -239,11 +239,11 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
             </div>
 
             {/* Teams */}
-            <div className="p-6">
+            <div className="p-3 sm:p-6">
               {/* Away Team */}
-              <div className={`flex items-center justify-between mb-4 pb-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+              <div className={`flex items-center justify-between mb-3 sm:mb-4 pb-3 sm:pb-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                     <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeamLogo}</span>
                   </div>
                   <div>
@@ -274,9 +274,9 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
               </div>
 
               {/* Home Team */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                     <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.homeTeamLogo}</span>
                   </div>
                   <div>

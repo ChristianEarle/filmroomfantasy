@@ -204,10 +204,10 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
       )}
 
       {/* Header Card */}
-      <div className={`rounded-lg border p-8 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className="flex items-start justify-between mb-6">
+      <div className={`rounded-lg border p-4 sm:p-6 md:p-8 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className="flex items-start justify-between mb-4 sm:mb-6 gap-3">
           <div>
-            <h1 className={`text-2xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fantasy Matchup</h1>
+            <h1 className={`text-xl sm:text-2xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fantasy Matchup</h1>
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Final results' : 'Side-by-side projections and biggest edges'}</p>
           </div>
           <div
@@ -219,28 +219,28 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
         </div>
 
         {/* Matchup Overview */}
-        <div className={`rounded-lg p-6 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-          <div className="flex items-center justify-between mb-6">
+        <div className={`rounded-lg p-4 sm:p-6 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+          <div className="flex items-center justify-between mb-4 sm:mb-6">
             {/* Your Team */}
             <div className="text-center flex-1">
-              <div className={`text-sm mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>You</div>
-              <div className={`text-4xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{isComplete && matchup?.userTeam?.score ? matchup.userTeam.score.toFixed(1) : yourTotal.toFixed(1)}</div>
-              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{isComplete ? 'Final Score' : 'Projected Points'}</div>
+              <div className={`text-xs sm:text-sm mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>You</div>
+              <div className={`text-2xl sm:text-4xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{isComplete && matchup?.userTeam?.score ? matchup.userTeam.score.toFixed(1) : yourTotal.toFixed(1)}</div>
+              <div className={`text-[10px] sm:text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{isComplete ? 'Final Score' : 'Projected Points'}</div>
             </div>
 
             {/* VS Badge */}
-            <div className="px-8">
-              <div className={`w-16 h-16 rounded-full border-2 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-600' : 'bg-white border-slate-300'}`}>
-                <span className={`font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>VS</span>
+            <div className="px-3 sm:px-8">
+              <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full border-2 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-600' : 'bg-white border-slate-300'}`}>
+                <span className={`text-sm sm:text-base font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>VS</span>
               </div>
             </div>
 
             {/* Opponent */}
             <div className="text-center flex-1">
-              <div className={`text-sm mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-600' : 'text-slate-400') : (isDarkMode ? 'text-slate-400' : 'text-slate-500')}`}>
+              <div className={`text-xs sm:text-sm mb-1 truncate ${!hasMatchup ? (isDarkMode ? 'text-slate-600' : 'text-slate-400') : (isDarkMode ? 'text-slate-400' : 'text-slate-500')}`}>
                 {opponentName}
               </div>
-              <div className={`text-4xl font-bold mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-700' : 'text-slate-300') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+              <div className={`text-2xl sm:text-4xl font-bold mb-1 ${!hasMatchup ? (isDarkMode ? 'text-slate-700' : 'text-slate-300') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                 {hasMatchup ? (isComplete && matchup?.opponent?.score ? matchup.opponent.score.toFixed(1) : opponentTotal.toFixed(1)) : '-'}
               </div>
               <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -292,7 +292,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
           )}
 
           {/* Quick Stats */}
-          <div className="grid grid-cols-3 gap-4 mt-6">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 mt-4 sm:mt-6">
             <div className={`rounded-lg p-3 text-center border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-center gap-1 mb-1">
                 <Target className="w-4 h-4 text-blue-500" aria-hidden="true" />
@@ -322,45 +322,45 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
 
       {/* Position-by-Position Comparison */}
       <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-          <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Position-by-Position Breakdown</h2>
-          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Final points at each roster spot' : 'Compare projections at each roster spot'}</p>
+        <div className={`p-3 sm:p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <h2 className={`font-bold text-sm sm:text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Position-by-Position Breakdown</h2>
+          <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Final points at each roster spot' : 'Compare projections at each roster spot'}</p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[600px]">
             <thead>
               <tr className={`border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                <th scope="col" className={`text-left px-6 py-3 text-xs w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>POS</th>
-                <th scope="col" className={`text-left px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Player</th>
-                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Pts' : 'Proj'}</th>
-                <th scope="col" className={`text-center px-4 py-3 text-xs w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Edge</th>
-                <th scope="col" className={`text-center px-4 py-3 text-xs w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Pts' : 'Proj'}</th>
-                <th scope="col" className={`text-right px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Their Player</th>
+                <th scope="col" className={`text-left px-2 sm:px-6 py-3 text-xs w-12 sm:w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>POS</th>
+                <th scope="col" className={`text-left px-2 sm:px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Player</th>
+                <th scope="col" className={`text-center px-2 sm:px-4 py-3 text-xs w-16 sm:w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Pts' : 'Proj'}</th>
+                <th scope="col" className={`text-center px-2 sm:px-4 py-3 text-xs w-14 sm:w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Edge</th>
+                <th scope="col" className={`text-center px-2 sm:px-4 py-3 text-xs w-16 sm:w-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Pts' : 'Proj'}</th>
+                <th scope="col" className={`text-right px-2 sm:px-4 py-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Their Player</th>
               </tr>
             </thead>
             <tbody>
               {positionComparison.map((comp, index) => (
                 <tr key={`${comp.yourPlayer.id || comp.position}-${index}`} className={`border-b transition-colors ${isDarkMode ? 'border-slate-800 hover:bg-slate-800/50' : 'border-slate-100 hover:bg-slate-50'}`}>
-                  <td className="px-6 py-4">
-                    <span className={`text-xs font-medium px-2 py-1 rounded ${isDarkMode ? 'text-slate-500 bg-slate-800' : 'text-slate-500 bg-slate-100'}`}>
+                  <td className="px-2 sm:px-6 py-3 sm:py-4">
+                    <span className={`text-xs font-medium px-1.5 sm:px-2 py-1 rounded ${isDarkMode ? 'text-slate-500 bg-slate-800' : 'text-slate-500 bg-slate-100'}`}>
                       {comp.position}
                     </span>
                   </td>
-                  <td className="px-4 py-4">
+                  <td className="px-2 sm:px-4 py-3 sm:py-4">
                     <button
                       onClick={() => onPlayerClick(convertToPlayer(comp.yourPlayer, index))}
                       className="text-left hover:text-blue-500 transition-colors group"
                     >
                       <div className="flex items-center gap-2">
-                        <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                          <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{comp.yourPlayer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                        <div className={`w-8 sm:w-9 aspect-[3/4] rounded flex items-center justify-center text-xs sm:text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                          <span className={`text-xs sm:text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{comp.yourPlayer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-4">
-                            <span className={`font-bold group-hover:text-blue-500 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.yourPlayer.name}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+                            <span className={`font-bold text-sm sm:text-base group-hover:text-blue-500 truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.yourPlayer.name}</span>
                             <span
-                              className={`text-xs font-medium px-2 py-1 rounded border shrink-0 ${getMatchupGradeColor(comp.yourPlayer.matchupGrade, isDarkMode)}`}
+                              className={`text-[10px] sm:text-xs font-medium px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border shrink-0 hidden sm:inline ${getMatchupGradeColor(comp.yourPlayer.matchupGrade, isDarkMode)}`}
                               title={`${getMatchupGradeLabel(comp.yourPlayer.matchupGrade)} projection for position`}
                             >
                               Matchup {comp.yourPlayer.matchupGrade || '—'}
@@ -371,10 +371,10 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                       </div>
                     </button>
                   </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.yourPlayer.projection.toFixed(1)}</span>
+                  <td className="px-2 sm:px-4 py-3 sm:py-4 text-center">
+                    <span className={`font-bold text-sm sm:text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{comp.yourPlayer.projection.toFixed(1)}</span>
                   </td>
-                  <td className="px-4 py-4 text-center">
+                  <td className="px-2 sm:px-4 py-3 sm:py-4 text-center">
                     <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${
                       comp.diff > 1 ? 'bg-green-500/20 text-green-500' :
                       comp.diff < -1 ? 'bg-red-500/20 text-red-500' :
@@ -384,12 +384,12 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                       {comp.diff > 0 ? '+' : ''}{comp.diff.toFixed(1)}
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className={`font-bold ${comp.oppPlayer.name === EMPTY_SLOT_NAME ? (isDarkMode ? 'text-slate-600' : 'text-slate-300') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                  <td className="px-2 sm:px-4 py-3 sm:py-4 text-center">
+                    <span className={`font-bold text-sm sm:text-base ${comp.oppPlayer.name === EMPTY_SLOT_NAME ? (isDarkMode ? 'text-slate-600' : 'text-slate-300') : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                       {comp.oppPlayer.name === EMPTY_SLOT_NAME ? '-' : comp.oppPlayer.projection.toFixed(1)}
                     </span>
                   </td>
-                  <td className="px-4 py-4 text-right">
+                  <td className="px-2 sm:px-4 py-3 sm:py-4 text-right">
                     {comp.oppPlayer.name === EMPTY_SLOT_NAME ? (
                       <div className="text-right">
                         <div className={`flex items-center gap-2 justify-end ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>
