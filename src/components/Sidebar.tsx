@@ -1,6 +1,5 @@
 import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen } from 'lucide-react';
 import { LeagueManager } from './LeagueManager';
-import { AdUnit } from './AdUnit';
 
 type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'Settings' | 'Pricing';
 
@@ -80,12 +79,6 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
             ))}
           </ul>
         </nav>
-
-        {/* AdSense Ad Unit */}
-        <div className="px-3 py-4 border-t">
-          <div className={`text-[10px] text-slate-600 text-center mb-2`}>Ad</div>
-          <AdUnit slot="sidebar-bottom" isDarkMode={isDarkMode} />
-        </div>
 
         {/* League Manager */}
         <LeagueManager
