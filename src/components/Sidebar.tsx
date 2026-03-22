@@ -1,4 +1,4 @@
-import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen } from 'lucide-react';
+import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight } from 'lucide-react';
 import { LeagueManager } from './LeagueManager';
 
 type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'Settings' | 'Pricing';
@@ -26,6 +26,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
     { icon: CalendarRange, label: 'Game Slate', view: 'GameSlate' as const },
     { icon: TrendingUp, label: 'Trends', view: 'Trends' as const },
     { icon: BookOpen, label: 'Research', view: 'Research' as const },
+    { icon: ArrowLeftRight, label: 'Trade Analyzer', view: 'TradeAnalyzer' as const },
     { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs' as const },
     { icon: CreditCard, label: 'Pricing', view: 'Pricing' as const },
     { icon: Settings, label: 'Settings', view: 'Settings' as const },
