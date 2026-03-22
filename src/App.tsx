@@ -24,6 +24,7 @@ import { ProfileView } from './components/ProfileView';
 import { AllPlayersView } from './components/AllPlayersView';
 import { ComingSoonView } from './components/ComingSoonView';
 import { PricingView } from './components/PricingView';
+import { FeedbackWidget } from './components/FeedbackWidget';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LeagueProvider, useLeagueContext } from './context/LeagueContext';
@@ -604,6 +605,9 @@ function AppContent() {
           isDarkMode={isDarkMode}
         />
       )}
+
+      {/* Floating Feedback Button */}
+      <FeedbackWidget isDarkMode={isDarkMode} currentPage={activeView} />
 
     </div>
   );

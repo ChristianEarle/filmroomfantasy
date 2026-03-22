@@ -125,10 +125,10 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
               <div className="p-8 text-center">
                 <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-500" />
                 <h4 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Thank you!
+                  Feedback Submitted!
                 </h4>
                 <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Your feedback has been submitted.
+                  Thank you — we'll review your feedback shortly.
                 </p>
               </div>
             ) : (
@@ -255,8 +255,8 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
           {isSuccess ? (
             <div className="text-center py-4">
               <CheckCircle className="w-10 h-10 mx-auto mb-2 text-green-500" />
-              <h4 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Thanks!</h4>
-              <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your feedback has been submitted.</p>
+              <h4 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Feedback Submitted!</h4>
+              <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Thank you — we'll review your feedback shortly.</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
