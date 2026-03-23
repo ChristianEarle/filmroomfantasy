@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   ArrowRightLeft,
   Plus,
@@ -8,6 +8,7 @@ import {
   Users,
   AlertCircle,
   ChevronDown,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -457,46 +458,76 @@ function GradeBadge({ grade, isDarkMode }: { grade: string; isDarkMode: boolean 
 function TradeResultsCard({
   result,
   isDarkMode,
+  resultsRef,
 }: {
   result: TradeResult;
   isDarkMode: boolean;
+  resultsRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // Scroll into view
+    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Trigger entrance animation
+    const raf = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(raf);
+  }, [resultsRef]);
+
   return (
-    <div className={`rounded-xl border p-6 space-y-6 ${isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'}`}>
-      {/* Winner callout */}
-      <div className={`flex items-start gap-3 p-4 rounded-lg ${isDarkMode ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-50 border border-emerald-200'}`}>
-        <Trophy className={`w-5 h-5 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
-        <div>
-          <p className={`text-sm font-semibold mb-1 ${isDarkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
-            Trade Winner: {result.winner}
-          </p>
-          <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-            {result.winnerExplanation}
-          </p>
+    <div
+      ref={resultsRef}
+      className={`space-y-4 transition-all duration-500 ease-out ${
+        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+      }`}
+    >
+      {/* Results header */}
+      <div className={`flex items-center gap-3 pt-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+        <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${isDarkMode ? 'bg-blue-500/20' : 'bg-blue-50'}`}>
+          <Sparkles className={`w-4 h-4 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
         </div>
+        <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          Analysis Complete
+        </h2>
       </div>
 
-      {/* Per-team grades */}
-      <div className="space-y-4">
-        <h4 className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-          Team Grades
-        </h4>
-        {result.teamGrades.map((tg, i) => (
-          <div
-            key={i}
-            className={`flex items-start gap-4 p-4 rounded-lg ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}
-          >
-            <GradeBadge grade={tg.grade} isDarkMode={isDarkMode} />
-            <div className="flex-1 min-w-0">
-              <p className={`text-sm font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                {tg.team}
-              </p>
-              <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                {tg.summary}
-              </p>
-            </div>
+      <div className={`rounded-xl border p-6 space-y-6 ${isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'}`}>
+        {/* Winner callout */}
+        <div className={`flex items-start gap-3 p-4 rounded-lg ${isDarkMode ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-50 border border-emerald-200'}`}>
+          <Trophy className={`w-6 h-6 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
+          <div>
+            <p className={`text-base font-bold mb-1 ${isDarkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+              Trade Winner: {result.winner}
+            </p>
+            <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+              {result.winnerExplanation}
+            </p>
           </div>
-        ))}
+        </div>
+
+        {/* Per-team grades */}
+        <div className="space-y-4">
+          <h4 className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+            Team Grades
+          </h4>
+          {result.teamGrades.map((tg, i) => (
+            <div
+              key={i}
+              className={`flex items-start gap-4 p-4 rounded-lg transition-all duration-300 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}
+              style={{ transitionDelay: `${(i + 1) * 100}ms`, opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(8px)' }}
+            >
+              <GradeBadge grade={tg.grade} isDarkMode={isDarkMode} />
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  {tg.team}
+                </p>
+                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                  {tg.summary}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -527,6 +558,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<TradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const isMultiTeam = teamCount > 2;
   const wordCount = context.trim() ? context.trim().split(/\s+/).length : 0;
@@ -859,7 +891,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
       )}
 
       {/* Results */}
-      {result && <TradeResultsCard result={result} isDarkMode={isDarkMode} />}
+      {result && <TradeResultsCard result={result} isDarkMode={isDarkMode} resultsRef={resultsRef} />}
     </div>
   );
 }
