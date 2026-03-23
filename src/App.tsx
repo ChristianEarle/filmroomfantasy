@@ -198,9 +198,22 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works (BUG-002 fix)
-  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const isDarkMode = user?.darkMode ?? true;
+
+  // Re-sync activeView from URL after auth loading completes, in case mounting
+  // or provider initialization changed state before the first meaningful render.
+  const hasResyncedRef = useRef(false);
+  useEffect(() => {
+    if (!isLoading && !hasResyncedRef.current) {
+      hasResyncedRef.current = true;
+      const urlView = getViewFromURL();
+      if (urlView !== activeView) {
+        setActiveView(urlView as any);
+      }
+    }
+  }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync dark class to <html> so CSS variables apply to html/body
   // (prevents white bars on mobile in dark mode)
