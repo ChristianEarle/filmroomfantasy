@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
 import { eq, and, desc, inArray } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import type { Env, Variables } from '../index';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
+
+type DB = ReturnType<typeof drizzle<typeof schema>>;
 
 const tradesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -88,7 +91,7 @@ interface EnrichedPlayerData {
 }
 
 async function fetchPlayerData(
-  db: ReturnType<typeof import('drizzle-orm/d1').drizzle>,
+  db: DB,
   playerNames: string[]
 ): Promise<Map<string, EnrichedPlayerData>> {
   if (playerNames.length === 0) return new Map();
@@ -507,7 +510,7 @@ tradesRoutes.post(
     const db = c.get('db');
     let playerData = new Map<string, EnrichedPlayerData>();
     try {
-      playerData = await fetchPlayerData(db as any, playerNames);
+      playerData = await fetchPlayerData(db, playerNames);
     } catch (err) {
       console.error('Failed to fetch player data for trade analysis:', err);
       // Continue without enrichment — AI will fall back to training data
