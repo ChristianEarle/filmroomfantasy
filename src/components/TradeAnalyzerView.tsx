@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   ArrowRightLeft,
   Plus,
@@ -57,41 +57,24 @@ function PlayerSearchInput({
   isDarkMode,
   onSelect,
   placeholder,
-  instanceId,
 }: {
   isDarkMode: boolean;
   onSelect: (asset: TradeAsset) => void;
   placeholder?: string;
-  instanceId: string;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isFocused, setIsFocused] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(e.target as Node)
-      ) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const showDropdown = isFocused && results.length > 0;
 
   const handleSearch = async (q: string) => {
     setQuery(q);
     if (q.trim().length < 2) {
       setResults([]);
-      setShowDropdown(false);
       return;
     }
     setIsSearching(true);
@@ -99,9 +82,7 @@ function PlayerSearchInput({
       const data = await api.get<{ players: SearchResult[] }>(
         `/players/search?q=${encodeURIComponent(q)}&limit=8`
       );
-      const players = data.players || [];
-      setResults(players);
-      setShowDropdown(players.length > 0);
+      setResults(data.players || []);
     } catch {
       setResults([]);
     } finally {
@@ -119,33 +100,53 @@ function PlayerSearchInput({
     });
     setQuery('');
     setResults([]);
-    setShowDropdown(false);
+    setIsFocused(false);
+  };
+
+  // Use focusin/focusout on the container so focus moving between input and
+  // dropdown buttons within the same container doesn't close the dropdown.
+  const handleFocusIn = () => {
+    clearTimeout(blurTimeoutRef.current);
+    setIsFocused(true);
+  };
+
+  const handleFocusOut = () => {
+    // Small delay to allow focus to move to another element within container
+    blurTimeoutRef.current = setTimeout(() => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(document.activeElement)
+      ) {
+        setIsFocused(false);
+      }
+    }, 100);
   };
 
   return (
-    <div className="relative">
+    <div
+      ref={containerRef}
+      className="relative"
+      onFocus={handleFocusIn}
+      onBlur={handleFocusOut}
+    >
       <div className="relative">
         <input
-          ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => handleSearch(e.target.value)}
-          onFocus={() => results.length > 0 && setShowDropdown(true)}
           placeholder={placeholder || 'Search player...'}
           className={`w-full px-3 py-2 text-sm rounded-lg border transition-colors ${
             isDarkMode
               ? 'bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-blue-500'
               : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
           } outline-none`}
-          data-instance={instanceId}
         />
         {isSearching && (
           <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />
         )}
       </div>
-      {showDropdown && results.length > 0 && (
+      {showDropdown && (
         <div
-          ref={dropdownRef}
           className={`absolute z-50 mt-1 w-full rounded-lg border shadow-lg max-h-48 overflow-y-auto ${
             isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'
           }`}
@@ -392,7 +393,6 @@ function TradeTeamCard({
       {/* Add player */}
       <PlayerSearchInput
         key={`search-${team.id}`}
-        instanceId={`team-${team.id}`}
         isDarkMode={isDarkMode}
         onSelect={(asset) => onAddAsset(team.id, asset)}
         placeholder="Search player to add..."
