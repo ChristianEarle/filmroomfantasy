@@ -3,6 +3,21 @@ import type { Env, Variables } from '../index';
 
 export const adminStatsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// CORS middleware for admin stats — allows dashboard access from any origin
+// (endpoint is already protected by SYNC_SECRET)
+adminStatsRoutes.use('*', async (c, next) => {
+  const origin = c.req.header('Origin') || '*';
+  c.header('Access-Control-Allow-Origin', origin);
+  c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Key');
+  c.header('Access-Control-Max-Age', '86400');
+
+  if (c.req.method === 'OPTIONS') {
+    return c.body(null, 204);
+  }
+  await next();
+});
+
 // Admin auth middleware — requires SYNC_SECRET
 adminStatsRoutes.use('*', async (c, next) => {
   const syncSecret = c.env.SYNC_SECRET;
