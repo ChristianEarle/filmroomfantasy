@@ -3,10 +3,22 @@ import type { Env, Variables } from '../index';
 
 export const adminStatsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// Admin auth middleware — requires SYNC_SECRET
+adminStatsRoutes.use('*', async (c, next) => {
+  const syncSecret = c.env.SYNC_SECRET;
+  if (!syncSecret) {
+    return c.json({ error: 'SYNC_SECRET not configured' }, 500);
+  }
+  const adminKey = c.req.header('X-Admin-Key');
+  if (adminKey !== syncSecret) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  await next();
+});
+
 /**
- * GET /api/admin/stats
+ * GET /api/admin-stats/stats
  * Returns dashboard stats: user counts, signups over time, auth breakdown, tiers, recent users.
- * Requires X-Admin-Key header matching SYNC_SECRET env var.
  */
 adminStatsRoutes.get('/stats', async (c) => {
   const db = c.env.DB;
