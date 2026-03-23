@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   ArrowRightLeft,
   Plus,
@@ -6,8 +6,8 @@ import {
   Loader2,
   Trophy,
   Users,
-  Search,
   AlertCircle,
+  ChevronDown,
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -22,11 +22,11 @@ interface TradeTeam {
 interface TradeAsset {
   id: string;
   type: 'player' | 'pick';
-  /** Display name (e.g. "Ja'Marr Chase" or "2025 1st Round Pick") */
   name: string;
-  /** Only for players */
   position?: string;
   team?: string;
+  /** Which team this asset goes TO (team id). Required for 3+ team trades. */
+  destinationTeamId?: number;
 }
 
 interface TeamGrade {
@@ -46,76 +46,106 @@ type TeamStrategy = 'win-now' | 'rebuilding' | 'balanced';
 
 // ── Player Search ──────────────────────────────────────────────────────
 
+interface SearchResult {
+  id: string;
+  name: string;
+  position: string;
+  team: string;
+}
+
 function PlayerSearchInput({
   isDarkMode,
   onSelect,
   placeholder,
+  instanceId,
 }: {
   isDarkMode: boolean;
   onSelect: (asset: TradeAsset) => void;
   placeholder?: string;
+  instanceId: string;
 }) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<TradeAsset[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const handleSearch = useCallback(
-    async (q: string) => {
-      setQuery(q);
-      if (q.trim().length < 2) {
-        setResults([]);
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node) &&
+        inputRef.current &&
+        !inputRef.current.contains(e.target as Node)
+      ) {
         setShowDropdown(false);
-        return;
       }
-      setIsSearching(true);
-      try {
-        const data = await api.get<
-          { players: { id: string; name: string; position: string; team: string }[] }
-        >(`/players/search?q=${encodeURIComponent(q)}&limit=8`);
-        const players = data.players || [];
-        setResults(
-          players.map((p) => ({
-            id: p.id,
-            type: 'player' as const,
-            name: p.name,
-            position: p.position,
-            team: p.team,
-          }))
-        );
-        setShowDropdown(true);
-      } catch {
-        setResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    },
-    []
-  );
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSearch = async (q: string) => {
+    setQuery(q);
+    if (q.trim().length < 2) {
+      setResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const data = await api.get<{ players: SearchResult[] }>(
+        `/players/search?q=${encodeURIComponent(q)}&limit=8`
+      );
+      const players = data.players || [];
+      setResults(players);
+      setShowDropdown(players.length > 0);
+    } catch {
+      setResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const selectPlayer = (p: SearchResult) => {
+    onSelect({
+      id: p.id,
+      type: 'player',
+      name: p.name,
+      position: p.position,
+      team: p.team,
+    });
+    setQuery('');
+    setResults([]);
+    setShowDropdown(false);
+  };
 
   return (
     <div className="relative">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => handleSearch(e.target.value)}
           onFocus={() => results.length > 0 && setShowDropdown(true)}
-          onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
           placeholder={placeholder || 'Search player...'}
-          className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border transition-colors ${
+          className={`w-full px-3 py-2 text-sm rounded-lg border transition-colors ${
             isDarkMode
               ? 'bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-blue-500'
               : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
           } outline-none`}
+          data-instance={instanceId}
         />
         {isSearching && (
-          <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />
+          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />
         )}
       </div>
       {showDropdown && results.length > 0 && (
         <div
+          ref={dropdownRef}
           className={`absolute z-50 mt-1 w-full rounded-lg border shadow-lg max-h-48 overflow-y-auto ${
             isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'
           }`}
@@ -124,13 +154,7 @@ function PlayerSearchInput({
             <button
               key={r.id}
               type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                onSelect(r);
-                setQuery('');
-                setResults([]);
-                setShowDropdown(false);
-              }}
+              onClick={() => selectPlayer(r)}
               className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${
                 isDarkMode ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
               }`}
@@ -223,35 +247,71 @@ function AssetChip({
   asset,
   isDarkMode,
   onRemove,
+  otherTeams,
+  onDestinationChange,
+  showDestination,
 }: {
   asset: TradeAsset;
   isDarkMode: boolean;
   onRemove: () => void;
+  otherTeams?: { id: number; label: string }[];
+  onDestinationChange?: (destinationTeamId: number) => void;
+  showDestination?: boolean;
 }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium ${
-        asset.type === 'player'
-          ? isDarkMode
-            ? 'bg-blue-500/20 text-blue-300'
-            : 'bg-blue-50 text-blue-700'
-          : isDarkMode
-          ? 'bg-amber-500/20 text-amber-300'
-          : 'bg-amber-50 text-amber-700'
-      }`}
-    >
-      {asset.position && (
-        <span className="text-[10px] font-bold opacity-70">{asset.position}</span>
-      )}
-      {asset.name}
-      <button
-        type="button"
-        onClick={onRemove}
-        className="ml-0.5 hover:opacity-70 transition-opacity"
+    <div className="flex items-center gap-2 flex-wrap">
+      <span
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium ${
+          asset.type === 'player'
+            ? isDarkMode
+              ? 'bg-blue-500/20 text-blue-300'
+              : 'bg-blue-50 text-blue-700'
+            : isDarkMode
+            ? 'bg-amber-500/20 text-amber-300'
+            : 'bg-amber-50 text-amber-700'
+        }`}
       >
-        <X className="w-3 h-3" />
-      </button>
-    </span>
+        {asset.position && (
+          <span className="text-[10px] font-bold opacity-70">{asset.position}</span>
+        )}
+        {asset.name}
+        <button
+          type="button"
+          onClick={onRemove}
+          className="ml-0.5 hover:opacity-70 transition-opacity"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </span>
+      {showDestination && otherTeams && otherTeams.length > 0 && onDestinationChange && (
+        <div className="flex items-center gap-1">
+          <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>→</span>
+          <div className="relative">
+            <select
+              value={asset.destinationTeamId ?? ''}
+              onChange={(e) => onDestinationChange(Number(e.target.value))}
+              className={`appearance-none pr-6 pl-2 py-0.5 text-xs rounded border transition-colors cursor-pointer ${
+                asset.destinationTeamId != null
+                  ? isDarkMode
+                    ? 'bg-slate-700 border-slate-500 text-white'
+                    : 'bg-white border-slate-300 text-slate-900'
+                  : isDarkMode
+                  ? 'bg-slate-700 border-amber-500/50 text-amber-400'
+                  : 'bg-amber-50 border-amber-300 text-amber-700'
+              } outline-none`}
+            >
+              <option value="">Select team...</option>
+              {otherTeams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-slate-400" />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -261,16 +321,22 @@ function TradeTeamCard({
   team,
   teamIndex,
   isDarkMode,
+  allTeams,
+  isMultiTeam,
   onAddAsset,
   onRemoveAsset,
   onLabelChange,
+  onAssetDestinationChange,
 }: {
   team: TradeTeam;
   teamIndex: number;
   isDarkMode: boolean;
+  allTeams: TradeTeam[];
+  isMultiTeam: boolean;
   onAddAsset: (teamId: number, asset: TradeAsset) => void;
   onRemoveAsset: (teamId: number, assetId: string) => void;
   onLabelChange: (teamId: number, label: string) => void;
+  onAssetDestinationChange: (teamId: number, assetId: string, destinationTeamId: number) => void;
 }) {
   const [showPickInput, setShowPickInput] = useState(false);
   const colors = [
@@ -281,6 +347,10 @@ function TradeTeamCard({
   ];
   const color = colors[teamIndex % colors.length];
 
+  const otherTeams = allTeams
+    .filter((t) => t.id !== team.id)
+    .map((t) => ({ id: t.id, label: t.label || `Team ${t.id + 1}` }));
+
   return (
     <div className={`rounded-xl border ${color.border} ${color.bg} p-4`}>
       <div className="flex items-center gap-2 mb-3">
@@ -290,7 +360,7 @@ function TradeTeamCard({
           value={team.label}
           onChange={(e) => onLabelChange(team.id, e.target.value)}
           placeholder={`Team ${teamIndex + 1}`}
-          className={`text-sm font-semibold bg-transparent border-none outline-none ${
+          className={`text-sm font-semibold bg-transparent border-none outline-none w-full ${
             isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
           }`}
         />
@@ -302,13 +372,18 @@ function TradeTeamCard({
 
       {/* Current assets */}
       {team.sends.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
+        <div className="flex flex-col gap-1.5 mb-3">
           {team.sends.map((asset) => (
             <AssetChip
               key={asset.id}
               asset={asset}
               isDarkMode={isDarkMode}
               onRemove={() => onRemoveAsset(team.id, asset.id)}
+              otherTeams={otherTeams}
+              showDestination={isMultiTeam}
+              onDestinationChange={(destId) =>
+                onAssetDestinationChange(team.id, asset.id, destId)
+              }
             />
           ))}
         </div>
@@ -316,6 +391,8 @@ function TradeTeamCard({
 
       {/* Add player */}
       <PlayerSearchInput
+        key={`search-${team.id}`}
+        instanceId={`team-${team.id}`}
         isDarkMode={isDarkMode}
         onSelect={(asset) => onAddAsset(team.id, asset)}
         placeholder="Search player to add..."
@@ -451,6 +528,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const [result, setResult] = useState<TradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const isMultiTeam = teamCount > 2;
   const wordCount = context.trim() ? context.trim().split(/\s+/).length : 0;
 
   const handleTeamCountChange = useCallback((count: 2 | 3 | 4) => {
@@ -499,7 +577,33 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     );
   }, []);
 
-  const canAnalyze = teams.every((t) => t.sends.length > 0) && !isAnalyzing;
+  const handleAssetDestinationChange = useCallback(
+    (teamId: number, assetId: string, destinationTeamId: number) => {
+      setTeams((prev) =>
+        prev.map((t) =>
+          t.id === teamId
+            ? {
+                ...t,
+                sends: t.sends.map((a) =>
+                  a.id === assetId ? { ...a, destinationTeamId } : a
+                ),
+              }
+            : t
+        )
+      );
+      setResult(null);
+    },
+    []
+  );
+
+  // For 2-team trades: all assets implicitly go to the other team
+  // For 3+ team trades: every asset must have a destination selected
+  const allAssetsHaveDestination = isMultiTeam
+    ? teams.every((t) => t.sends.every((a) => a.destinationTeamId != null))
+    : true;
+
+  const canAnalyze =
+    teams.every((t) => t.sends.length > 0) && allAssetsHaveDestination && !isAnalyzing;
 
   const handleAnalyze = async () => {
     if (!canAnalyze) return;
@@ -516,6 +620,10 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
             name: a.name,
             position: a.position,
             team: a.team,
+            destinationTeam: isMultiTeam
+              ? (teams.find((ot) => ot.id === a.destinationTeamId)?.label ||
+                `Team ${(a.destinationTeamId ?? 0) + 1}`)
+              : undefined,
           })),
         })),
         leagueType,
@@ -550,8 +658,6 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     setError(null);
   };
 
-  // ── Option button helper ─────────────────────────────────────────
-
   const optionBtn = (
     active: boolean,
     onClick: () => void,
@@ -571,6 +677,19 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
       {label}
     </button>
   );
+
+  // Validation message
+  const validationMessage = (() => {
+    if (isAnalyzing) return null;
+    const emptyTeams = teams.filter((t) => t.sends.length === 0);
+    if (emptyTeams.length > 0) {
+      return 'Each team must send at least one player or pick';
+    }
+    if (isMultiTeam && !allAssetsHaveDestination) {
+      return 'Select a destination team for each asset';
+    }
+    return null;
+  })();
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -661,9 +780,12 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
             team={team}
             teamIndex={i}
             isDarkMode={isDarkMode}
+            allTeams={teams}
+            isMultiTeam={isMultiTeam}
             onAddAsset={handleAddAsset}
             onRemoveAsset={handleRemoveAsset}
             onLabelChange={handleLabelChange}
+            onAssetDestinationChange={handleAssetDestinationChange}
           />
         ))}
       </div>
@@ -721,9 +843,9 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
           )}
         </button>
 
-        {!canAnalyze && !isAnalyzing && (
+        {validationMessage && (
           <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-            Each team must send at least one player or pick
+            {validationMessage}
           </p>
         )}
       </div>

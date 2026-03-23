@@ -12,6 +12,8 @@ interface TradeAssetInput {
   name: string;
   position?: string;
   team?: string;
+  /** For 3+ team trades: which team this asset goes to */
+  destinationTeam?: string;
 }
 
 interface TradeTeamInput {
@@ -41,16 +43,36 @@ interface TradeAnalysisResult {
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function buildTradeDescription(body: AnalyzeTradeBody): string {
+  const isMultiTeam = body.teams.length > 2;
+
   const teamDescriptions = body.teams.map((t) => {
-    const assets = t.sends
-      .map((a) => {
-        if (a.type === 'player') {
-          return `${a.name}${a.position ? ` (${a.position}` : ''}${a.team ? `, ${a.team})` : a.position ? ')' : ''}`;
-        }
-        return a.name;
-      })
-      .join(', ');
-    return `${t.label} sends: ${assets}`;
+    if (isMultiTeam) {
+      // Group assets by destination team
+      const byDest = new Map<string, string[]>();
+      for (const a of t.sends) {
+        const dest = a.destinationTeam || 'unknown';
+        const desc = a.type === 'player'
+          ? `${a.name}${a.position ? ` (${a.position}` : ''}${a.team ? `, ${a.team})` : a.position ? ')' : ''}`
+          : a.name;
+        const list = byDest.get(dest) || [];
+        list.push(desc);
+        byDest.set(dest, list);
+      }
+      const lines = Array.from(byDest.entries())
+        .map(([dest, assets]) => `  → ${dest}: ${assets.join(', ')}`)
+        .join('\n');
+      return `${t.label} sends:\n${lines}`;
+    } else {
+      const assets = t.sends
+        .map((a) => {
+          if (a.type === 'player') {
+            return `${a.name}${a.position ? ` (${a.position}` : ''}${a.team ? `, ${a.team})` : a.position ? ')' : ''}`;
+          }
+          return a.name;
+        })
+        .join(', ');
+      return `${t.label} sends: ${assets}`;
+    }
   });
 
   return teamDescriptions.join('\n');
