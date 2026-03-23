@@ -3,7 +3,7 @@ import { eq, and, desc, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import type { Env, Variables } from '../index';
-import { authMiddleware } from '../middleware/auth';
+import { optionalAuthMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
@@ -467,7 +467,7 @@ Rules:
 
 tradesRoutes.post(
   '/analyze',
-  authMiddleware,
+  optionalAuthMiddleware,
   rateLimit(10, 60_000), // 10 requests per minute per user
   async (c) => {
     const anthropicKey = c.env.ANTHROPIC_API_KEY;
