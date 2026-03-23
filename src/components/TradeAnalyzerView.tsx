@@ -71,13 +71,14 @@ function PlayerSearchInput({
       setIsSearching(true);
       try {
         const data = await api.get<
-          { id: string; fullName: string; position: string; team: string }[]
+          { players: { id: string; name: string; position: string; team: string }[] }
         >(`/players/search?q=${encodeURIComponent(q)}&limit=8`);
+        const players = data.players || [];
         setResults(
-          data.map((p) => ({
+          players.map((p) => ({
             id: p.id,
             type: 'player' as const,
-            name: p.fullName,
+            name: p.name,
             position: p.position,
             team: p.team,
           }))
@@ -95,7 +96,7 @@ function PlayerSearchInput({
   return (
     <div className="relative">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
         <input
           type="text"
           value={query}
@@ -103,7 +104,7 @@ function PlayerSearchInput({
           onFocus={() => results.length > 0 && setShowDropdown(true)}
           onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
           placeholder={placeholder || 'Search player...'}
-          className={`w-full pl-8 pr-3 py-2 text-sm rounded-lg border transition-colors ${
+          className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border transition-colors ${
             isDarkMode
               ? 'bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-blue-500'
               : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
