@@ -23,6 +23,7 @@ import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswo
 import { ProfileView } from './components/ProfileView';
 import { AllPlayersView } from './components/AllPlayersView';
 import { ComingSoonView } from './components/ComingSoonView';
+import { TradeAnalyzerView } from './components/TradeAnalyzerView';
 import { PricingView } from './components/PricingView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -567,7 +568,7 @@ function AppContent() {
             ) : activeView === 'DraftRankings' ? (
               <ComingSoonView title="Draft Rankings" description="AI-powered draft rankings with ADP tracking, tier breakdowns, and custom scoring projections." icon="draft" isDarkMode={isDarkMode} />
             ) : activeView === 'TradeAnalyzer' ? (
-              <ComingSoonView title="AI Trade Analyzer" description="Evaluate trade offers with AI analysis, player value comparisons, and roster impact projections." icon="trade" isDarkMode={isDarkMode} />
+              <TradeAnalyzerView isDarkMode={isDarkMode} />
             ) : activeView === 'Pricing' ? (
               <PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} onNavigate={(view) => setActiveView(view as any)} />
             ) : (
