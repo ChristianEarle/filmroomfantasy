@@ -16,51 +16,51 @@ adminStatsRoutes.use('*', async (c, next) => {
   await next();
 });
 
-/**
- * GET /api/admin-stats/stats
- * Returns dashboard stats: user counts, signups over time, auth breakdown, tiers, recent users.
- */
 adminStatsRoutes.get('/stats', async (c) => {
   const db = c.env.DB;
 
   try {
     const totalUsers = await db.prepare('SELECT COUNT(*) as count FROM users').first();
 
-    const today = new Date().toISOString().split('T')[0];
-    const todaySignups = await db.prepare(
-      "SELECT COUNT(*) as count FROM users WHERE DATE(createdAt) = ?"
-    ).bind(today).first();
+    const nowMs = Date.now();
+    const startOfTodayMs = new Date(new Date().toISOString().split('T')[0]).getTime();
+    const startOfTodaySec = Math.floor(startOfTodayMs / 1000);
 
+    const todaySignups = await db.prepare(
+      "SELECT COUNT(*) as count FROM users WHERE created_at >= ?"
+    ).bind(startOfTodaySec).first();
+
+    const fourteenDaysAgoSec = Math.floor((nowMs - 14 * 86400000) / 1000);
     const signupsByDay = await db.prepare(`
-      SELECT DATE(createdAt) as date, COUNT(*) as count
+      SELECT DATE(created_at, 'unixepoch') as date, COUNT(*) as count
       FROM users
-      WHERE createdAt >= datetime('now', '-14 days')
-      GROUP BY DATE(createdAt)
+      WHERE created_at >= ?
+      GROUP BY DATE(created_at, 'unixepoch')
       ORDER BY date ASC
-    `).all();
+    `).bind(fourteenDaysAgoSec).all();
 
     const authBreakdown = await db.prepare(`
       SELECT
-        SUM(CASE WHEN googleId IS NOT NULL THEN 1 ELSE 0 END) as google,
-        SUM(CASE WHEN yahooAccessToken IS NOT NULL THEN 1 ELSE 0 END) as yahoo,
-        SUM(CASE WHEN googleId IS NULL AND yahooAccessToken IS NULL THEN 1 ELSE 0 END) as email
+        SUM(CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END) as google,
+        SUM(CASE WHEN yahoo_access_token IS NOT NULL THEN 1 ELSE 0 END) as yahoo,
+        SUM(CASE WHEN google_id IS NULL AND yahoo_access_token IS NULL THEN 1 ELSE 0 END) as email
       FROM users
     `).first();
 
     const tiers = await db.prepare(`
-      SELECT subscriptionTier, COUNT(*) as count
+      SELECT subscription_tier, COUNT(*) as count
       FROM users
-      GROUP BY subscriptionTier
+      GROUP BY subscription_tier
     `).all();
 
     const leagues = await db.prepare('SELECT COUNT(*) as count FROM league_members').first();
 
     const recentUsers = await db.prepare(`
-      SELECT u.id, u.username, u.email, u.subscriptionTier, u.createdAt,
-        u.googleId, u.yahooAccessToken,
-        (SELECT COUNT(*) FROM league_members lm WHERE lm.userId = u.id) as leagueCount
+      SELECT u.id, u.username, u.email, u.subscription_tier, u.created_at,
+        u.google_id, u.yahoo_access_token,
+        (SELECT COUNT(*) FROM league_members lm WHERE lm.user_id = u.id) as leagueCount
       FROM users u
-      ORDER BY u.createdAt DESC
+      ORDER BY u.created_at DESC
       LIMIT 25
     `).all();
 
