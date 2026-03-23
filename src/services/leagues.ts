@@ -17,6 +17,7 @@ export interface League {
   waiverBudget?: number;
   role?: string;
   teams?: Team[];
+  updatedAt?: string;
 }
 
 export interface Team {

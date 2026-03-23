@@ -1,4 +1,4 @@
-import { Search, User, Loader2, Menu } from 'lucide-react';
+import { Search, User, Loader2, Menu, Bell } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Player } from '../App';
 import { usePlayerSearch } from '../hooks';
@@ -168,6 +168,17 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
           )}
         </div>
 
+        {isAuthenticated && (
+          <div className="relative">
+            <button
+              aria-label="Notifications"
+              className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
+              title="Notifications coming soon"
+            >
+              <Bell className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+            </button>
+          </div>
+        )}
 
         <button
           onClick={onProfileClick}

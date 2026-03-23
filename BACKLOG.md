@@ -120,7 +120,7 @@
 - [x] **Fix `injured_reserve` display in search bar** - Header search now maps all statuses including `injured_reserve → "IR"` with distinct colors for each status level.
 - [x] **Password reset email functionality** - Full flow: `password_reset_tokens` table with SHA-256 hashed tokens, 1-hour expiry. Backend `POST /forgot-password` (rate-limited, no email enumeration) and `POST /reset-password` (token verification, session revocation). Resend email API integration with console fallback. Frontend `ForgotPasswordView` and `ResetPasswordView` components. "Forgot password?" link on LoginView. URL parameter detection for reset tokens in App.tsx.
 - [x] **Correct playoff percentage** - Replaced fake rank+winRate formula with real Monte Carlo engine (10,000 simulations). Uses PPG-based win probabilities (clamped 15%-85%) for every remaining matchup, tallies playoff appearances across all sims. Projected wins now averaged from simulations. All hardcoded `6` playoff spots replaced with `league.playoffTeams`.
-- [ ] **Limit to one league connection for free users** - Free users should only be able to connect one league. Additional league connections require a premium subscription.
+- [x] **Limit to one league connection for free users** - Backend already enforces 1-league limit for free users (402 response). Frontend now proactively blocks the Connect League button with a clear upgrade message when free users already have 1 league.
 - [x] **Working Trends page** - Rewrote TrendsView with two tabs: "Roster Trends" (most added/dropped from `/players/trending`) and "Projection Movers" (from `/players/projection-movements`). Real data, two-column layout, ownership %, trend indicators.
 - [x] **Configure Resend for password reset emails** - Resend API key set in `.dev.vars`, domain `filmroomfantasy.com` verified. Sends from `noreply@filmroomfantasy.com`. Feedback notifications go to `support@filmroomfantasy.com`. For production: `wrangler secret put RESEND_API_KEY` and `wrangler secret put FEEDBACK_EMAIL`.
 
@@ -137,7 +137,7 @@
 
 ### Notifications
 - [ ] **Working notifications** - Implement real push/in-app notifications for injuries, lineup locks, trade offers, and waiver results.
-- [ ] **Restore notification bell in header** - Removed from `Header.tsx` for beta (no backend). Re-add `<Bell>` icon from lucide-react and wire to notification API once backend exists.
+- [x] **Restore notification bell in header** - Re-added `<Bell>` icon from lucide-react to Header. Shows for authenticated users with "coming soon" tooltip. Ready to wire to notification API when backend is built.
 
 ### Waivers
 - [x] **Add player search on waivers tab** - Added search bar with clear button to WaiversView. Passes `search` param to API for server-side filtering.
@@ -152,9 +152,9 @@
 - [ ] **Season projections** - Full-season projected stats and fantasy point totals for all players, updated weekly.
 
 ### Settings
-- [ ] **"Last synced" timestamp on connected leagues** - Show when each league's data was last synced from its platform (Sleeper/ESPN/Yahoo). Helps users know if their data is fresh or stale.
-- [ ] **Account management in settings** - Add password change, email change, and username change to the Settings page. The backend endpoints exist (`/auth/change-password`) but are not surfaced in Settings UI.
-- [ ] **Sync success feedback** - Show a brief success indicator or "Last synced: just now" after a league sync completes, so users know it worked.
+- [x] **"Last synced" timestamp on connected leagues** - League cards in Settings now show "Last synced: [date] at [time]" from the league's `updatedAt` field.
+- [x] **Account management in settings** - Added Account section to Settings with password change form. Supports both existing-password users (requires current password) and Google-only users (set a new password). Uses existing `/auth/change-password` endpoint.
+- [x] **Sync success feedback** - Sync button now shows green "Synced!" with checkmark for 5 seconds after successful sync. Last synced timestamp updates immediately.
 
 ### Mobile
 - [ ] **Mobile optimization** - Comprehensive mobile pass: fix touch targets, table scrolling, modal sizing, bottom nav, and responsive breakpoints across all views.
