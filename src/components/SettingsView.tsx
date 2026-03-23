@@ -1,9 +1,10 @@
-import { Plus, Globe, AlertCircle, Loader2, X, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus, Globe, AlertCircle, Loader2, X, RefreshCw, Trash2, Check } from 'lucide-react';
 import { FeedbackWidget } from './FeedbackWidget';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLeaguesContext } from '../context/LeaguesContext';
 import { leagueConnectService, sleeperApi, yahooApi, type Platform, type ExternalLeague } from '../services';
+import { authService } from '../services';
 import type { ScoringFormat } from '../services/auth';
 
 interface SettingsViewProps {
@@ -66,12 +67,49 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
   // Sync/disconnect state
   const [syncingLeagueId, setSyncingLeagueId] = useState<string | null>(null);
   const [syncingError, setSyncingError] = useState<string | null>(null);
+  const [syncSuccessLeagueId, setSyncSuccessLeagueId] = useState<string | null>(null);
   const [disconnectingLeagueId, setDisconnectingLeagueId] = useState<string | null>(null);
 
   // Yahoo connection state
   const [yahooLeagues, setYahooLeagues] = useState<ExternalLeague[]>([]);
   const [loadingYahooLeagues, setLoadingYahooLeagues] = useState(false);
   const [yahooError, setYahooError] = useState<string | null>(null);
+
+  // Password change state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordChanging, setPasswordChanging] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+
+  const handleChangePassword = async () => {
+    setPasswordError(null);
+    setPasswordSuccess(false);
+
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+
+    setPasswordChanging(true);
+    try {
+      await authService.changePassword(currentPassword, newPassword);
+      setPasswordSuccess(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordSuccess(false), 5000);
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Failed to change password.');
+    } finally {
+      setPasswordChanging(false);
+    }
+  };
 
   // Wrap updateProfile with error handling
   const handleUpdatePreference = useCallback(async (updates: Parameters<typeof updateProfile>[0]) => {
@@ -277,10 +315,13 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
   const handleSyncLeague = async (leagueId: string) => {
     setSyncingLeagueId(leagueId);
     setSyncingError(null);
+    setSyncSuccessLeagueId(null);
     try {
       await leagueConnectService.syncLeague(leagueId);
       refetchLeagues();
       onLeagueSynced?.();
+      setSyncSuccessLeagueId(leagueId);
+      setTimeout(() => setSyncSuccessLeagueId((prev) => prev === leagueId ? null : prev), 5000);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : (error as { message?: string })?.message || 'Sync failed. Please try again.';
       setSyncingError(message);
@@ -332,7 +373,14 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Manage your fantasy league connections</p>
           </div>
           <button
-            onClick={() => setShowConnectModal(true)}
+            onClick={() => {
+              if (user?.subscriptionTier !== 'pro' && leagues.length >= 1) {
+                setConnectError('Upgrade to Pro to connect multiple leagues. Free accounts are limited to 1 league.');
+                return;
+              }
+              setConnectError(null);
+              setShowConnectModal(true);
+            }}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
           >
             <Plus className="w-4 h-4" aria-hidden="true" />
@@ -351,6 +399,12 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
             <div className="mb-4 flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
               {syncingError}
+            </div>
+          )}
+          {connectError && !showConnectModal && (
+            <div className="mb-4 flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-500 text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+              {connectError}
             </div>
           )}
           {leaguesLoading ? (
@@ -376,6 +430,11 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                       <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {league.platform ? league.platform.charAt(0).toUpperCase() + league.platform.slice(1) : 'FilmRoom'} • {league.seasonYear} • {league.teamCount} Teams • {league.scoringFormat.toUpperCase()}
                       </div>
+                      {league.updatedAt && (
+                        <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                          Last synced: {new Date(league.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at {new Date(league.updatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -388,17 +447,21 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                       disabled={syncingLeagueId === league.id || disconnectingLeagueId === league.id}
                       aria-label={`Sync ${league.name}`}
                       className={`text-sm px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 ${
-                        syncingLeagueId === league.id
+                        syncSuccessLeagueId === league.id
+                          ? 'text-green-500 bg-green-500/10'
+                          : syncingLeagueId === league.id
                           ? 'text-blue-500 bg-blue-500/10'
                           : isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200'
                       } disabled:cursor-not-allowed`}
                     >
                       {syncingLeagueId === league.id ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                      ) : syncSuccessLeagueId === league.id ? (
+                        <Check className="w-3.5 h-3.5" aria-hidden="true" />
                       ) : (
                         <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
                       )}
-                      {syncingLeagueId === league.id ? 'Syncing...' : 'Sync'}
+                      {syncingLeagueId === league.id ? 'Syncing...' : syncSuccessLeagueId === league.id ? 'Synced!' : 'Sync'}
                     </button>
                     <button
                       onClick={() => handleDisconnectLeague(league.id)}
@@ -494,6 +557,89 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-300'}`}></div>
             </label>
           </div>
+        </div>
+      </div>
+
+      {/* Account Management */}
+      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <h2 className={`text-lg font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Account</h2>
+          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Change your password{user?.hasGoogle ? ' or manage your Google-linked account' : ''}</p>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {passwordError && (
+            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+              {passwordError}
+            </div>
+          )}
+          {passwordSuccess && (
+            <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-500 text-sm">
+              <Check className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+              Password changed successfully.
+            </div>
+          )}
+
+          {user?.hasGoogle && !user?.hasPassword && (
+            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Your account uses Google sign-in. You can set a password below to also enable email/password login.
+            </p>
+          )}
+
+          {user?.hasPassword && (
+            <div>
+              <label htmlFor="current-password" className={`block text-sm font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                Current Password
+              </label>
+              <input
+                id="current-password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className={`w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                placeholder="Enter current password"
+              />
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="new-password" className={`block text-sm font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+              New Password
+            </label>
+            <input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'}`}
+              placeholder="At least 8 characters"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="confirm-password" className={`block text-sm font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+              Confirm New Password
+            </label>
+            <input
+              id="confirm-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleChangePassword()}
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'}`}
+              placeholder="Re-enter new password"
+            />
+          </div>
+
+          <button
+            onClick={handleChangePassword}
+            disabled={passwordChanging || !newPassword || !confirmPassword || (!!user?.hasPassword && !currentPassword)}
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {passwordChanging && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+            {user?.hasPassword ? 'Change Password' : 'Set Password'}
+          </button>
         </div>
       </div>
 
