@@ -1,10 +1,12 @@
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from 'react';
-import { ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown, Search, ArrowLeft, Loader2, SearchX } from 'lucide-react';
+import { ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Search, ArrowLeft, Loader2, SearchX } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
 import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+
+const ALL_PLAYERS_PAGE_SIZE = 350;
 
 interface AllPlayersViewProps {
   selectedScoring: 'PPR' | 'Half PPR' | 'Standard';
@@ -21,6 +23,75 @@ interface AllPlayersViewProps {
 
 type SortField = 'rank' | 'name' | 'position' | 'projectedPoints' | 'weekChange';
 type SortDirection = 'asc' | 'desc';
+
+// Memoized row component — defined at module scope so React.memo works properly
+const AllPlayerRow = memo(function AllPlayerRow({
+  player,
+  isDarkMode,
+  oddsData,
+  onPlayerClick,
+}: {
+  player: Player;
+  isDarkMode: boolean;
+  oddsData?: { homeTeam: string; awayTeam: string; homeSpread: number | null; total: number | null } | null;
+  onPlayerClick: (player: Player) => void;
+}) {
+  const formatOdds = () => {
+    if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
+      return null;
+    }
+    const isHome = oddsData.homeTeam === player.team;
+    const spread = Math.abs(oddsData.homeSpread);
+    const spreadSign = (isHome && oddsData.homeSpread < 0) || (!isHome && oddsData.homeSpread > 0) ? '-' : '+';
+    return `${player.team} ${spreadSign}${spread} • O/U ${oddsData.total}`;
+  };
+
+  const oddsDisplay = formatOdds();
+
+  return (
+    <tr
+      tabIndex={0}
+      role="button"
+      aria-label={`${player.name}, ${player.position}, ${player.team}`}
+      onClick={() => onPlayerClick(player)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onPlayerClick(player);
+        }
+      }}
+      className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
+    >
+      <td className="px-4 py-2">
+        <span className={`text-xs font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
+      </td>
+      <td className="px-3 py-2">
+        <div>
+          <div className={`text-sm font-semibold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
+          <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            {player.team} <span className="sm:hidden">• {player.position}</span>
+            {oddsDisplay && (
+              <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                {oddsDisplay}
+              </div>
+            )}
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-2 hidden sm:table-cell">
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+          {player.position}
+        </span>
+      </td>
+      <td className="px-3 py-2 hidden md:table-cell">
+        <span className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
+      </td>
+      <td className="px-3 py-2 text-right">
+        <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+      </td>
+    </tr>
+  );
+});
 
 export function AllPlayersView({
   selectedScoring,
@@ -41,22 +112,52 @@ export function AllPlayersView({
   const [sortField, setSortField] = useState<SortField>('projectedPoints');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [players, setPlayers] = useState<APIPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const weekDropdownRef = useRef<HTMLDivElement>(null);
+
   const seasonYear = league?.seasonYear ?? getDefaultSeason();
   const scoringFormat = scoringToFormat(selectedScoring);
 
   // Fetch odds for the current week
-  const season = 2025;
+  const season = getDefaultSeason();
   const { odds } = useOdds(currentWeek, season);
 
-  // Helper to find odds for a player's team
-  const getOddsForTeam = (teamAbbr: string) => {
-    return odds.find(o => o.homeTeam === teamAbbr || o.awayTeam === teamAbbr) || null;
-  };
+  // Pre-build odds lookup map
+  const oddsLookup = useMemo(() => {
+    const map = new Map<string, (typeof odds)[0]>();
+    for (const o of odds) {
+      map.set(o.homeTeam, o);
+      map.set(o.awayTeam, o);
+    }
+    return map;
+  }, [odds]);
+
+  // Debounce search input
+  useEffect(() => {
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(searchTimerRef.current);
+  }, [searchQuery]);
+
+  // Click-outside handler for week dropdown
+  useEffect(() => {
+    if (!showWeekDropdown) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (weekDropdownRef.current && !weekDropdownRef.current.contains(e.target as Node)) {
+        setShowWeekDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showWeekDropdown]);
 
   // Fetch players from API (week-specific: past weeks = actual pts, current = projections)
   const fetchPlayers = useCallback(async () => {
@@ -65,7 +166,7 @@ export function AllPlayersView({
     try {
       const params = new URLSearchParams({
         page: '1',
-        limit: '350',
+        limit: String(ALL_PLAYERS_PAGE_SIZE),
         includeStats: 'true',
         sortBy: 'projectedPoints',
         sortOrder: 'desc',
@@ -82,8 +183,8 @@ export function AllPlayersView({
         params.set('leagueId', league.id);
       }
 
-      if (searchQuery) {
-        params.set('search', searchQuery);
+      if (debouncedSearchQuery) {
+        params.set('search', debouncedSearchQuery);
       }
 
       const response = await api.get<{
@@ -91,7 +192,16 @@ export function AllPlayersView({
         pagination?: { page: number; limit: number; total: number; totalPages: number };
       }>(`/players?${params.toString()}`);
 
-      const playersList = Array.isArray(response?.players) ? response.players : [];
+      let playersList = Array.isArray(response?.players) ? response.players : [];
+
+      // BUG-003: strict client-side filter to ensure results match search query
+      if (debouncedSearchQuery) {
+        const q = debouncedSearchQuery.toLowerCase();
+        playersList = playersList.filter(p =>
+          p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q)
+        );
+      }
+
       setPlayers(playersList);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch players';
@@ -100,7 +210,7 @@ export function AllPlayersView({
     } finally {
       setLoading(false);
     }
-  }, [selectedPosition, league?.id, searchQuery, currentWeek, seasonYear, scoringFormat]);
+  }, [selectedPosition, league?.id, debouncedSearchQuery, currentWeek, seasonYear, scoringFormat]);
 
   useEffect(() => {
     fetchPlayers();
@@ -122,71 +232,10 @@ export function AllPlayersView({
       : <ArrowDown className="w-3 h-3 text-blue-400" />;
   };
 
-  // Memoized row component
-  const AllPlayerRow = memo(function AllPlayerRow({
-    player,
-    isDarkMode,
-    oddsData,
-  }: {
-    player: Player;
-    isDarkMode: boolean;
-    oddsData?: { homeTeam: string; awayTeam: string; homeSpread: number | null; total: number | null } | null;
-  }) {
-    const formatOdds = () => {
-      if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
-        return null;
-      }
-      const isHome = oddsData.homeTeam === player.team;
-      const spread = Math.abs(oddsData.homeSpread);
-      const spreadSign = (isHome && oddsData.homeSpread < 0) || (!isHome && oddsData.homeSpread > 0) ? '-' : '+';
-      return `${player.team} ${spreadSign}${spread} • O/U ${oddsData.total}`;
-    };
-
-    const oddsDisplay = formatOdds();
-
-    return (
-      <tr
-        tabIndex={0}
-        role="button"
-        onClick={() => onPlayerClick(player)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onPlayerClick(player);
-          }
-        }}
-        className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
-      >
-        <td className="px-4 py-2">
-          <span className={`text-xs font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
-        </td>
-        <td className="px-3 py-2">
-          <div>
-            <div className={`text-sm font-semibold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
-            <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-              {player.team} <span className="sm:hidden">• {player.position}</span>
-              {oddsDisplay && (
-                <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
-                  {oddsDisplay}
-                </div>
-              )}
-            </div>
-          </div>
-        </td>
-        <td className="px-3 py-2 hidden sm:table-cell">
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-            {player.position}
-          </span>
-        </td>
-        <td className="px-3 py-2 hidden md:table-cell">
-          <span className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
-        </td>
-        <td className="px-3 py-2 text-right">
-          <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
-        </td>
-      </tr>
-    );
-  });
+  const getAriaSortValue = (field: SortField): 'ascending' | 'descending' | 'none' => {
+    if (sortField !== field) return 'none';
+    return sortDirection === 'asc' ? 'ascending' : 'descending';
+  };
 
   const sortedAndFilteredPlayers = useMemo(() => {
     let filtered = players;
@@ -221,7 +270,7 @@ export function AllPlayersView({
           comparison = a.projectedPoints - b.projectedPoints;
           break;
         case 'weekChange':
-          comparison = a.weekChange - b.weekChange;
+          comparison = 0;
           break;
       }
       return sortDirection === 'asc' ? comparison : -comparison;
@@ -258,9 +307,11 @@ export function AllPlayersView({
             <div className={`flex items-center rounded-lg px-2 gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
               <Search className={`w-3.5 h-3.5 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} aria-hidden="true" />
               <input
+                ref={searchInputRef}
                 type="text"
                 placeholder="Search..."
                 aria-label="Search players"
+                maxLength={50}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={`py-1 bg-transparent text-xs focus:outline-none w-20 ${isDarkMode ? 'text-white placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'}`}
@@ -275,11 +326,12 @@ export function AllPlayersView({
                 <button
                   key={option}
                   onClick={() => onScoringChange(option)}
+                  aria-pressed={selectedScoring === option}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
                     selectedScoring === option
                       ? 'bg-blue-600 text-white'
                       : isDarkMode
-                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-800'
+                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -296,11 +348,12 @@ export function AllPlayersView({
                 <button
                   key={position}
                   onClick={() => onPositionChange(position)}
+                  aria-pressed={selectedPosition === position}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
                     selectedPosition === position
                       ? 'bg-blue-600 text-white'
                       : isDarkMode
-                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-800'
+                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -312,25 +365,28 @@ export function AllPlayersView({
             <div className={`w-px h-5 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
 
             {/* Week Selector */}
-            <div className="relative">
+            <div className="relative" ref={weekDropdownRef}>
               <button
                 onClick={() => setShowWeekDropdown(!showWeekDropdown)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                aria-expanded={showWeekDropdown}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 <span className="text-xs">Wk {currentWeek}</span>
                 <ChevronDown className={`w-3 h-3 transition-transform ${showWeekDropdown ? 'rotate-180' : ''}`} />
               </button>
               {showWeekDropdown && (
-                <div className={`absolute top-8 left-0 w-20 rounded-lg border shadow-xl z-50 overflow-hidden max-h-48 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div role="listbox" className={`absolute top-8 left-0 w-20 rounded-lg border shadow-xl z-50 overflow-hidden max-h-48 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                   {NFL_WEEKS.map(week => (
                     <button
                       key={week}
+                      role="option"
+                      aria-selected={currentWeek === week}
                       onClick={() => { onWeekChange(week); setShowWeekDropdown(false); }}
                       className={`w-full px-3 py-1.5 text-xs text-left transition-colors ${
                         currentWeek === week
                           ? 'bg-blue-600 text-white'
                           : isDarkMode
-                            ? 'text-slate-300 hover:bg-slate-800'
+                            ? 'text-slate-300 hover:bg-slate-700'
                             : 'text-slate-600 hover:bg-slate-100'
                       }`}
                     >
@@ -367,11 +423,13 @@ export function AllPlayersView({
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" aria-label="Loading players" />
             </div>
           ) : (
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse" role="grid" aria-label="All players rankings">
               <thead className={`sticky top-0 z-10 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                 <tr className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   <th
+                    scope="col"
                     onClick={() => handleSort('rank')}
+                    aria-sort={getAriaSortValue('rank')}
                     className={`text-left px-4 py-2 text-xs font-semibold cursor-pointer transition-colors w-12 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1">
@@ -380,7 +438,9 @@ export function AllPlayersView({
                     </div>
                   </th>
                   <th
+                    scope="col"
                     onClick={() => handleSort('name')}
+                    aria-sort={getAriaSortValue('name')}
                     className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1">
@@ -389,7 +449,9 @@ export function AllPlayersView({
                     </div>
                   </th>
                   <th
+                    scope="col"
                     onClick={() => handleSort('position')}
+                    aria-sort={getAriaSortValue('position')}
                     className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-14 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1">
@@ -397,9 +459,11 @@ export function AllPlayersView({
                       {getSortIcon('position')}
                     </div>
                   </th>
-                  <th className={`text-left px-3 py-2 text-xs font-semibold w-40 hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>STATS</th>
+                  <th scope="col" className={`text-left px-3 py-2 text-xs font-semibold w-40 hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>STATS</th>
                   <th
+                    scope="col"
                     onClick={() => handleSort('projectedPoints')}
+                    aria-sort={getAriaSortValue('projectedPoints')}
                     className={`text-right px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-16 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1 justify-end">
@@ -407,7 +471,6 @@ export function AllPlayersView({
                       {getSortIcon('projectedPoints')}
                     </div>
                   </th>
-                  {/* TREND column removed — weekChange data not yet available from API */}
                 </tr>
               </thead>
               <tbody>
@@ -428,7 +491,7 @@ export function AllPlayersView({
                         </p>
                         {searchQuery.trim() && (
                           <button
-                            onClick={() => setSearchQuery('')}
+                            onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}
                             className="mt-1 px-4 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors"
                           >
                             Clear search
@@ -442,7 +505,8 @@ export function AllPlayersView({
                     key={player.id}
                     player={player}
                     isDarkMode={isDarkMode}
-                    oddsData={getOddsForTeam(player.team)}
+                    oddsData={oddsLookup.get(player.team) || null}
+                    onPlayerClick={onPlayerClick}
                   />
                 ))}
               </tbody>

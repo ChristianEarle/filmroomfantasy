@@ -315,34 +315,33 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <li className="highlight">Player rankings — all positions, all scoring formats</li>
               <li className="highlight">NFL Game Slate with live scores</li>
               <li className="highlight">News &amp; injury updates</li>
+              <li className="highlight">Current week projections</li>
               <li>1 league sync</li>
-              <li>Current week projections</li>
+              <li>3 trade analyses per day</li>
             </ul>
             <a className="price-btn outline" onClick={nav('Login')}>Start free</a>
           </div>
           <div className="price-card featured">
             <div className="tier pop">Pro &mdash; Most Popular</div>
             <div className="amount">$4.99<span>/mo</span></div>
-            <div className="period">or $29.99/year (save 50%)</div>
+            <div className="period">or $49.99/year (save 17%)</div>
             <ul>
               <li className="highlight">Everything in Free</li>
               <li className="highlight">Unlimited league syncs</li>
               <li className="highlight">Trending players &amp; add/drop data</li>
-              <li className="highlight">Deeper player research — stats, Vegas props, game logs, matchup grades</li>
+              <li className="highlight">5 trade analyses per day</li>
             </ul>
             <a className="price-btn fill" onClick={nav('Pricing')}>Try Pro free for 7 days</a>
           </div>
           <div className="price-card">
             <div className="tier">Elite</div>
             <div className="amount">$9.99<span>/mo</span></div>
-            <div className="period">or $59.99/year (save 50%)</div>
+            <div className="period">or $99.99/year (save 17%)</div>
             <ul>
               <li className="highlight">Everything in Pro</li>
-              <li className="highlight">Trade analyzer</li>
-              <li className="highlight">Lineup optimizer</li>
-              <li>Custom scoring models</li>
-              <li>Season-long projections</li>
-              <li>Priority support</li>
+              <li className="highlight">Deeper player research — stats, Vegas props, game logs, matchup grades</li>
+              <li className="highlight">Unlimited trade analyses</li>
+              <li>Custom scoring models (coming soon)</li>
               <li>Early access to new features</li>
             </ul>
             <a className="price-btn outline" onClick={nav('Pricing')}>Try Elite free for 7 days</a>

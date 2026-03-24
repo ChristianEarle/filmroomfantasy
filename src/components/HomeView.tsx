@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { TrendingUp, Trophy, Flame, Clock, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
 import { Player } from '../App';
 import { NewsSnippet } from './NewsSnippet';
-import { Game } from './GameSlateView';
+import type { Game } from '../types/game';
 import { useTrendingPlayers, useNews, useEspnScoreboard } from '../hooks';
 import { useLeagueContext, type RosterPlayer } from '../context/LeagueContext';
 

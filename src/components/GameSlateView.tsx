@@ -1,36 +1,14 @@
-import { useState, useMemo } from 'react';
-import { Calendar, TrendingUp, Cloud, CloudRain, Sun, CloudSnow, Loader2, Warehouse, TreePine, Star, Trophy, CheckCircle } from 'lucide-react';
+import { useState, useMemo, useCallback } from 'react';
+import { Calendar, TrendingUp, Cloud, CloudRain, Sun, CloudSnow, Loader2, Warehouse, TreePine, Star, Trophy, CheckCircle, RefreshCw } from 'lucide-react';
 import { Player } from '../App';
 import { useEspnScoreboard } from '../hooks';
 import { useOdds } from '../hooks/useOdds';
+import { getDefaultSeason } from '../utils/playerUtils';
 import type { TopPerformer } from '../services/games';
+import type { Game } from '../types/game';
 import { AdUnit } from './AdUnit';
 
-export interface Game {
-  id: string;
-  awayTeam: string;
-  awayTeamLogo: string;
-  homeTeam: string;
-  homeTeamLogo: string;
-  gameTime: string;
-  gameTimeFormatted: string;
-  spread: number | null;
-  favoredTeam: 'home' | 'away';
-  overUnder: number | null;
-  tvNetwork: string;
-  weather?: {
-    displayValue: string;
-    temperature?: number;
-    highTemperature?: number;
-  } | null;
-  homeScore?: number;
-  awayScore?: number;
-  status?: string;
-  topPerformers?: {
-    home: TopPerformer | null;
-    away: TopPerformer | null;
-  };
-}
+export type { Game };
 
 interface GameSlateViewProps {
   onSelectGame?: (game: Game | null) => void;
@@ -95,19 +73,57 @@ function getWinner(game: Game): 'home' | 'away' | 'tie' | null {
   return 'tie';
 }
 
+/** Render odds section for scheduled/in-progress games */
+function OddsSection({ game, gameOdds, isDarkMode }: { game: Game; gameOdds: { homeSpread: number | null; total: number | null; homeMoneyline?: number | null; awayMoneyline?: number | null } | undefined; isDarkMode: boolean }) {
+  return (
+    <div className="space-y-3">
+      {/* Spread */}
+      <div>
+        <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Spread</div>
+        <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          {gameOdds && gameOdds.homeSpread != null
+            ? `${gameOdds.homeSpread < 0 ? game.homeTeamLogo : game.awayTeamLogo} ${Math.abs(gameOdds.homeSpread)}`
+            : '—'}
+        </div>
+      </div>
+
+      {/* Over/Under */}
+      <div>
+        <div className={`text-xs mb-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <TrendingUp className="w-3 h-3" />
+          Over/Under
+        </div>
+        <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          {gameOdds && gameOdds.total != null ? `O/U ${gameOdds.total}` : '—'}
+        </div>
+      </div>
+
+      {/* Moneyline */}
+      {gameOdds && gameOdds.homeMoneyline != null && gameOdds.awayMoneyline != null && (
+        <div>
+          <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Moneyline</div>
+          <div className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+            {game.homeTeamLogo} {gameOdds.homeMoneyline > 0 ? '+' : ''}{gameOdds.homeMoneyline} / {game.awayTeamLogo} {gameOdds.awayMoneyline > 0 ? '+' : ''}{gameOdds.awayMoneyline}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateViewProps = {}) {
   const [selectedWeek, setSelectedWeek] = useState<number | undefined>(undefined);
-  const { games: espnGames, week, weekLabel, isLoading, error, espnUnavailable } = useEspnScoreboard(selectedWeek);
+  const { games: espnGames, week, weekLabel, isLoading, error, espnUnavailable, refetch } = useEspnScoreboard(selectedWeek);
 
   // Fetch odds data for the current week
   const currentWeek = week ?? 1;
-  const season = 2025;
-  const { odds, formatSpread, formatTotal } = useOdds(currentWeek, season);
+  const season = getDefaultSeason();
+  const { odds } = useOdds(currentWeek, season);
 
   // Helper to find odds for a game by team abbreviation
-  const getGameOdds = (teamAbbr: string) => {
+  const getGameOdds = useCallback((teamAbbr: string) => {
     return odds.find(o => o.homeTeam === teamAbbr || o.awayTeam === teamAbbr);
-  };
+  }, [odds]);
 
   const displayGames: Game[] = useMemo(() => espnGames.map((g) => ({
     id: g.id,
@@ -137,6 +153,13 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
     onSelectGame?.(fullGame);
   };
 
+  const handleGameKeyDown = (e: React.KeyboardEvent, game: Game, espnGame: (typeof espnGames)[0]) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleGameClick(game, espnGame);
+    }
+  };
+
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
@@ -151,6 +174,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
               <select
                 value={selectedWeek ?? ''}
                 onChange={(e) => setSelectedWeek(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+                aria-label="Select NFL week"
                 className={`rounded px-2 py-1 text-sm border ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
               >
                 <option value="">Current week</option>
@@ -163,9 +187,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
             <p className={`text-sm sm:text-base ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               {allFinal
                 ? 'Final scores and top fantasy performers'
-                : allScheduled
-                  ? 'Matchups with Vegas lines, spreads & projected weather'
-                  : 'Matchups with Vegas lines, spreads & projected weather'}
+                : 'Matchups with Vegas lines, spreads & projected weather'}
             </p>
           </div>
           <div className={`rounded-lg px-4 py-3 sm:px-6 sm:py-4 border flex-shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
@@ -185,13 +207,19 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
       )}
 
       {error && (
-        <div className={`rounded-lg border p-4 ${isDarkMode ? 'bg-red-900/20 border-red-700 text-red-300' : 'bg-red-50 border-red-200 text-red-700'}`}>
+        <div className={`rounded-lg border p-4 ${isDarkMode ? 'bg-red-900/20 border-red-700 text-red-300' : 'bg-red-50 border-red-200 text-red-700'}`} aria-live="assertive">
           <div className="font-medium">{error.message}</div>
+          <button
+            onClick={() => refetch?.()}
+            className={`mt-2 px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${isDarkMode ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300' : 'bg-red-100 hover:bg-red-200 text-red-700'}`}
+          >
+            Try Again
+          </button>
         </div>
       )}
 
       {isLoading ? (
-        <div className={`flex items-center justify-center py-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        <div className={`flex items-center justify-center py-24 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} aria-live="polite">
           <Loader2 className="w-8 h-8 animate-spin mr-2" />
           Loading games…
         </div>
@@ -212,7 +240,10 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
           const gameElement = (
           <div
             key={game.id}
+            role="button"
+            tabIndex={0}
             onClick={() => handleGameClick(game, espnGames[idx])}
+            onKeyDown={(e) => handleGameKeyDown(e, game, espnGames[idx])}
             className={`rounded-lg border overflow-hidden hover:shadow-lg transition-all cursor-pointer hover:border-blue-500 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
           >
             {/* Game Header */}
@@ -368,43 +399,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
               ) : (
                 /* Scheduled/In-progress — show betting lines from odds API */
                 <div className={`rounded-lg p-4 mt-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                  {(() => {
-                    const gameOdds = getGameOdds(game.homeTeam);
-                    return (
-                      <div className="space-y-3">
-                        {/* Spread */}
-                        <div>
-                          <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Spread</div>
-                          <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                            {gameOdds && gameOdds.homeSpread != null
-                              ? `${gameOdds.homeSpread < 0 ? game.homeTeamLogo : game.awayTeamLogo} ${Math.abs(gameOdds.homeSpread)}`
-                              : '—'}
-                          </div>
-                        </div>
-
-                        {/* Over/Under */}
-                        <div>
-                          <div className={`text-xs mb-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                            <TrendingUp className="w-3 h-3" />
-                            Over/Under
-                          </div>
-                          <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                            {gameOdds && gameOdds.total != null ? `O/U ${gameOdds.total}` : '—'}
-                          </div>
-                        </div>
-
-                        {/* Moneyline */}
-                        {gameOdds && gameOdds.homeMoneyline != null && gameOdds.awayMoneyline != null && (
-                          <div>
-                            <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Moneyline</div>
-                            <div className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                              {game.homeTeamLogo} {gameOdds.homeMoneyline > 0 ? '+' : ''}{gameOdds.homeMoneyline} / {game.awayTeamLogo} {gameOdds.awayMoneyline > 0 ? '+' : ''}{gameOdds.awayMoneyline}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  <OddsSection game={game} gameOdds={getGameOdds(game.homeTeam)} isDarkMode={isDarkMode} />
                 </div>
               )}
             </div>
@@ -415,7 +410,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
           const showAd = (idx + 1) % 4 === 0 && idx !== displayGames.length - 1;
 
           return (
-            <div key={`game-${idx}`} className="contents">
+            <div key={game.id} className="contents">
               {gameElement}
               {showAd && (
                 <div className="lg:col-span-2 my-4 rounded-lg overflow-hidden">
