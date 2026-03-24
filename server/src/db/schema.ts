@@ -26,6 +26,13 @@ export const users = sqliteTable('users', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
+export const tradeAnalysisUsage = sqliteTable('trade_analysis_usage', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  usedAt: text('used_at').notNull(),
+  dateKey: text('date_key').notNull(), // YYYY-MM-DD
+});
+
 export const sessions = sqliteTable('sessions', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

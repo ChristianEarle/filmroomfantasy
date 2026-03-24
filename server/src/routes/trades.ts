@@ -10,6 +10,26 @@ type DB = ReturnType<typeof drizzle<typeof schema>>;
 
 const tradesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// ── Trade Usage Limits ────────────────────────────────────────────────
+
+/** Daily trade analysis limits by subscription tier */
+const TRADE_LIMITS: Record<string, number> = {
+  free: 3,
+  pro: 5,
+  elite: Infinity,
+};
+
+/** Number of analyses allowed for unauthenticated users (lifetime via IP) */
+const ANON_LIMIT = 1;
+
+function getTodayKey(): string {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function generateId(): string {
+  return crypto.randomUUID();
+}
+
 // ── Types ──────────────────────────────────────────────────────────────
 
 interface TradeAssetInput {
@@ -463,7 +483,59 @@ Rules:
 - If draft picks are involved, assess their value relative to the players being traded`;
 }
 
-// ── Route ──────────────────────────────────────────────────────────────
+// ── Usage Route ───────────────────────────────────────────────────────
+
+tradesRoutes.get(
+  '/usage',
+  optionalAuthMiddleware,
+  async (c) => {
+    const user = c.get('user');
+    const db = c.get('db');
+
+    if (!user) {
+      // Unauthenticated — check IP-based usage
+      const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
+      const anonUserId = `anon_${ip}`;
+      const used = await db
+        .select()
+        .from(schema.tradeAnalysisUsage)
+        .where(eq(schema.tradeAnalysisUsage.userId, anonUserId));
+      return c.json({
+        used: used.length,
+        limit: ANON_LIMIT,
+        remaining: Math.max(0, ANON_LIMIT - used.length),
+        resetsDaily: false,
+      });
+    }
+
+    const tier = user.subscriptionTier || 'free';
+    const limit = TRADE_LIMITS[tier] ?? TRADE_LIMITS.free;
+    const today = getTodayKey();
+
+    if (limit === Infinity) {
+      return c.json({ used: 0, limit: -1, remaining: -1, resetsDaily: true });
+    }
+
+    const todayUsage = await db
+      .select()
+      .from(schema.tradeAnalysisUsage)
+      .where(
+        and(
+          eq(schema.tradeAnalysisUsage.userId, user.id),
+          eq(schema.tradeAnalysisUsage.dateKey, today)
+        )
+      );
+
+    return c.json({
+      used: todayUsage.length,
+      limit,
+      remaining: Math.max(0, limit - todayUsage.length),
+      resetsDaily: true,
+    });
+  }
+);
+
+// ── Analyze Route ─────────────────────────────────────────────────────
 
 tradesRoutes.post(
   '/analyze',
@@ -500,14 +572,56 @@ tradesRoutes.post(
       return c.json({ error: 'Invalid league type' }, 400);
     }
 
+    // ── Check trade analysis usage limit ──
+    const db = c.get('db');
+    const user = c.get('user');
+    const today = getTodayKey();
+
+    if (!user) {
+      // Unauthenticated: lifetime limit by IP
+      const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
+      const anonUserId = `anon_${ip}`;
+      const anonUsage = await db
+        .select()
+        .from(schema.tradeAnalysisUsage)
+        .where(eq(schema.tradeAnalysisUsage.userId, anonUserId));
+      if (anonUsage.length >= ANON_LIMIT) {
+        return c.json({
+          error: 'You\'ve used your free analysis. Create an account to get 3 per day.',
+          code: 'TRADE_LIMIT_REACHED',
+        }, 429);
+      }
+      // Record usage after successful analysis (below)
+    } else {
+      const tier = user.subscriptionTier || 'free';
+      const limit = TRADE_LIMITS[tier] ?? TRADE_LIMITS.free;
+      if (limit !== Infinity) {
+        const todayUsage = await db
+          .select()
+          .from(schema.tradeAnalysisUsage)
+          .where(
+            and(
+              eq(schema.tradeAnalysisUsage.userId, user.id),
+              eq(schema.tradeAnalysisUsage.dateKey, today)
+            )
+          );
+        if (todayUsage.length >= limit) {
+          const upgradeHint = tier === 'free'
+            ? 'Upgrade to Pro for 5 per day or Elite for unlimited.'
+            : 'Upgrade to Elite for unlimited analyses.';
+          return c.json({
+            error: `You've used all ${limit} analyses today. ${upgradeHint}`,
+            code: 'TRADE_LIMIT_REACHED',
+          }, 429);
+        }
+      }
+    }
+
     // Collect all player names from the trade
     const playerNames = body.teams
       .flatMap((t) => t.sends)
       .filter((a) => a.type === 'player')
       .map((a) => a.name);
-
-    // Fetch enriched player data from DB
-    const db = c.get('db');
     let playerData = new Map<string, EnrichedPlayerData>();
     try {
       playerData = await fetchPlayerData(db, playerNames);
@@ -581,6 +695,22 @@ Provide your analysis as JSON.`;
       ) {
         console.error('AI response missing fields:', JSON.stringify(parsed).slice(0, 500));
         return c.json({ error: 'AI returned an incomplete response. Please try again.' }, 502);
+      }
+
+      // Record successful usage
+      try {
+        const usageUserId = user
+          ? user.id
+          : `anon_${c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown'}`;
+        await db.insert(schema.tradeAnalysisUsage).values({
+          id: generateId(),
+          userId: usageUserId,
+          usedAt: new Date().toISOString(),
+          dateKey: today,
+        });
+      } catch (usageErr) {
+        console.error('Failed to record trade usage:', usageErr);
+        // Don't fail the response if usage tracking fails
       }
 
       return c.json(parsed);

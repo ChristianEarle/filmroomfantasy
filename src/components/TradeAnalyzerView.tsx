@@ -11,6 +11,14 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+
+interface TradeUsage {
+  used: number;
+  limit: number; // -1 = unlimited
+  remaining: number; // -1 = unlimited
+  resetsDaily: boolean;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -576,6 +584,7 @@ function createInitialTeams(count: number): TradeTeam[] {
 }
 
 export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
+  const { user } = useAuth();
   const [teamCount, setTeamCount] = useState<2 | 3 | 4>(2);
   const [teams, setTeams] = useState<TradeTeam[]>(createInitialTeams(2));
   const [leagueType, setLeagueType] = useState<LeagueType>('redraft');
@@ -585,6 +594,23 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const [result, setResult] = useState<TradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const [usage, setUsage] = useState<TradeUsage | null>(null);
+
+  const fetchUsage = useCallback(async () => {
+    try {
+      const data = await api.get<TradeUsage>('/trades/usage');
+      setUsage(data);
+    } catch {
+      // Non-critical — don't block the UI
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUsage();
+  }, [fetchUsage]);
+
+  const isUnlimited = usage?.limit === -1;
+  const hasUsesLeft = !usage || isUnlimited || usage.remaining > 0;
 
   const isMultiTeam = teamCount > 2;
   const charCount = context.length;
@@ -661,7 +687,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     : true;
 
   const canAnalyze =
-    teams.every((t) => t.sends.length > 0) && allAssetsHaveDestination && !isAnalyzing;
+    teams.every((t) => t.sends.length > 0) && allAssetsHaveDestination && !isAnalyzing && hasUsesLeft;
 
   const handleAnalyze = async () => {
     if (!canAnalyze) return;
@@ -699,6 +725,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
       );
     } finally {
       setIsAnalyzing(false);
+      fetchUsage();
     }
   };
 
@@ -899,6 +926,23 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
             </>
           )}
         </button>
+
+        {/* Usage indicator */}
+        {usage && (
+          <p className={`text-xs ${!hasUsesLeft ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            {isUnlimited ? (
+              'Unlimited analyses'
+            ) : !hasUsesLeft ? (
+              !user
+                ? 'Create an account for 3 free analyses per day'
+                : user.subscriptionTier === 'free'
+                ? 'No analyses left today. Upgrade for more.'
+                : 'No analyses left today. Resets at midnight.'
+            ) : (
+              `${usage.remaining}/${usage.limit} analyses remaining${usage.resetsDaily ? ' today' : ''}`
+            )}
+          </p>
+        )}
 
         {validationMessage && (
           <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
