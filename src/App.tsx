@@ -173,19 +173,24 @@ const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
 
 /** Read the current URL pathname and return the matching view, defaulting to 'Board'. */
 function getViewFromURL(): string {
+  let path: string;
+
   // Handle redirect from landing page: landing.html encodes the original path
   // in a hash fragment when Cloudflare Pages serves it for SPA routes.
   const hash = window.location.hash;
   if (hash.startsWith('#redirect=')) {
     const redirectPath = decodeURIComponent(hash.substring('#redirect='.length));
-    // Restore the correct URL (strip the hash, show the real path)
+    // Use the decoded path directly — don't re-read window.location.pathname
+    // because replaceState may not update it synchronously in all browsers.
+    path = redirectPath.split('?')[0].toLowerCase().replace(/\/+$/, '') || '/';
+    // Restore the clean URL in the address bar
     window.history.replaceState({}, '', redirectPath);
+  } else {
+    path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
   }
 
-  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
-
-  // Root path: show Board (landing page handles marketing homepage at /)
-  if (path === '/') return 'Board';
+  // Root path or /app.html: show Board
+  if (path === '/' || path === '/app.html' || path === '/app') return 'Board';
 
   const view = PATH_TO_VIEW[path] ?? 'Board';
   // /register is handled within the Login view via authView state
