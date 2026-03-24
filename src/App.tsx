@@ -148,7 +148,7 @@ export interface Player {
 
 // URL path <-> view mapping for client-side routing (BUG-001/002 fix)
 const VIEW_TO_PATH: Record<string, string> = {
-  Home: '/',
+  Home: '/home',
   Board: '/board',
   Matchup: '/matchup',
   Team: '/team',
@@ -173,7 +173,20 @@ const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
 
 /** Read the current URL pathname and return the matching view, defaulting to 'Board'. */
 function getViewFromURL(): string {
+  // Handle redirect from landing page: landing.html encodes the original path
+  // in a hash fragment when Cloudflare Pages serves it for SPA routes.
+  const hash = window.location.hash;
+  if (hash.startsWith('#redirect=')) {
+    const redirectPath = decodeURIComponent(hash.substring('#redirect='.length));
+    // Restore the correct URL (strip the hash, show the real path)
+    window.history.replaceState({}, '', redirectPath);
+  }
+
   const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
+
+  // Root path: show Board (landing page handles marketing homepage at /)
+  if (path === '/') return 'Board';
+
   const view = PATH_TO_VIEW[path] ?? 'Board';
   // /register is handled within the Login view via authView state
   if (view === 'Register') return 'Login';
