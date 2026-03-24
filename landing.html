@@ -3,17 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script>
-    // SPA route detection: if not on the landing page root, redirect to the React app.
-    // Cloudflare Pages serves this file (index.html) for unmatched routes via SPA fallback.
-    // We encode the original path in a hash so the SPA can restore it.
-    (function() {
-      var p = location.pathname;
-      if (p !== '/' && p !== '/index.html') {
-        location.replace('/app.html#redirect=' + encodeURIComponent(p + location.search));
-      }
-    })();
-    </script>
     <title>FilmRoom Fantasy — Fantasy Football Rankings, Projections & Analysis</title>
     <meta name="description" content="Fantasy football rankings driven by Vegas lines — not expert opinions. Projections built on how the betting market prices every game. Sync your Sleeper, Yahoo, or ESPN league instantly.">
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6355054767351119" crossorigin="anonymous"></script>
