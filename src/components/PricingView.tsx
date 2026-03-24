@@ -68,8 +68,9 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: 'Player rankings — all positions, all scoring formats', highlight: true },
         { text: 'NFL Game Slate with live scores', highlight: true },
         { text: 'News & injury updates', highlight: true },
+        { text: 'Current week projections', highlight: true },
         { text: '1 league sync', highlight: false },
-        { text: 'Current week projections', highlight: false },
+        { text: '3 trade analyses per day', highlight: false },
       ],
       cta: !isAuthenticated ? 'Sign Up Free' : userTier === 'free' ? 'Current Plan' : 'Downgrade',
       featured: false,
@@ -85,6 +86,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: 'Unlimited league syncs', highlight: true },
         { text: 'Trending players & add/drop data', highlight: true },
         { text: 'Deeper player research — stats, Vegas props, game logs, matchup grades', highlight: true },
+        { text: '5 trade analyses per day', highlight: true },
       ],
       cta: !isAuthenticated ? 'Sign Up' : userTier === 'pro' ? 'Current Plan' : 'Upgrade to Pro',
       featured: true,
@@ -97,12 +99,12 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
       description: 'Advanced tools for serious competitors.',
       features: [
         { text: 'Everything in Pro', highlight: true },
-        { text: 'Trade analyzer', highlight: true, comingSoon: true },
+        { text: 'Unlimited trade analyses', highlight: true },
         { text: 'Lineup optimizer', highlight: true, comingSoon: true },
         { text: 'Custom scoring models', highlight: false, comingSoon: true },
         { text: 'Season-long projections', highlight: false, comingSoon: true },
-        { text: 'Priority support', highlight: false, comingSoon: true },
-        { text: 'Early access to new features', highlight: false, comingSoon: true },
+        { text: 'Priority support', highlight: false },
+        { text: 'Early access to new features', highlight: false },
       ],
       cta: !isAuthenticated ? 'Sign Up' : userTier === 'elite' ? 'Current Plan' : 'Upgrade to Elite',
       featured: false,
@@ -189,7 +191,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
 
                 {/* Price */}
                 {tier.monthlyPrice !== null && tier.yearlyPrice !== null ? (
-                  <div className="mb-1">
+                  <div className="mb-2">
                     <div className={`text-4xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       ${isAnnual ? tier.yearlyPrice.toFixed(2) : tier.monthlyPrice.toFixed(2)}
                     </div>
@@ -198,7 +200,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                     </div>
                   </div>
                 ) : (
-                  <div className="mb-4">
+                  <div className="mb-2">
                     <div className={`text-4xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       {tier.price}
                     </div>
@@ -209,11 +211,13 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                 )}
 
                 {/* Savings Note */}
-                {tier.monthlyPrice !== null && isAnnual && (
-                  <div className={`text-xs font-semibold mb-6 ${isDarkMode ? 'text-green-400' : 'text-green-700'}`}>
-                    Save {savings[tier.name as 'pro' | 'elite']} vs monthly
-                  </div>
-                )}
+                <div className="h-5 mb-4">
+                  {tier.monthlyPrice !== null && isAnnual && (
+                    <span className={`text-xs font-semibold ${isDarkMode ? 'text-green-400' : 'text-green-700'}`}>
+                      Save {savings[tier.name as 'pro' | 'elite']} vs monthly
+                    </span>
+                  )}
+                </div>
 
                 <p className={`text-sm mb-6 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                   {tier.description}
