@@ -565,7 +565,7 @@ interface TradeAnalyzerViewProps {
   isDarkMode: boolean;
 }
 
-const MAX_CONTEXT_WORDS = 150;
+const MAX_CONTEXT_CHARS = 750;
 
 function createInitialTeams(count: number): TradeTeam[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -587,7 +587,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const resultsRef = useRef<HTMLDivElement>(null);
 
   const isMultiTeam = teamCount > 2;
-  const wordCount = context.trim() ? context.trim().split(/\s+/).length : 0;
+  const charCount = context.length;
 
   const handleTeamCountChange = useCallback((count: 2 | 3 | 4) => {
     setTeamCount(count);
@@ -703,8 +703,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   };
 
   const handleContextChange = (text: string) => {
-    const words = text.trim().split(/\s+/);
-    if (text.trim() === '' || words.length <= MAX_CONTEXT_WORDS) {
+    if (text.length <= MAX_CONTEXT_CHARS) {
       setContext(text);
     }
   };
@@ -869,8 +868,8 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
               : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
           } outline-none`}
         />
-        <p className={`text-xs mt-1 ${wordCount >= MAX_CONTEXT_WORDS ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-          {wordCount}/{MAX_CONTEXT_WORDS} words
+        <p className={`text-xs mt-1 ${charCount >= MAX_CONTEXT_CHARS ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          {charCount}/{MAX_CONTEXT_CHARS}
         </p>
       </div>
 
