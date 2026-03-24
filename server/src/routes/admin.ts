@@ -1510,3 +1510,59 @@ adminRoutes.post('/generate-projections', async (c) => {
     );
   }
 });
+
+/**
+ * POST /api/admin/set-tier
+ * Manually set a user's subscription tier (e.g. grant pro status without payment).
+ * Body: { email: string, tier: 'free' | 'pro', expiresAt?: string }
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ */
+adminRoutes.post('/set-tier', async (c) => {
+  const db = c.get('db');
+
+  try {
+    const body = await c.req.json() as { email?: string; tier?: string; expiresAt?: string };
+    const { email, tier, expiresAt } = body;
+
+    if (!email || !tier) {
+      return c.json({ error: 'email and tier are required' }, 400);
+    }
+
+    if (tier !== 'free' && tier !== 'pro') {
+      return c.json({ error: 'tier must be "free" or "pro"' }, 400);
+    }
+
+    const user = await db.query.users.findFirst({
+      where: eq(schema.users.email, email),
+    });
+
+    if (!user) {
+      return c.json({ error: `User not found: ${email}` }, 404);
+    }
+
+    await db
+      .update(schema.users)
+      .set({
+        subscriptionTier: tier,
+        subscriptionExpiresAt: expiresAt || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.users.id, user.id));
+
+    return c.json({
+      success: true,
+      email,
+      tier,
+      expiresAt: expiresAt || null,
+    });
+  } catch (err) {
+    console.error('Set tier error:', err);
+    return c.json(
+      {
+        error: 'Failed to set tier',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});

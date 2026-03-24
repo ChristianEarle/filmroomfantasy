@@ -3,6 +3,22 @@ import { X, ArrowLeft, Cloud, Loader2 } from 'lucide-react';
 import { Player } from '../App';
 import { useGame } from '../hooks';
 
+function formatGameTime(isoString: string): string {
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    });
+  } catch {
+    return isoString;
+  }
+}
+
 interface Game {
   id: string;
   awayTeam: string;
@@ -104,7 +120,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
                   <span className="text-sm">Back to Slate</span>
                 </button>
               </div>
-              <div className={`text-sm mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{game.gameTime} • {game.tvNetwork}</div>
+              <div className={`text-sm mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{formatGameTime(game.gameTime)} • {game.tvNetwork}</div>
               <h2 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeam} @ {game.homeTeam}</h2>
             </div>
             <button
@@ -153,7 +169,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               <p className="text-sm">Player projections and stats will appear here during the NFL season.</p>
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-6">
             {/* Away Team */}
             <div>
               <div className={`rounded-lg p-4 mb-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
