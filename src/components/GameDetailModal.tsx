@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
-import { X, ArrowLeft, Cloud, Loader2 } from 'lucide-react';
+import { useEffect, useRef, useMemo } from 'react';
+import { X, ArrowLeft, Cloud, Loader2, AlertCircle } from 'lucide-react';
 import { Player } from '../App';
 import { useGame } from '../hooks';
+import type { Game } from '../types/game';
 
 function formatGameTime(isoString: string): string {
   try {
@@ -19,20 +20,6 @@ function formatGameTime(isoString: string): string {
   }
 }
 
-interface Game {
-  id: string;
-  awayTeam: string;
-  awayTeamLogo: string;
-  homeTeam: string;
-  homeTeamLogo: string;
-  gameTime: string;
-  spread: string;
-  favoredTeam: 'home' | 'away';
-  overUnder: number;
-  tvNetwork: string;
-  weather?: { displayValue: string; temperature?: number } | null;
-}
-
 interface GameDetailModalProps {
   game: Game;
   onClose: () => void;
@@ -40,14 +27,18 @@ interface GameDetailModalProps {
   isDarkMode: boolean;
 }
 
+const ALLOWED_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'FLEX']);
+const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'Other'] as const;
+
 // Map API player to App Player format
 function toAppPlayer(p: { id: string; name: string; team: string; position: string; projectedPoints?: number; weekRank?: number; headshotUrl?: string | null }): Player {
+  const pos = ALLOWED_POSITIONS.has(p.position) ? p.position : 'FLEX';
   return {
     id: p.id,
     rank: p.weekRank ?? 0,
     name: p.name,
     team: p.team,
-    position: (p.position || 'WR') as Player['position'],
+    position: pos as Player['position'],
     keyLine: '',
     projectedPoints: p.projectedPoints ?? 0,
     weekChange: 0,
@@ -55,9 +46,21 @@ function toAppPlayer(p: { id: string; name: string; team: string; position: stri
   };
 }
 
+function handlePlayerKeyDown(e: React.KeyboardEvent, player: Player, onPlayerClick: (p: Player) => void) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    onPlayerClick(player);
+  }
+}
 
 export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: GameDetailModalProps) {
   const { game: apiGame, homePlayers: apiHome, awayPlayers: apiAway, isLoading, error } = useGame(game.id);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Auto-focus close button on mount
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+  }, []);
 
   // Close on Escape key
   useEffect(() => {
@@ -81,21 +84,22 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
       TE: [],
       K: [],
       DEF: [],
+      Other: [],
     };
-    
+
     players.forEach(player => {
       if (grouped[player.position]) {
         grouped[player.position].push(player);
+      } else {
+        grouped['Other'].push(player);
       }
     });
-    
+
     return grouped;
   };
 
-  const awayPlayersByPosition = groupByPosition(awayPlayers);
-  const homePlayersByPosition = groupByPosition(homePlayers);
-
-  const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
+  const awayPlayersByPosition = useMemo(() => groupByPosition(awayPlayers), [awayPlayers]);
+  const homePlayersByPosition = useMemo(() => groupByPosition(homePlayers), [homePlayers]);
 
   return (
     <div
@@ -124,6 +128,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               <h2 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeam} @ {game.homeTeam}</h2>
             </div>
             <button
+              ref={closeButtonRef}
               onClick={onClose}
               aria-label="Close game details"
               className={`transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
@@ -131,7 +136,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               <X className="w-6 h-6" />
             </button>
           </div>
-          
+
           {/* Game Info */}
           <div className="flex items-center gap-6 text-sm flex-wrap">
             <div className={`rounded-lg px-4 py-2 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
@@ -159,11 +164,17 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
         {/* Content */}
         <div className={`flex-1 overflow-y-auto p-6 relative ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
           {isLoading && (
-            <div className={`absolute inset-0 flex items-center justify-center z-10 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-100/80'}`}>
+            <div className={`absolute inset-0 flex items-center justify-center z-10 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-100/80'}`} aria-live="polite">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
             </div>
           )}
-          {!isLoading && awayPlayers.length === 0 && homePlayers.length === 0 && (
+          {error && (
+            <div className={`mb-4 p-4 rounded-lg flex items-center gap-3 ${isDarkMode ? 'bg-red-900/20 border border-red-700 text-red-300' : 'bg-red-50 border border-red-200 text-red-700'}`} role="alert" aria-live="assertive">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm">{error.message}</p>
+            </div>
+          )}
+          {!isLoading && !error && awayPlayers.length === 0 && homePlayers.length === 0 && (
             <div className={`text-center py-12 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               <p className="text-lg font-medium mb-2">No player data available</p>
               <p className="text-sm">Player projections and stats will appear here during the NFL season.</p>
@@ -193,38 +204,40 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               </div>
 
               <div className="space-y-2">
-                {positions.map(position => (
-                  <div key={position}>
-                    <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>{position}</div>
-                    <div className="space-y-2">
-                      {awayPlayersByPosition[position].map((player) => (
-                        <div
-                          key={player.id}
-                          onClick={() => onPlayerClick(player)}
-                          className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex-1">
-                              <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{player.name}</div>
-                              <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
-                                {player.position}{player.rank > 0 ? ` • #${player.rank}` : ''}
+                {POSITIONS.map(position => {
+                  const players = awayPlayersByPosition[position];
+                  if (!players || players.length === 0) return null;
+                  return (
+                    <div key={position}>
+                      <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>{position}</div>
+                      <div className="space-y-2">
+                        {players.map((player) => (
+                          <div
+                            key={player.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onPlayerClick(player)}
+                            onKeyDown={(e) => handlePlayerKeyDown(e, player, onPlayerClick)}
+                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{player.name}</div>
+                                <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
+                                  {player.position}{player.rank > 0 ? ` • #${player.rank}` : ''}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-bold text-blue-600">{player.projectedPoints}</div>
+                                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
                               </div>
                             </div>
-                            <div className="text-right">
-                              <div className="text-lg font-bold text-blue-600">{player.projectedPoints}</div>
-                              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
-                            </div>
                           </div>
-                          {player.projectedPoints > 0 && (
-                            <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
-                              {player.position} pts
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -251,38 +264,40 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               </div>
 
               <div className="space-y-2">
-                {positions.map(position => (
-                  <div key={position}>
-                    <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>{position}</div>
-                    <div className="space-y-2">
-                      {homePlayersByPosition[position].map((player) => (
-                        <div
-                          key={player.id}
-                          onClick={() => onPlayerClick(player)}
-                          className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex-1">
-                              <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{player.name}</div>
-                              <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
-                                {player.position}
+                {POSITIONS.map(position => {
+                  const players = homePlayersByPosition[position];
+                  if (!players || players.length === 0) return null;
+                  return (
+                    <div key={position}>
+                      <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>{position}</div>
+                      <div className="space-y-2">
+                        {players.map((player) => (
+                          <div
+                            key={player.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onPlayerClick(player)}
+                            onKeyDown={(e) => handlePlayerKeyDown(e, player, onPlayerClick)}
+                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{player.name}</div>
+                                <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
+                                  {player.position}{player.rank > 0 ? ` • #${player.rank}` : ''}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-bold text-blue-600">{player.projectedPoints}</div>
+                                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
                               </div>
                             </div>
-                            <div className="text-right">
-                              <div className="text-lg font-bold text-blue-600">{player.projectedPoints}</div>
-                              <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
-                            </div>
                           </div>
-                          {player.projectedPoints > 0 && (
-                            <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
-                              {player.position} pts
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

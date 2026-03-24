@@ -9,7 +9,8 @@ import { TeamView } from './components/TeamView';
 import { MatchupView } from './components/MatchupView';
 import { WaiversView } from './components/WaiversView';
 import { HomeView } from './components/HomeView';
-import { GameSlateView, Game } from './components/GameSlateView';
+import { GameSlateView } from './components/GameSlateView';
+import type { Game } from './types/game';
 import { GameDetailModal } from './components/GameDetailModal';
 
 // Lazy load heavy views for better initial bundle size

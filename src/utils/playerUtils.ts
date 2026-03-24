@@ -83,7 +83,7 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
  */
 export function getDefaultSeason(): number {
   const d = new Date();
-  return d.getMonth() <= 2 ? d.getFullYear() - 1 : d.getFullYear();
+  return d.getMonth() <= 3 ? d.getFullYear() - 1 : d.getFullYear();
 }
 
 /**
