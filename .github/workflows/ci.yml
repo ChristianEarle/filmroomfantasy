@@ -73,6 +73,12 @@ jobs:
           cd build
           cp index.html app.html
           cp ../landing.html index.html
+          # Create directory-based routes so Cloudflare Pages serves the SPA
+          # for each app route (e.g. /trade-analyzer -> trade-analyzer/index.html)
+          for route in board team matchup waivers game-slate trends research playoff-predictor trade-analyzer draft-rankings all-players pricing settings profile home login register forgot-password; do
+            mkdir -p "$route"
+            cp app.html "$route/index.html"
+          done
 
       - name: Install backend dependencies
         working-directory: server
