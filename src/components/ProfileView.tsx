@@ -1,15 +1,38 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Lock, LogOut, Eye, EyeOff, Check, AlertCircle, Pencil } from 'lucide-react';
+import { Mail, Lock, LogOut, Eye, EyeOff, Check, AlertCircle, Pencil, Crown, ArrowUpRight, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authService } from '../services';
+import { api } from '../services/api';
 
 interface ProfileViewProps {
   isDarkMode?: boolean;
   onLogout: () => void;
+  onNavigate?: (view: string) => void;
 }
 
-export function ProfileView({ isDarkMode = true, onLogout }: ProfileViewProps) {
+export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: ProfileViewProps) {
   const { user, updateProfile } = useAuth();
+
+  // Subscription management
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState('');
+
+  const tier = user?.subscriptionTier || 'free';
+  const isPaid = tier === 'pro' || tier === 'elite';
+
+  const handleManageSubscription = async () => {
+    setPortalError('');
+    setPortalLoading(true);
+    try {
+      const response = await api.post<{ url: string }>('/billing/create-portal', {
+        returnUrl: window.location.href,
+      });
+      window.location.href = response.url;
+    } catch (err) {
+      setPortalError(err instanceof Error ? err.message : 'Failed to open subscription management');
+      setPortalLoading(false);
+    }
+  };
 
   // Account info editing
   const [editingAccount, setEditingAccount] = useState(false);
@@ -393,6 +416,75 @@ export function ProfileView({ isDarkMode = true, onLogout }: ProfileViewProps) {
               )}
             </button>
           </form>
+        </div>
+      </div>
+
+      {/* Subscription */}
+      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className="p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isPaid ? 'bg-amber-500/10' : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+              <Crown className={`w-5 h-5 ${isPaid ? 'text-amber-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Subscription</h2>
+              <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                {isPaid ? `You\u2019re on the ${tier.charAt(0).toUpperCase() + tier.slice(1)} plan` : "You\u2019re on the Free plan"}
+              </p>
+            </div>
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+              tier === 'elite' ? 'bg-purple-500/15 text-purple-400 border border-purple-500/20' :
+              tier === 'pro' ? 'bg-amber-500/15 text-amber-500 border border-amber-500/20' :
+              isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-slate-100 text-slate-500 border border-slate-200'
+            }`}>
+              {tier === 'elite' ? 'Elite' : tier === 'pro' ? 'Pro' : 'Free'}
+            </span>
+          </div>
+
+          {portalError && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {portalError}
+            </div>
+          )}
+
+          {isPaid ? (
+            <div className="space-y-3">
+              {user?.subscriptionExpiresAt && (
+                <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  Renews {new Date(user.subscriptionExpiresAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                </p>
+              )}
+              <button
+                onClick={handleManageSubscription}
+                disabled={portalLoading}
+                className={`flex h-10 w-full items-center justify-center gap-2 rounded-lg border text-sm font-medium transition-colors ${
+                  isDarkMode
+                    ? 'border-slate-700 text-slate-300 hover:bg-slate-800 disabled:text-slate-600'
+                    : 'border-slate-200 text-slate-700 hover:bg-slate-50 disabled:text-slate-400'
+                } disabled:cursor-not-allowed`}
+              >
+                {portalLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>Manage subscription</>
+                )}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Upgrade to unlock unlimited league syncs, deeper research, trending players, and more.
+              </p>
+              <button
+                onClick={() => onNavigate?.('Pricing')}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+              >
+                Upgrade plan
+                <ArrowUpRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

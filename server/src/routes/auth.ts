@@ -269,6 +269,8 @@ authRoutes.get('/me', authMiddleware, async (c) => {
       notificationsEnabled: user.notificationsEnabled ?? true,
       hasGoogle: !!user.googleId,
       hasPassword: !!user.passwordHash,
+      subscriptionTier: user.subscriptionTier ?? 'free',
+      subscriptionExpiresAt: user.subscriptionExpiresAt ?? null,
     },
     leagues: memberships.map(m => ({
       ...m.league,

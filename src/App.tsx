@@ -532,7 +532,7 @@ function AppContent() {
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ProfileView isDarkMode={isDarkMode} onLogout={handleLogout} />
+                <ProfileView isDarkMode={isDarkMode} onLogout={handleLogout} onNavigate={(view) => setActiveView(view as any)} />
               )
             ) : activeView === 'Login' ? (
               authView === 'forgot' ? (
