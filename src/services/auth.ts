@@ -15,7 +15,7 @@ export interface User {
   notificationsEnabled?: boolean;
   hasGoogle?: boolean;
   hasPassword?: boolean;
-  subscriptionTier?: 'free' | 'pro';
+  subscriptionTier?: 'free' | 'pro' | 'elite';
   subscriptionExpiresAt?: string;
 }
 
