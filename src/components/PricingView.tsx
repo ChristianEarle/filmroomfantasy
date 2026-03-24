@@ -224,7 +224,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                 <ul className="space-y-3 mb-8 flex-1">
                   {tier.features.map((feature, idx) => (
                     <li key={idx} className="flex items-start gap-3">
-                      <Check className={`w-5 h-5 flex-shrink-0 mt-0.5 ${feature.highlight ? 'text-blue-600' : isDarkMode ? 'text-slate-600' : 'text-slate-400'}`} />
+                      <Check className="w-5 h-5 flex-shrink-0 mt-0.5 text-blue-600" />
                       <span className={`text-sm ${feature.highlight ? (isDarkMode ? 'text-white font-semibold' : 'text-slate-900 font-semibold') : isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                         {feature.text}
                         {'comingSoon' in feature && feature.comingSoon && (
