@@ -25,6 +25,7 @@ import { AllPlayersView } from './components/AllPlayersView';
 import { ComingSoonView } from './components/ComingSoonView';
 import { TradeAnalyzerView } from './components/TradeAnalyzerView';
 import { PricingView } from './components/PricingView';
+import { LandingPage } from './components/LandingPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LeagueProvider, useLeagueContext } from './context/LeagueContext';
@@ -148,6 +149,7 @@ export interface Player {
 
 // URL path <-> view mapping for client-side routing (BUG-001/002 fix)
 const VIEW_TO_PATH: Record<string, string> = {
+  Landing: '/',
   Home: '/home',
   Board: '/board',
   Matchup: '/matchup',
@@ -171,26 +173,12 @@ const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
   Object.entries(VIEW_TO_PATH).map(([view, path]) => [path, view])
 );
 
-/** Read the current URL pathname and return the matching view, defaulting to 'Board'. */
+/** Read the current URL pathname and return the matching view, defaulting to 'Landing'. */
 function getViewFromURL(): string {
-  let path: string;
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
 
-  // Handle redirect from landing page: landing.html encodes the original path
-  // in a hash fragment when Cloudflare Pages serves it for SPA routes.
-  const hash = window.location.hash;
-  if (hash.startsWith('#redirect=')) {
-    const redirectPath = decodeURIComponent(hash.substring('#redirect='.length));
-    // Use the decoded path directly — don't re-read window.location.pathname
-    // because replaceState may not update it synchronously in all browsers.
-    path = redirectPath.split('?')[0].toLowerCase().replace(/\/+$/, '') || '/';
-    // Restore the clean URL in the address bar
-    window.history.replaceState({}, '', redirectPath);
-  } else {
-    path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
-  }
-
-  // Root path or /app.html: show Board
-  if (path === '/' || path === '/app.html' || path === '/app') return 'Board';
+  // Root path shows the landing page for unauthenticated users (handled in render)
+  if (path === '/') return 'Landing';
 
   const view = PATH_TO_VIEW[path] ?? 'Board';
   // /register is handled within the Login view via authView state
@@ -215,23 +203,10 @@ function AppContent() {
       setCurrentWeek(league.currentWeek);
     }
   }, [league?.id, league?.currentWeek]);
-  // Initialize activeView from URL so direct navigation works (BUG-002 fix)
-  const [activeView, setActiveView] = useState<'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings'>(() => getViewFromURL() as any);
+  // Initialize activeView from URL so direct navigation works
+  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const isDarkMode = user?.darkMode ?? true;
-
-  // Re-sync activeView from URL after auth loading completes, in case mounting
-  // or provider initialization changed state before the first meaningful render.
-  const hasResyncedRef = useRef(false);
-  useEffect(() => {
-    if (!isLoading && !hasResyncedRef.current) {
-      hasResyncedRef.current = true;
-      const urlView = getViewFromURL();
-      if (urlView !== activeView) {
-        setActiveView(urlView as any);
-      }
-    }
-  }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync dark class to <html> so CSS variables apply to html/body
   // (prevents white bars on mobile in dark mode)
@@ -399,6 +374,18 @@ function AppContent() {
         </div>
       </div>
     );
+  }
+
+  // Landing page: fullscreen, no sidebar/header
+  if (activeView === 'Landing' && !isAuthenticated) {
+    return (
+      <LandingPage onNavigate={(view) => setActiveView(view as any)} />
+    );
+  }
+
+  // If authenticated user lands on '/', redirect to Home
+  if (activeView === 'Landing' && isAuthenticated) {
+    setActiveView('Home');
   }
 
   return (
