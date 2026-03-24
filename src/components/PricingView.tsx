@@ -85,7 +85,6 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: 'Everything in Free', highlight: true },
         { text: 'Unlimited league syncs', highlight: true },
         { text: 'Trending players & add/drop data', highlight: true },
-        { text: 'Deeper player research — stats, Vegas props, game logs, matchup grades', highlight: true },
         { text: '5 trade analyses per day', highlight: true },
       ],
       cta: !isAuthenticated ? 'Sign Up' : userTier === 'pro' ? 'Current Plan' : 'Upgrade to Pro',
@@ -99,11 +98,9 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
       description: 'Advanced tools for serious competitors.',
       features: [
         { text: 'Everything in Pro', highlight: true },
+        { text: 'Deeper player research — stats, Vegas props, game logs, matchup grades', highlight: true },
         { text: 'Unlimited trade analyses', highlight: true },
-        { text: 'Lineup optimizer', highlight: true, comingSoon: true },
         { text: 'Custom scoring models', highlight: false, comingSoon: true },
-        { text: 'Season-long projections', highlight: false, comingSoon: true },
-        { text: 'Priority support', highlight: false },
         { text: 'Early access to new features', highlight: false },
       ],
       cta: !isAuthenticated ? 'Sign Up' : userTier === 'elite' ? 'Current Plan' : 'Upgrade to Elite',
@@ -227,7 +224,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                 <ul className="space-y-3 mb-8 flex-1">
                   {tier.features.map((feature, idx) => (
                     <li key={idx} className="flex items-start gap-3">
-                      <Check className={`w-5 h-5 flex-shrink-0 mt-0.5 ${feature.highlight ? 'text-blue-600' : isDarkMode ? 'text-slate-600' : 'text-slate-400'}`} />
+                      <Check className="w-5 h-5 flex-shrink-0 mt-0.5 text-blue-600" />
                       <span className={`text-sm ${feature.highlight ? (isDarkMode ? 'text-white font-semibold' : 'text-slate-900 font-semibold') : isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                         {feature.text}
                         {'comingSoon' in feature && feature.comingSoon && (
