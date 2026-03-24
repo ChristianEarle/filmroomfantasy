@@ -69,8 +69,14 @@ function PlayerSearchInput({
   const [isFocused, setIsFocused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const showDropdown = isFocused && results.length > 0;
+
+  // Clean up timeout on unmount
+  useEffect(() => {
+    return () => clearTimeout(blurTimeoutRef.current);
+  }, []);
 
   const handleSearch = async (q: string) => {
     setQuery(q);
@@ -111,8 +117,16 @@ function PlayerSearchInput({
     setIsFocused(true);
   };
 
-  const handleFocusOut = () => {
-    // Small delay to allow focus to move to another element within container
+  const handleFocusOut = (e: React.FocusEvent) => {
+    // If focus is moving to another element within the container, stay open
+    if (
+      e.relatedTarget &&
+      containerRef.current?.contains(e.relatedTarget as Node)
+    ) {
+      return;
+    }
+    // Small delay as a safety net for cases where relatedTarget is null
+    // (e.g. clicking non-focusable areas then quickly back)
     blurTimeoutRef.current = setTimeout(() => {
       if (
         containerRef.current &&
@@ -123,15 +137,27 @@ function PlayerSearchInput({
     }, 100);
   };
 
+  // Handle click on the container to re-focus the input even if blur races
+  const handleContainerMouseDown = (e: React.MouseEvent) => {
+    // If clicking within the container (but not on a dropdown button),
+    // prevent the blur from firing and keep focus on the input
+    if (e.target === containerRef.current || e.target === inputRef.current) {
+      return;
+    }
+    // For dropdown buttons, let them handle their own click
+  };
+
   return (
     <div
       ref={containerRef}
       className="relative"
       onFocus={handleFocusIn}
       onBlur={handleFocusOut}
+      onMouseDown={handleContainerMouseDown}
     >
       <div className="relative">
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => handleSearch(e.target.value)}
@@ -539,7 +565,7 @@ interface TradeAnalyzerViewProps {
   isDarkMode: boolean;
 }
 
-const MAX_CONTEXT_WORDS = 150;
+const MAX_CONTEXT_CHARS = 750;
 
 function createInitialTeams(count: number): TradeTeam[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -561,7 +587,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const resultsRef = useRef<HTMLDivElement>(null);
 
   const isMultiTeam = teamCount > 2;
-  const wordCount = context.trim() ? context.trim().split(/\s+/).length : 0;
+  const charCount = context.length;
 
   const handleTeamCountChange = useCallback((count: 2 | 3 | 4) => {
     setTeamCount(count);
@@ -677,8 +703,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   };
 
   const handleContextChange = (text: string) => {
-    const words = text.trim().split(/\s+/);
-    if (text.trim() === '' || words.length <= MAX_CONTEXT_WORDS) {
+    if (text.length <= MAX_CONTEXT_CHARS) {
       setContext(text);
     }
   };
@@ -843,8 +868,8 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
               : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
           } outline-none`}
         />
-        <p className={`text-xs mt-1 ${wordCount >= MAX_CONTEXT_WORDS ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-          {wordCount}/{MAX_CONTEXT_WORDS} words
+        <p className={`text-xs mt-1 ${charCount >= MAX_CONTEXT_CHARS ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          {charCount}/{MAX_CONTEXT_CHARS}
         </p>
       </div>
 
