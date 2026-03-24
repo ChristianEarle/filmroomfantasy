@@ -28,6 +28,11 @@ interface MatchupViewProps {
   isDarkMode: boolean;
 }
 
+/** Strip trailing digits from a roster slot for display (e.g. "RB1" → "RB", "WR2" → "WR", "FLEX" → "FLEX") */
+function displaySlot(slot: string): string {
+  return (slot || '').replace(/\d+$/, '');
+}
+
 export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
   const { league, userTeam, roster, matchup, matchupLoading, error } = useLeagueContext();
   const currentWeek = league?.currentWeek || 1;
@@ -43,7 +48,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
         const pts = isComplete ? (p?.actualPoints ?? p?.projectedPoints ?? 0) : (p?.projectedPoints || 0);
         return {
           id: p?.id,
-          position: p?.position || 'FLEX',
+          position: displaySlot(p?.slot || p?.position || 'FLEX'),
           slot: p?.slot || p?.position || 'FLEX',
           name: p?.name || 'Unknown',
           team: p?.team || '-',
@@ -65,7 +70,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
       userStarters.length > 0 ? userStarters : ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DEF'];
     return sortByPosition(
       starterSlots.map(pos => ({
-        position: pos,
+        position: displaySlot(pos),
         slot: pos,
         name: EMPTY_SLOT_NAME,
         team: '-',
@@ -83,7 +88,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
         const pts = isComplete ? (p?.actualPoints ?? p?.projectedPoints ?? 0) : (p?.projectedPoints || 0);
         return {
           id: p?.id,
-          position: p?.position || 'FLEX',
+          position: displaySlot(p?.slot || p?.position || 'FLEX'),
           slot: p?.slot || p?.position || 'FLEX',
           name: p?.name || 'Unknown',
           team: p?.team || '-',
