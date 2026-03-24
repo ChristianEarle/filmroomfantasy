@@ -151,7 +151,7 @@ export interface Player {
 const VIEW_TO_PATH: Record<string, string> = {
   Landing: '/',
   Home: '/home',
-  Board: '/board',
+  Board: '/player-rankings',
   Matchup: '/matchup',
   Team: '/team',
   Waivers: '/waivers',
@@ -227,7 +227,7 @@ function AppContent() {
 
   // Sync URL when activeView changes (BUG-001 fix: URL now updates on sidebar nav)
   useEffect(() => {
-    const targetPath = VIEW_TO_PATH[activeView] || '/board';
+    const targetPath = VIEW_TO_PATH[activeView] || '/player-rankings';
     if (window.location.pathname !== targetPath) {
       window.history.pushState({ view: activeView }, '', targetPath);
     }
@@ -247,7 +247,7 @@ function AppContent() {
   useEffect(() => {
     const titles: Record<string, string> = {
       Home: 'Dashboard | FilmRoom',
-      Board: 'Player Rankings | FilmRoom',
+      Board: `${league?.seasonYear ?? new Date().getFullYear()} Player Rankings | FilmRoom`,
       Team: 'My Team | FilmRoom',
       Matchup: 'Matchup | FilmRoom',
       Waivers: 'Waivers | FilmRoom',

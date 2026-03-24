@@ -19,7 +19,7 @@ interface SidebarProps {
 export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated = false, selectedLeagueId, onLeagueSelect, onConnectLeague, mobileOpen = false, onMobileClose, userTier = 'free' }: SidebarProps) {
   const menuItems = [
     { icon: Home, label: 'Home', view: 'Home' as const },
-    { icon: LayoutDashboard, label: 'Board', view: 'Board' as const },
+    { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board' as const },
     { icon: Swords, label: 'Matchup', view: 'Matchup' as const },
     { icon: UsersIcon, label: 'Team', view: 'Team' as const },
     { icon: ListPlus, label: 'Waivers', view: 'Waivers' as const },
