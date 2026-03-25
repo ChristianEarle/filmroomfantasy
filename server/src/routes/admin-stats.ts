@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
-import { timingSafeEqual } from '../utils/crypto';
+import { eq } from 'drizzle-orm';
+import * as schema from '../db/schema';
+import { adminAuthMiddleware } from '../middleware/adminAuth';
 import type { Env, Variables } from '../index';
 
 export const adminStatsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -15,7 +17,7 @@ adminStatsRoutes.use('*', async (c, next) => {
   const allowedOrigin = origin && allowedAdminOrigins.includes(origin) ? origin : allowedAdminOrigins[0];
   c.header('Access-Control-Allow-Origin', allowedOrigin);
   c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  c.header('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Key');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Key, Authorization');
   c.header('Access-Control-Max-Age', '86400');
   c.header('Vary', 'Origin');
 
@@ -25,17 +27,37 @@ adminStatsRoutes.use('*', async (c, next) => {
   await next();
 });
 
-// Admin auth middleware — requires SYNC_SECRET
+// Dual auth: X-Admin-Key (dashboard) or JWT admin user (app UI)
 adminStatsRoutes.use('*', async (c, next) => {
-  const syncSecret = c.env.SYNC_SECRET;
-  if (!syncSecret) {
-    return c.json({ error: 'SYNC_SECRET not configured' }, 500);
+  if (c.req.method === 'OPTIONS') {
+    await next();
+    return;
   }
-  const adminKey = c.req.header('X-Admin-Key');
-  if (!adminKey || !timingSafeEqual(adminKey, syncSecret)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+
+  // Try to extract user from JWT if present
+  const { getCookie } = await import('hono/cookie');
+  const cookieToken = getCookie(c, 'auth_token');
+  const authHeader = c.req.header('Authorization');
+  const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
+
+  if (token) {
+    try {
+      const { jwtVerify } = await import('jose');
+      const secret = new TextEncoder().encode(c.env.JWT_SECRET);
+      const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
+      if (payload.sub) {
+        const db = c.get('db');
+        const user = await db.query.users.findFirst({
+          where: eq(schema.users.id, payload.sub as string),
+        });
+        if (user) c.set('user', user);
+      }
+    } catch {
+      // Invalid token — fall through to key check
+    }
   }
-  await next();
+
+  await adminAuthMiddleware(c, next);
 });
 
 adminStatsRoutes.get('/stats', async (c) => {

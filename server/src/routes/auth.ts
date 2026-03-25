@@ -304,6 +304,7 @@ authRoutes.get('/me', authMiddleware, async (c) => {
       hasPassword: !!user.passwordHash,
       subscriptionTier: user.subscriptionTier ?? 'free',
       subscriptionExpiresAt: user.subscriptionExpiresAt ?? null,
+      role: user.role ?? 'user',
     },
     leagues: memberships.map(m => ({
       ...m.league,

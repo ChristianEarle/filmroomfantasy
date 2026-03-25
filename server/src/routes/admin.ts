@@ -8,22 +8,42 @@ import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
 import { generateProjectionsFromProps } from '../services/projections';
-import { timingSafeEqual } from '../utils/crypto';
+import { adminAuthMiddleware } from '../middleware/adminAuth';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// Admin auth middleware — always requires SYNC_SECRET
+// Dual auth: X-Admin-Key (dashboard/cron) or JWT admin user (app UI)
 adminRoutes.use('*', async (c, next) => {
-  const syncSecret = c.env.SYNC_SECRET;
-  if (!syncSecret) {
-    return c.json({ error: 'SYNC_SECRET not configured' }, 500);
+  if (c.req.method === 'OPTIONS') {
+    await next();
+    return;
   }
-  const adminKey = c.req.header('X-Admin-Key');
-  if (!adminKey || !timingSafeEqual(adminKey, syncSecret)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+
+  // Try to extract user from JWT if present (non-failing)
+  const { getCookie } = await import('hono/cookie');
+  const cookieToken = getCookie(c, 'auth_token');
+  const authHeader = c.req.header('Authorization');
+  const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
+
+  if (token) {
+    try {
+      const { jwtVerify } = await import('jose');
+      const secret = new TextEncoder().encode(c.env.JWT_SECRET);
+      const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
+      if (payload.sub) {
+        const db = c.get('db');
+        const user = await db.query.users.findFirst({
+          where: eq(schema.users.id, payload.sub as string),
+        });
+        if (user) c.set('user', user);
+      }
+    } catch {
+      // Invalid token — fall through to X-Admin-Key check
+    }
   }
-  await next();
+
+  await adminAuthMiddleware(c, next);
 });
 
 /**
