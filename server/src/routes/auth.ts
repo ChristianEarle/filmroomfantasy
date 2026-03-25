@@ -18,14 +18,22 @@ function setAuthCookie(c: any, token: string) {
   setCookie(c, AUTH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'Lax',
+    // In production the frontend and API are on different domains, so we need
+    // SameSite=None (requires Secure) to allow cross-site cookie sending.
+    // In dev they share localhost via Vite proxy, so Lax is fine.
+    sameSite: isProduction ? 'None' : 'Lax',
     path: '/api',
     maxAge: AUTH_COOKIE_MAX_AGE,
   });
 }
 
 function clearAuthCookie(c: any) {
-  deleteCookie(c, AUTH_COOKIE_NAME, { path: '/api' });
+  const isProduction = c.env.ENVIRONMENT === 'production';
+  deleteCookie(c, AUTH_COOKIE_NAME, {
+    path: '/api',
+    secure: isProduction,
+    sameSite: isProduction ? 'None' : 'Lax',
+  });
 }
 
 export const authRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
