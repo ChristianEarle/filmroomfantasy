@@ -286,7 +286,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         </div>
 
         {/* FAQ Section */}
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-3xl mx-auto mt-20">
           <h2 className={`text-3xl font-bold mb-8 text-center ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Frequently asked questions
           </h2>
@@ -327,7 +327,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         </div>
 
         {/* Bottom CTA */}
-        <div className={`mt-16 text-center py-12 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+        <div className={`mt-20 text-center py-12 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
           <p className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Ready to level up your fantasy game?
           </p>
