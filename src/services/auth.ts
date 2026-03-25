@@ -1,5 +1,5 @@
 // Authentication API services
-import { api } from './api';
+import { api, setAuthToken } from './api';
 
 // Types
 export type ScoringFormat = 'ppr' | 'half_ppr' | 'standard';
@@ -40,10 +40,12 @@ export interface League {
 
 export interface AuthResponse {
   user: User;
+  token?: string;
 }
 
 export interface GoogleAuthResponse {
   user?: User;
+  token?: string;
   needsUsername?: boolean;
   email?: string;
 }
@@ -57,21 +59,23 @@ export interface MeResponse {
 export const authService = {
   // Register a new user
   register: async (email: string, password: string, username: string): Promise<AuthResponse> => {
-    // Server sets httpOnly cookie automatically — no token handling needed
-    return api.post<AuthResponse>('/auth/register', {
+    const res = await api.post<AuthResponse>('/auth/register', {
       email,
       password,
       username,
     });
+    if (res.token) setAuthToken(res.token);
+    return res;
   },
 
   // Login user
   login: async (email: string, password: string): Promise<AuthResponse> => {
-    // Server sets httpOnly cookie automatically — no token handling needed
-    return api.post<AuthResponse>('/auth/login', {
+    const res = await api.post<AuthResponse>('/auth/login', {
       email,
       password,
     });
+    if (res.token) setAuthToken(res.token);
+    return res;
   },
 
   // Logout user — revoke session server-side; server clears the cookie
@@ -81,6 +85,7 @@ export const authService = {
     } catch {
       // If server call fails (e.g. token already expired), cookie is already gone
     }
+    setAuthToken(null);
   },
 
   // Get current user
@@ -106,8 +111,9 @@ export const authService = {
   googleLogin: async (credential: string, username?: string): Promise<GoogleAuthResponse> => {
     const body: Record<string, string> = { credential };
     if (username) body.username = username;
-    // Server sets httpOnly cookie automatically — no token handling needed
-    return api.post<GoogleAuthResponse>('/auth/google', body);
+    const res = await api.post<GoogleAuthResponse>('/auth/google', body);
+    if (res.token) setAuthToken(res.token);
+    return res;
   },
 
   // Forgot password — request a reset link

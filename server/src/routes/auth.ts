@@ -196,10 +196,12 @@ authRoutes.post('/register', authRateLimit, async (c) => {
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
     });
 
-    // Set httpOnly cookie — token is NOT returned in the response body
+    // Set httpOnly cookie (primary auth) + return token in body (fallback for
+    // browsers that block cross-origin cookies)
     setAuthCookie(c, token);
 
     return c.json({
+      token,
       user: {
         id: userId,
         email: email.toLowerCase(),
@@ -256,10 +258,12 @@ authRoutes.post('/login', authRateLimit, async (c) => {
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
     });
 
-    // Set httpOnly cookie — token is NOT returned in the response body
+    // Set httpOnly cookie (primary auth) + return token in body (fallback for
+    // browsers that block cross-origin cookies)
     setAuthCookie(c, token);
 
     return c.json({
+      token,
       user: {
         id: user.id,
         email: user.email,
@@ -558,10 +562,12 @@ authRoutes.post('/google', authRateLimit, async (c) => {
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
     });
 
-    // Set httpOnly cookie — token is NOT returned in the response body
+    // Set httpOnly cookie (primary auth) + return token in body (fallback for
+    // browsers that block cross-origin cookies)
     setAuthCookie(c, token);
 
     return c.json({
+      token,
       user: {
         id: user.id,
         email: user.email,
