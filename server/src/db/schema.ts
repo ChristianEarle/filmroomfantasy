@@ -22,6 +22,7 @@ export const users = sqliteTable('users', {
   stripeCustomerId: text('stripe_customer_id'),
   stripeSubscriptionId: text('stripe_subscription_id'),
   subscriptionExpiresAt: text('subscription_expires_at'),
+  role: text('role').notNull().default('user'), // 'user' | 'admin'
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
