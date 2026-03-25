@@ -181,7 +181,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                     : 'bg-slate-50 border-slate-200'
               }`}
             >
-              {tier.badge && isHighlighted && (
+              {tier.badge && (
                 <div className={`absolute -top-3 left-1/2 transform -translate-x-1/2 px-3 py-1 rounded-full text-xs font-semibold ${isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>
                   {tier.badge}
                 </div>
