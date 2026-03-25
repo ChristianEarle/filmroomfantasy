@@ -309,11 +309,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                 q: 'Can I sync multiple leagues on Free?',
                 a: 'Free tier allows 1 league sync. Pro and Elite support unlimited league syncs across Sleeper, Yahoo, and ESPN.',
               },
-              {
-                q: 'Do you offer refunds?',
-                a: 'Annual subscriptions come with a 14-day money-back guarantee. Monthly subscriptions can be cancelled anytime.',
-              },
-              {
+{
                 q: 'What happens if I cancel?',
                 a: 'Your access ends at the end of your billing period. You can reactivate anytime without losing your data.',
               },
