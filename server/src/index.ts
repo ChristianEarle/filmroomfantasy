@@ -72,12 +72,26 @@ app.use('*', cors({
   origin: (origin, _c) => {
     if (!origin) return allowedOrigins[0];
     if (allowedOrigins.includes(origin)) return origin;
-    // Allow only our specific Cloudflare Pages/Workers subdomains
-    if (origin.endsWith('.filmroomfantasy.pages.dev') || origin.endsWith('.filmroomfantasy.workers.dev')) return origin;
-    // Allow custom production domains:
-    if (origin === 'https://filmroomfantasy.com' || origin === 'https://www.filmroomfantasy.com') return origin;
-    if (origin === 'https://filmroom.app' || origin === 'https://www.filmroom.app') return origin;
-    return allowedOrigins[0];
+    try {
+      const { hostname } = new URL(origin);
+      // Allow Cloudflare Pages/Workers domains (base domain + subdomains)
+      if (
+        hostname === 'filmroomfantasy.pages.dev' ||
+        hostname.endsWith('.filmroomfantasy.pages.dev') ||
+        hostname === 'filmroomfantasy.workers.dev' ||
+        hostname.endsWith('.filmroomfantasy.workers.dev')
+      ) return origin;
+      // Allow custom production domains
+      if (
+        hostname === 'filmroomfantasy.com' ||
+        hostname === 'www.filmroomfantasy.com' ||
+        hostname === 'filmroom.app' ||
+        hostname === 'www.filmroom.app'
+      ) return origin;
+    } catch {
+      // Invalid URL — fall through to deny
+    }
+    return null as unknown as string;
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key'],
