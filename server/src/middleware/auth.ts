@@ -18,7 +18,9 @@ export const authMiddleware = async (
 
   try {
     const secret = new TextEncoder().encode(c.env.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secret, {
+      algorithms: ['HS256'],
+    });
 
     if (!payload.sub) {
       return c.json({ error: 'Unauthorized - Invalid token' }, 401);
@@ -66,7 +68,9 @@ export const optionalAuthMiddleware = async (
 
     try {
       const secret = new TextEncoder().encode(c.env.JWT_SECRET);
-      const { payload } = await jwtVerify(token, secret);
+      const { payload } = await jwtVerify(token, secret, {
+        algorithms: ['HS256'],
+      });
 
       if (payload.sub) {
         const db = c.get('db');

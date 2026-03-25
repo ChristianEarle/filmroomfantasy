@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { timingSafeEqual } from '../utils/crypto';
 import type { Env, Variables } from '../index';
 
 export const adminStatsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -23,19 +24,6 @@ adminStatsRoutes.use('*', async (c, next) => {
   }
   await next();
 });
-
-// Constant-time string comparison to prevent timing attacks on admin key
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const encoder = new TextEncoder();
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  let result = 0;
-  for (let i = 0; i < bufA.length; i++) {
-    result |= bufA[i] ^ bufB[i];
-  }
-  return result === 0;
-}
 
 // Admin auth middleware — requires SYNC_SECRET
 adminStatsRoutes.use('*', async (c, next) => {
@@ -90,8 +78,9 @@ adminStatsRoutes.get('/stats', async (c) => {
     const leagues = await db.prepare('SELECT COUNT(*) as count FROM league_members').first();
 
     const recentUsers = await db.prepare(`
-      SELECT u.id, u.username, u.email, u.subscription_tier, u.created_at,
-        u.google_id, u.yahoo_access_token,
+      SELECT u.id, u.username, u.subscription_tier, u.created_at,
+        CASE WHEN u.google_id IS NOT NULL THEN 1 ELSE 0 END as hasGoogle,
+        CASE WHEN u.yahoo_access_token IS NOT NULL THEN 1 ELSE 0 END as hasYahoo,
         (SELECT COUNT(*) FROM league_members lm WHERE lm.user_id = u.id) as leagueCount
       FROM users u
       ORDER BY u.created_at DESC

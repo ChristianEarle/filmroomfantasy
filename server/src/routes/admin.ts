@@ -8,22 +8,10 @@ import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
 import { generateProjectionsFromProps } from '../services/projections';
+import { timingSafeEqual } from '../utils/crypto';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
-
-// Constant-time string comparison to prevent timing attacks on admin key
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const encoder = new TextEncoder();
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  let result = 0;
-  for (let i = 0; i < bufA.length; i++) {
-    result |= bufA[i] ^ bufB[i];
-  }
-  return result === 0;
-}
 
 // Admin auth middleware — always requires SYNC_SECRET
 adminRoutes.use('*', async (c, next) => {
@@ -1541,8 +1529,8 @@ adminRoutes.post('/set-tier', async (c) => {
       return c.json({ error: 'email and tier are required' }, 400);
     }
 
-    if (tier !== 'free' && tier !== 'pro') {
-      return c.json({ error: 'tier must be "free" or "pro"' }, 400);
+    if (!['free', 'pro', 'elite'].includes(tier)) {
+      return c.json({ error: 'tier must be "free", "pro", or "elite"' }, 400);
     }
 
     const user = await db.query.users.findFirst({

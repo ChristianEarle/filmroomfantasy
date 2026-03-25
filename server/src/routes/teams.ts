@@ -384,9 +384,26 @@ teamRoutes.put('/:id/roster', authMiddleware, async (c) => {
   try {
     const { moves } = await c.req.json();
 
+    if (!Array.isArray(moves) || moves.length === 0 || moves.length > 30) {
+      return c.json({ error: 'Invalid moves array' }, 400);
+    }
+
+    // Allowed roster slot values
+    const validSlots = [
+      'QB', 'RB1', 'RB2', 'WR1', 'WR2', 'WR3', 'TE', 'FLEX', 'SUPERFLEX', 'K', 'DEF',
+      'BN1', 'BN2', 'BN3', 'BN4', 'BN5', 'BN6', 'BN7', 'BN8', 'IR', 'IR2',
+    ];
+
     // moves: [{ playerId: string, newSlot: string, isStarter: boolean }]
     for (const move of moves) {
       const { playerId, newSlot, isStarter } = move;
+
+      if (!playerId || typeof playerId !== 'string') {
+        return c.json({ error: 'Invalid playerId in move' }, 400);
+      }
+      if (!newSlot || !validSlots.includes(newSlot)) {
+        return c.json({ error: `Invalid slot: ${newSlot}` }, 400);
+      }
 
       await db
         .update(schema.rosterSpots)

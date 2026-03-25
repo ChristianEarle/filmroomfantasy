@@ -274,11 +274,54 @@ leagueRoutes.put('/:id', authMiddleware, async (c) => {
     ];
 
     const updates: Record<string, unknown> = {};
-    for (const key of allowedUpdates) {
-      if (body[key] !== undefined) {
-        updates[key] = body[key];
+
+    // Validate each field before accepting
+    if (body.name !== undefined) {
+      if (typeof body.name !== 'string' || body.name.trim().length < 1 || body.name.trim().length > 100) {
+        return c.json({ error: 'League name must be between 1 and 100 characters' }, 400);
       }
+      updates.name = body.name.trim();
     }
+    if (body.scoringFormat !== undefined) {
+      if (!['ppr', 'half_ppr', 'standard'].includes(body.scoringFormat)) {
+        return c.json({ error: 'Invalid scoring format' }, 400);
+      }
+      updates.scoringFormat = body.scoringFormat;
+    }
+    if (body.currentWeek !== undefined) {
+      if (!Number.isInteger(body.currentWeek) || body.currentWeek < 1 || body.currentWeek > 22) {
+        return c.json({ error: 'Current week must be between 1 and 22' }, 400);
+      }
+      updates.currentWeek = body.currentWeek;
+    }
+    if (body.tradeDeadline !== undefined) {
+      updates.tradeDeadline = body.tradeDeadline;
+    }
+    if (body.playoffWeeks !== undefined) {
+      if (!Number.isInteger(body.playoffWeeks) || body.playoffWeeks < 1 || body.playoffWeeks > 5) {
+        return c.json({ error: 'Playoff weeks must be between 1 and 5' }, 400);
+      }
+      updates.playoffWeeks = body.playoffWeeks;
+    }
+    if (body.playoffTeams !== undefined) {
+      if (!Number.isInteger(body.playoffTeams) || body.playoffTeams < 2 || body.playoffTeams > 16) {
+        return c.json({ error: 'Playoff teams must be between 2 and 16' }, 400);
+      }
+      updates.playoffTeams = body.playoffTeams;
+    }
+    if (body.waiverType !== undefined) {
+      if (!['faab', 'rolling'].includes(body.waiverType)) {
+        return c.json({ error: 'Invalid waiver type' }, 400);
+      }
+      updates.waiverType = body.waiverType;
+    }
+    if (body.waiverBudget !== undefined) {
+      if (!Number.isInteger(body.waiverBudget) || body.waiverBudget < 0 || body.waiverBudget > 10000) {
+        return c.json({ error: 'Waiver budget must be between 0 and 10000' }, 400);
+      }
+      updates.waiverBudget = body.waiverBudget;
+    }
+
     updates.updatedAt = new Date();
 
     await db
