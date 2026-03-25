@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
-import { type APIPlayer, getDefaultSeason } from '../utils/playerUtils';
+import { type APIPlayer, getEffectiveSeason } from '../utils/playerUtils';
 
 interface BiggestMoversProps {
   currentWeek: number;
@@ -36,7 +36,7 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
   const [moversData, setMoversData] = useState<MoverData[]>([]);
   const [performersData, setPerformersData] = useState<PerformerData[]>([]);
 
-  const seasonYear = league?.seasonYear ?? getDefaultSeason();
+  const seasonYear = getEffectiveSeason(league?.seasonYear);
 
   useEffect(() => {
     const fetchData = async () => {

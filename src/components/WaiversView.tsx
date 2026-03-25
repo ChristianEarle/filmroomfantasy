@@ -3,6 +3,7 @@ import { Player } from '../App';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
+import { getEffectiveSeason } from '../utils/playerUtils';
 
 interface WaiversViewProps {
   onPlayerClick: (player: Player) => void;
@@ -51,11 +52,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
   const scoringOptions: Array<'PPR' | 'Half PPR' | 'Standard'> = ['PPR', 'Half PPR', 'Standard'];
   const positions = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 
-  const getDefaultSeason = () => {
-    const d = new Date();
-    return d.getMonth() <= 2 ? d.getFullYear() - 1 : d.getFullYear();
-  };
-  const seasonYear = league?.seasonYear ?? getDefaultSeason();
+  const seasonYear = getEffectiveSeason(league?.seasonYear);
 
   // In the offseason (Feb-Aug), default to week 18 (last regular season week)
   const currentWeek = (() => {

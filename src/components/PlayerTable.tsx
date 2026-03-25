@@ -5,7 +5,7 @@ import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
 import { usePlayerProps, formatPropLine } from '../hooks/usePlayerProps';
-import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+import { type APIPlayer, convertAPIPlayerToPlayer, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 import { AdUnit } from './AdUnit';
 
 // Memoized table row component to prevent unnecessary re-renders
@@ -179,7 +179,7 @@ export function PlayerTable({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showWeekDropdown]);
 
-  const seasonYear = league?.seasonYear ?? getDefaultSeason();
+  const seasonYear = getEffectiveSeason(league?.seasonYear);
   const scoringFormat = scoringToFormat(selectedScoring);
 
   // Fetch players from API
