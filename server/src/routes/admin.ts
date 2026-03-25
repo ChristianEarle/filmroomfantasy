@@ -402,7 +402,7 @@ adminRoutes.post('/sync-twitter-news', async (c) => {
 
   if (!rssUrls || !rssUrls.trim()) {
     return c.json({
-      error: 'TWITTER_RSS_URLS not configured',
+      error: 'RSS news feeds not configured',
       message: 'Set TWITTER_RSS_URLS in wrangler.toml or secrets (comma-separated RSS URLs, e.g. https://nitter.net/AdamSchefter/rss)',
     }, 400);
   }
@@ -1075,7 +1075,7 @@ adminRoutes.post('/sync-odds', async (c) => {
 
   if (!oddsApiKey) {
     return c.json({
-      error: 'ODDS_API_KEY not configured',
+      error: 'Odds API not configured',
     }, 500);
   }
 
@@ -1179,7 +1179,7 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
 
   if (!oddsApiKey) {
     return c.json({
-      error: 'ODDS_API_KEY not configured',
+      error: 'Odds API not configured',
     }, 500);
   }
 
@@ -1298,7 +1298,7 @@ adminRoutes.post('/sync-player-props', async (c) => {
   const apiKey = c.env.ODDS_API_KEY;
 
   if (!apiKey) {
-    return c.json({ error: 'ODDS_API_KEY not configured' }, 500);
+    return c.json({ error: 'Odds API not configured' }, 500);
   }
 
   const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string; season?: number }>();

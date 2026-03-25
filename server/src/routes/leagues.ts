@@ -432,6 +432,15 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
       return c.json({ error: 'Platform, external ID, and name are required' }, 400);
     }
 
+    const validPlatforms = ['sleeper', 'espn', 'yahoo'];
+    if (!validPlatforms.includes(platform)) {
+      return c.json({ error: 'Invalid platform. Must be sleeper, espn, or yahoo' }, 400);
+    }
+
+    if (typeof externalId !== 'string' || externalId.trim().length === 0 || externalId.length > 200) {
+      return c.json({ error: 'Invalid external ID' }, 400);
+    }
+
     // Check league limit for free users (max 1 league)
     if (user.subscriptionTier === 'free') {
       const userLeagues = await db.query.leagueMembers.findMany({
@@ -548,7 +557,10 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
 });
 
 // Sync league data from external platform
-leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
+// Stricter rate limit: 3 syncs per 15 minutes per IP (expensive external API calls)
+const syncRateLimit = rateLimit(3, 15 * 60 * 1000);
+
+leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
   const user = c.get('user');
   const db = c.get('db');
   const leagueId = c.req.param('id');
