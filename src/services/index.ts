@@ -1,5 +1,5 @@
 // Export all services
-export { default as api, getToken, setToken, removeToken, ApiError } from './api';
+export { default as api, ApiError } from './api';
 export { default as authService } from './auth';
 export { default as playerService } from './players';
 export { default as leagueService } from './leagues';

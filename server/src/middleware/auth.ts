@@ -1,20 +1,40 @@
 import { Context, Next } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { jwtVerify } from 'jose';
 import { eq, and, gt } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import type { Env, Variables } from '../index';
 
+const AUTH_COOKIE_NAME = 'auth_token';
+
+/**
+ * Extract the auth token from the request.
+ * Reads from httpOnly cookie first (secure, preferred).
+ * Falls back to Authorization header for backwards compatibility during migration.
+ */
+function getAuthToken(c: Context): string | undefined {
+  // Prefer httpOnly cookie (not accessible to JavaScript — XSS-safe)
+  const cookieToken = getCookie(c, AUTH_COOKIE_NAME);
+  if (cookieToken) return cookieToken;
+
+  // Fallback: Authorization header (for API clients, mobile apps, etc.)
+  const authHeader = c.req.header('Authorization');
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7);
+  }
+
+  return undefined;
+}
+
 export const authMiddleware = async (
   c: Context<{ Bindings: Env; Variables: Variables }>,
   next: Next
 ) => {
-  const authHeader = c.req.header('Authorization');
+  const token = getAuthToken(c);
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!token) {
     return c.json({ error: 'Unauthorized - No token provided' }, 401);
   }
-
-  const token = authHeader.substring(7);
 
   try {
     const secret = new TextEncoder().encode(c.env.JWT_SECRET);
@@ -61,11 +81,9 @@ export const optionalAuthMiddleware = async (
   c: Context<{ Bindings: Env; Variables: Variables }>,
   next: Next
 ) => {
-  const authHeader = c.req.header('Authorization');
+  const token = getAuthToken(c);
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-
+  if (token) {
     try {
       const secret = new TextEncoder().encode(c.env.JWT_SECRET);
       const { payload } = await jwtVerify(token, secret, {

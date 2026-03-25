@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { SignJWT, jwtVerify, createRemoteJWKSet } from 'jose';
 import { eq, and, isNull, gt } from 'drizzle-orm';
 import * as schema from '../db/schema';
@@ -7,6 +8,25 @@ import { rateLimit } from '../middleware/rateLimit';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { generateId } from '../utils/id';
 import type { Env, Variables } from '../index';
+
+// Cookie configuration for auth token
+const AUTH_COOKIE_NAME = 'auth_token';
+const AUTH_COOKIE_MAX_AGE = 24 * 60 * 60; // 24h in seconds
+
+function setAuthCookie(c: any, token: string) {
+  const isProduction = c.env.ENVIRONMENT === 'production';
+  setCookie(c, AUTH_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'Lax',
+    path: '/api',
+    maxAge: AUTH_COOKIE_MAX_AGE,
+  });
+}
+
+function clearAuthCookie(c: any) {
+  deleteCookie(c, AUTH_COOKIE_NAME, { path: '/api' });
+}
 
 export const authRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -167,13 +187,15 @@ authRoutes.post('/register', authRateLimit, async (c) => {
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
     });
 
+    // Set httpOnly cookie — token is NOT returned in the response body
+    setAuthCookie(c, token);
+
     return c.json({
       user: {
         id: userId,
         email: email.toLowerCase(),
         username,
       },
-      token,
     }, 201);
   } catch (error) {
     console.error('Registration error:', error);
@@ -225,6 +247,9 @@ authRoutes.post('/login', authRateLimit, async (c) => {
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
     });
 
+    // Set httpOnly cookie — token is NOT returned in the response body
+    setAuthCookie(c, token);
+
     return c.json({
       user: {
         id: user.id,
@@ -232,7 +257,6 @@ authRoutes.post('/login', authRateLimit, async (c) => {
         username: user.username,
         avatarUrl: user.avatarUrl,
       },
-      token,
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -524,6 +548,9 @@ authRoutes.post('/google', authRateLimit, async (c) => {
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
     });
 
+    // Set httpOnly cookie — token is NOT returned in the response body
+    setAuthCookie(c, token);
+
     return c.json({
       user: {
         id: user.id,
@@ -531,7 +558,6 @@ authRoutes.post('/google', authRateLimit, async (c) => {
         username: user.username,
         avatarUrl: user.avatarUrl,
       },
-      token,
     });
   } catch (error) {
     console.error('Google auth error:', error);
@@ -542,8 +568,10 @@ authRoutes.post('/google', authRateLimit, async (c) => {
 // Logout — revoke the current session token
 authRoutes.post('/logout', authMiddleware, async (c) => {
   try {
+    // Read token from cookie (primary) or Authorization header (fallback for migration)
+    const cookieToken = getCookie(c, AUTH_COOKIE_NAME);
     const authHeader = c.req.header('Authorization');
-    const token = authHeader?.substring(7);
+    const token = cookieToken || authHeader?.substring(7);
 
     if (!token) {
       return c.json({ error: 'No token provided' }, 400);
@@ -553,6 +581,9 @@ authRoutes.post('/logout', authMiddleware, async (c) => {
 
     // Delete the session matching this token
     await db.delete(schema.sessions).where(eq(schema.sessions.token, token));
+
+    // Clear the httpOnly auth cookie
+    clearAuthCookie(c);
 
     return c.json({ message: 'Logged out successfully' });
   } catch (error) {

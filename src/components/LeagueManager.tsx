@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link2, Loader2, ChevronDown, Check } from 'lucide-react';
 import { useLeaguesContext } from '../context/LeaguesContext';
 import { UpgradeModal } from './UpgradeModal';
-import { getToken } from '../services/api';
+// Auth cookie is sent automatically via credentials: 'include'
 
 interface LeagueManagerProps {
   isDarkMode: boolean;
@@ -164,21 +164,14 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
 
   const handleUpgradeClick = async (priceId: string) => {
     try {
-      // Get auth token from localStorage
-      const token = getToken();
-      if (!token) {
-        alert('Please sign in first');
-        return;
-      }
-
       // Create checkout session
       const apiBase = import.meta.env.VITE_API_URL || '/api';
       const response = await fetch(`${apiBase}/billing/create-checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
+        credentials: 'include',
         body: JSON.stringify({
           priceId,
           successUrl: `${window.location.origin}?billing=success`,

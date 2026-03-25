@@ -2,21 +2,6 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
-// Token storage
-const TOKEN_KEY = 'filmroom_token';
-
-export const getToken = (): string | null => {
-  return localStorage.getItem(TOKEN_KEY);
-};
-
-export const setToken = (token: string): void => {
-  localStorage.setItem(TOKEN_KEY, token);
-};
-
-export const removeToken = (): void => {
-  localStorage.removeItem(TOKEN_KEY);
-};
-
 // API Error class
 export class ApiError extends Error {
   constructor(
@@ -29,27 +14,22 @@ export class ApiError extends Error {
   }
 }
 
-// Base fetch wrapper with auth
+// Base fetch wrapper with auth via httpOnly cookies
 export async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getToken();
-
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
-
-  if (token) {
-    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-  }
 
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers,
+      credentials: 'include', // Send httpOnly cookies with every request
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Network error';
@@ -68,10 +48,6 @@ export async function apiFetch<T>(
   }
 
   if (!response.ok) {
-    // Auto-clear stale token on 401 Unauthorized to prevent infinite auth loops
-    if (response.status === 401) {
-      removeToken();
-    }
     const errorObj = data as { error?: string };
     throw new ApiError(response.status, errorObj.error || 'An error occurred', data);
   }

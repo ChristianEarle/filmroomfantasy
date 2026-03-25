@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authService, getToken, removeToken } from '../services';
+import { authService } from '../services';
 import type { User, League, UpdateProfileData, GoogleAuthResponse } from '../services/auth';
 
 interface AuthContextType {
@@ -24,19 +24,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = !!user;
 
-  // Check for existing token and load user on mount
+  // Check for existing session on mount by calling /auth/me
+  // The httpOnly cookie is sent automatically — no localStorage check needed
   useEffect(() => {
     const initAuth = async () => {
-      const token = getToken();
-      if (token) {
-        try {
-          const response = await authService.me();
-          setUser(response.user);
-          setLeagues(response.leagues);
-        } catch {
-          // Token invalid or expired
-          removeToken();
-        }
+      try {
+        const response = await authService.me();
+        setUser(response.user);
+        setLeagues(response.leagues);
+      } catch {
+        // No valid session — user stays null
       }
       setIsLoading(false);
     };
@@ -46,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const response = await authService.login(email, password);
-    // Fetch full user with preferences and leagues (token already set by login)
+    // Fetch full user with preferences and leagues (cookie already set by server)
     try {
       const meResponse = await authService.me();
       setUser(meResponse.user);
@@ -59,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(async (email: string, password: string, username: string) => {
     const response = await authService.register(email, password, username);
-    // Fetch full user with preferences (authService.register already calls setToken)
+    // Fetch full user with preferences (cookie already set by server)
     try {
       const meResponse = await authService.me();
       setUser(meResponse.user);
@@ -78,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return response;
     }
 
-    // Fetch full user with preferences and leagues (token already set by googleLogin)
+    // Fetch full user with preferences and leagues (cookie already set by server)
     if (response.user) {
       try {
         const meResponse = await authService.me();
