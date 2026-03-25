@@ -65,7 +65,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
               <li key={index}>
                 <button
                   onClick={() => handleNavClick(item.view)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                     item.view === activeView
                       ? 'bg-blue-600 text-white shadow-sm'
                       : isDarkMode
@@ -74,7 +74,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
                   }`}
                 >
                   <item.icon className="w-5 h-5" />
-                  <span className={`text-sm ${item.view === activeView ? 'font-semibold' : ''}`}>{item.label}</span>
+                  <span className={`text-sm font-medium`}>{item.label}</span>
                 </button>
               </li>
             ))}
