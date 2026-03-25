@@ -557,7 +557,10 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
 });
 
 // Sync league data from external platform
-leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
+// Stricter rate limit: 3 syncs per 15 minutes per IP (expensive external API calls)
+const syncRateLimit = rateLimit(3, 15 * 60 * 1000);
+
+leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
   const user = c.get('user');
   const db = c.get('db');
   const leagueId = c.req.param('id');
@@ -566,7 +569,7 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
     return c.json({ error: 'Not authenticated' }, 401);
   }
 
-  // Only commissioners can trigger external sync (expensive external API calls)
+  // Check membership
   const membership = await db.query.leagueMembers.findFirst({
     where: and(
       eq(schema.leagueMembers.userId, user.id),
@@ -576,10 +579,6 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
 
   if (!membership) {
     return c.json({ error: 'Not a member of this league' }, 403);
-  }
-
-  if (membership.role !== 'commissioner') {
-    return c.json({ error: 'Only commissioners can sync league data' }, 403);
   }
 
   const league = await db.query.leagues.findFirst({
