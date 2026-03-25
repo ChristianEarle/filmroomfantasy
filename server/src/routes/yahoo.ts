@@ -129,7 +129,7 @@ yahooRoutes.post('/auth-url', yahooAuthRateLimit, authMiddleware, async (c) => {
   if (!user) return c.json({ error: 'Not authenticated' }, 401);
 
   if (!c.env.YAHOO_CLIENT_ID || !c.env.YAHOO_CLIENT_SECRET) {
-    return c.json({ error: 'Yahoo OAuth is not configured. Set YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET.' }, 500);
+    return c.json({ error: 'Yahoo OAuth is not configured' }, 503);
   }
 
   const state = await createOAuthState(user.id, c.env.JWT_SECRET);
