@@ -1,13 +1,14 @@
-import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight } from 'lucide-react';
+import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck } from 'lucide-react';
 import { LeagueManager } from './LeagueManager';
 
-type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'Settings' | 'Pricing';
+type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'Settings' | 'Pricing' | 'Admin';
 
 interface SidebarProps {
   activeView: SidebarView | 'Profile' | 'Login';
   onViewChange: (view: SidebarView) => void;
   isDarkMode: boolean;
   isAuthenticated?: boolean;
+  isAdmin?: boolean;
   selectedLeagueId: string | null;
   onLeagueSelect: (leagueId: string) => void;
   onConnectLeague: () => void;
@@ -16,7 +17,7 @@ interface SidebarProps {
   userTier?: 'free' | 'pro';
 }
 
-export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated = false, selectedLeagueId, onLeagueSelect, onConnectLeague, mobileOpen = false, onMobileClose, userTier = 'free' }: SidebarProps) {
+export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated = false, isAdmin = false, selectedLeagueId, onLeagueSelect, onConnectLeague, mobileOpen = false, onMobileClose, userTier = 'free' }: SidebarProps) {
   const menuItems = [
     { icon: Home, label: 'Home', view: 'Home' as const },
     { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board' as const },
@@ -30,6 +31,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
     { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs' as const },
     { icon: CreditCard, label: 'Pricing', view: 'Pricing' as const },
     { icon: Settings, label: 'Settings', view: 'Settings' as const },
+    ...(isAdmin ? [{ icon: ShieldCheck, label: 'Admin', view: 'Admin' as const }] : []),
   ];
 
   const handleNavClick = (view: SidebarView) => {
