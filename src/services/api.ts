@@ -2,6 +2,18 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+// In-memory auth token — fallback for browsers that block cross-origin cookies.
+// The httpOnly cookie remains the primary auth mechanism; this supplements it.
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
+
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
 // API Error class
 export class ApiError extends Error {
   constructor(
@@ -14,7 +26,7 @@ export class ApiError extends Error {
   }
 }
 
-// Base fetch wrapper with auth via httpOnly cookies
+// Base fetch wrapper with auth via httpOnly cookies + Authorization header fallback
 export async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -23,6 +35,11 @@ export async function apiFetch<T>(
     'Content-Type': 'application/json',
     ...options.headers,
   };
+
+  // Attach Bearer token as fallback for browsers blocking cross-origin cookies
+  if (authToken && !(headers as Record<string, string>)['Authorization']) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
+  }
 
   let response: Response;
   try {
