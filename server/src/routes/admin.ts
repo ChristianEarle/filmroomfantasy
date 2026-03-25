@@ -8,6 +8,7 @@ import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
 import { generateProjectionsFromProps } from '../services/projections';
+import { timingSafeEqual } from '../utils/crypto';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -19,7 +20,7 @@ adminRoutes.use('*', async (c, next) => {
     return c.json({ error: 'SYNC_SECRET not configured' }, 500);
   }
   const adminKey = c.req.header('X-Admin-Key');
-  if (adminKey !== syncSecret) {
+  if (!adminKey || !timingSafeEqual(adminKey, syncSecret)) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
   await next();
@@ -1528,8 +1529,8 @@ adminRoutes.post('/set-tier', async (c) => {
       return c.json({ error: 'email and tier are required' }, 400);
     }
 
-    if (tier !== 'free' && tier !== 'pro') {
-      return c.json({ error: 'tier must be "free" or "pro"' }, 400);
+    if (!['free', 'pro', 'elite'].includes(tier)) {
+      return c.json({ error: 'tier must be "free", "pro", or "elite"' }, 400);
     }
 
     const user = await db.query.users.findFirst({

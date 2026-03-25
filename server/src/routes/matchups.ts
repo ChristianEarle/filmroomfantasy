@@ -233,6 +233,18 @@ matchupRoutes.get('/:id/live', authMiddleware, async (c) => {
       return c.json({ error: 'Matchup not found' }, 404);
     }
 
+    // Check if user is in the league
+    const membership = await db.query.leagueMembers.findFirst({
+      where: and(
+        eq(schema.leagueMembers.userId, user.id),
+        eq(schema.leagueMembers.leagueId, matchup.leagueId)
+      ),
+    });
+
+    if (!membership) {
+      return c.json({ error: 'Not a member of this league' }, 403);
+    }
+
     // Calculate live scores from player_weekly_stats
     const league = await db.query.leagues.findFirst({
       where: eq(schema.leagues.id, matchup.leagueId),

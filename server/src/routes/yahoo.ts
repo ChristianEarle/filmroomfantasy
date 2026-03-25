@@ -339,20 +339,28 @@ function parseYahooLeagues(data: any): Array<{
   return leagues;
 }
 
+// Escape HTML entities to prevent XSS
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // HTML page returned by the OAuth callback to close the popup
 function getCallbackHtml(success: boolean, error?: string): string {
+  const safeError = error ? escapeHtml(error) : 'Unknown error';
+  // JSON.stringify + escapeHtml to prevent </script> breakout and XSS in script context
+  const jsonError = error ? escapeHtml(JSON.stringify(error)) : 'null';
   return `<!DOCTYPE html>
 <html>
 <head><title>Yahoo Authorization</title></head>
 <body style="background:#0f172a;color:white;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
 <div style="text-align:center">
   <h2>${success ? 'Yahoo Connected!' : 'Connection Failed'}</h2>
-  <p>${success ? 'You can close this window.' : (error || 'Unknown error')}</p>
+  <p>${success ? 'You can close this window.' : safeError}</p>
 </div>
 <script>
   if (window.opener) {
-    window.opener.postMessage({ type: 'yahoo_oauth', success: ${success}, error: ${error ? JSON.stringify(error) : 'null'} }, window.location.origin);
-    setTimeout(() => window.close(), 1500);
+    window.opener.postMessage({ type: 'yahoo_oauth', success: ${success}, error: ${jsonError} }, window.location.origin);
+    setTimeout(function() { window.close(); }, 1500);
   }
 </script>
 </body>

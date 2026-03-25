@@ -68,6 +68,10 @@ export async function apiFetch<T>(
   }
 
   if (!response.ok) {
+    // Auto-clear stale token on 401 Unauthorized to prevent infinite auth loops
+    if (response.status === 401) {
+      removeToken();
+    }
     const errorObj = data as { error?: string };
     throw new ApiError(response.status, errorObj.error || 'An error occurred', data);
   }

@@ -1,16 +1,23 @@
 import { Hono } from 'hono';
+import { timingSafeEqual } from '../utils/crypto';
 import type { Env, Variables } from '../index';
 
 export const adminStatsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// CORS middleware for admin stats — allows dashboard access from any origin
-// (endpoint is already protected by SYNC_SECRET)
+// CORS middleware for admin stats — restrict to known admin dashboard origins
 adminStatsRoutes.use('*', async (c, next) => {
-  const origin = c.req.header('Origin') || '*';
-  c.header('Access-Control-Allow-Origin', origin);
+  const origin = c.req.header('Origin');
+  // Only reflect origin for trusted admin dashboard origins; deny others
+  const allowedAdminOrigins = [
+    'http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173',
+    'https://filmroomfantasy.com', 'https://www.filmroomfantasy.com',
+  ];
+  const allowedOrigin = origin && allowedAdminOrigins.includes(origin) ? origin : allowedAdminOrigins[0];
+  c.header('Access-Control-Allow-Origin', allowedOrigin);
   c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
   c.header('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Key');
   c.header('Access-Control-Max-Age', '86400');
+  c.header('Vary', 'Origin');
 
   if (c.req.method === 'OPTIONS') {
     return c.body(null, 204);
@@ -25,7 +32,7 @@ adminStatsRoutes.use('*', async (c, next) => {
     return c.json({ error: 'SYNC_SECRET not configured' }, 500);
   }
   const adminKey = c.req.header('X-Admin-Key');
-  if (adminKey !== syncSecret) {
+  if (!adminKey || !timingSafeEqual(adminKey, syncSecret)) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
   await next();
@@ -71,8 +78,9 @@ adminStatsRoutes.get('/stats', async (c) => {
     const leagues = await db.prepare('SELECT COUNT(*) as count FROM league_members').first();
 
     const recentUsers = await db.prepare(`
-      SELECT u.id, u.username, u.email, u.subscription_tier, u.created_at,
-        u.google_id, u.yahoo_access_token,
+      SELECT u.id, u.username, u.subscription_tier, u.created_at,
+        CASE WHEN u.google_id IS NOT NULL THEN 1 ELSE 0 END as hasGoogle,
+        CASE WHEN u.yahoo_access_token IS NOT NULL THEN 1 ELSE 0 END as hasYahoo,
         (SELECT COUNT(*) FROM league_members lm WHERE lm.user_id = u.id) as leagueCount
       FROM users u
       ORDER BY u.created_at DESC

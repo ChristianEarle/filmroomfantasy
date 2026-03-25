@@ -236,7 +236,7 @@ billingRoutes.get('/status', authMiddleware, async (c) => {
   return c.json({
     tier: user.subscriptionTier,
     expiresAt: user.subscriptionExpiresAt,
-    stripeCustomerId: user.stripeCustomerId || null,
+    hasStripeCustomer: !!user.stripeCustomerId,
   });
 });
 
@@ -264,6 +264,11 @@ billingRoutes.post('/create-portal', authMiddleware, async (c) => {
 
     if (!returnUrl) {
       return c.json({ error: 'Missing required field: returnUrl' }, 400);
+    }
+
+    // Validate returnUrl to prevent open redirect attacks
+    if (!isAllowedRedirectUrl(returnUrl)) {
+      return c.json({ error: 'Invalid redirect URL' }, 400);
     }
 
     const portalResponse = await fetch(`${STRIPE_API_URL}/billing_portal/sessions`, {

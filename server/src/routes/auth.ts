@@ -279,8 +279,11 @@ authRoutes.get('/me', authMiddleware, async (c) => {
   });
 });
 
+// Rate limit profile and password changes: 10 req/15 min
+const profileRateLimit = rateLimit(10, 15 * 60 * 1000);
+
 // Update profile (includes preferences)
-authRoutes.put('/profile', authMiddleware, async (c) => {
+authRoutes.put('/profile', profileRateLimit, authMiddleware, async (c) => {
   try {
     const user = c.get('user');
     const body = await c.req.json();
@@ -364,7 +367,7 @@ authRoutes.put('/profile', authMiddleware, async (c) => {
 });
 
 // Change password
-authRoutes.post('/change-password', authMiddleware, async (c) => {
+authRoutes.post('/change-password', profileRateLimit, authMiddleware, async (c) => {
   try {
     const user = c.get('user');
     const { currentPassword, newPassword } = await c.req.json();
