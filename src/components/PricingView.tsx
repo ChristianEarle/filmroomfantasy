@@ -13,6 +13,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
   const [isAnnual, setIsAnnual] = useState(false);
   const [loading, setLoading] = useState<'pro' | 'elite' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hoveredTier, setHoveredTier] = useState<string | null>(null);
 
   const handleUpgrade = useCallback(async (tier: 'pro' | 'elite') => {
     if (!isAuthenticated) {
@@ -163,11 +164,15 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
 
         {/* Pricing Cards */}
         <div className={`grid grid-cols-1 md:grid-cols-3 gap-6 mb-16`}>
-          {tiers.map((tier) => (
+          {tiers.map((tier) => {
+            const isHighlighted = hoveredTier ? hoveredTier === tier.name : tier.featured;
+            return (
             <div
               key={tier.name}
+              onMouseEnter={() => setHoveredTier(tier.name)}
+              onMouseLeave={() => setHoveredTier(null)}
               className={`rounded-xl border transition-all relative ${
-                tier.featured
+                isHighlighted
                   ? isDarkMode
                     ? 'bg-slate-900 border-slate-700 ring-2 ring-blue-600 ring-opacity-50'
                     : 'bg-slate-50 border-slate-200 ring-2 ring-blue-600 ring-opacity-50'
@@ -176,7 +181,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                     : 'bg-slate-50 border-slate-200'
               }`}
             >
-              {tier.badge && (
+              {tier.badge && isHighlighted && (
                 <div className={`absolute -top-3 left-1/2 transform -translate-x-1/2 px-3 py-1 rounded-full text-xs font-semibold ${isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>
                   {tier.badge}
                 </div>
@@ -227,7 +232,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                   {tier.features.map((feature, idx) => (
                     <li key={idx} className="flex items-start gap-3">
                       <Check className="w-5 h-5 flex-shrink-0 mt-0.5 text-blue-600" />
-                      <span className={`text-sm ${feature.highlight ? (isDarkMode ? 'text-white font-semibold' : 'text-slate-900 font-semibold') : isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                      <span className={`text-sm ${feature.highlight ? (isDarkMode ? 'text-white font-semibold' : 'text-slate-900 font-semibold') : isDarkMode ? 'text-white' : 'text-slate-600'}`}>
                         {feature.text}
                         {'comingSoon' in feature && feature.comingSoon && (
                           <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${isDarkMode ? 'bg-amber-900/30 text-amber-400 border border-amber-800/50' : 'bg-amber-100 text-amber-700 border border-amber-200'}`}>
@@ -276,7 +281,8 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* FAQ Section */}
