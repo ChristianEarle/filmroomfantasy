@@ -17,6 +17,7 @@ export interface User {
   hasPassword?: boolean;
   subscriptionTier?: 'free' | 'pro' | 'elite';
   subscriptionExpiresAt?: string;
+  role?: 'user' | 'admin';
 }
 
 export interface UpdateProfileData {

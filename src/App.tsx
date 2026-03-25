@@ -26,6 +26,7 @@ import { AllPlayersView } from './components/AllPlayersView';
 import { ComingSoonView } from './components/ComingSoonView';
 import { TradeAnalyzerView } from './components/TradeAnalyzerView';
 import { PricingView } from './components/PricingView';
+import { AdminView } from './components/AdminView';
 import { LandingPage } from './components/LandingPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -168,6 +169,7 @@ const VIEW_TO_PATH: Record<string, string> = {
   Register: '/register',
   AllPlayers: '/all-players',
   Pricing: '/pricing',
+  Admin: '/admin',
 };
 
 const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
@@ -205,7 +207,7 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works
-  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'Admin'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const isDarkMode = user?.darkMode ?? true;
 
@@ -392,6 +394,7 @@ function AppContent() {
         onViewChange={setActiveView}
         isDarkMode={isDarkMode}
         isAuthenticated={isAuthenticated}
+        isAdmin={user?.role === 'admin'}
         selectedLeagueId={selectedLeagueId}
         onLeagueSelect={setSelectedLeagueId}
         onConnectLeague={() => setActiveView('Settings')}
@@ -584,6 +587,18 @@ function AppContent() {
               <ComingSoonView title="Draft Rankings" description="AI-powered draft rankings with ADP tracking, tier breakdowns, and custom scoring projections." icon="draft" isDarkMode={isDarkMode} />
             ) : activeView === 'TradeAnalyzer' ? (
               <TradeAnalyzerView isDarkMode={isDarkMode} />
+            ) : activeView === 'Admin' ? (
+              user?.role === 'admin' ? (
+                <AdminView isDarkMode={isDarkMode} />
+              ) : (
+                <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+                  <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Access Denied</h2>
+                  <p className={`mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>You don't have permission to view this page.</p>
+                  <button onClick={() => setActiveView('Home')} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    Go Home
+                  </button>
+                </div>
+              )
             ) : activeView === 'Pricing' ? (
               <PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} onNavigate={(view) => setActiveView(view as any)} />
             ) : (
