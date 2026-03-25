@@ -176,9 +176,8 @@ authRoutes.post('/register', authRateLimit, async (c) => {
     const passwordHash = await hashPassword(password);
 
     // Create user
-    // Promo: grant elite to all signups through April 1, 2026
-    const promoEnd = new Date('2026-04-01T00:00:00Z');
-    const isPromoActive = new Date() < promoEnd;
+    // Promo: grant elite (forever) to all signups through April 1, 2026
+    const isPromoActive = new Date() < new Date('2026-04-01T00:00:00Z');
 
     const userId = generateId();
     await db.insert(schema.users).values({
@@ -186,7 +185,7 @@ authRoutes.post('/register', authRateLimit, async (c) => {
       email: email.toLowerCase(),
       passwordHash,
       username,
-      ...(isPromoActive ? { subscriptionTier: 'elite', subscriptionExpiresAt: promoEnd.toISOString() } : {}),
+      ...(isPromoActive ? { subscriptionTier: 'elite' } : {}),
     });
 
     // Generate token
@@ -532,9 +531,8 @@ authRoutes.post('/google', authRateLimit, async (c) => {
 
         const userId = generateId();
 
-        // Promo: grant elite to all signups through April 1, 2026
-        const promoEnd = new Date('2026-04-01T00:00:00Z');
-        const isPromoActive = new Date() < promoEnd;
+        // Promo: grant elite (forever) to all signups through April 1, 2026
+        const isPromoActive = new Date() < new Date('2026-04-01T00:00:00Z');
 
         await db.insert(schema.users).values({
           id: userId,
@@ -543,7 +541,7 @@ authRoutes.post('/google', authRateLimit, async (c) => {
           username: username,
           googleId: googleId,
           avatarUrl: googlePayload.picture || null,
-          ...(isPromoActive ? { subscriptionTier: 'elite', subscriptionExpiresAt: promoEnd.toISOString() } : {}),
+          ...(isPromoActive ? { subscriptionTier: 'elite' } : {}),
         });
 
         user = await db.query.users.findFirst({
