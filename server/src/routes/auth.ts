@@ -14,25 +14,26 @@ const AUTH_COOKIE_NAME = 'auth_token';
 const AUTH_COOKIE_MAX_AGE = 24 * 60 * 60; // 24h in seconds
 
 function setAuthCookie(c: any, token: string) {
-  const isProduction = c.env.ENVIRONMENT === 'production';
+  // Detect HTTPS from the request itself rather than relying on ENVIRONMENT var.
+  // Cloudflare Workers always serve HTTPS in production; local dev uses HTTP.
+  const isSecure = c.req.url.startsWith('https://');
   setCookie(c, AUTH_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: isProduction,
-    // In production the frontend and API are on different domains, so we need
-    // SameSite=None (requires Secure) to allow cross-site cookie sending.
-    // In dev they share localhost via Vite proxy, so Lax is fine.
-    sameSite: isProduction ? 'None' : 'Lax',
+    secure: isSecure,
+    // Cross-site cookies (frontend ≠ API domain) require SameSite=None + Secure.
+    // Local dev uses same-origin via Vite proxy, so Lax is fine over HTTP.
+    sameSite: isSecure ? 'None' : 'Lax',
     path: '/api',
     maxAge: AUTH_COOKIE_MAX_AGE,
   });
 }
 
 function clearAuthCookie(c: any) {
-  const isProduction = c.env.ENVIRONMENT === 'production';
+  const isSecure = c.req.url.startsWith('https://');
   deleteCookie(c, AUTH_COOKIE_NAME, {
     path: '/api',
-    secure: isProduction,
-    sameSite: isProduction ? 'None' : 'Lax',
+    secure: isSecure,
+    sameSite: isSecure ? 'None' : 'Lax',
   });
 }
 
