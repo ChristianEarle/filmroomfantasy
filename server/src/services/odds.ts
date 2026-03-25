@@ -1,5 +1,25 @@
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
+/** Strip API key from URLs before logging to prevent credential leakage */
+function sanitizeUrl(url: string): string {
+  return url.replace(/apiKey=[^&]+/, 'apiKey=***');
+}
+
+/**
+ * Fetch wrapper that prevents API key leakage in error messages.
+ * The Odds API requires the key as a query parameter (no header auth).
+ * This wrapper ensures the key never appears in thrown errors or logs.
+ */
+async function safeFetch(url: string): Promise<Response> {
+  try {
+    return await fetch(url);
+  } catch (err) {
+    // Network errors may include the full URL — sanitize before re-throwing
+    const msg = err instanceof Error ? err.message : 'Network error';
+    throw new Error(`Odds API request failed: ${msg.replace(/apiKey=[^&\s]+/g, 'apiKey=***')}`);
+  }
+}
+
 // Team name mapping: The Odds API uses full names, Sleeper uses abbreviations
 const TEAM_NAME_TO_ABBR: Record<string, string> = {
   'Arizona Cardinals': 'ARI',
@@ -99,9 +119,9 @@ export async function fetchCurrentOdds(apiKey: string): Promise<OddsGame[]> {
   url.searchParams.set('oddsFormat', 'american');
   url.searchParams.set('apiKey', apiKey);
 
-  const response = await fetch(url.toString());
+  const response = await safeFetch(url.toString());
   if (!response.ok) {
-    throw new Error(`Failed to fetch current odds: ${response.statusText}`);
+    throw new Error(`Failed to fetch current odds: ${response.status} ${response.statusText}`);
   }
 
   return response.json();
@@ -125,9 +145,9 @@ export async function fetchHistoricalOdds(
   url.searchParams.set('date', date);
   url.searchParams.set('apiKey', apiKey);
 
-  const response = await fetch(url.toString());
+  const response = await safeFetch(url.toString());
   if (!response.ok) {
-    throw new Error(`Failed to fetch historical odds: ${response.statusText}`);
+    throw new Error(`Failed to fetch historical odds: ${response.status} ${response.statusText}`);
   }
 
   const json = await response.json() as {
@@ -262,9 +282,9 @@ export async function fetchPlayerProps(
     url.searchParams.set('date', date);
   }
 
-  const response = await fetch(url.toString());
+  const response = await safeFetch(url.toString());
   if (!response.ok) {
-    console.error(`Failed to fetch player props for event ${eventId}: ${response.statusText}`);
+    console.error(`Failed to fetch player props for event ${eventId}: ${response.status} ${response.statusText}`);
     return null;
   }
 
