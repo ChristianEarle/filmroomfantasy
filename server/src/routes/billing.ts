@@ -202,6 +202,7 @@ billingRoutes.post('/create-checkout', authMiddleware, async (c) => {
         mode: 'subscription',
         success_url: successUrl,
         cancel_url: cancelUrl,
+        'subscription_data[trial_period_days]': '3',
       }),
     });
 
@@ -293,6 +294,58 @@ billingRoutes.post('/create-portal', authMiddleware, async (c) => {
     return c.json({ url: session.url });
   } catch (error) {
     console.error('[billing] Error in create-portal:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// POST /api/billing/cancel
+// Cancels the user's subscription at the end of the current billing period
+billingRoutes.post('/cancel', authMiddleware, async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ error: 'Not authenticated' }, 401);
+  }
+
+  const stripeSecretKey = c.env.STRIPE_SECRET_KEY;
+  if (!stripeSecretKey) {
+    return c.json({ error: 'Stripe not configured' }, 500);
+  }
+
+  if (!user.stripeSubscriptionId) {
+    return c.json({ error: 'No active subscription to cancel' }, 400);
+  }
+
+  try {
+    // Cancel at period end (user keeps access until the billing cycle ends)
+    const cancelResponse = await fetch(
+      `${STRIPE_API_URL}/subscriptions/${user.stripeSubscriptionId}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${stripeSecretKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          cancel_at_period_end: 'true',
+        }),
+      }
+    );
+
+    if (!cancelResponse.ok) {
+      const error = await cancelResponse.json();
+      console.error('[billing] Failed to cancel subscription:', error);
+      return c.json({ error: 'Failed to cancel subscription' }, 500);
+    }
+
+    const sub = await cancelResponse.json() as { cancel_at_period_end: boolean; current_period_end: number };
+
+    return c.json({
+      cancelled: true,
+      accessUntil: new Date(sub.current_period_end * 1000).toISOString(),
+    });
+  } catch (error) {
+    console.error('[billing] Error in cancel:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -402,7 +455,7 @@ billingRoutes.post('/webhook', async (c) => {
       const customerId = event.data.object.customer;
       const subStatus = event.data.object.status;
 
-      if (customerId && subStatus === 'active') {
+      if (customerId && (subStatus === 'active' || subStatus === 'trialing')) {
         // Re-fetch subscription to get updated tier
         const subscriptionId = event.data.object.id;
         let tier = 'pro';
