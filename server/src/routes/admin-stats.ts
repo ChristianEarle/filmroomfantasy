@@ -3,20 +3,39 @@ import type { Env, Variables } from '../index';
 
 export const adminStatsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// CORS middleware for admin stats — allows dashboard access from any origin
-// (endpoint is already protected by SYNC_SECRET)
+// CORS middleware for admin stats — restrict to known admin dashboard origins
 adminStatsRoutes.use('*', async (c, next) => {
-  const origin = c.req.header('Origin') || '*';
-  c.header('Access-Control-Allow-Origin', origin);
+  const origin = c.req.header('Origin');
+  // Only reflect origin for trusted admin dashboard origins; deny others
+  const allowedAdminOrigins = [
+    'http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173',
+    'https://filmroomfantasy.com', 'https://www.filmroomfantasy.com',
+  ];
+  const allowedOrigin = origin && allowedAdminOrigins.includes(origin) ? origin : allowedAdminOrigins[0];
+  c.header('Access-Control-Allow-Origin', allowedOrigin);
   c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
   c.header('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Key');
   c.header('Access-Control-Max-Age', '86400');
+  c.header('Vary', 'Origin');
 
   if (c.req.method === 'OPTIONS') {
     return c.body(null, 204);
   }
   await next();
 });
+
+// Constant-time string comparison to prevent timing attacks on admin key
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const encoder = new TextEncoder();
+  const bufA = encoder.encode(a);
+  const bufB = encoder.encode(b);
+  let result = 0;
+  for (let i = 0; i < bufA.length; i++) {
+    result |= bufA[i] ^ bufB[i];
+  }
+  return result === 0;
+}
 
 // Admin auth middleware — requires SYNC_SECRET
 adminStatsRoutes.use('*', async (c, next) => {
@@ -25,7 +44,7 @@ adminStatsRoutes.use('*', async (c, next) => {
     return c.json({ error: 'SYNC_SECRET not configured' }, 500);
   }
   const adminKey = c.req.header('X-Admin-Key');
-  if (adminKey !== syncSecret) {
+  if (!adminKey || !timingSafeEqual(adminKey, syncSecret)) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
   await next();

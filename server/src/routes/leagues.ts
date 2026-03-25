@@ -75,8 +75,22 @@ leagueRoutes.post('/', authMiddleware, async (c) => {
       waiverBudget = 100,
     } = body;
 
-    if (!name) {
-      return c.json({ error: 'League name is required' }, 400);
+    if (!name || typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 100) {
+      return c.json({ error: 'League name is required and must be between 1 and 100 characters' }, 400);
+    }
+
+    const validScoringFormats = ['ppr', 'half_ppr', 'standard'];
+    if (!validScoringFormats.includes(scoringFormat)) {
+      return c.json({ error: 'Invalid scoring format. Must be ppr, half_ppr, or standard' }, 400);
+    }
+
+    if (!Number.isInteger(teamCount) || teamCount < 2 || teamCount > 32) {
+      return c.json({ error: 'Team count must be between 2 and 32' }, 400);
+    }
+
+    const validWaiverTypes = ['faab', 'rolling'];
+    if (!validWaiverTypes.includes(waiverType)) {
+      return c.json({ error: 'Invalid waiver type. Must be faab or rolling' }, 400);
     }
 
     const leagueId = generateId();

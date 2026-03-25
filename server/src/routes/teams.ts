@@ -193,9 +193,12 @@ teamRoutes.put('/:id', authMiddleware, async (c) => {
     const { name } = await c.req.json();
 
     if (name) {
+      if (typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 100) {
+        return c.json({ error: 'Team name must be between 1 and 100 characters' }, 400);
+      }
       await db
         .update(schema.teams)
-        .set({ name, updatedAt: new Date() })
+        .set({ name: name.trim(), updatedAt: new Date() })
         .where(eq(schema.teams.id, teamId));
     }
 

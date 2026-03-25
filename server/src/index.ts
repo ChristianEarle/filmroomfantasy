@@ -71,10 +71,9 @@ const allowedOrigins = [
 app.use('*', cors({
   origin: (origin, _c) => {
     if (!origin) return allowedOrigins[0];
-        if (origin === 'null') return 'null';
     if (allowedOrigins.includes(origin)) return origin;
-    // Allow Cloudflare Pages/Workers subdomains (trusted Cloudflare infrastructure)
-    if (origin.endsWith('.pages.dev') || origin.endsWith('.cloudflarepages.com') || origin.endsWith('.workers.dev')) return origin;
+    // Allow only our specific Cloudflare Pages/Workers subdomains
+    if (origin.endsWith('.filmroomfantasy.pages.dev') || origin.endsWith('.filmroomfantasy.workers.dev')) return origin;
     // Allow custom production domains:
     if (origin === 'https://filmroomfantasy.com' || origin === 'https://www.filmroomfantasy.com') return origin;
     if (origin === 'https://filmroom.app' || origin === 'https://www.filmroom.app') return origin;

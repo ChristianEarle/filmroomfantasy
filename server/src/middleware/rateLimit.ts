@@ -100,8 +100,9 @@ async function checkD1(
  */
 export function rateLimit(maxRequests: number, windowMs: number) {
   return async (c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) => {
-    // Use CF-Connecting-IP header (Cloudflare provides real client IP)
-    const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown';
+    // Use CF-Connecting-IP header (Cloudflare provides real client IP, cannot be spoofed).
+    // Do NOT fall back to X-Forwarded-For as it can be trivially spoofed to bypass rate limits.
+    const ip = c.req.header('CF-Connecting-IP') || 'unknown';
     const path = c.req.path;
     const key = `${ip}:${path}`;
 
