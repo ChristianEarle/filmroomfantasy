@@ -16,6 +16,9 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
   // Subscription management
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState('');
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelledUntil, setCancelledUntil] = useState<string | null>(null);
 
   const tier = user?.subscriptionTier || 'free';
   const isPaid = tier === 'pro' || tier === 'elite';
@@ -31,6 +34,20 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
     } catch (err) {
       setPortalError(err instanceof Error ? err.message : 'Failed to open subscription management');
       setPortalLoading(false);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    setPortalError('');
+    setCancelLoading(true);
+    try {
+      const response = await api.post<{ cancelled: boolean; accessUntil: string }>('/billing/cancel', {});
+      setCancelledUntil(response.accessUntil);
+      setShowCancelConfirm(false);
+    } catch (err) {
+      setPortalError(err instanceof Error ? err.message : 'Failed to cancel subscription');
+    } finally {
+      setCancelLoading(false);
     }
   };
 
@@ -450,11 +467,15 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
 
           {isPaid ? (
             <div className="space-y-3">
-              {user?.subscriptionExpiresAt && (
+              {cancelledUntil ? (
+                <p className={`text-xs ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>
+                  Subscription cancelled. You have access until {new Date(cancelledUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+                </p>
+              ) : user?.subscriptionExpiresAt ? (
                 <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   Renews {new Date(user.subscriptionExpiresAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                 </p>
-              )}
+              ) : null}
               <button
                 onClick={handleManageSubscription}
                 disabled={portalLoading}
@@ -470,6 +491,41 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
                   <>Manage subscription</>
                 )}
               </button>
+              {!cancelledUntil && (
+                <>
+                  {showCancelConfirm ? (
+                    <div className={`p-3 rounded-lg border space-y-3 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                        Are you sure? You'll keep access until the end of your billing period.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleCancelSubscription}
+                          disabled={cancelLoading}
+                          className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:bg-red-600/50 disabled:cursor-not-allowed"
+                        >
+                          {cancelLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Yes, cancel'}
+                        </button>
+                        <button
+                          onClick={() => setShowCancelConfirm(false)}
+                          className={`flex h-9 flex-1 items-center justify-center rounded-lg border text-sm font-medium transition-colors ${
+                            isDarkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          Keep plan
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowCancelConfirm(true)}
+                      className={`text-sm transition-colors ${isDarkMode ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-500'}`}
+                    >
+                      Cancel subscription
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-3">

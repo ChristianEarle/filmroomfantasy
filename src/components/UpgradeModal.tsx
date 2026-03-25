@@ -30,14 +30,13 @@ export function UpgradeModal({
 
   const benefits = [
     'Connect unlimited leagues',
-    'Advanced analytics & projections',
-    'Custom roster exports',
-    'Priority support',
-    'Ad-free experience',
+    'Trending players & add/drop data',
+    '5 trade analyses per day',
+    '3-day free trial — cancel anytime',
   ];
 
-  const monthlyPriceId = 'price_monthly_pro'; // Replace with actual Stripe price ID
-  const yearlyPriceId = 'price_yearly_pro'; // Replace with actual Stripe price ID
+  const monthlyPriceId = 'pro_monthly';
+  const yearlyPriceId = 'pro_yearly';
 
   return (
     <div
