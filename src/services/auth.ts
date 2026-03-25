@@ -1,5 +1,5 @@
 // Authentication API services
-import { api, setToken, removeToken } from './api';
+import { api } from './api';
 
 // Types
 export type ScoringFormat = 'ppr' | 'half_ppr' | 'standard';
@@ -40,12 +40,10 @@ export interface League {
 
 export interface AuthResponse {
   user: User;
-  token: string;
 }
 
 export interface GoogleAuthResponse {
   user?: User;
-  token?: string;
   needsUsername?: boolean;
   email?: string;
 }
@@ -59,33 +57,30 @@ export interface MeResponse {
 export const authService = {
   // Register a new user
   register: async (email: string, password: string, username: string): Promise<AuthResponse> => {
-    const response = await api.post<AuthResponse>('/auth/register', {
+    // Server sets httpOnly cookie automatically — no token handling needed
+    return api.post<AuthResponse>('/auth/register', {
       email,
       password,
       username,
     });
-    setToken(response.token);
-    return response;
   },
 
   // Login user
   login: async (email: string, password: string): Promise<AuthResponse> => {
-    const response = await api.post<AuthResponse>('/auth/login', {
+    // Server sets httpOnly cookie automatically — no token handling needed
+    return api.post<AuthResponse>('/auth/login', {
       email,
       password,
     });
-    setToken(response.token);
-    return response;
   },
 
-  // Logout user — revoke session server-side, then clear local token
+  // Logout user — revoke session server-side; server clears the cookie
   logout: async (): Promise<void> => {
     try {
       await api.post('/auth/logout', {});
     } catch {
-      // If server call fails (e.g. token already expired), still clear locally
+      // If server call fails (e.g. token already expired), cookie is already gone
     }
-    removeToken();
   },
 
   // Get current user
@@ -111,11 +106,8 @@ export const authService = {
   googleLogin: async (credential: string, username?: string): Promise<GoogleAuthResponse> => {
     const body: Record<string, string> = { credential };
     if (username) body.username = username;
-    const response = await api.post<GoogleAuthResponse>('/auth/google', body);
-    if (response.token) {
-      setToken(response.token);
-    }
-    return response;
+    // Server sets httpOnly cookie automatically — no token handling needed
+    return api.post<GoogleAuthResponse>('/auth/google', body);
   },
 
   // Forgot password — request a reset link
@@ -127,7 +119,6 @@ export const authService = {
   resetPassword: async (token: string, newPassword: string): Promise<{ message: string }> => {
     return api.post<{ message: string }>('/auth/reset-password', { token, newPassword });
   },
-
 };
 
 export default authService;
