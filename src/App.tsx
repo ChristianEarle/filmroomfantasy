@@ -267,15 +267,11 @@ function AppContent() {
     document.title = titles[activeView] || 'FilmRoom - Fantasy Football Analysis & Management';
   }, [activeView]);
 
-  // Check URL for reset_token parameter on mount (query or hash fragment)
+  // Check URL for reset_token in hash fragment on mount
+  // Only accept hash fragments (not query params) to prevent token leakage via referrer headers
   useEffect(() => {
-    // Check hash fragment first (more secure — not sent in referrer headers)
     const hashParams = new URLSearchParams(window.location.hash.slice(1));
-    const hashToken = hashParams.get('reset_token');
-    // Fall back to query params for backward compatibility
-    const queryParams = new URLSearchParams(window.location.search);
-    const queryToken = queryParams.get('reset_token');
-    const token = hashToken || queryToken;
+    const token = hashParams.get('reset_token');
     if (token) {
       setResetToken(token);
       setAuthView('reset');

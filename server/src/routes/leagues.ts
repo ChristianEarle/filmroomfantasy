@@ -432,6 +432,15 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
       return c.json({ error: 'Platform, external ID, and name are required' }, 400);
     }
 
+    const validPlatforms = ['sleeper', 'espn', 'yahoo'];
+    if (!validPlatforms.includes(platform)) {
+      return c.json({ error: 'Invalid platform. Must be sleeper, espn, or yahoo' }, 400);
+    }
+
+    if (typeof externalId !== 'string' || externalId.trim().length === 0 || externalId.length > 200) {
+      return c.json({ error: 'Invalid external ID' }, 400);
+    }
+
     // Check league limit for free users (max 1 league)
     if (user.subscriptionTier === 'free') {
       const userLeagues = await db.query.leagueMembers.findMany({
@@ -557,7 +566,7 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
     return c.json({ error: 'Not authenticated' }, 401);
   }
 
-  // Check membership
+  // Only commissioners can trigger external sync (expensive external API calls)
   const membership = await db.query.leagueMembers.findFirst({
     where: and(
       eq(schema.leagueMembers.userId, user.id),
@@ -567,6 +576,10 @@ leagueRoutes.post('/:id/sync', authMiddleware, async (c) => {
 
   if (!membership) {
     return c.json({ error: 'Not a member of this league' }, 403);
+  }
+
+  if (membership.role !== 'commissioner') {
+    return c.json({ error: 'Only commissioners can sync league data' }, 403);
   }
 
   const league = await db.query.leagues.findFirst({

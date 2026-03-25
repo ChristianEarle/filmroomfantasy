@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
 // ============================================
@@ -285,9 +285,9 @@ export const gameOdds = sqliteTable('game_odds', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   gameOddsUnique: uniqueIndex('game_odds_unique').on(table.gameId, table.bookmaker, table.market, table.snapshotTime),
-  gameOddsGameIdx: uniqueIndex('idx_game_odds_game_id').on(table.gameId),
-  gameOddsWeekIdx: uniqueIndex('idx_game_odds_week').on(table.week),
-  gameOddsCommenceIdx: uniqueIndex('idx_game_odds_commence').on(table.commenceTime),
+  gameOddsGameIdx: index('idx_game_odds_game_id').on(table.gameId),
+  gameOddsWeekIdx: index('idx_game_odds_week').on(table.week),
+  gameOddsCommenceIdx: index('idx_game_odds_commence').on(table.commenceTime),
 }));
 
 // ============================================
@@ -489,10 +489,10 @@ export const playerProps = sqliteTable('player_props', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   playerPropsUnique: uniqueIndex('player_props_unique').on(table.eventId, table.playerName, table.market, table.bookmaker, table.snapshotTime),
-  playerPropsNameIdx: uniqueIndex('idx_player_props_name').on(table.playerName),
-  playerPropsWeekIdx: uniqueIndex('idx_player_props_week').on(table.week),
-  playerPropsMarketIdx: uniqueIndex('idx_player_props_market').on(table.market),
-  playerPropsExternalIdIdx: uniqueIndex('idx_player_props_external_id').on(table.playerExternalId),
+  playerPropsNameIdx: index('idx_player_props_name').on(table.playerName),
+  playerPropsWeekIdx: index('idx_player_props_week').on(table.week),
+  playerPropsMarketIdx: index('idx_player_props_market').on(table.market),
+  playerPropsExternalIdIdx: index('idx_player_props_external_id').on(table.playerExternalId),
 }));
 
 // ============================================
