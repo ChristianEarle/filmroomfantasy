@@ -1587,3 +1587,41 @@ adminRoutes.post('/set-tier', async (c) => {
     );
   }
 });
+
+/**
+ * POST /api/admin/bulk-set-tier
+ * Set ALL users to a given subscription tier.
+ * Body: { tier: 'free' | 'pro' | 'elite', expiresAt?: string }
+ */
+adminRoutes.post('/bulk-set-tier', async (c) => {
+  const db = c.get('db');
+
+  try {
+    const body = await c.req.json() as { tier?: string; expiresAt?: string };
+    const { tier, expiresAt } = body;
+
+    if (!tier || !['free', 'pro', 'elite'].includes(tier)) {
+      return c.json({ error: 'tier must be "free", "pro", or "elite"' }, 400);
+    }
+
+    const result = await c.env.DB.prepare(
+      'UPDATE users SET subscription_tier = ?, subscription_expires_at = ?, updated_at = ?'
+    ).bind(tier, expiresAt || null, Math.floor(Date.now() / 1000)).run();
+
+    return c.json({
+      success: true,
+      tier,
+      expiresAt: expiresAt || null,
+      usersUpdated: result.meta?.changes ?? 0,
+    });
+  } catch (err) {
+    console.error('Bulk set tier error:', err);
+    return c.json(
+      {
+        error: 'Failed to bulk set tier',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});

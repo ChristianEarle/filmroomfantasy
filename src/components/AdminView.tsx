@@ -29,11 +29,15 @@ export function AdminView({ isDarkMode }: AdminViewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Upgrade modal state
+  // Upgrade state
   const [upgradeEmail, setUpgradeEmail] = useState('');
   const [upgradeTier, setUpgradeTier] = useState<'free' | 'pro' | 'elite'>('pro');
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [upgradeResult, setUpgradeResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Bulk upgrade state
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
@@ -69,6 +73,21 @@ export function AdminView({ isDarkMode }: AdminViewProps) {
       setUpgradeResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to update tier' });
     } finally {
       setUpgradeLoading(false);
+    }
+  };
+
+  const handleBulkUpgrade = async (tier: 'free' | 'pro' | 'elite') => {
+    if (!confirm(`Set ALL users to ${tier}? This cannot be undone.`)) return;
+    setBulkLoading(true);
+    setBulkResult(null);
+    try {
+      const data = await api.post<{ usersUpdated: number }>('/admin/bulk-set-tier', { tier });
+      setBulkResult({ type: 'success', message: `${data.usersUpdated} users set to ${tier}` });
+      fetchStats();
+    } catch (err) {
+      setBulkResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed' });
+    } finally {
+      setBulkLoading(false);
     }
   };
 
@@ -238,6 +257,47 @@ export function AdminView({ isDarkMode }: AdminViewProps) {
               : isDarkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-700'
           }`}>
             {upgradeResult.message}
+          </div>
+        )}
+      </div>
+
+      {/* Bulk Tier Actions */}
+      <div className={cardClass}>
+        <h2 className={`text-lg font-semibold mb-4 ${textPrimary}`}>
+          <Shield className="w-5 h-5 inline mr-2" />
+          Bulk Tier Actions
+        </h2>
+        <p className={`text-sm mb-4 ${textSecondary}`}>
+          Set all users to a tier at once. New signups through April 1, 2026 automatically receive Elite.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          {(['elite', 'pro', 'free'] as const).map(tier => (
+            <button
+              key={tier}
+              onClick={() => handleBulkUpgrade(tier)}
+              disabled={bulkLoading}
+              className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 ${
+                tier === 'elite'
+                  ? 'bg-purple-600 text-white hover:bg-purple-700'
+                  : tier === 'pro'
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : isDarkMode
+                      ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+              }`}
+            >
+              {bulkLoading ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+              Set All to {tier.charAt(0).toUpperCase() + tier.slice(1)}
+            </button>
+          ))}
+        </div>
+        {bulkResult && (
+          <div className={`mt-3 px-3 py-2 rounded-lg text-sm ${
+            bulkResult.type === 'success'
+              ? isDarkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-50 text-green-700'
+              : isDarkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-700'
+          }`}>
+            {bulkResult.message}
           </div>
         )}
       </div>
