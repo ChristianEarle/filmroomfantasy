@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown, Activity, Loader2, RefreshCw, ArrowUpRight, A
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
+import { getEffectiveSeason } from '../utils/playerUtils';
 
 interface TrendsViewProps {
   onPlayerClick: (player: Player) => void;
@@ -57,11 +58,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   const [error, setError] = useState<string | null>(null);
 
   const currentWeek = league?.currentWeek ?? 1;
-  const getDefaultSeason = () => {
-    const d = new Date();
-    return d.getMonth() <= 3 ? d.getFullYear() - 1 : d.getFullYear();
-  };
-  const seasonYear = league?.seasonYear ?? getDefaultSeason();
+  const seasonYear = getEffectiveSeason(league?.seasonYear);
 
   const leagueParam = useMemo(() => league?.id ? `&leagueId=${league.id}` : '', [league?.id]);
 

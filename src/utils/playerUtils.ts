@@ -87,6 +87,19 @@ export function getDefaultSeason(): number {
 }
 
 /**
+ * Get the effective season year for displaying rankings/stats.
+ * Uses the league's season year if it has data (not in the future),
+ * otherwise falls back to the latest season with data.
+ */
+export function getEffectiveSeason(leagueSeasonYear?: number | null): number {
+  const latestSeason = getDefaultSeason();
+  if (leagueSeasonYear != null && leagueSeasonYear <= latestSeason) {
+    return leagueSeasonYear;
+  }
+  return latestSeason;
+}
+
+/**
  * Convert scoring label to API format string.
  */
 export function scoringToFormat(scoring: 'PPR' | 'Half PPR' | 'Standard'): string {

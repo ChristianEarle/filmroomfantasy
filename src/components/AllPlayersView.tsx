@@ -4,7 +4,7 @@ import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
-import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+import { type APIPlayer, convertAPIPlayerToPlayer, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 
 const ALL_PLAYERS_PAGE_SIZE = 350;
 
@@ -122,7 +122,7 @@ export function AllPlayersView({
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const weekDropdownRef = useRef<HTMLDivElement>(null);
 
-  const seasonYear = league?.seasonYear ?? getDefaultSeason();
+  const seasonYear = getEffectiveSeason(league?.seasonYear);
   const scoringFormat = scoringToFormat(selectedScoring);
 
   // Fetch odds for the current week
