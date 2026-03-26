@@ -7,4 +7,5 @@
 # GOOGLE_CLIENT_ID=...           # optional: Google OAuth
 # YAHOO_CLIENT_ID=...            # optional: Yahoo Fantasy
 # YAHOO_CLIENT_SECRET=...        # optional: Yahoo Fantasy
-# RESEND_API_KEY=re_...          # optional: password reset emails
+# RESEND_API_KEY=re_...          # optional: password reset & feedback emails
+# FEEDBACK_EMAIL=you@example.com # optional: where feedback notifications are sent
