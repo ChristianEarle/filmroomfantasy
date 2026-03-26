@@ -63,7 +63,7 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
         setIsOpen(false);
         setIsSuccess(false);
         successTimerRef.current = null;
-      }, 2000);
+      }, 4000);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to submit feedback';
       setError(errorMessage);
@@ -122,14 +122,20 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
 
             {/* Success state */}
             {isSuccess ? (
-              <div className="p-8 text-center">
-                <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-500" />
-                <h4 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              <div className="p-10 text-center animate-in fade-in zoom-in duration-300">
+                <div className="relative inline-block mb-4">
+                  <div className="absolute inset-0 bg-green-500/20 rounded-full animate-ping" />
+                  <CheckCircle className="relative w-16 h-16 mx-auto text-green-500" />
+                </div>
+                <h4 className={`text-xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   Feedback Submitted!
                 </h4>
                 <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   Thank you — we'll review your feedback shortly.
                 </p>
+                <div className="mt-4 inline-block px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-600 text-xs font-medium">
+                  Successfully sent
+                </div>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="p-4 space-y-4">
@@ -253,10 +259,16 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
         </div>
         <div className="p-6">
           {isSuccess ? (
-            <div className="text-center py-4">
-              <CheckCircle className="w-10 h-10 mx-auto mb-2 text-green-500" />
-              <h4 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Feedback Submitted!</h4>
+            <div className="text-center py-8">
+              <div className="relative inline-block mb-4">
+                <div className="absolute inset-0 bg-green-500/20 rounded-full animate-ping" />
+                <CheckCircle className="relative w-14 h-14 mx-auto text-green-500" />
+              </div>
+              <h4 className={`text-lg font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Feedback Submitted!</h4>
               <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Thank you — we'll review your feedback shortly.</p>
+              <div className="mt-3 inline-block px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-600 text-xs font-medium">
+                Successfully sent
+              </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
