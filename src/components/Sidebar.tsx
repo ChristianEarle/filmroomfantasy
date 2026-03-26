@@ -1,4 +1,4 @@
-import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck, Medal, BarChart3 } from 'lucide-react';
+import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck, Medal, BarChart3, FileText } from 'lucide-react';
 import { LeagueManager } from './LeagueManager';
 
 type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'LeagueAnalyzer' | 'Settings' | 'Pricing' | 'Admin' | 'Articles' | 'ArticleDetail';
@@ -31,6 +31,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
     { icon: Medal, label: 'Draft Rankings', view: 'DraftRankings' as const, comingSoon: true },
     { icon: ArrowLeftRight, label: 'Trade Analyzer', view: 'TradeAnalyzer' as const, comingSoon: false },
     { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs' as const, comingSoon: false },
+    { icon: FileText, label: 'Articles', view: 'Articles' as const, comingSoon: false },
     { icon: CreditCard, label: 'Pricing', view: 'Pricing' as const, comingSoon: false },
     { icon: Settings, label: 'Settings', view: 'Settings' as const, comingSoon: false },
     ...(isAdmin ? [{ icon: ShieldCheck, label: 'Admin', view: 'Admin' as const, comingSoon: false }] : []),
