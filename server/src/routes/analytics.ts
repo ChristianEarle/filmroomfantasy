@@ -4,6 +4,36 @@ import type { Env, Variables } from '../index';
 
 export const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// ─── Central Time helpers ────────────────────────────────────────────────────
+/** Returns the current US Central Time UTC offset in seconds (-6h CST or -5h CDT). */
+function getCentralOffsetSec(): number {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  // CDT starts 2nd Sunday of March at 2 AM CST (08:00 UTC)
+  const mar1Day = new Date(Date.UTC(year, 2, 1)).getUTCDay();
+  const marFirstSun = mar1Day === 0 ? 1 : 1 + (7 - mar1Day);
+  const marSecondSun = marFirstSun + 7;
+  const cdtStart = Date.UTC(year, 2, marSecondSun, 8, 0, 0); // 2AM CST = 8AM UTC
+  // CST resumes 1st Sunday of November at 2 AM CDT (07:00 UTC)
+  const nov1Day = new Date(Date.UTC(year, 10, 1)).getUTCDay();
+  const novFirstSun = nov1Day === 0 ? 1 : 1 + (7 - nov1Day);
+  const cstStart = Date.UTC(year, 10, novFirstSun, 7, 0, 0); // 2AM CDT = 7AM UTC
+  const ts = now.getTime();
+  const isDST = ts >= cdtStart && ts < cstStart;
+  return isDST ? -5 * 3600 : -6 * 3600;
+}
+
+/** Returns the unix timestamp (seconds) for the start of "today" in Central Time. */
+function getCentralTodayStartSec(): number {
+  const offsetSec = getCentralOffsetSec();
+  const nowSec = Math.floor(Date.now() / 1000);
+  // Current time in CT seconds since epoch
+  const ctNowSec = nowSec + offsetSec;
+  // Start of CT day, then convert back to UTC
+  const ctDayStartSec = ctNowSec - (ctNowSec % 86400);
+  return ctDayStartSec - offsetSec;
+}
+
 // ─── Public: record a page view ───────────────────────────────────────────────
 analyticsRoutes.post('/pageview', async (c) => {
   const db = c.env.DB;
@@ -111,9 +141,13 @@ analyticsRoutes.get('/admin/overview', async (c) => {
 
   try {
     const nowSec = Math.floor(Date.now() / 1000);
-    const todayStartSec = Math.floor(new Date(new Date().toISOString().split('T')[0]).getTime() / 1000);
+    const centralOffsetSec = getCentralOffsetSec();
+    const todayStartSec = getCentralTodayStartSec();
     const sevenDaysAgoSec = nowSec - 7 * 86400;
     const thirtyDaysAgoSec = nowSec - 30 * 86400;
+    // SQLite offset string for Central Time (e.g. "-5 hours" or "-6 hours")
+    const ctOffsetHours = centralOffsetSec / 3600;
+    const sqlCtOffset = `${ctOffsetHours} hours`;
 
     // Run all queries in parallel
     const [
@@ -162,9 +196,9 @@ analyticsRoutes.get('/admin/overview', async (c) => {
         'SELECT COUNT(DISTINCT session_id) as count FROM page_views WHERE created_at >= ?'
       ).bind(thirtyDaysAgoSec).first<{ count: number }>(),
 
-      // Views by day (last 30 days)
+      // Views by day (last 30 days, Central Time)
       db.prepare(`
-        SELECT DATE(created_at, 'unixepoch') as date,
+        SELECT DATE(created_at, 'unixepoch', '${sqlCtOffset}') as date,
                COUNT(*) as views,
                COUNT(DISTINCT session_id) as visitors
         FROM page_views
@@ -232,9 +266,9 @@ analyticsRoutes.get('/admin/overview', async (c) => {
         LIMIT 50
       `).all(),
 
-      // Hourly breakdown today
+      // Hourly breakdown today (Central Time)
       db.prepare(`
-        SELECT CAST(strftime('%H', created_at, 'unixepoch') AS INTEGER) as hour,
+        SELECT CAST(strftime('%H', created_at, 'unixepoch', '${sqlCtOffset}') AS INTEGER) as hour,
                COUNT(*) as views
         FROM page_views
         WHERE created_at >= ?

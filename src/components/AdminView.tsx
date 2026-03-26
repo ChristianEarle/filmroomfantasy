@@ -594,7 +594,7 @@ function AnalyticsTab({
         <div className={cardClass}>
           <h2 className={`text-lg font-semibold mb-4 ${textPrimary}`}>
             <BarChart3 className="w-5 h-5 inline mr-2" />
-            Today's Traffic by Hour
+            Today's Traffic by Hour (CT)
           </h2>
           <div className="flex items-end gap-[2px] h-24">
             {Array.from({ length: 24 }, (_, hour) => {
@@ -602,15 +602,16 @@ function AnalyticsTab({
               const views = data?.views ?? 0;
               const maxViews = Math.max(...analytics.hourlyToday.map(h => h.views), 1);
               const height = views > 0 ? Math.max((views / maxViews) * 100, 5) : 2;
+              const ampm = hour === 0 ? '12a' : hour < 12 ? `${hour}a` : hour === 12 ? '12p' : `${hour - 12}p`;
               return (
                 <div key={hour} className="flex-1 flex flex-col items-center">
                   <div
                     className={`w-full rounded-t ${views > 0 ? 'bg-emerald-500' : isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`}
                     style={{ height: `${height}%` }}
-                    title={`${hour}:00 - ${views} views`}
+                    title={`${ampm} - ${views} views`}
                   />
                   {hour % 4 === 0 && (
-                    <span className={`text-[9px] mt-1 ${textSecondary}`}>{hour}h</span>
+                    <span className={`text-[9px] mt-1 ${textSecondary}`}>{ampm}</span>
                   )}
                 </div>
               );
