@@ -450,7 +450,7 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
       if (userLeagues.length >= 1) {
         return c.json(
           {
-            error: 'Upgrade to Pro to connect multiple leagues',
+            error: 'Upgrade to Pro or Elite to connect multiple leagues',
             code: 'LEAGUE_LIMIT_EXCEEDED',
             tier: 'free',
             maxLeagues: 1,
