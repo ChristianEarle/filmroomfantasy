@@ -1,7 +1,7 @@
 // League Connection Service - Connects to external fantasy platforms
 import api from './api';
 
-export type Platform = 'sleeper' | 'espn' | 'yahoo';
+export type Platform = 'sleeper' | 'espn' | 'yahoo' | 'mfl';
 
 export interface ExternalLeague {
   externalId: string;
@@ -191,6 +191,38 @@ export const espnApi = {
   },
 };
 
+// MFL API - Public API, no auth needed (league ID + year)
+export const mflApi = {
+  // Get league by ID and year
+  getLeague: async (leagueId: string, season: number = new Date().getFullYear()): Promise<ExternalLeague | null> => {
+    try {
+      const response = await fetch(
+        `https://api.myfantasyleague.com/${season}/export?TYPE=league&L=${encodeURIComponent(leagueId)}&JSON=1`
+      );
+      if (!response.ok) return null;
+      const data = await response.json();
+
+      const league = data?.league;
+      if (!league) return null;
+
+      const franchises = Array.isArray(league.franchises?.franchise)
+        ? league.franchises.franchise
+        : league.franchises?.franchise ? [league.franchises.franchise] : [];
+
+      return {
+        externalId: leagueId,
+        platform: 'mfl',
+        name: league.name || `MFL League ${leagueId}`,
+        seasonYear: season,
+        teamCount: franchises.length || 12,
+        scoringFormat: 'ppr', // MFL scoring varies; default to PPR, user can adjust
+      };
+    } catch {
+      return null;
+    }
+  },
+};
+
 // Yahoo API - Requires OAuth (handled by backend)
 export const yahooApi = {
   // Get Yahoo OAuth authorization URL from backend
@@ -264,6 +296,8 @@ export const leagueConnectService = {
         return sleeperApi.getLeague(leagueId);
       case 'espn':
         return espnApi.getLeague(leagueId);
+      case 'mfl':
+        return mflApi.getLeague(leagueId);
       case 'yahoo':
         return null; // Yahoo leagues are fetched through OAuth flow, not by ID
       default:

@@ -125,6 +125,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     { id: 'sleeper' as Platform, name: 'Sleeper', color: 'bg-blue-500', textColor: 'text-blue-400', description: 'Connect via username' },
     { id: 'espn' as Platform, name: 'ESPN', color: 'bg-red-600', textColor: 'text-red-400', description: 'Public leagues only' },
     { id: 'yahoo' as Platform, name: 'Yahoo', color: 'bg-purple-600', textColor: 'text-purple-400', description: 'Connect via OAuth' },
+    { id: 'mfl' as Platform, name: 'MFL', color: 'bg-green-600', textColor: 'text-green-400', description: 'Enter league ID' },
   ];
 
   // Reset modal state
@@ -353,6 +354,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
       case 'sleeper': return 'bg-blue-500/20 text-blue-500';
       case 'espn': return 'bg-red-500/20 text-red-500';
       case 'yahoo': return 'bg-purple-500/20 text-purple-500';
+      case 'mfl': return 'bg-green-500/20 text-green-500';
       default: return isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-600';
     }
   };
@@ -428,7 +430,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                     <div>
                       <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{league.name}</div>
                       <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                        {league.platform ? league.platform.charAt(0).toUpperCase() + league.platform.slice(1) : 'FilmRoom'} • {league.seasonYear} • {league.teamCount} Teams • {league.scoringFormat.toUpperCase()}
+                        {league.platform ? (league.platform === 'mfl' ? 'MFL' : league.platform === 'espn' ? 'ESPN' : league.platform.charAt(0).toUpperCase() + league.platform.slice(1)) : 'FilmRoom'} • {league.seasonYear} • {league.teamCount} Teams • {league.scoringFormat.toUpperCase()}
                       </div>
                       {league.updatedAt && (
                         <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -687,7 +689,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               {/* Step 1: Select Platform */}
               {connectionStep === 'select-platform' && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     {platforms.map((platform) => (
                       <button
                         key={platform.id}
@@ -842,6 +844,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                       {selectedPlatform === 'sleeper' && 'Find your league ID in the Sleeper app under League Settings'}
                       {selectedPlatform === 'espn' && 'Find your league ID in the URL: fantasy.espn.com/football/league?leagueId=XXXXXX'}
                       {selectedPlatform === 'yahoo' && 'Find your league ID in the URL: football.fantasysports.yahoo.com/f1/XXXXXX'}
+                      {selectedPlatform === 'mfl' && 'Find your league ID in the URL: myfantasyleague.com/YYYY/home/XXXXX (the 5-digit number)'}
                     </p>
                   </div>
 
@@ -957,7 +960,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                       {fetchedLeague.name}
                     </div>
                     <div className={`text-sm space-y-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <p>Platform: {fetchedLeague.platform.charAt(0).toUpperCase() + fetchedLeague.platform.slice(1)}</p>
+                      <p>Platform: {fetchedLeague.platform === 'mfl' ? 'MFL' : fetchedLeague.platform === 'espn' ? 'ESPN' : fetchedLeague.platform.charAt(0).toUpperCase() + fetchedLeague.platform.slice(1)}</p>
                       <p>Season: {fetchedLeague.seasonYear}</p>
                       <p>Teams: {fetchedLeague.teamCount}</p>
                       <p>Scoring: {fetchedLeague.scoringFormat.toUpperCase()}</p>
