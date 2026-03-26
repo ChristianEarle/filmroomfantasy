@@ -87,7 +87,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: 'Unlimited league syncs', highlight: true },
         { text: 'Trending players & add/drop data', highlight: true },
         { text: '5 trade analyses per day', highlight: true },
-        { text: '3-day free trial', highlight: true },
+        { text: '3-week free trial', highlight: true },
       ],
       cta: !isAuthenticated ? 'Start Free Trial' : userTier === 'pro' ? 'Current Plan' : 'Start Free Trial',
       featured: true,
@@ -103,7 +103,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: 'Unlimited league syncs', highlight: true },
         { text: 'Deeper player research — stats, Vegas props, game logs, matchup grades', highlight: true },
         { text: 'Unlimited trade analyses', highlight: true },
-        { text: '3-day free trial', highlight: true },
+        { text: '3-week free trial', highlight: true },
         { text: 'Custom scoring models', highlight: false, comingSoon: true },
         { text: 'Early access to new features', highlight: false },
       ],
@@ -300,7 +300,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
               },
               {
                 q: 'Is there a free trial for Pro and Elite?',
-                a: 'Yes, both Pro and Elite include a 3-day free trial. You can cancel anytime during the trial and won\u2019t be charged.',
+                a: 'Yes, both Pro and Elite include a 3-week free trial. You can cancel anytime during the trial and won\u2019t be charged.',
               },
               {
                 q: 'What payment methods do you accept?',

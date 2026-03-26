@@ -32,7 +32,7 @@ export function UpgradeModal({
     'Connect unlimited leagues',
     'Trending players & add/drop data',
     '5 trade analyses per day',
-    '3-day free trial — cancel anytime',
+    '3-week free trial — cancel anytime',
   ];
 
   const monthlyPriceId = 'pro_monthly';
