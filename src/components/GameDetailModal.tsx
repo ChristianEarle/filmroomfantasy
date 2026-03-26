@@ -180,127 +180,123 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               <p className="text-sm">Player projections and stats will appear here during the NFL season.</p>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-6">
-            {/* Away Team */}
-            <div>
-              <div className={`rounded-lg p-4 mb-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
-                      <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeamLogo}</span>
-                    </div>
-                    <div>
-                      <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeam}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Away Team</div>
-                    </div>
+          {/* Team Headers */}
+          <div className="grid grid-cols-2 gap-6 mb-4">
+            {/* Away Team Header */}
+            <div className={`rounded-lg p-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
+                    <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeamLogo}</span>
                   </div>
-                  {game.favoredTeam === 'away' && (
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-green-500">-{game.spread}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
-                    </div>
-                  )}
+                  <div>
+                    <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.awayTeam}</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Away Team</div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                {POSITIONS.map(position => {
-                  const players = awayPlayersByPosition[position];
-                  if (!players || players.length === 0) return null;
-                  return (
-                    <div key={position}>
-                      <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>{position}</div>
-                      <div className="space-y-2">
-                        {players.map((player) => (
-                          <div
-                            key={player.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => onPlayerClick(player)}
-                            onKeyDown={(e) => handlePlayerKeyDown(e, player, onPlayerClick)}
-                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{player.name}</div>
-                                <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
-                                  {player.position}{player.rank > 0 ? ` • #${player.rank}` : ''}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-lg font-bold text-blue-600">{player.projectedPoints}</div>
-                                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+                {game.favoredTeam === 'away' && (
+                  <div className="text-right">
+                    <div className="text-sm font-bold text-green-500">-{game.spread}</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Home Team */}
-            <div>
-              <div className={`rounded-lg p-4 mb-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
-                      <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.homeTeamLogo}</span>
-                    </div>
-                    <div>
-                      <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.homeTeam}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Home Team</div>
-                    </div>
+            {/* Home Team Header */}
+            <div className={`rounded-lg p-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
+                    <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.homeTeamLogo}</span>
                   </div>
-                  {game.favoredTeam === 'home' && (
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-green-500">-{game.spread}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
-                    </div>
-                  )}
+                  <div>
+                    <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.homeTeam}</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Home Team</div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                {POSITIONS.map(position => {
-                  const players = homePlayersByPosition[position];
-                  if (!players || players.length === 0) return null;
-                  return (
-                    <div key={position}>
-                      <div className={`text-sm font-bold mb-2 mt-4 first:mt-0 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>{position}</div>
-                      <div className="space-y-2">
-                        {players.map((player) => (
-                          <div
-                            key={player.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => onPlayerClick(player)}
-                            onKeyDown={(e) => handlePlayerKeyDown(e, player, onPlayerClick)}
-                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{player.name}</div>
-                                <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
-                                  {player.position}{player.rank > 0 ? ` • #${player.rank}` : ''}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-lg font-bold text-blue-600">{player.projectedPoints}</div>
-                                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+                {game.favoredTeam === 'home' && (
+                  <div className="text-right">
+                    <div className="text-sm font-bold text-green-500">-{game.spread}</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
+
+          {/* Players by Position — aligned side by side */}
+          {POSITIONS.map(position => {
+            const awayGroup = awayPlayersByPosition[position] || [];
+            const homeGroup = homePlayersByPosition[position] || [];
+            if (awayGroup.length === 0 && homeGroup.length === 0) return null;
+            const maxCount = Math.max(awayGroup.length, homeGroup.length);
+            return (
+              <div key={position} className="mb-4">
+                <div className={`text-sm font-bold mb-2 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>{position}</div>
+                <div className="space-y-2">
+                  {Array.from({ length: maxCount }, (_, i) => {
+                    const awayPlayer = awayGroup[i];
+                    const homePlayer = homeGroup[i];
+                    return (
+                      <div key={i} className="grid grid-cols-2 gap-6">
+                        {/* Away player slot */}
+                        {awayPlayer ? (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onPlayerClick(awayPlayer)}
+                            onKeyDown={(e) => handlePlayerKeyDown(e, awayPlayer, onPlayerClick)}
+                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{awayPlayer.name}</div>
+                                <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
+                                  {awayPlayer.position}{awayPlayer.rank > 0 ? ` • #${awayPlayer.rank}` : ''}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-bold text-blue-600">{awayPlayer.projectedPoints}</div>
+                                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div />
+                        )}
+                        {/* Home player slot */}
+                        {homePlayer ? (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onPlayerClick(homePlayer)}
+                            onKeyDown={(e) => handlePlayerKeyDown(e, homePlayer, onPlayerClick)}
+                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className={`font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-900 group-hover:text-slate-800'}`}>{homePlayer.name}</div>
+                                <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>
+                                  {homePlayer.position}{homePlayer.rank > 0 ? ` • #${homePlayer.rank}` : ''}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-bold text-blue-600">{homePlayer.projectedPoints}</div>
+                                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>pts</div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

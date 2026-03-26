@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Lock, LogOut, Eye, EyeOff, Check, AlertCircle, Pencil, Crown, ArrowUpRight, Loader2 } from 'lucide-react';
+import { Mail, LogOut, Check, AlertCircle, Pencil, Crown, ArrowUpRight, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { authService } from '../services';
 import { api } from '../services/api';
 
 interface ProfileViewProps {
@@ -12,7 +11,6 @@ interface ProfileViewProps {
 
 export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: ProfileViewProps) {
   const { user, updateProfile } = useAuth();
-
   // Subscription management
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState('');
@@ -67,15 +65,6 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
   const [accountError, setAccountError] = useState('');
   const [accountLoading, setAccountLoading] = useState(false);
 
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [passwordSaved, setPasswordSaved] = useState(false);
-  const [passwordError, setPasswordError] = useState('');
-  const [passwordLoading, setPasswordLoading] = useState(false);
-
   // Track timeouts for cleanup on unmount
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => {
@@ -83,8 +72,6 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
       timersRef.current.forEach(t => clearTimeout(t));
     };
   }, []);
-
-  const isGoogleOnly = user?.hasGoogle && !user?.hasPassword;
 
   const handleStartEditing = () => {
     setEditEmail(user?.email || '');
@@ -140,28 +127,6 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
     }
   };
 
-  const handleSavePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPassword !== confirmPassword) {
-      setPasswordError('Passwords do not match');
-      return;
-    }
-    setPasswordError('');
-    setPasswordLoading(true);
-    try {
-      await authService.changePassword(isGoogleOnly ? '' : currentPassword, newPassword);
-      setPasswordSaved(true);
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      timersRef.current.push(setTimeout(() => setPasswordSaved(false), 3000));
-    } catch (err) {
-      setPasswordError(err instanceof Error ? err.message : 'Failed to update password');
-    } finally {
-      setPasswordLoading(false);
-    }
-  };
-
   const inputWrap = `flex h-12 w-full items-center gap-3 rounded-lg border text-sm transition-all focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${
     isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'
   }`;
@@ -174,7 +139,7 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
       {/* Header */}
       <div>
         <h1 className={`text-3xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Profile</h1>
-        <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Manage your account and password</p>
+        <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Manage your account</p>
       </div>
 
       {/* Account Info */}
@@ -313,129 +278,6 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
         </div>
       </div>
 
-      {/* Password */}
-      <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-          <div className="flex items-center gap-3 mb-6">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-              <Lock className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
-            </div>
-            <div>
-              <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                {isGoogleOnly ? 'Set a password' : 'Password'}
-              </h2>
-              <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {isGoogleOnly
-                  ? 'Add a password to also sign in with email and password.'
-                  : 'Change your password. New passwords must meet the requirements below.'}
-              </p>
-            </div>
-          </div>
-          <form onSubmit={handleSavePassword} className="space-y-6">
-            {passwordError && (
-              <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                {passwordError}
-              </div>
-            )}
-            {/* Only show current password field if user has a password */}
-            {!isGoogleOnly && (
-              <div
-                className={`flex h-12 items-center gap-3 rounded-lg border text-sm transition-all focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${
-                  isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'
-                }`}
-              >
-                <div className={`flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                  <Lock className="h-5 w-5" strokeWidth={1.5} />
-                </div>
-                <input
-                  type={showCurrentPassword ? 'text' : 'password'}
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className={`min-w-0 flex-1 bg-transparent py-0 pr-2 text-sm focus:outline-none placeholder:text-sm ${
-                    isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
-                  }`}
-                  placeholder="Current password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                  className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}
-                >
-                  {showCurrentPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-            )}
-            <div
-              className={`flex h-12 items-center gap-3 rounded-lg border text-sm transition-all focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${
-                isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'
-              }`}
-            >
-              <div className={`flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                <Lock className="h-5 w-5" strokeWidth={1.5} />
-              </div>
-              <input
-                type={showNewPassword ? 'text' : 'password'}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className={`min-w-0 flex-1 bg-transparent py-0 pr-2 text-sm focus:outline-none placeholder:text-sm ${
-                  isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
-                }`}
-                placeholder="New password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowNewPassword(!showNewPassword)}
-                className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}
-              >
-                {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
-            {newPassword.length > 0 && (
-              <div className="space-y-2">
-                <p className={`text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>New password must include:</p>
-                <PasswordRequirement met={newPassword.length >= 8} text="At least 8 characters" isDarkMode={isDarkMode} />
-                <PasswordRequirement met={/[A-Z]/.test(newPassword)} text="One uppercase letter" isDarkMode={isDarkMode} />
-                <PasswordRequirement met={/[0-9]/.test(newPassword)} text="One number" isDarkMode={isDarkMode} />
-              </div>
-            )}
-            <div
-              className={`flex h-12 items-center gap-3 rounded-lg border text-sm transition-all focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${
-                isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'
-              }`}
-            >
-              <div className={`flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                <Lock className="h-5 w-5" strokeWidth={1.5} />
-              </div>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className={`min-w-0 flex-1 bg-transparent py-0 pr-4 text-sm focus:outline-none placeholder:text-sm ${
-                  isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
-                }`}
-                placeholder="Confirm new password"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={passwordLoading || (!isGoogleOnly && !currentPassword) || !newPassword || newPassword !== confirmPassword || newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)}
-              className="flex h-12 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:bg-blue-600/50 disabled:cursor-not-allowed"
-            >
-              {passwordLoading ? (
-                <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : passwordSaved ? (
-                <><Check className="h-4 w-4" /> Password updated</>
-              ) : isGoogleOnly ? (
-                'Set password'
-              ) : (
-                'Update password'
-              )}
-            </button>
-          </form>
-        </div>
-      </div>
-
       {/* Subscription */}
       <div className={`border rounded-lg overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="p-6">
@@ -556,17 +398,6 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function PasswordRequirement({ met, text, isDarkMode }: { met: boolean; text: string; isDarkMode: boolean }) {
-  return (
-    <div className={`flex items-center gap-2.5 text-xs ${met ? 'text-green-500' : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded ${met ? 'bg-green-500/20 border border-green-500/30' : isDarkMode ? 'border border-slate-700 bg-slate-800' : 'border border-slate-200 bg-slate-100'}`}>
-        {met && <Check className="h-3 w-3" strokeWidth={2.5} />}
-      </div>
-      <span>{text}</span>
     </div>
   );
 }
