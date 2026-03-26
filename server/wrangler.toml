@@ -27,6 +27,12 @@ database_id = "6acfacc9-ccdd-46bd-9cea-8693306ed524"
 #   wrangler secret put YAHOO_CLIENT_SECRET --env production
 #     → Yahoo OAuth from https://developer.yahoo.com/apps/
 #
+#   wrangler secret put RESEND_API_KEY --env production
+#     → Optional: enables password reset & feedback notification emails
+#
+#   wrangler secret put FEEDBACK_EMAIL --env production
+#     → Optional: email address that receives feedback submissions
+#
 # For local dev, these are set in server/.dev.vars (gitignored)
 
 [vars]
