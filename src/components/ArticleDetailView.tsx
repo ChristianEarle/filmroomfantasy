@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { getArticleBySlug, articles, ARTICLE_CATEGORIES } from '../data/articles';
+import { useState, useEffect, useCallback } from 'react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { api } from '../services/api';
+import { ARTICLE_CATEGORIES } from '../data/articles';
 import { SEO } from './SEO';
 
 interface ArticleDetailViewProps {
@@ -11,17 +12,62 @@ interface ArticleDetailViewProps {
   onNavigate: (view: string) => void;
 }
 
+interface ArticleData {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  content: string;
+  category: string;
+  tags: string[];
+  author: string;
+  readingTime: number;
+  publishedAt: string | null;
+  updatedAt: number;
+}
+
 export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, onNavigate }: ArticleDetailViewProps) {
-  const article = getArticleBySlug(slug);
+  const [article, setArticle] = useState<ArticleData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [relatedArticles, setRelatedArticles] = useState<ArticleData[]>([]);
 
-  const relatedArticles = useMemo(() => {
-    if (!article) return [];
-    return articles
-      .filter(a => a.slug !== slug && (a.category === article.category || a.tags.some(t => article.tags.includes(t))))
-      .slice(0, 3);
-  }, [slug, article]);
+  const fetchArticle = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.get<{ article: ArticleData }>(`/articles/${slug}`);
+      setArticle(data.article);
 
-  if (!article) {
+      // Fetch all published articles for "related" section
+      const allData = await api.get<{ articles: ArticleData[] }>('/articles');
+      const related = allData.articles
+        .filter(a => a.slug !== slug && (
+          a.category === data.article.category ||
+          a.tags.some((t: string) => data.article.tags.includes(t))
+        ))
+        .slice(0, 3);
+      setRelatedArticles(related);
+    } catch {
+      setError('Article not found');
+    } finally {
+      setLoading(false);
+    }
+  }, [slug]);
+
+  useEffect(() => {
+    fetchArticle();
+  }, [fetchArticle]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  if (error || !article) {
     return (
       <div className="max-w-3xl mx-auto text-center py-16">
         <h1 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Article Not Found</h1>
@@ -33,8 +79,10 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
     );
   }
 
-  const category = ARTICLE_CATEGORIES[article.category];
-  const date = new Date(article.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const category = ARTICLE_CATEGORIES[article.category as keyof typeof ARTICLE_CATEGORIES];
+  const date = article.publishedAt
+    ? new Date(article.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '';
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -52,10 +100,9 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
             'author': { '@type': 'Organization', 'name': article.author },
             'publisher': { '@type': 'Organization', 'name': 'FilmRoom', 'url': 'https://filmroomfantasy.com' },
             'datePublished': article.publishedAt,
-            'dateModified': article.updatedAt || article.publishedAt,
             'mainEntityOfPage': `https://filmroomfantasy.com/articles/${article.slug}`,
             'wordCount': article.content.split(/\s+/).length,
-            'articleSection': category.label,
+            'articleSection': category?.label,
             'keywords': article.tags.join(', '),
           },
           {
@@ -83,14 +130,16 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
       {/* Article header */}
       <header className="mb-8">
         <div className="flex items-center gap-3 mb-3">
-          <span
-            className="text-xs font-bold uppercase tracking-wide px-2 py-0.5 rounded"
-            style={{ color: category.color, background: `${category.color}18` }}
-          >
-            {category.label}
-          </span>
+          {category && (
+            <span
+              className="text-xs font-bold uppercase tracking-wide px-2 py-0.5 rounded"
+              style={{ color: category.color, background: `${category.color}18` }}
+            >
+              {category.label}
+            </span>
+          )}
           <span className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-            {date} &middot; {article.readingTime} min read
+            {date}{date && ' \u00b7 '}{article.readingTime} min read
           </span>
         </div>
         <h1 className={`text-2xl sm:text-3xl font-bold leading-tight mb-3 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -152,7 +201,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
           </h2>
           <div className="space-y-3">
             {relatedArticles.map((ra) => {
-              const raCat = ARTICLE_CATEGORIES[ra.category];
+              const raCat = ARTICLE_CATEGORIES[ra.category as keyof typeof ARTICLE_CATEGORIES];
               return (
                 <button
                   key={ra.slug}
@@ -163,9 +212,11 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
                       : 'bg-white border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <span className="text-xs font-bold uppercase tracking-wide" style={{ color: raCat.color }}>
-                    {raCat.label}
-                  </span>
+                  {raCat && (
+                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: raCat.color }}>
+                      {raCat.label}
+                    </span>
+                  )}
                   <h3 className={`text-sm font-bold mt-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {ra.title}
                   </h3>

@@ -21,6 +21,7 @@ import { billingRoutes } from './routes/billing';
 import { adminStatsRoutes } from './routes/admin-stats';
 import { tradesRoutes } from './routes/trades';
 import { analyticsRoutes } from './routes/analytics';
+import { articleRoutes } from './routes/articles';
 
 // Types
 export type Env = {
@@ -179,6 +180,7 @@ app.route('/api/billing', billingRoutes);
 app.route('/api/trades', tradesRoutes);
 app.route('/api/admin', adminStatsRoutes);
 app.route('/api/analytics', analyticsRoutes);
+app.route('/api/articles', articleRoutes);
 
 // 404 handler
 app.notFound((c) => {

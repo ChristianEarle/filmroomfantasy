@@ -1,5 +1,7 @@
-import { useState, useMemo } from 'react';
-import { articles, ARTICLE_CATEGORIES, type Article } from '../data/articles';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Loader2 } from 'lucide-react';
+import { api } from '../services/api';
+import { ARTICLE_CATEGORIES } from '../data/articles';
 import { SEO } from './SEO';
 
 interface ArticlesViewProps {
@@ -8,13 +10,44 @@ interface ArticlesViewProps {
   onArticleSelect: (slug: string) => void;
 }
 
+interface ArticleData {
+  slug: string;
+  title: string;
+  description: string;
+  category: string;
+  tags: string[];
+  author: string;
+  readingTime: number;
+  publishedAt: string | null;
+}
+
 export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: ArticlesViewProps) {
+  const [articles, setArticles] = useState<ArticleData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const fetchArticles = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.get<{ articles: ArticleData[] }>('/articles');
+      setArticles(data.articles);
+    } catch {
+      setError('Failed to load articles');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchArticles();
+  }, [fetchArticles]);
 
   const filteredArticles = useMemo(() => {
     if (selectedCategory === 'all') return articles;
     return articles.filter(a => a.category === selectedCategory);
-  }, [selectedCategory]);
+  }, [selectedCategory, articles]);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -77,17 +110,38 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
         ))}
       </div>
 
+      {/* Loading / Error */}
+      {loading && (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+        </div>
+      )}
+      {error && (
+        <div className={`text-center py-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <p>{error}</p>
+          <button onClick={fetchArticles} className="mt-3 text-blue-500 text-sm font-medium">Try again</button>
+        </div>
+      )}
+
       {/* Article list */}
-      <div className="space-y-4">
-        {filteredArticles.map((article) => (
-          <ArticleCard
-            key={article.slug}
-            article={article}
-            isDarkMode={isDarkMode}
-            onClick={() => onArticleSelect(article.slug)}
-          />
-        ))}
-      </div>
+      {!loading && !error && (
+        <div className="space-y-4">
+          {filteredArticles.length === 0 ? (
+            <div className={`text-center py-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              <p>No articles yet. Check back soon!</p>
+            </div>
+          ) : (
+            filteredArticles.map((article) => (
+              <ArticleCard
+                key={article.slug}
+                article={article}
+                isDarkMode={isDarkMode}
+                onClick={() => onArticleSelect(article.slug)}
+              />
+            ))
+          )}
+        </div>
+      )}
 
       {/* Internal links section */}
       <div className={`mt-12 pt-8 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -117,9 +171,13 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
   );
 }
 
-function ArticleCard({ article, isDarkMode, onClick }: { article: Article; isDarkMode: boolean; onClick: () => void }) {
-  const category = ARTICLE_CATEGORIES[article.category];
-  const date = new Date(article.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+function ArticleCard({ article, isDarkMode, onClick }: { article: ArticleData; isDarkMode: boolean; onClick: () => void }) {
+  const category = ARTICLE_CATEGORIES[article.category as keyof typeof ARTICLE_CATEGORIES];
+  const date = article.publishedAt
+    ? new Date(article.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '';
+
+  if (!category) return null;
 
   return (
     <article
@@ -138,7 +196,7 @@ function ArticleCard({ article, isDarkMode, onClick }: { article: Article; isDar
           {category.label}
         </span>
         <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-          {date} &middot; {article.readingTime} min read
+          {date}{date && ' \u00b7 '}{article.readingTime} min read
         </span>
       </div>
       <h2 className={`text-lg font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
