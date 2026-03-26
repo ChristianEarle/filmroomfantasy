@@ -163,6 +163,7 @@ const VIEW_TO_PATH: Record<string, string> = {
   Research: '/research',
   Playoffs: '/playoff-predictor',
   DraftRankings: '/draft-rankings',
+  LeagueAnalyzer: '/league-analyzer',
   TradeAnalyzer: '/trade-analyzer',
   Settings: '/settings',
   Profile: '/profile',
@@ -208,7 +209,7 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works
-  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'Admin'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   // Local dark mode state for unauthenticated users (initialized from localStorage)
   const [localDarkMode, setLocalDarkMode] = useState<boolean>(() => {
@@ -266,6 +267,7 @@ function AppContent() {
       Research: 'Player Research | FilmRoom',
       Playoffs: 'Playoff Predictor | FilmRoom',
       DraftRankings: 'Draft Rankings | FilmRoom',
+      LeagueAnalyzer: 'League Analyzer | FilmRoom',
       TradeAnalyzer: 'AI Trade Analyzer | FilmRoom',
       Settings: 'Settings | FilmRoom',
       Profile: 'Profile | FilmRoom',
@@ -507,16 +509,7 @@ function AppContent() {
                 </Suspense>
               </ErrorBoundary>
             ) : activeView === 'Research' ? (
-              <ErrorBoundary isDarkMode={isDarkMode}>
-                <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
-                  <ResearchView
-                    isDarkMode={isDarkMode}
-                    userSubscriptionTier={user?.subscriptionTier}
-                    isAuthenticated={isAuthenticated}
-                    onPlayerClick={handlePlayerClick}
-                  />
-                </Suspense>
-              </ErrorBoundary>
+              <ComingSoonView title="Player Research" description="In-depth player analysis with Vegas props, game logs, projection accuracy tracking, and advanced metrics." icon="draft" isDarkMode={isDarkMode} />
             ) : activeView === 'Playoffs' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
@@ -596,6 +589,8 @@ function AppContent() {
               )
             ) : activeView === 'DraftRankings' ? (
               <ComingSoonView title="Draft Rankings" description="AI-powered draft rankings with ADP tracking, tier breakdowns, and custom scoring projections." icon="draft" isDarkMode={isDarkMode} />
+            ) : activeView === 'LeagueAnalyzer' ? (
+              <ComingSoonView title="League Analyzer" description="Deep dive into your league with power rankings, strength of schedule analysis, and roster composition breakdowns." icon="league" isDarkMode={isDarkMode} />
             ) : activeView === 'TradeAnalyzer' ? (
               <TradeAnalyzerView isDarkMode={isDarkMode} />
             ) : activeView === 'Admin' ? (

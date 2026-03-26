@@ -1,7 +1,7 @@
-import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck } from 'lucide-react';
+import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck, Medal, BarChart3 } from 'lucide-react';
 import { LeagueManager } from './LeagueManager';
 
-type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'Settings' | 'Pricing' | 'Admin';
+type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'LeagueAnalyzer' | 'Settings' | 'Pricing' | 'Admin';
 
 interface SidebarProps {
   activeView: SidebarView | 'Profile' | 'Login';
@@ -19,19 +19,21 @@ interface SidebarProps {
 
 export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated = false, isAdmin = false, selectedLeagueId, onLeagueSelect, onConnectLeague, mobileOpen = false, onMobileClose, userTier = 'free' }: SidebarProps) {
   const menuItems = [
-    { icon: Home, label: 'Home', view: 'Home' as const },
-    { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board' as const },
-    { icon: Swords, label: 'Matchup', view: 'Matchup' as const },
-    { icon: UsersIcon, label: 'Team', view: 'Team' as const },
-    { icon: ListPlus, label: 'Waivers', view: 'Waivers' as const },
-    { icon: CalendarRange, label: 'Game Slate', view: 'GameSlate' as const },
-    { icon: TrendingUp, label: 'Trends', view: 'Trends' as const },
-    { icon: BookOpen, label: 'Research', view: 'Research' as const },
-    { icon: ArrowLeftRight, label: 'Trade Analyzer', view: 'TradeAnalyzer' as const },
-    { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs' as const },
-    { icon: CreditCard, label: 'Pricing', view: 'Pricing' as const },
-    { icon: Settings, label: 'Settings', view: 'Settings' as const },
-    ...(isAdmin ? [{ icon: ShieldCheck, label: 'Admin', view: 'Admin' as const }] : []),
+    { icon: Home, label: 'Home', view: 'Home' as const, comingSoon: false },
+    { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board' as const, comingSoon: false },
+    { icon: Swords, label: 'Matchup', view: 'Matchup' as const, comingSoon: false },
+    { icon: UsersIcon, label: 'Team', view: 'Team' as const, comingSoon: false },
+    { icon: ListPlus, label: 'Waivers', view: 'Waivers' as const, comingSoon: false },
+    { icon: CalendarRange, label: 'Game Slate', view: 'GameSlate' as const, comingSoon: false },
+    { icon: TrendingUp, label: 'Trends', view: 'Trends' as const, comingSoon: false },
+    { icon: BookOpen, label: 'Research', view: 'Research' as const, comingSoon: true },
+    { icon: BarChart3, label: 'League Analyzer', view: 'LeagueAnalyzer' as const, comingSoon: true },
+    { icon: Medal, label: 'Draft Rankings', view: 'DraftRankings' as const, comingSoon: true },
+    { icon: ArrowLeftRight, label: 'Trade Analyzer', view: 'TradeAnalyzer' as const, comingSoon: false },
+    { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs' as const, comingSoon: false },
+    { icon: CreditCard, label: 'Pricing', view: 'Pricing' as const, comingSoon: false },
+    { icon: Settings, label: 'Settings', view: 'Settings' as const, comingSoon: false },
+    ...(isAdmin ? [{ icon: ShieldCheck, label: 'Admin', view: 'Admin' as const, comingSoon: false }] : []),
   ];
 
   const handleNavClick = (view: SidebarView) => {
@@ -77,6 +79,17 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
                 >
                   <item.icon className="w-5 h-5" />
                   <span className={`text-sm font-medium`}>{item.label}</span>
+                  {item.comingSoon && (
+                    <span className={`ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${
+                      item.view === activeView
+                        ? 'bg-white/20 text-white'
+                        : isDarkMode
+                          ? 'bg-amber-500/15 text-amber-400'
+                          : 'bg-amber-100 text-amber-600'
+                    }`}>
+                      SOON
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
