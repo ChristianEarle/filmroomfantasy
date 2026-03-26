@@ -331,7 +331,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <li className="highlight">Trending players &amp; add/drop data</li>
               <li className="highlight">5 trade analyses per day</li>
             </ul>
-            <a className="price-btn fill" onClick={nav('Pricing')}>Try Pro free for 3 weeks</a>
+            <a className="price-btn fill" onClick={nav('Pricing')}>Try Pro free for 3 days</a>
           </div>
           <div className="price-card">
             <div className="tier">Elite</div>
@@ -344,7 +344,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <li>Custom scoring models (coming soon)</li>
               <li>Early access to new features</li>
             </ul>
-            <a className="price-btn outline" onClick={nav('Pricing')}>Try Elite free for 3 weeks</a>
+            <a className="price-btn outline" onClick={nav('Pricing')}>Try Elite free for 3 days</a>
           </div>
         </div>
       </section>
