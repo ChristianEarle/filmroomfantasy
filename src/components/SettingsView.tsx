@@ -49,6 +49,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
   // Sleeper connection state
   const [sleeperUsername, setSleeperUsername] = useState('');
+  const [sleeperUserId, setSleeperUserId] = useState<string | null>(null);
   const [sleeperLeagues, setSleeperLeagues] = useState<ExternalLeague[]>([]);
   const [loadingSleeperLeagues, setLoadingSleeperLeagues] = useState(false);
   const [sleeperError, setSleeperError] = useState<string | null>(null);
@@ -133,6 +134,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     setConnectionStep('select-platform');
     setSelectedPlatform(null);
     setSleeperUsername('');
+    setSleeperUserId(null);
     setSleeperLeagues([]);
     setSleeperError(null);
     setManualLeagueId('');
@@ -158,11 +160,12 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     try {
       const sleeperUser = await sleeperApi.getUser(sleeperUsername.trim());
       if (!sleeperUser) {
-        setSleeperError('User not found. Please check the username.');
+        setSleeperError('User not found. Please check the username (not display name).');
         setLoadingSleeperLeagues(false);
         return;
       }
 
+      setSleeperUserId(sleeperUser.user_id);
       const fetchedLeagues = await sleeperApi.getUserLeagues(sleeperUser.user_id);
       if (fetchedLeagues.length === 0) {
         setSleeperError('No NFL leagues found for this user.');
@@ -283,7 +286,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
         league.platform,
         league.externalId,
         league,
-        league.platform === 'sleeper' ? sleeperUsername : undefined
+        league.platform === 'sleeper' ? sleeperUsername : undefined,
+        league.platform === 'sleeper' ? sleeperUserId ?? undefined : undefined
       );
 
       // Auto-sync the league to import teams and rosters
