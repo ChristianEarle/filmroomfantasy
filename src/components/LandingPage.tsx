@@ -349,6 +349,24 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         </div>
       </section>
 
+      <section className="diff-section fade-in">
+        <div className="section-header" style={{ marginBottom: 24 }}><h2>Explore Our Tools</h2></div>
+        <div className="diff-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+          {[
+            { title: 'Player Rankings', desc: 'Weekly projections powered by Vegas lines across PPR, Half PPR, and Standard.', view: 'Board' },
+            { title: 'Trade Analyzer', desc: 'AI-powered trade evaluations with instant fair value analysis.', view: 'TradeAnalyzer' },
+            { title: 'NFL Game Slate', desc: 'Live scores, spreads, and fantasy-relevant game stats.', view: 'GameSlate' },
+            { title: 'Trends', desc: 'Track trending players and roster movement across leagues.', view: 'Trends' },
+          ].map((t) => (
+            <a key={t.title} onClick={nav(t.view)} className="diff-card" style={{ cursor: 'pointer', textDecoration: 'none' }}>
+              <h3>{t.title}</h3>
+              <p>{t.desc}</p>
+              <span style={{ color: 'var(--accent)', fontSize: '13px', fontWeight: 600, marginTop: '12px', display: 'inline-block' }}>Explore &rarr;</span>
+            </a>
+          ))}
+        </div>
+      </section>
+
       <section className="final-cta fade-in">
         <h2>Stop guessing. Start winning.</h2>
         <p>Free rankings built on Vegas lines. No credit card required.</p>
@@ -358,9 +376,11 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
       <footer>
         <div className="left">&copy; 2026 FilmRoom Fantasy</div>
         <div className="right">
-          <a href="#rankings">Rankings</a>
-          <a href="#features">Features</a>
-          <a href="#pricing">Pricing</a>
+          <a onClick={nav('Board')}>Player Rankings</a>
+          <a onClick={nav('TradeAnalyzer')}>Trade Analyzer</a>
+          <a onClick={nav('GameSlate')}>NFL Games</a>
+          <a onClick={nav('Pricing')}>Pricing</a>
+          <a onClick={nav('Articles')}>Articles</a>
           <a onClick={nav('Login')}>Login</a>
         </div>
       </footer>

@@ -4,27 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
-    <!-- Primary Meta Tags -->
+    <!-- Primary Meta Tags (dynamic per-route via react-helmet-async) -->
     <title>FilmRoom - Fantasy Football Analysis & Management</title>
-    <meta name="title" content="FilmRoom - Fantasy Football Analysis & Management" />
     <meta name="description" content="Manage your fantasy football leagues with advanced analytics, player projections, waiver wire analysis, and real-time stats from Sleeper and ESPN." />
-    <meta name="keywords" content="fantasy football, fantasy sports, NFL, player rankings, projections, waiver wire, sleeper, ESPN, league management" />
+    <meta name="keywords" content="fantasy football, fantasy sports, NFL, player rankings, projections, waiver wire, sleeper, ESPN, league management, trade analyzer, draft rankings" />
     <meta name="author" content="FilmRoom" />
     <link rel="canonical" href="https://filmroomfantasy.com/" />
-
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://filmroomfantasy.com/" />
-    <meta property="og:title" content="FilmRoom - Fantasy Football Analysis & Management" />
-    <meta property="og:description" content="Manage your fantasy football leagues with advanced analytics, player projections, waiver wire analysis, and real-time stats." />
-    <meta property="og:image" content="https://filmroomfantasy.com/og-image.png" />
-
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://filmroomfantasy.com/" />
-    <meta property="twitter:title" content="FilmRoom - Fantasy Football Analysis & Management" />
-    <meta property="twitter:description" content="Manage your fantasy football leagues with advanced analytics, player projections, waiver wire analysis, and real-time stats." />
-    <meta property="twitter:image" content="https://filmroomfantasy.com/og-image.png" />
 
     <!-- Favicon & PWA -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -51,27 +36,7 @@
     <link rel="preconnect" href="https://filmroom-api.earle2001.workers.dev" crossorigin />
     <link rel="dns-prefetch" href="https://filmroom-api.earle2001.workers.dev" />
 
-    <!-- Structured Data (JSON-LD) -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "WebApplication",
-      "name": "FilmRoom",
-      "url": "https://filmroomfantasy.com",
-      "description": "Fantasy football analysis and league management with player projections, waiver wire tools, and playoff predictions.",
-      "applicationCategory": "SportsApplication",
-      "operatingSystem": "Web",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      },
-      "creator": {
-        "@type": "Organization",
-        "name": "FilmRoom"
-      }
-    }
-    </script>
+    <!-- Structured Data injected dynamically by react-helmet-async per route -->
   </head>
 
   <body>

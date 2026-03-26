@@ -2,62 +2,86 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://filmroomfantasy.com/</loc>
-    <lastmod>2026-03-16</lastmod>
+    <lastmod>2026-03-26</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://filmroomfantasy.com/login</loc>
-    <lastmod>2026-03-16</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://filmroomfantasy.com/register</loc>
-    <lastmod>2026-03-16</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://filmroomfantasy.com/rankings</loc>
-    <lastmod>2026-03-16</lastmod>
+    <loc>https://filmroomfantasy.com/player-rankings</loc>
+    <lastmod>2026-03-26</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://filmroomfantasy.com/waivers</loc>
-    <lastmod>2026-03-16</lastmod>
+    <lastmod>2026-03-26</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://filmroomfantasy.com/games</loc>
-    <lastmod>2026-03-16</lastmod>
+    <loc>https://filmroomfantasy.com/game-slate</loc>
+    <lastmod>2026-03-26</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://filmroomfantasy.com/trends</loc>
-    <lastmod>2026-03-16</lastmod>
+    <lastmod>2026-03-26</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://filmroomfantasy.com/playoffs</loc>
-    <lastmod>2026-03-16</lastmod>
+    <loc>https://filmroomfantasy.com/trade-analyzer</loc>
+    <lastmod>2026-03-26</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://filmroomfantasy.com/draft-rankings</loc>
-    <lastmod>2026-03-16</lastmod>
+    <loc>https://filmroomfantasy.com/playoff-predictor</loc>
+    <lastmod>2026-03-26</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://filmroomfantasy.com/trade-analyzer</loc>
-    <lastmod>2026-03-16</lastmod>
+    <loc>https://filmroomfantasy.com/draft-rankings</loc>
+    <lastmod>2026-03-26</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://filmroomfantasy.com/league-analyzer</loc>
+    <lastmod>2026-03-26</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://filmroomfantasy.com/research</loc>
+    <lastmod>2026-03-26</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://filmroomfantasy.com/pricing</loc>
+    <lastmod>2026-03-26</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://filmroomfantasy.com/login</loc>
+    <lastmod>2026-03-26</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://filmroomfantasy.com/register</loc>
+    <lastmod>2026-03-26</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://filmroomfantasy.com/articles</loc>
+    <lastmod>2026-03-26</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>

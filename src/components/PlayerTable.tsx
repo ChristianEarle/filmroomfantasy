@@ -306,9 +306,9 @@ export function PlayerTable({
       <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
         <div className={`p-3 sm:p-4 md:p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-          <h2 className={`font-bold mb-1 text-sm sm:text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-            {seasonYear} Player Rankings — Week {currentWeek} {pointsType === 'actual' ? '(Final)' : '(Projections)'}
-          </h2>
+          <h1 className={`font-bold mb-1 text-sm sm:text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            {seasonYear} Fantasy Football Player Rankings — Week {currentWeek} {pointsType === 'actual' ? '(Final)' : '(Projections)'}
+          </h1>
           <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             {pointsType === 'actual' ? 'Actual points scored' : 'Top players based on season stats and projections'}
           </p>

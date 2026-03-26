@@ -5,28 +5,31 @@ import { PlayerTable } from './components/PlayerTable';
 import { NewsPanel } from './components/NewsPanel';
 import { BiggestMovers } from './components/BiggestMovers';
 import { PlayerCard } from './components/PlayerCard';
-import { TeamView } from './components/TeamView';
-import { MatchupView } from './components/MatchupView';
-import { WaiversView } from './components/WaiversView';
-import { HomeView } from './components/HomeView';
-import { GameSlateView } from './components/GameSlateView';
 import type { Game } from './types/game';
 import { GameDetailModal } from './components/GameDetailModal';
+import { SEO, getSEOPropsForView } from './components/SEO';
 
-// Lazy load heavy views for better initial bundle size
+// Lazy load views for better initial bundle size
 const TrendsView = lazy(() => import('./components/TrendsView').then(m => ({ default: m.TrendsView })));
 const PlayoffPredictorView = lazy(() => import('./components/PlayoffPredictorView').then(m => ({ default: m.PlayoffPredictorView })));
 const ResearchView = lazy(() => import('./components/ResearchView').then(m => ({ default: m.ResearchView })));
-import { SettingsView } from './components/SettingsView';
+const TeamView = lazy(() => import('./components/TeamView').then(m => ({ default: m.TeamView })));
+const MatchupView = lazy(() => import('./components/MatchupView').then(m => ({ default: m.MatchupView })));
+const WaiversView = lazy(() => import('./components/WaiversView').then(m => ({ default: m.WaiversView })));
+const HomeView = lazy(() => import('./components/HomeView').then(m => ({ default: m.HomeView })));
+const GameSlateView = lazy(() => import('./components/GameSlateView').then(m => ({ default: m.GameSlateView })));
+const TradeAnalyzerView = lazy(() => import('./components/TradeAnalyzerView').then(m => ({ default: m.TradeAnalyzerView })));
+const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
+const PricingView = lazy(() => import('./components/PricingView').then(m => ({ default: m.PricingView })));
+const AdminView = lazy(() => import('./components/AdminView').then(m => ({ default: m.AdminView })));
+const AllPlayersView = lazy(() => import('./components/AllPlayersView').then(m => ({ default: m.AllPlayersView })));
+const ProfileView = lazy(() => import('./components/ProfileView').then(m => ({ default: m.ProfileView })));
+const ArticlesView = lazy(() => import('./components/ArticlesView').then(m => ({ default: m.ArticlesView })));
+const ArticleDetailView = lazy(() => import('./components/ArticleDetailView').then(m => ({ default: m.ArticleDetailView })));
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
 import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswordView';
-import { ProfileView } from './components/ProfileView';
-import { AllPlayersView } from './components/AllPlayersView';
 import { ComingSoonView } from './components/ComingSoonView';
-import { TradeAnalyzerView } from './components/TradeAnalyzerView';
-import { PricingView } from './components/PricingView';
-import { AdminView } from './components/AdminView';
 import { LandingPage } from './components/LandingPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -172,6 +175,8 @@ const VIEW_TO_PATH: Record<string, string> = {
   AllPlayers: '/all-players',
   Pricing: '/pricing',
   Admin: '/admin',
+  Articles: '/articles',
+  ArticleDetail: '/articles', // handled with slug in URL
 };
 
 const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
@@ -185,10 +190,23 @@ function getViewFromURL(): string {
   // Root path shows the landing page for unauthenticated users (handled in render)
   if (path === '/') return 'Landing';
 
+  // Handle article detail routes (/articles/some-slug)
+  if (path.startsWith('/articles/') && path.length > '/articles/'.length) return 'ArticleDetail';
+  if (path === '/articles') return 'Articles';
+
   const view = PATH_TO_VIEW[path] ?? 'Board';
   // /register is handled within the Login view via authView state
   if (view === 'Register') return 'Login';
   return view;
+}
+
+/** Extract article slug from URL */
+function getArticleSlugFromURL(): string | null {
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+  if (path.startsWith('/articles/')) {
+    return path.slice('/articles/'.length);
+  }
+  return null;
 }
 
 // Main App content component that uses auth context
@@ -209,8 +227,9 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works
-  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  const [articleSlug, setArticleSlug] = useState<string | null>(() => getArticleSlugFromURL());
   // Local dark mode state for unauthenticated users (initialized from localStorage)
   const [localDarkMode, setLocalDarkMode] = useState<boolean>(() => {
     const stored = localStorage.getItem('darkMode');
@@ -237,46 +256,31 @@ function AppContent() {
 
   // Sync URL when activeView changes (BUG-001 fix: URL now updates on sidebar nav)
   useEffect(() => {
-    const targetPath = VIEW_TO_PATH[activeView] || '/player-rankings';
+    let targetPath: string;
+    if (activeView === 'ArticleDetail' && articleSlug) {
+      targetPath = `/articles/${articleSlug}`;
+    } else {
+      targetPath = VIEW_TO_PATH[activeView] || '/player-rankings';
+    }
     if (window.location.pathname !== targetPath) {
       window.history.pushState({ view: activeView }, '', targetPath);
     }
     trackPageView(targetPath);
-  }, [activeView]);
+  }, [activeView, articleSlug]);
 
   // Handle browser back/forward buttons (popstate) so routing stays in sync
   useEffect(() => {
     const handlePopState = () => {
       const view = getViewFromURL();
       setActiveView(view as any);
+      setArticleSlug(getArticleSlugFromURL());
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Dynamic page title per view (SEO + better browser tab UX)
-  useEffect(() => {
-    const titles: Record<string, string> = {
-      Home: 'Dashboard | FilmRoom',
-      Board: `${league?.seasonYear ?? new Date().getFullYear()} Player Rankings | FilmRoom`,
-      Team: 'My Team | FilmRoom',
-      Matchup: 'Matchup | FilmRoom',
-      Waivers: 'Waivers | FilmRoom',
-      GameSlate: 'NFL Games | FilmRoom',
-      Trends: 'Trends | FilmRoom',
-      Research: 'Player Research | FilmRoom',
-      Playoffs: 'Playoff Predictor | FilmRoom',
-      DraftRankings: 'Draft Rankings | FilmRoom',
-      LeagueAnalyzer: 'League Analyzer | FilmRoom',
-      TradeAnalyzer: 'AI Trade Analyzer | FilmRoom',
-      Settings: 'Settings | FilmRoom',
-      Profile: 'Profile | FilmRoom',
-      Login: authView === 'register' ? 'Sign Up | FilmRoom' : 'Sign In | FilmRoom',
-      AllPlayers: 'All Players | FilmRoom',
-      Pricing: 'Pricing | FilmRoom',
-    };
-    document.title = titles[activeView] || 'FilmRoom - Fantasy Football Analysis & Management';
-  }, [activeView]);
+  // SEO props for current view (dynamic meta tags, canonical, JSON-LD)
+  const seoProps = useMemo(() => getSEOPropsForView(activeView, authView), [activeView, authView]);
 
   // Check URL for reset_token in hash fragment on mount
   // Only accept hash fragments (not query params) to prevent token leakage via referrer headers
@@ -388,10 +392,20 @@ function AppContent() {
     );
   }
 
+  // Suspense fallback for lazy-loaded views
+  const suspenseFallback = (
+    <div className="flex items-center justify-center py-12">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+    </div>
+  );
+
   // Landing page: fullscreen, no sidebar/header
   if (activeView === 'Landing' && !isAuthenticated) {
     return (
-      <LandingPage onNavigate={(view) => setActiveView(view as any)} />
+      <>
+        <SEO {...seoProps} />
+        <LandingPage onNavigate={(view) => setActiveView(view as any)} />
+      </>
     );
   }
 
@@ -402,6 +416,7 @@ function AppContent() {
 
   return (
     <div className={`flex h-dvh min-h-screen ${isDarkMode ? 'dark bg-slate-950' : 'bg-slate-100'}`}>
+      <SEO {...seoProps} />
       <Sidebar
         activeView={activeView}
         onViewChange={setActiveView}
@@ -446,12 +461,14 @@ function AppContent() {
                   isDarkMode={isDarkMode}
                 />
               ) : (
-                <HomeView
-                  onPlayerClick={setSelectedPlayer}
-                  onViewChange={setActiveView}
-                  onGameSelect={handleGameSelect}
-                  isDarkMode={isDarkMode}
-                />
+                <Suspense fallback={suspenseFallback}>
+                  <HomeView
+                    onPlayerClick={setSelectedPlayer}
+                    onViewChange={setActiveView}
+                    onGameSelect={handleGameSelect}
+                    isDarkMode={isDarkMode}
+                  />
+                </Suspense>
               )
             ) : activeView === 'Board' ? (
               <div className="max-w-[1600px] mx-auto">
@@ -484,7 +501,7 @@ function AppContent() {
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <TeamView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} />
+                <Suspense fallback={suspenseFallback}><TeamView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
               )
             ) : activeView === 'Matchup' ? (
               showLoginGate ? (
@@ -492,16 +509,18 @@ function AppContent() {
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <MatchupView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} />
+                <Suspense fallback={suspenseFallback}><MatchupView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
               )
             ) : activeView === 'GameSlate' ? (
-              <GameSlateView
-                onSelectGame={setSelectedGame}
-                isDarkMode={isDarkMode}
-              />
+              <Suspense fallback={suspenseFallback}>
+                <GameSlateView
+                  onSelectGame={setSelectedGame}
+                  isDarkMode={isDarkMode}
+                />
+              </Suspense>
             ) : activeView === 'Trends' ? (
               <ErrorBoundary isDarkMode={isDarkMode}>
-                <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+                <Suspense fallback={suspenseFallback}>
                   <TrendsView
                     onPlayerClick={handlePlayerClick}
                     isDarkMode={isDarkMode}
@@ -517,7 +536,7 @@ function AppContent() {
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
                 <ErrorBoundary isDarkMode={isDarkMode}>
-                  <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+                  <Suspense fallback={suspenseFallback}>
                     <PlayoffPredictorView isDarkMode={isDarkMode} />
                   </Suspense>
                 </ErrorBoundary>
@@ -526,17 +545,19 @@ function AppContent() {
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <SettingsView
-                  isDarkMode={isDarkMode}
-                  onToggleDarkMode={handleToggleDarkMode}
-                  onLeagueSynced={() => refreshAll()}
-                />
+                <Suspense fallback={suspenseFallback}>
+                  <SettingsView
+                    isDarkMode={isDarkMode}
+                    onToggleDarkMode={handleToggleDarkMode}
+                    onLeagueSynced={() => refreshAll()}
+                  />
+                </Suspense>
               )
             ) : activeView === 'Profile' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ProfileView isDarkMode={isDarkMode} onLogout={handleLogout} onNavigate={(view) => setActiveView(view as any)} />
+                <Suspense fallback={suspenseFallback}><ProfileView isDarkMode={isDarkMode} onLogout={handleLogout} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
               )
             ) : activeView === 'Login' ? (
               authView === 'forgot' ? (
@@ -567,35 +588,37 @@ function AppContent() {
                 />
               )
             ) : activeView === 'AllPlayers' ? (
-              <AllPlayersView
-                selectedScoring={selectedScoring}
-                onScoringChange={setSelectedScoring}
-                selectedPosition={selectedPosition}
-                onPositionChange={setSelectedPosition}
-                currentWeek={currentWeek}
-                onWeekChange={setCurrentWeek}
-                onPlayerClick={setSelectedPlayer}
-                onBack={handleBackFromAllPlayers}
-                isDarkMode={isDarkMode}
-                source={allPlayersSource}
-              />
+              <Suspense fallback={suspenseFallback}>
+                <AllPlayersView
+                  selectedScoring={selectedScoring}
+                  onScoringChange={setSelectedScoring}
+                  selectedPosition={selectedPosition}
+                  onPositionChange={setSelectedPosition}
+                  currentWeek={currentWeek}
+                  onWeekChange={setCurrentWeek}
+                  onPlayerClick={setSelectedPlayer}
+                  onBack={handleBackFromAllPlayers}
+                  isDarkMode={isDarkMode}
+                  source={allPlayersSource}
+                />
+              </Suspense>
             ) : activeView === 'Waivers' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <WaiversView onPlayerClick={setSelectedPlayer} onViewAll={handleViewAllFromWaivers} isDarkMode={isDarkMode} />
+                <Suspense fallback={suspenseFallback}><WaiversView onPlayerClick={setSelectedPlayer} onViewAll={handleViewAllFromWaivers} isDarkMode={isDarkMode} /></Suspense>
               )
             ) : activeView === 'DraftRankings' ? (
               <ComingSoonView title="Draft Rankings" description="AI-powered draft rankings with ADP tracking, tier breakdowns, and custom scoring projections." icon="draft" isDarkMode={isDarkMode} />
             ) : activeView === 'LeagueAnalyzer' ? (
               <ComingSoonView title="League Analyzer" description="Deep dive into your league with power rankings, strength of schedule analysis, and roster composition breakdowns." icon="league" isDarkMode={isDarkMode} />
             ) : activeView === 'TradeAnalyzer' ? (
-              <TradeAnalyzerView isDarkMode={isDarkMode} />
+              <Suspense fallback={suspenseFallback}><TradeAnalyzerView isDarkMode={isDarkMode} /></Suspense>
             ) : activeView === 'Admin' ? (
               user?.role === 'admin' ? (
-                <AdminView isDarkMode={isDarkMode} />
+                <Suspense fallback={suspenseFallback}><AdminView isDarkMode={isDarkMode} /></Suspense>
               ) : (
                 <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
                   <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Access Denied</h2>
@@ -606,7 +629,25 @@ function AppContent() {
                 </div>
               )
             ) : activeView === 'Pricing' ? (
-              <PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} onNavigate={(view) => setActiveView(view as any)} />
+              <Suspense fallback={suspenseFallback}><PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
+            ) : activeView === 'Articles' ? (
+              <Suspense fallback={suspenseFallback}>
+                <ArticlesView
+                  isDarkMode={isDarkMode}
+                  onNavigate={(view) => setActiveView(view as any)}
+                  onArticleSelect={(slug) => { setArticleSlug(slug); setActiveView('ArticleDetail'); }}
+                />
+              </Suspense>
+            ) : activeView === 'ArticleDetail' && articleSlug ? (
+              <Suspense fallback={suspenseFallback}>
+                <ArticleDetailView
+                  slug={articleSlug}
+                  isDarkMode={isDarkMode}
+                  onBack={() => { setArticleSlug(null); setActiveView('Articles'); }}
+                  onArticleSelect={(slug) => { setArticleSlug(slug); }}
+                  onNavigate={(view) => setActiveView(view as any)}
+                />
+              </Suspense>
             ) : (
               <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
                 <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Page Not Found</h2>

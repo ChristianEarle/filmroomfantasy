@@ -188,9 +188,9 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
             {/* Header */}
             <div className={`p-3 sm:p-4 md:p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <div className="flex items-center justify-between mb-1">
-                <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Waiver Wire (Week {currentWeek})
-                </h2>
+                <h1 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  Fantasy Football Waiver Wire — Week {currentWeek}
+                </h1>
                 <button
                   onClick={fetchPlayers}
                   disabled={loading}
