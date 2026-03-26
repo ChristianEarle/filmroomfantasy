@@ -56,32 +56,8 @@ articleRoutes.get('/', async (c) => {
   return c.json({ articles: parsed });
 });
 
-// GET /api/articles/:slug — Get single published article by slug (public)
-articleRoutes.get('/:slug', async (c) => {
-  const db = c.get('db');
-  const slug = c.req.param('slug');
-
-  const article = await db.query.articles.findFirst({
-    where: and(
-      eq(schema.articles.slug, slug),
-      eq(schema.articles.status, 'published'),
-    ),
-  });
-
-  if (!article) {
-    return c.json({ error: 'Article not found' }, 404);
-  }
-
-  return c.json({
-    article: {
-      ...article,
-      tags: JSON.parse(article.tags || '[]') as string[],
-    },
-  });
-});
-
 // ============================================
-// ADMIN ENDPOINTS
+// ADMIN ENDPOINTS (must be registered before /:slug catch-all)
 // ============================================
 
 // GET /api/articles/admin/all — List all articles including drafts (admin only)
@@ -253,4 +229,29 @@ articleRoutes.delete('/admin/:id', adminAuthMiddleware, async (c) => {
   await db.delete(schema.articles).where(eq(schema.articles.id, id));
 
   return c.json({ success: true, message: 'Article deleted' });
+});
+
+// GET /api/articles/:slug — Get single published article by slug (public)
+// NOTE: This catch-all must be LAST so it doesn't intercept /admin/* routes
+articleRoutes.get('/:slug', async (c) => {
+  const db = c.get('db');
+  const slug = c.req.param('slug');
+
+  const article = await db.query.articles.findFirst({
+    where: and(
+      eq(schema.articles.slug, slug),
+      eq(schema.articles.status, 'published'),
+    ),
+  });
+
+  if (!article) {
+    return c.json({ error: 'Article not found' }, 404);
+  }
+
+  return c.json({
+    article: {
+      ...article,
+      tags: JSON.parse(article.tags || '[]') as string[],
+    },
+  });
 });
