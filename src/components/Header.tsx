@@ -95,7 +95,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
             <Menu aria-hidden="true" className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
           </button>
         )}
-        <h1 className={isDarkMode ? 'text-white' : 'text-slate-900'}>FilmRoom</h1>
+        <span className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom</span>
         <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded">BETA</span>
       </div>
 
