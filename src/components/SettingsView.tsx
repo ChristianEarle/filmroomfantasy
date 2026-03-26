@@ -374,8 +374,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
           </div>
           <button
             onClick={() => {
-              if (user?.subscriptionTier !== 'pro' && leagues.length >= 1) {
-                setConnectError('Upgrade to Pro to connect multiple leagues. Free accounts are limited to 1 league.');
+              if (user?.subscriptionTier !== 'pro' && user?.subscriptionTier !== 'elite' && leagues.length >= 1) {
+                setConnectError('Upgrade to Pro or Elite to connect multiple leagues. Free accounts are limited to 1 league.');
                 return;
               }
               setConnectError(null);

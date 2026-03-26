@@ -100,6 +100,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
       description: 'Advanced tools for serious competitors.',
       features: [
         { text: 'Everything in Pro', highlight: true },
+        { text: 'Unlimited league syncs', highlight: true },
         { text: 'Deeper player research — stats, Vegas props, game logs, matchup grades', highlight: true },
         { text: 'Unlimited trade analyses', highlight: true },
         { text: '3-day free trial', highlight: true },
