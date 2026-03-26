@@ -60,8 +60,42 @@ articleRoutes.get('/', async (c) => {
 // ADMIN ENDPOINTS (must be registered before /:slug catch-all)
 // ============================================
 
+// Extract user from JWT before admin auth check (same pattern as analytics/admin-stats routes)
+articleRoutes.use('/admin/*', async (c, next) => {
+  if (c.req.method === 'OPTIONS') {
+    await next();
+    return;
+  }
+
+  const { getCookie } = await import('hono/cookie');
+  const cookieToken = getCookie(c, 'auth_token');
+  const authHeader = c.req.header('Authorization');
+  const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
+
+  if (token) {
+    try {
+      const { jwtVerify } = await import('jose');
+      const { eq } = await import('drizzle-orm');
+      const schemaModule = await import('../db/schema');
+      const secret = new TextEncoder().encode(c.env.JWT_SECRET);
+      const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
+      if (payload.sub) {
+        const db = c.get('db');
+        const user = await db.query.users.findFirst({
+          where: eq(schemaModule.users.id, payload.sub as string),
+        });
+        if (user) c.set('user', user);
+      }
+    } catch {
+      // Fall through to adminAuthMiddleware
+    }
+  }
+
+  await adminAuthMiddleware(c, next);
+});
+
 // GET /api/articles/admin/all — List all articles including drafts (admin only)
-articleRoutes.get('/admin/all', adminAuthMiddleware, async (c) => {
+articleRoutes.get('/admin/all', async (c) => {
   const db = c.get('db');
 
   const items = await db.query.articles.findMany({
@@ -77,7 +111,7 @@ articleRoutes.get('/admin/all', adminAuthMiddleware, async (c) => {
 });
 
 // POST /api/articles/admin — Create a new article (admin only)
-articleRoutes.post('/admin', adminAuthMiddleware, async (c) => {
+articleRoutes.post('/admin', async (c) => {
   const db = c.get('db');
   const body = await c.req.json();
 
@@ -140,7 +174,7 @@ articleRoutes.post('/admin', adminAuthMiddleware, async (c) => {
 });
 
 // PUT /api/articles/admin/:id — Update an article (admin only)
-articleRoutes.put('/admin/:id', adminAuthMiddleware, async (c) => {
+articleRoutes.put('/admin/:id', async (c) => {
   const db = c.get('db');
   const id = c.req.param('id');
   const body = await c.req.json();
@@ -215,7 +249,7 @@ articleRoutes.put('/admin/:id', adminAuthMiddleware, async (c) => {
 });
 
 // DELETE /api/articles/admin/:id — Delete an article (admin only)
-articleRoutes.delete('/admin/:id', adminAuthMiddleware, async (c) => {
+articleRoutes.delete('/admin/:id', async (c) => {
   const db = c.get('db');
   const id = c.req.param('id');
 
