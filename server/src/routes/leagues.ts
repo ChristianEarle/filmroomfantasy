@@ -14,6 +14,16 @@ import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
 import { generateProjectionsFromProps } from '../services/projections';
+import {
+  fetchLeague as fetchMflLeague,
+  fetchRosters as fetchMflRosters,
+  fetchSchedule as fetchMflSchedule,
+  fetchPlayerScores as fetchMflPlayerScores,
+  parseMflName,
+  mapMflPosition,
+  mapMflTeam,
+  ensureArray,
+} from '../services/mfl';
 import type { Env, Variables } from '../index';
 
 // Rate limit for league routes: 60 req/min per IP (all auth-gated)
@@ -432,9 +442,9 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
       return c.json({ error: 'Platform, external ID, and name are required' }, 400);
     }
 
-    const validPlatforms = ['sleeper', 'espn', 'yahoo'];
+    const validPlatforms = ['sleeper', 'espn', 'yahoo', 'mfl'];
     if (!validPlatforms.includes(platform)) {
-      return c.json({ error: 'Invalid platform. Must be sleeper, espn, or yahoo' }, 400);
+      return c.json({ error: 'Invalid platform. Must be sleeper, espn, yahoo, or mfl' }, 400);
     }
 
     if (typeof externalId !== 'string' || externalId.trim().length === 0 || externalId.length > 200) {
@@ -1526,6 +1536,345 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       const err = error instanceof Error ? error : new Error(String(error));
       console.error('Yahoo sync error:', err);
       return c.json({ error: err.message || 'Failed to sync league from Yahoo' }, 500);
+    }
+  }
+
+  // Handle MFL sync
+  if (league.platform === 'mfl' && league.externalId) {
+    try {
+      const year = league.seasonYear || new Date().getFullYear();
+
+      // 1. Fetch league settings from MFL
+      const mflLeagueData = await fetchMflLeague(league.externalId, year);
+      const mflLeague = mflLeagueData?.league;
+      if (!mflLeague) {
+        return c.json({ error: 'Failed to fetch league data from MFL. Check your league ID.' }, 500);
+      }
+
+      const franchises = ensureArray(mflLeague.franchises?.franchise);
+      if (franchises.length === 0) {
+        return c.json({ error: 'No franchises found in MFL league' }, 500);
+      }
+
+      // Update league metadata
+      await db.update(schema.leagues)
+        .set({
+          name: mflLeague.name || league.name,
+          teamCount: franchises.length,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.leagues.id, league.id));
+
+      // 2. Fetch rosters from MFL
+      const mflRostersData = await fetchMflRosters(league.externalId, year);
+      const mflRosters = ensureArray(mflRostersData?.rosters?.franchise);
+
+      // Build franchise ID → franchise info map
+      const franchiseMap = new Map<string, typeof franchises[0]>();
+      for (const f of franchises) {
+        franchiseMap.set(f.id, f);
+      }
+
+      let teamsImported = 0;
+      let playersImported = 0;
+
+      // Collect all MFL player IDs across all rosters for batch lookup
+      const allMflPlayerIds = new Set<string>();
+      for (const roster of mflRosters) {
+        const players = ensureArray(roster.player);
+        for (const p of players) {
+          if (p.id) allMflPlayerIds.add(p.id);
+        }
+      }
+
+      // Pre-fetch MFL player details for name matching
+      let mflPlayerMap = new Map<string, { firstName: string; lastName: string; fullName: string; position: string; team: string }>();
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        const mflPlayersUrl = `https://api.myfantasyleague.com/${year}/export?TYPE=players&DETAILS=1&JSON=1`;
+        const playersResponse = await fetch(mflPlayersUrl, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'FilmRoomFantasy/1.0' },
+        });
+        clearTimeout(timeoutId);
+        if (playersResponse.ok) {
+          const playersData = await playersResponse.json() as any;
+          const mflPlayers = ensureArray(playersData?.players?.player);
+          for (const mp of mflPlayers) {
+            if (!mp.id) continue;
+            const parsed = parseMflName(mp.name || '');
+            const pos = mapMflPosition(mp.position || '');
+            if (pos) {
+              mflPlayerMap.set(mp.id, {
+                firstName: parsed.firstName,
+                lastName: parsed.lastName,
+                fullName: parsed.fullName,
+                position: pos,
+                team: mapMflTeam(mp.team || 'FA'),
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch MFL players (sync continues with name matching):', e);
+      }
+
+      // Process each franchise/roster
+      for (const roster of mflRosters) {
+        const franchise = franchiseMap.get(roster.id);
+        const teamName = franchise?.name || `Team ${roster.id}`;
+        const ownerName = franchise?.owner_name || teamName;
+
+        // Upsert team
+        const existingTeam = league.teams.find(t => t.externalOwnerId === roster.id);
+        let teamId: string;
+
+        if (existingTeam) {
+          teamId = existingTeam.id;
+          await db.update(schema.teams).set({
+            name: teamName,
+            ownerDisplayName: ownerName,
+            faabBudget: franchise?.bbidAvailableBalance ? parseInt(franchise.bbidAvailableBalance, 10) : undefined,
+            updatedAt: new Date(),
+          }).where(eq(schema.teams.id, existingTeam.id));
+        } else {
+          teamId = generateId();
+          await db.insert(schema.teams).values({
+            id: teamId,
+            name: teamName,
+            leagueId: league.id,
+            ownerId: user.id,
+            externalOwnerId: roster.id,
+            ownerDisplayName: ownerName,
+            faabBudget: franchise?.bbidAvailableBalance ? parseInt(franchise.bbidAvailableBalance, 10) : 100,
+          });
+        }
+        teamsImported++;
+
+        // Sync roster players
+        const rosterPlayers = ensureArray(roster.player);
+        if (rosterPlayers.length > 0) {
+          // Clear existing roster spots for this team
+          await db.delete(schema.rosterSpots)
+            .where(eq(schema.rosterSpots.teamId, teamId));
+
+          let starterCount = 0;
+          let benchCount = 0;
+
+          for (const rosterPlayer of rosterPlayers) {
+            if (!rosterPlayer.id) continue;
+
+            const mflPlayerInfo = mflPlayerMap.get(rosterPlayer.id);
+            if (!mflPlayerInfo) continue; // Skip non-fantasy positions
+
+            // Try to find the player in our DB by name + position
+            let dbPlayer = null;
+            if (mflPlayerInfo.firstName && mflPlayerInfo.lastName) {
+              dbPlayer = await db.query.nflPlayers.findFirst({
+                where: and(
+                  eq(schema.nflPlayers.firstName, mflPlayerInfo.firstName),
+                  eq(schema.nflPlayers.lastName, mflPlayerInfo.lastName),
+                  eq(schema.nflPlayers.position, mflPlayerInfo.position),
+                ),
+              });
+            }
+
+            // Fallback: try full name match
+            if (!dbPlayer && mflPlayerInfo.fullName) {
+              dbPlayer = await db.query.nflPlayers.findFirst({
+                where: and(
+                  eq(schema.nflPlayers.name, mflPlayerInfo.fullName),
+                  eq(schema.nflPlayers.position, mflPlayerInfo.position),
+                ),
+              });
+            }
+
+            // For DEF, match by team
+            if (!dbPlayer && mflPlayerInfo.position === 'DEF') {
+              dbPlayer = await db.query.nflPlayers.findFirst({
+                where: and(
+                  eq(schema.nflPlayers.team, mflPlayerInfo.team),
+                  eq(schema.nflPlayers.position, 'DEF'),
+                ),
+              });
+            }
+
+            if (dbPlayer) {
+              const isIR = rosterPlayer.status === 'INJURED_RESERVE' || rosterPlayer.status === 'TAXI_SQUAD';
+              const isStarter = !isIR && rosterPlayer.status === 'ROSTER' && starterCount < 9;
+              const slot = isIR ? 'IR' : isStarter ? mflPlayerInfo.position : `BN${benchCount + 1}`;
+
+              if (isStarter) starterCount++;
+              if (!isStarter && !isIR) benchCount++;
+
+              await db.insert(schema.rosterSpots).values({
+                id: generateId(),
+                teamId,
+                playerId: dbPlayer.id,
+                slot,
+                isStarter,
+                acquiredType: 'sync',
+              });
+              playersImported++;
+            }
+          }
+        }
+      }
+
+      // 3. Sync matchups from MFL schedule
+      let matchupsImported = 0;
+      try {
+        const mflScheduleData = await fetchMflSchedule(league.externalId, year);
+        const weeklySchedules = ensureArray(mflScheduleData?.schedule?.weeklySchedule);
+
+        // Re-fetch teams after upserts
+        const updatedTeams = await db.query.teams.findMany({
+          where: eq(schema.teams.leagueId, league.id),
+        });
+        const franchiseIdToTeamId = new Map<string, string>();
+        for (const t of updatedTeams) {
+          if (t.externalOwnerId) {
+            franchiseIdToTeamId.set(t.externalOwnerId, t.id);
+          }
+        }
+
+        for (const weekSchedule of weeklySchedules) {
+          const week = parseInt(weekSchedule.week, 10);
+          if (isNaN(week) || week < 1) continue;
+
+          const matchups = ensureArray(weekSchedule.matchup);
+          for (const matchup of matchups) {
+            const teams = ensureArray(matchup.franchise);
+            if (teams.length !== 2) continue;
+
+            const homeTeamId = franchiseIdToTeamId.get(teams[0].id);
+            const awayTeamId = franchiseIdToTeamId.get(teams[1].id);
+            if (!homeTeamId || !awayTeamId) continue;
+
+            const homeScore = parseFloat(teams[0].score || '0') || 0;
+            const awayScore = parseFloat(teams[1].score || '0') || 0;
+            const isComplete = (teams[0].result === 'W' || teams[0].result === 'L' || teams[0].result === 'T');
+
+            // Check for existing matchup
+            const existingMatchup = await db.query.matchups.findFirst({
+              where: and(
+                eq(schema.matchups.leagueId, league.id),
+                eq(schema.matchups.week, week),
+                eq(schema.matchups.homeTeamId, homeTeamId),
+              ),
+            });
+
+            if (!existingMatchup) {
+              await db.insert(schema.matchups).values({
+                id: generateId(),
+                leagueId: league.id,
+                week,
+                homeTeamId,
+                awayTeamId,
+                homeScore,
+                awayScore,
+                isComplete,
+              });
+              matchupsImported++;
+            } else {
+              await db.update(schema.matchups)
+                .set({ homeScore, awayScore, isComplete })
+                .where(eq(schema.matchups.id, existingMatchup.id));
+            }
+          }
+        }
+      } catch (scheduleErr) {
+        console.error('MFL schedule sync error (non-fatal):', scheduleErr);
+      }
+
+      // 4. Sync player scores for completed weeks
+      let statsImported = 0;
+      try {
+        const currentWeek = league.currentWeek || 1;
+        for (let week = 1; week <= currentWeek; week++) {
+          if (week > 1) await sleep(150);
+          try {
+            const scoresData = await fetchMflPlayerScores(league.externalId, year, week);
+            const playerScores = ensureArray(
+              scoresData?.playerScores?.playerScore as any
+            );
+
+            for (const ps of playerScores) {
+              if (!ps.id || !ps.score) continue;
+              const mflInfo = mflPlayerMap.get(ps.id);
+              if (!mflInfo) continue;
+
+              // Find player in DB
+              let dbPlayer = null;
+              if (mflInfo.firstName && mflInfo.lastName) {
+                dbPlayer = await db.query.nflPlayers.findFirst({
+                  where: and(
+                    eq(schema.nflPlayers.firstName, mflInfo.firstName),
+                    eq(schema.nflPlayers.lastName, mflInfo.lastName),
+                    eq(schema.nflPlayers.position, mflInfo.position),
+                  ),
+                });
+              }
+              if (!dbPlayer && mflInfo.position === 'DEF') {
+                dbPlayer = await db.query.nflPlayers.findFirst({
+                  where: and(
+                    eq(schema.nflPlayers.team, mflInfo.team),
+                    eq(schema.nflPlayers.position, 'DEF'),
+                  ),
+                });
+              }
+              if (!dbPlayer) continue;
+
+              const score = parseFloat(ps.score) || 0;
+
+              // Check if stats exist
+              const existingStats = await db.query.playerWeeklyStats.findFirst({
+                where: and(
+                  eq(schema.playerWeeklyStats.playerId, dbPlayer.id),
+                  eq(schema.playerWeeklyStats.week, week),
+                  eq(schema.playerWeeklyStats.seasonYear, year),
+                ),
+              });
+
+              // MFL only provides total score, not breakdowns - store as PPR points
+              if (existingStats) {
+                await db.update(schema.playerWeeklyStats)
+                  .set({ fantasyPointsPPR: score, fantasyPointsHalf: score, fantasyPointsStd: score })
+                  .where(eq(schema.playerWeeklyStats.id, existingStats.id));
+              } else if (score > 0) {
+                await db.insert(schema.playerWeeklyStats).values({
+                  id: generateId(),
+                  playerId: dbPlayer.id,
+                  week,
+                  seasonYear: year,
+                  fantasyPointsPPR: score,
+                  fantasyPointsHalf: score,
+                  fantasyPointsStd: score,
+                });
+                statsImported++;
+              }
+            }
+          } catch (weekErr) {
+            console.error(`MFL stats sync error for week ${week} (non-fatal):`, weekErr);
+          }
+        }
+      } catch (statsErr) {
+        console.error('MFL stats sync error (non-fatal):', statsErr);
+      }
+
+      return c.json({
+        success: true,
+        message: `Synced from MFL: ${teamsImported} teams, ${playersImported} players, ${matchupsImported} matchups, ${statsImported} stats`,
+        teamsImported,
+        playersImported,
+        matchupsImported,
+        statsImported,
+      });
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error('MFL sync error:', err);
+      return c.json({ error: err.message || 'Failed to sync league from MFL' }, 500);
     }
   }
 
