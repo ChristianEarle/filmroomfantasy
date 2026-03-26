@@ -32,6 +32,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LeagueProvider, useLeagueContext } from './context/LeagueContext';
 import { LeaguesProvider, useLeaguesContext } from './context/LeaguesContext';
+import { trackPageView } from './services/analytics';
 
 // Page transition wrapper component
 function PageTransition({ children, viewKey }: { children: React.ReactNode; viewKey: string }) {
@@ -239,6 +240,7 @@ function AppContent() {
     if (window.location.pathname !== targetPath) {
       window.history.pushState({ view: activeView }, '', targetPath);
     }
+    trackPageView(targetPath);
   }, [activeView]);
 
   // Handle browser back/forward buttons (popstate) so routing stays in sync
