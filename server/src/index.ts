@@ -20,6 +20,7 @@ import { yahooRoutes } from './routes/yahoo';
 import { billingRoutes } from './routes/billing';
 import { adminStatsRoutes } from './routes/admin-stats';
 import { tradesRoutes } from './routes/trades';
+import { analyticsRoutes } from './routes/analytics';
 
 // Types
 export type Env = {
@@ -177,6 +178,7 @@ app.route('/api/yahoo', yahooRoutes);
 app.route('/api/billing', billingRoutes);
 app.route('/api/trades', tradesRoutes);
 app.route('/api/admin', adminStatsRoutes);
+app.route('/api/analytics', analyticsRoutes);
 
 // 404 handler
 app.notFound((c) => {

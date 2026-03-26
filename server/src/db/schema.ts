@@ -526,6 +526,30 @@ export const userFeedback = sqliteTable('user_feedback', {
 });
 
 // ============================================
+// PAGE VIEWS & ANALYTICS
+// ============================================
+
+export const pageViews = sqliteTable('page_views', {
+  id: text('id').primaryKey(),
+  path: text('path').notNull(),
+  referrer: text('referrer'),
+  userId: text('user_id'),
+  sessionId: text('session_id').notNull(), // anonymous fingerprint
+  userAgent: text('user_agent'),
+  country: text('country'),
+  device: text('device'), // 'mobile' | 'tablet' | 'desktop'
+  browser: text('browser'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  pageViewsPathIdx: index('idx_page_views_path').on(table.path),
+  pageViewsCreatedIdx: index('idx_page_views_created').on(table.createdAt),
+  pageViewsSessionIdx: index('idx_page_views_session').on(table.sessionId),
+}));
+
+export type PageView = typeof pageViews.$inferSelect;
+export type NewPageView = typeof pageViews.$inferInsert;
+
+// ============================================
 // TYPE EXPORTS
 // ============================================
 
