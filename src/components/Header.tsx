@@ -157,35 +157,38 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
           ref={searchRef}
           className="relative"
         >
-          <button
-            onClick={() => setSearchOpen(!searchOpen)}
-            aria-label="Search players"
-            aria-expanded={searchOpen}
-            className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
-          >
-            <Search className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
-          </button>
-
-          {searchOpen && (
-            <div role="combobox" aria-label="Player search results" className={`absolute top-12 right-0 w-[calc(100vw-2rem)] sm:w-96 rounded-lg border shadow-xl z-50 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-              <div className="p-4">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search players by name or team..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg text-sm focus:outline-none focus:border-blue-500 ${isDarkMode ? 'bg-slate-950 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
-                    autoFocus
-                  />
-                  {isSearching && (
-                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-blue-500" />
-                  )}
-                </div>
+          {searchOpen ? (
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+                <input
+                  type="text"
+                  placeholder="Search players..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className={`w-48 sm:w-64 pl-9 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                  autoFocus
+                />
+                {isSearching && (
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-blue-500" />
+                )}
               </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setSearchOpen(true)}
+              aria-label="Search players"
+              aria-expanded={searchOpen}
+              className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
+            >
+              <Search className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+            </button>
+          )}
 
+          {searchOpen && (searchResults.length > 0 || (searchQuery.length >= 2 && !isSearching) || (searchQuery.length > 0 && searchQuery.length < 2)) && (
+            <div role="listbox" aria-label="Player search results" className={`absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               {searchResults.length > 0 && (
-                <div className={`max-h-96 overflow-y-auto border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                <div className="max-h-96 overflow-y-auto">
                   {searchResults.map((player) => (
                     <button
                       key={player.id}
@@ -195,7 +198,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                         setSearchQuery('');
                         clearResults();
                       }}
-                      className={`w-full px-4 py-3 transition-colors text-left border-b last:border-b-0 ${isDarkMode ? 'hover:bg-slate-800 border-slate-700' : 'hover:bg-slate-50 border-slate-200'}`}
+                      className={`w-full px-4 py-3 transition-colors text-left border-b last:border-b-0 ${isDarkMode ? 'hover:bg-slate-700 border-slate-700' : 'hover:bg-slate-50 border-slate-200'}`}
                     >
                       <div className="flex items-center justify-between">
                         <div>
@@ -227,13 +230,13 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
               )}
 
               {searchQuery.length >= 2 && !isSearching && searchResults.length === 0 && (
-                <div className={`p-4 text-center text-sm border-t ${isDarkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>
+                <div className={`p-4 text-center text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   No players found
                 </div>
               )}
 
               {searchQuery.length > 0 && searchQuery.length < 2 && (
-                <div className={`p-4 text-center text-sm border-t ${isDarkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>
+                <div className={`p-4 text-center text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   Type at least 2 characters to search
                 </div>
               )}
