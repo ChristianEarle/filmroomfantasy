@@ -1,7 +1,9 @@
-import { Search, User, Loader2, Menu, Bell } from 'lucide-react';
+import { Search, User, Loader2, Menu, Bell, ChevronDown, Check } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Player } from '../App';
 import { usePlayerSearch } from '../hooks';
+import { useLeaguesContext } from '../context/LeaguesContext';
+import { useLeagueContext } from '../context/LeagueContext';
 
 interface HeaderProps {
   onPlayerClick: (player: Player) => void;
@@ -15,6 +17,24 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchRef = useRef<HTMLDivElement>(null);
+  const [leagueDropdownOpen, setLeagueDropdownOpen] = useState(false);
+  const leagueDropdownRef = useRef<HTMLDivElement>(null);
+
+  const { leagues } = useLeaguesContext();
+  const { selectedLeagueId, setSelectedLeagueId } = useLeagueContext();
+  const selectedLeague = leagues.find(l => l.id === selectedLeagueId);
+
+  // Close league dropdown on click outside
+  useEffect(() => {
+    if (!leagueDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (leagueDropdownRef.current && !leagueDropdownRef.current.contains(e.target as Node)) {
+        setLeagueDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [leagueDropdownOpen]);
 
   // Use the API search hook
   const { results: searchResults, isSearching, search, clearResults } = usePlayerSearch();
@@ -80,6 +100,59 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
       </div>
 
       <div className="flex items-center gap-3">
+        {/* League Switcher - visible when authenticated with multiple leagues */}
+        {isAuthenticated && leagues.length > 1 && (
+          <div ref={leagueDropdownRef} className="relative">
+            <button
+              onClick={() => setLeagueDropdownOpen(!leagueDropdownOpen)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-700'}`}
+            >
+              <span className="max-w-[120px] sm:max-w-[180px] truncate font-medium">
+                {selectedLeague?.name || 'Select League'}
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${leagueDropdownOpen ? 'rotate-180' : ''} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+            </button>
+
+            {leagueDropdownOpen && (
+              <div className={`absolute top-full right-0 mt-1 w-64 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className={`px-3 py-2 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                  <span className={`text-xs font-medium uppercase tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Switch League</span>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {leagues.map((league) => (
+                    <button
+                      key={league.id}
+                      onClick={() => {
+                        if (league.id !== selectedLeagueId) {
+                          setSelectedLeagueId(league.id);
+                        }
+                        setLeagueDropdownOpen(false);
+                      }}
+                      className={`w-full px-3 py-2.5 text-left transition-colors flex items-center justify-between ${
+                        league.id === selectedLeagueId
+                          ? isDarkMode ? 'bg-blue-600/20' : 'bg-blue-50'
+                          : isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className={`text-sm font-medium truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                          {league.name}
+                        </div>
+                        <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                          {league.scoringFormat.toUpperCase()} · {league.teamCount} teams
+                        </div>
+                      </div>
+                      {league.id === selectedLeagueId && (
+                        <Check className="w-4 h-4 flex-shrink-0 text-blue-500 ml-2" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div
           ref={searchRef}
           className="relative"

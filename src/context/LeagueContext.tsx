@@ -195,7 +195,27 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   const { leagues } = useLeaguesContext();
 
   // State
-  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
+  const [selectedLeagueId, setSelectedLeagueIdState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('selectedLeagueId');
+    } catch {
+      return null;
+    }
+  });
+
+  // Wrap setter to persist to localStorage
+  const setSelectedLeagueId = useCallback((id: string | null) => {
+    setSelectedLeagueIdState(id);
+    try {
+      if (id) {
+        localStorage.setItem('selectedLeagueId', id);
+      } else {
+        localStorage.removeItem('selectedLeagueId');
+      }
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
   const [league, setLeague] = useState<LeagueDetails | null>(null);
   const [leagueLoading, setLeagueLoading] = useState(false);
   const [userTeam, setUserTeam] = useState<UserTeam | null>(null);
@@ -211,11 +231,13 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   const [allMatchupsLoading, setAllMatchupsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-select first league when leagues change
+  // Auto-select league: validate persisted selection or fall back to first league
   useEffect(() => {
-    if (leagues.length > 0 && !selectedLeagueId) {
-      setSelectedLeagueId(leagues[0].id);
-    } else if (leagues.length === 0) {
+    if (leagues.length > 0) {
+      if (!selectedLeagueId || !leagues.some(l => l.id === selectedLeagueId)) {
+        setSelectedLeagueId(leagues[0].id);
+      }
+    } else {
       setSelectedLeagueId(null);
       setLeague(null);
       setUserTeam(null);
@@ -224,7 +246,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
       setMatchup(null);
       setStandings([]);
     }
-  }, [leagues, selectedLeagueId]);
+  }, [leagues, selectedLeagueId, setSelectedLeagueId]);
 
   // Reset viewedTeamId when league changes (so we can set it to the user's team)
   useEffect(() => {
