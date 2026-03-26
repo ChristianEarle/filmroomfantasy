@@ -74,35 +74,36 @@ export const sleeperApi = {
     }
   },
 
-  // Get leagues for a user (fetches last 3 seasons so users find 2024/2025 leagues)
+  // Get leagues for a user (fetches last 3 seasons in parallel)
   getUserLeagues: async (userId: string): Promise<ExternalLeague[]> => {
     const currentYear = new Date().getFullYear();
     const seasons = [currentYear, currentYear - 1, currentYear - 2];
     const allLeagues: ExternalLeague[] = [];
     const seen = new Set<string>();
 
-    for (const season of seasons) {
-      try {
-        const response = await fetch(`https://api.sleeper.app/v1/user/${userId}/leagues/nfl/${season}`);
-        if (!response.ok) continue;
-        const leagues = await response.json();
+    // Fetch all seasons in parallel
+    const results = await Promise.all(
+      seasons.map(season =>
+        fetch(`https://api.sleeper.app/v1/user/${userId}/leagues/nfl/${season}`)
+          .then(res => res.ok ? res.json() : [])
+          .catch(() => [])
+      )
+    );
 
-        for (const league of leagues) {
-          const id = league.league_id;
-          if (seen.has(id)) continue;
-          seen.add(id);
-          allLeagues.push({
-            externalId: id,
-            platform: 'sleeper' as Platform,
-            name: league.name,
-            seasonYear: parseInt(league.season),
-            teamCount: league.total_rosters,
-            scoringFormat: league.scoring_settings?.rec === 1 ? 'ppr' :
-                           league.scoring_settings?.rec === 0.5 ? 'half_ppr' : 'standard',
-          });
-        }
-      } catch {
-        // Continue with other seasons
+    for (const leagues of results) {
+      for (const league of leagues) {
+        const id = league.league_id;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        allLeagues.push({
+          externalId: id,
+          platform: 'sleeper' as Platform,
+          name: league.name,
+          seasonYear: parseInt(league.season),
+          teamCount: league.total_rosters,
+          scoringFormat: league.scoring_settings?.rec === 1 ? 'ppr' :
+                         league.scoring_settings?.rec === 0.5 ? 'half_ppr' : 'standard',
+        });
       }
     }
     return allLeagues;
@@ -266,7 +267,8 @@ export const leagueConnectService = {
     platform: Platform,
     externalId: string,
     leagueData: ExternalLeague,
-    sleeperUsername?: string
+    sleeperUsername?: string,
+    sleeperUserId?: string
   ): Promise<ConnectLeagueResponse> => {
     return api.post<ConnectLeagueResponse>('/leagues/connect', {
       platform,
@@ -275,7 +277,8 @@ export const leagueConnectService = {
       scoringFormat: leagueData.scoringFormat,
       teamCount: leagueData.teamCount,
       seasonYear: leagueData.seasonYear,
-      sleeperUsername, // Pass the Sleeper username to identify user's team during sync
+      sleeperUsername,
+      sleeperUserId, // Sleeper user_id for reliable team matching during sync
     });
   },
 

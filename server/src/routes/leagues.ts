@@ -436,6 +436,7 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
       teamCount = 12,
       seasonYear = new Date().getFullYear(),
       sleeperUsername, // User's Sleeper username to identify their team
+      sleeperUserId,   // User's Sleeper user_id for reliable matching
     } = body;
 
     if (!platform || !externalId || !name) {
@@ -491,13 +492,13 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
         return c.json({ error: 'You have already connected this league' }, 400);
       }
 
-      // Add user to existing league (store sleeperUsername so sync can find their team)
+      // Add user to existing league (store sleeperUserId for reliable sync matching, fall back to username)
       await db.insert(schema.leagueMembers).values({
         id: generateId(),
         userId: user.id,
         leagueId: existingLeague.id,
         role: 'member',
-        externalUsername: sleeperUsername || null,
+        externalUsername: sleeperUserId || sleeperUsername || null,
       });
 
       // Create team for user
@@ -538,7 +539,7 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
       userId: user.id,
       leagueId,
       role: 'commissioner',
-      externalUsername: sleeperUsername || null,
+      externalUsername: sleeperUserId || sleeperUsername || null,
     });
 
     // Create team for user
@@ -605,8 +606,28 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
   // Handle Sleeper sync
   if (league.platform === 'sleeper' && league.externalId) {
     try {
-      // Fetch rosters from Sleeper
-      const rostersResponse = await fetch(`https://api.sleeper.app/v1/league/${league.externalId}/rosters`);
+      // Fetch rosters, users, and players from Sleeper in parallel
+      const [rostersResponse, usersResponse, playersResult] = await Promise.all([
+        fetch(`https://api.sleeper.app/v1/league/${league.externalId}/rosters`),
+        fetch(`https://api.sleeper.app/v1/league/${league.externalId}/users`),
+        (async () => {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 25000);
+            const playersResponse = await fetch('https://api.sleeper.app/v1/players/nfl', {
+              signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            if (playersResponse.ok) {
+              return await playersResponse.json() as Record<string, any>;
+            }
+          } catch (e) {
+            console.error('Failed to fetch Sleeper players (sync continues with basic player names):', e);
+          }
+          return {};
+        })(),
+      ]);
+
       if (!rostersResponse.ok) {
         return c.json({ error: 'Failed to fetch rosters from Sleeper' }, 500);
       }
@@ -616,29 +637,13 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         return c.json({ error: 'No valid rosters returned from Sleeper' }, 500);
       }
 
-      // Fetch users from Sleeper
-      const usersResponse = await fetch(`https://api.sleeper.app/v1/league/${league.externalId}/users`);
       if (!usersResponse.ok) {
         return c.json({ error: 'Failed to fetch users from Sleeper' }, 500);
       }
       const sleeperUsersRaw = await usersResponse.json();
       const sleeperUsers = validateSleeperArray(sleeperUsersRaw, isValidSleeperUser, 'users');
 
-      // Fetch all NFL players from Sleeper (cached - this is a large dataset, may take 15-20s)
-      let sleeperPlayers: Record<string, any> = {};
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000);
-        const playersResponse = await fetch('https://api.sleeper.app/v1/players/nfl', {
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        if (playersResponse.ok) {
-          sleeperPlayers = await playersResponse.json() as Record<string, any>;
-        }
-      } catch (e) {
-        console.error('Failed to fetch Sleeper players (sync continues with basic player names):', e);
-      }
+      const sleeperPlayers = playersResult;
 
       // Create a map of owner_id to user info
       const userMap = new Map<string, any>();
@@ -649,17 +654,25 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       // Find the current user's team in our database
       const userTeam = league.teams.find(t => t.ownerId === user.id);
 
-      // Find which Sleeper user matches this app user (by externalUsername)
+      // Find which Sleeper user matches this app user
+      // externalUsername may contain a Sleeper user_id (preferred) or a username/display_name
       let userSleeperUserId: string | null = null;
       if (membership.externalUsername) {
-        // Find the Sleeper user that matches the stored username
-        for (const sleeperUser of sleeperUsers) {
-          if (
-            sleeperUser.display_name?.toLowerCase() === membership.externalUsername.toLowerCase() ||
-            sleeperUser.username?.toLowerCase() === membership.externalUsername.toLowerCase()
-          ) {
-            userSleeperUserId = sleeperUser.user_id;
-            break;
+        const stored = membership.externalUsername;
+        // First try direct user_id match (most reliable)
+        const directMatch = sleeperUsers.find(u => u.user_id === stored);
+        if (directMatch) {
+          userSleeperUserId = directMatch.user_id;
+        } else {
+          // Fall back to username/display_name matching
+          for (const sleeperUser of sleeperUsers) {
+            if (
+              sleeperUser.display_name?.toLowerCase() === stored.toLowerCase() ||
+              sleeperUser.username?.toLowerCase() === stored.toLowerCase()
+            ) {
+              userSleeperUserId = sleeperUser.user_id;
+              break;
+            }
           }
         }
       }
@@ -1013,101 +1026,88 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         }
       }
 
-      // Fetch stats for each completed week including playoffs (with throttling between requests)
+      // Fetch all weeks of stats in parallel (much faster than sequential)
       const statsWeekLimit = Math.min(effectiveCurrentWeek, totalWeeks);
-      for (let week = 1; week <= statsWeekLimit; week++) {
+      const statsUrls = Array.from({ length: statsWeekLimit }, (_, i) => {
+        const week = i + 1;
+        const seasonType = week > regularSeasonWeeks ? 'post' : 'regular';
+        return `https://api.sleeper.com/stats/nfl/${league.seasonYear}/${week}?season_type=${seasonType}`;
+      });
+      const allWeekStats = await throttledFetchAll<Record<string, any>>(statsUrls, 5, 200);
+
+      // Pre-fetch existing stats for all rostered players in bulk
+      const playerIdArray = Array.from(existingPlayersByExtId.entries());
+      const existingStatsMap = new Map<string, { id: string }>();
+      for (let i = 0; i < playerIdArray.length; i += 50) {
+        const chunk = playerIdArray.slice(i, i + 50).map(([, p]) => p.id);
+        const found = await db.query.playerWeeklyStats.findMany({
+          where: and(
+            inArray(schema.playerWeeklyStats.playerId, chunk),
+            eq(schema.playerWeeklyStats.seasonYear, league.seasonYear)
+          ),
+          columns: { id: true, playerId: true, week: true },
+        });
+        for (const s of found) {
+          existingStatsMap.set(`${s.playerId}_${s.week}`, { id: s.id });
+        }
+      }
+
+      // Process stats using pre-fetched maps (no per-player DB lookups)
+      for (let i = 0; i < statsWeekLimit; i++) {
+        const week = i + 1;
+        const weekStats = allWeekStats[i];
+        if (!weekStats) continue;
+
         try {
-          // Throttle: 150ms delay between sequential stats fetches
-          if (week > 1) await sleep(150);
-
-          // Use api.sleeper.com for stats — post-season uses same week numbers
-          const seasonType = week > regularSeasonWeeks ? 'post' : 'regular';
-          const statsResponse = await fetch(
-            `https://api.sleeper.com/stats/nfl/${league.seasonYear}/${week}?season_type=${seasonType}`
-          );
-
-          if (!statsResponse.ok) {
-            console.log(`No stats available for week ${week} (HTTP ${statsResponse.status})`);
-            continue;
-          }
-
-          const weekStats = await statsResponse.json() as Record<string, any>;
-
-          // Process stats for rostered players only
           for (const sleeperPlayerId of allRosteredPlayerIds) {
             const playerStats = weekStats[sleeperPlayerId];
             if (!playerStats) continue;
 
-            // Find the player in our database by external ID
-            const player = await db.query.nflPlayers.findFirst({
-              where: eq(schema.nflPlayers.externalId, sleeperPlayerId),
-            });
-
+            // Use pre-fetched player map instead of DB query
+            const player = existingPlayersByExtId.get(sleeperPlayerId);
             if (!player) continue;
 
-            // Check if stats already exist for this player/week
-            const existingStats = await db.query.playerWeeklyStats.findFirst({
-              where: and(
-                eq(schema.playerWeeklyStats.playerId, player.id),
-                eq(schema.playerWeeklyStats.week, week),
-                eq(schema.playerWeeklyStats.seasonYear, league.seasonYear)
-              ),
-            });
+            const statsKey = `${player.id}_${week}`;
+            const existingStats = existingStatsMap.get(statsKey);
 
             const statsData = {
               playerId: player.id,
               week,
               seasonYear: league.seasonYear,
               opponent: playerStats.opponent || null,
-
-              // Passing
               passAttempts: playerStats.pass_att || 0,
               passCompletions: playerStats.pass_cmp || 0,
               passYards: playerStats.pass_yd || 0,
               passTDs: playerStats.pass_td || 0,
               passInterceptions: playerStats.pass_int || 0,
-
-              // Rushing
               rushAttempts: playerStats.rush_att || 0,
               rushYards: playerStats.rush_yd || 0,
               rushTDs: playerStats.rush_td || 0,
-
-              // Receiving
               targets: playerStats.rec_tgt || 0,
               receptions: playerStats.rec || 0,
               receivingYards: playerStats.rec_yd || 0,
               receivingTDs: playerStats.rec_td || 0,
-
-              // Misc
               fumbles: playerStats.fum || 0,
               fumblesLost: playerStats.fum_lost || 0,
               twoPointConversions: (playerStats.pass_2pt || 0) + (playerStats.rush_2pt || 0) + (playerStats.rec_2pt || 0),
-
-              // Kicking
               fgMade: playerStats.fgm || 0,
               fgAttempts: playerStats.fga || 0,
               fg40PlusMade: (playerStats.fgm_40_49 || 0) + (playerStats.fgm_50p || 0),
               fg50PlusMade: playerStats.fgm_50p || 0,
               xpMade: playerStats.xpm || 0,
               xpAttempts: playerStats.xpa || 0,
-
-              // Snap counts
               offSnaps: Math.round(playerStats.off_snp || 0),
               defSnaps: Math.round(playerStats.def_snp || 0),
               stSnaps: Math.round(playerStats.st_snp || 0),
               tmOffSnaps: Math.round(playerStats.tm_off_snp || 0),
               tmDefSnaps: Math.round(playerStats.tm_def_snp || 0),
               tmStSnaps: Math.round(playerStats.tm_st_snp || 0),
-
-              // Defense (for team defenses)
               sacks: playerStats.sack || 0,
               defInterceptions: playerStats.int || 0,
               fumblesRecovered: playerStats.fum_rec || 0,
               defenseTDs: (playerStats.def_td || 0) + (playerStats.st_td || 0),
               safeties: playerStats.safe || 0,
               pointsAllowed: playerStats.pts_allow || 0,
-
-              // Fantasy Points (Sleeper provides these)
               fantasyPointsPPR: playerStats.pts_ppr || 0,
               fantasyPointsHalf: playerStats.pts_half_ppr || 0,
               fantasyPointsStd: playerStats.pts_std || 0,
@@ -1122,11 +1122,12 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
                 id: generateId(),
                 ...statsData,
               });
+              existingStatsMap.set(statsKey, { id: 'new' });
               statsImported++;
             }
           }
         } catch (e) {
-          console.error(`Failed to fetch stats for week ${week}:`, e);
+          console.error(`Failed to process stats for week ${week}:`, e);
         }
       }
 
@@ -1175,32 +1176,37 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
           });
           const weekComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
 
-          // Import projections for players NOT already covered by book lines
-          for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
-            if (!playerProj) continue;
-
-            // Only import if the player exists in our database
-            const player = await db.query.nflPlayers.findFirst({
-              where: eq(schema.nflPlayers.externalId, sleeperPlayerId),
-            });
-
-            if (!player) continue;
-
-            // Skip players already covered by book line projections
-            if (playersCoveredByProps.has(player.id)) continue;
-
-            // Determine scoring format from league
-            const scoringFormat = league.scoringFormat || 'ppr';
-
-            // Check if projection exists
-            const existingProj = await db.query.playerProjections.findFirst({
+          // Pre-fetch existing projections for this week in bulk
+          const scoringFormat = league.scoringFormat || 'ppr';
+          const existingProjMap = new Map<string, any>();
+          const allPlayerIds = Array.from(existingPlayersByExtId.values()).map(p => p.id);
+          for (let pi = 0; pi < allPlayerIds.length; pi += 50) {
+            const chunk = allPlayerIds.slice(pi, pi + 50);
+            const found = await db.query.playerProjections.findMany({
               where: and(
-                eq(schema.playerProjections.playerId, player.id),
+                inArray(schema.playerProjections.playerId, chunk),
                 eq(schema.playerProjections.week, projectionWeek),
                 eq(schema.playerProjections.seasonYear, league.seasonYear),
                 eq(schema.playerProjections.scoringFormat, scoringFormat)
               ),
             });
+            for (const p of found) {
+              existingProjMap.set(p.playerId, p);
+            }
+          }
+
+          // Import projections for players NOT already covered by book lines
+          for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
+            if (!playerProj) continue;
+
+            // Use pre-fetched player map instead of DB query
+            const player = existingPlayersByExtId.get(sleeperPlayerId);
+            if (!player) continue;
+
+            // Skip players already covered by book line projections
+            if (playersCoveredByProps.has(player.id)) continue;
+
+            const existingProj = existingProjMap.get(player.id);
 
             const projData = {
               playerId: player.id,
