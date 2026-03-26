@@ -1,0 +1,303 @@
+import { Helmet } from 'react-helmet-async';
+
+const BASE_URL = 'https://filmroomfantasy.com';
+
+interface SEOProps {
+  title?: string;
+  description?: string;
+  path?: string;
+  type?: string;
+  image?: string;
+  noindex?: boolean;
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
+}
+
+// Per-route SEO metadata
+const ROUTE_SEO: Record<string, { title: string; description: string }> = {
+  Landing: {
+    title: 'FilmRoom - Fantasy Football Analysis & Management',
+    description: 'Manage your fantasy football leagues with advanced analytics, player projections, waiver wire analysis, and real-time stats from Sleeper and ESPN.',
+  },
+  Board: {
+    title: 'Fantasy Football Player Rankings | FilmRoom',
+    description: 'Weekly fantasy football player rankings powered by Vegas lines. PPR, Half PPR, and Standard scoring projections updated every 4 hours.',
+  },
+  Home: {
+    title: 'Dashboard | FilmRoom',
+    description: 'Your fantasy football command center. View your team, matchups, and league activity all in one place.',
+  },
+  Team: {
+    title: 'My Team | FilmRoom',
+    description: 'Manage your fantasy football roster with advanced player projections and start/sit recommendations.',
+  },
+  Matchup: {
+    title: 'Matchup Analysis | FilmRoom',
+    description: 'Analyze your weekly fantasy football matchup with player-by-player projections and win probability.',
+  },
+  Waivers: {
+    title: 'Waiver Wire Picks | FilmRoom',
+    description: 'Find the best waiver wire pickups and free agent adds for your fantasy football league, ranked by projected value.',
+  },
+  GameSlate: {
+    title: 'NFL Game Slate & Scores | FilmRoom',
+    description: 'Live NFL game slate with scores, spreads, over/unders, and fantasy-relevant stats for every matchup.',
+  },
+  Trends: {
+    title: 'Fantasy Football Trends | FilmRoom',
+    description: 'Track trending players, roster percentages, and add/drop activity across fantasy football leagues.',
+  },
+  Research: {
+    title: 'Player Research & Analysis | FilmRoom',
+    description: 'In-depth fantasy football player analysis with Vegas props, game logs, projection accuracy tracking, and advanced metrics.',
+  },
+  Playoffs: {
+    title: 'Fantasy Football Playoff Predictor | FilmRoom',
+    description: 'Simulate your fantasy football playoff scenarios with AI-powered predictions and strength of schedule analysis.',
+  },
+  DraftRankings: {
+    title: 'Fantasy Football Draft Rankings | FilmRoom',
+    description: 'AI-powered fantasy football draft rankings with ADP tracking, tier breakdowns, and custom scoring projections.',
+  },
+  LeagueAnalyzer: {
+    title: 'League Analyzer | FilmRoom',
+    description: 'Deep dive into your fantasy football league with power rankings, strength of schedule, and roster composition analysis.',
+  },
+  TradeAnalyzer: {
+    title: 'AI Trade Analyzer | FilmRoom',
+    description: 'Evaluate fantasy football trades with AI-powered analysis. Get instant trade values and fair deal recommendations.',
+  },
+  Pricing: {
+    title: 'Pricing & Plans | FilmRoom',
+    description: 'FilmRoom pricing plans. Free fantasy football rankings, Pro features for serious managers, and Elite tools for the competitive edge.',
+  },
+  Login: {
+    title: 'Sign In | FilmRoom',
+    description: 'Sign in to your FilmRoom account to access your fantasy football leagues, rankings, and personalized projections.',
+  },
+  Register: {
+    title: 'Sign Up Free | FilmRoom',
+    description: 'Create a free FilmRoom account. Get access to fantasy football rankings, projections, and league management tools.',
+  },
+  AllPlayers: {
+    title: 'All Players | FilmRoom',
+    description: 'Browse all fantasy football players with rankings, projections, and stats across every position and scoring format.',
+  },
+  Settings: {
+    title: 'Settings | FilmRoom',
+    description: 'Manage your FilmRoom account settings, league connections, and preferences.',
+  },
+  Profile: {
+    title: 'Profile | FilmRoom',
+    description: 'View and update your FilmRoom profile and account information.',
+  },
+};
+
+// View name to URL path mapping
+const VIEW_TO_PATH: Record<string, string> = {
+  Landing: '/',
+  Home: '/home',
+  Board: '/player-rankings',
+  Matchup: '/matchup',
+  Team: '/team',
+  Waivers: '/waivers',
+  GameSlate: '/game-slate',
+  Trends: '/trends',
+  Research: '/research',
+  Playoffs: '/playoff-predictor',
+  DraftRankings: '/draft-rankings',
+  LeagueAnalyzer: '/league-analyzer',
+  TradeAnalyzer: '/trade-analyzer',
+  Settings: '/settings',
+  Profile: '/profile',
+  Login: '/login',
+  Register: '/register',
+  AllPlayers: '/all-players',
+  Pricing: '/pricing',
+  Admin: '/admin',
+};
+
+export function SEO({ title, description, path, type = 'website', image, noindex, jsonLd }: SEOProps) {
+  const finalTitle = title || 'FilmRoom - Fantasy Football Analysis & Management';
+  const finalDescription = description || 'Manage your fantasy football leagues with advanced analytics, player projections, waiver wire analysis, and real-time stats.';
+  const finalPath = path || '/';
+  const canonicalUrl = `${BASE_URL}${finalPath}`;
+  const ogImage = image || `${BASE_URL}/og-image.png`;
+
+  return (
+    <Helmet>
+      <title>{finalTitle}</title>
+      <meta name="description" content={finalDescription} />
+      <link rel="canonical" href={canonicalUrl} />
+
+      {/* Open Graph */}
+      <meta property="og:type" content={type} />
+      <meta property="og:url" content={canonicalUrl} />
+      <meta property="og:title" content={finalTitle} />
+      <meta property="og:description" content={finalDescription} />
+      <meta property="og:image" content={ogImage} />
+
+      {/* Twitter */}
+      <meta property="twitter:card" content="summary_large_image" />
+      <meta property="twitter:url" content={canonicalUrl} />
+      <meta property="twitter:title" content={finalTitle} />
+      <meta property="twitter:description" content={finalDescription} />
+      <meta property="twitter:image" content={ogImage} />
+
+      {noindex && <meta name="robots" content="noindex,nofollow" />}
+
+      {jsonLd && (
+        <script type="application/ld+json">
+          {JSON.stringify(Array.isArray(jsonLd) ? jsonLd : jsonLd)}
+        </script>
+      )}
+    </Helmet>
+  );
+}
+
+/** Get SEO props for a given view name */
+export function getSEOPropsForView(view: string, authView?: string): SEOProps {
+  // Handle register sub-view
+  const effectiveView = view === 'Login' && authView === 'register' ? 'Register' : view;
+  const seo = ROUTE_SEO[effectiveView];
+  const path = VIEW_TO_PATH[effectiveView] || '/';
+
+  const props: SEOProps = {
+    title: seo?.title,
+    description: seo?.description,
+    path,
+  };
+
+  // Noindex private/authenticated pages
+  const privateViews = ['Home', 'Team', 'Matchup', 'Settings', 'Profile', 'Admin', 'AllPlayers'];
+  if (privateViews.includes(effectiveView)) {
+    props.noindex = true;
+  }
+
+  // Add structured data for specific pages
+  if (effectiveView === 'Landing') {
+    props.jsonLd = [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'WebApplication',
+        'name': 'FilmRoom',
+        'url': BASE_URL,
+        'description': 'Fantasy football analysis and league management with player projections, waiver wire tools, and playoff predictions.',
+        'applicationCategory': 'SportsApplication',
+        'operatingSystem': 'Web',
+        'offers': {
+          '@type': 'AggregateOffer',
+          'lowPrice': '0',
+          'highPrice': '9.99',
+          'priceCurrency': 'USD',
+          'offerCount': '3',
+        },
+        'creator': {
+          '@type': 'Organization',
+          'name': 'FilmRoom',
+          'url': BASE_URL,
+        },
+        'featureList': [
+          'Vegas-powered player rankings',
+          'Waiver wire analysis',
+          'AI trade analyzer',
+          'Playoff predictor',
+          'Multi-platform league sync (Sleeper, ESPN, Yahoo)',
+        ],
+      },
+      {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        'itemListElement': [
+          { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        ],
+      },
+    ];
+  }
+
+  if (effectiveView === 'Board') {
+    props.jsonLd = [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'WebPage',
+        'name': 'Fantasy Football Player Rankings',
+        'description': seo?.description,
+        'url': `${BASE_URL}/player-rankings`,
+        'isPartOf': { '@type': 'WebApplication', 'name': 'FilmRoom' },
+      },
+      {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        'itemListElement': [
+          { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+          { '@type': 'ListItem', 'position': 2, 'name': 'Player Rankings', 'item': `${BASE_URL}/player-rankings` },
+        ],
+      },
+    ];
+  }
+
+  if (effectiveView === 'Waivers') {
+    props.jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Waiver Wire', 'item': `${BASE_URL}/waivers` },
+      ],
+    };
+  }
+
+  if (effectiveView === 'TradeAnalyzer') {
+    props.jsonLd = [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'WebPage',
+        'name': 'AI Fantasy Football Trade Analyzer',
+        'description': seo?.description,
+        'url': `${BASE_URL}/trade-analyzer`,
+      },
+      {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        'itemListElement': [
+          { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+          { '@type': 'ListItem', 'position': 2, 'name': 'Trade Analyzer', 'item': `${BASE_URL}/trade-analyzer` },
+        ],
+      },
+    ];
+  }
+
+  if (effectiveView === 'Pricing') {
+    props.jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Pricing', 'item': `${BASE_URL}/pricing` },
+      ],
+    };
+  }
+
+  if (effectiveView === 'Trends') {
+    props.jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Trends', 'item': `${BASE_URL}/trends` },
+      ],
+    };
+  }
+
+  if (effectiveView === 'GameSlate') {
+    props.jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'NFL Games', 'item': `${BASE_URL}/game-slate` },
+      ],
+    };
+  }
+
+  return props;
+}

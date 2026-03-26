@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users, TrendingUp, Shield, Loader2, Search, ChevronUp, ChevronDown, BarChart3, Globe, Monitor, Smartphone, Tablet, Eye, MousePointer } from 'lucide-react';
+import { Users, TrendingUp, Shield, Loader2, Search, ChevronUp, ChevronDown, BarChart3, Globe, Monitor, Smartphone, Tablet, Eye, MousePointer, FileText } from 'lucide-react';
 import { api } from '../services/api';
+import { ArticleEditor } from './ArticleEditor';
 
 interface AdminViewProps {
   isDarkMode: boolean;
@@ -40,7 +41,7 @@ interface AnalyticsData {
   hourlyToday: { hour: number; views: number }[];
 }
 
-type AdminTab = 'overview' | 'analytics';
+type AdminTab = 'overview' | 'analytics' | 'articles';
 
 export function AdminView({ isDarkMode }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -163,6 +164,7 @@ export function AdminView({ isDarkMode }: AdminViewProps) {
   const tabs: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
     { id: 'overview', label: 'Overview', icon: <Shield className="w-4 h-4" /> },
     { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" /> },
+    { id: 'articles', label: 'Articles', icon: <FileText className="w-4 h-4" /> },
   ];
 
   return (
@@ -224,6 +226,10 @@ export function AdminView({ isDarkMode }: AdminViewProps) {
           textPrimary={textPrimary}
           textSecondary={textSecondary}
         />
+      )}
+
+      {activeTab === 'articles' && (
+        <ArticleEditor isDarkMode={isDarkMode} />
       )}
     </div>
   );

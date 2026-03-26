@@ -497,6 +497,34 @@ export const playerProps = sqliteTable('player_props', {
 }));
 
 // ============================================
+// ARTICLES / BLOG
+// ============================================
+
+export const articles = sqliteTable('articles', {
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  title: text('title').notNull(),
+  description: text('description').notNull(), // Meta description / excerpt
+  content: text('content').notNull(), // HTML or Markdown content
+  category: text('category').notNull(), // 'strategy' | 'rankings' | 'news' | 'tools' | 'beginners'
+  tags: text('tags').notNull().default('[]'), // JSON array of strings
+  author: text('author').notNull().default('FilmRoom'),
+  status: text('status').notNull().default('draft'), // 'draft' | 'published'
+  readingTime: integer('reading_time').notNull().default(5), // minutes
+  imageUrl: text('image_url'), // Optional hero image
+  publishedAt: text('published_at'), // ISO date string, null if draft
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  articlesSlugIdx: uniqueIndex('idx_articles_slug').on(table.slug),
+  articlesStatusIdx: index('idx_articles_status').on(table.status),
+  articlesCategoryIdx: index('idx_articles_category').on(table.category),
+}));
+
+export type Article = typeof articles.$inferSelect;
+export type NewArticle = typeof articles.$inferInsert;
+
+// ============================================
 // PASSWORD RESET TOKENS
 // ============================================
 
