@@ -1,14 +1,14 @@
-import { Medal, ArrowRightLeft, Construction } from 'lucide-react';
+import { Medal, ArrowRightLeft, BarChart3, Construction } from 'lucide-react';
 
 interface ComingSoonViewProps {
   title: string;
   description: string;
-  icon: 'draft' | 'trade';
+  icon: 'draft' | 'trade' | 'league';
   isDarkMode: boolean;
 }
 
 export function ComingSoonView({ title, description, icon, isDarkMode }: ComingSoonViewProps) {
-  const Icon = icon === 'draft' ? Medal : ArrowRightLeft;
+  const Icon = icon === 'draft' ? Medal : icon === 'league' ? BarChart3 : ArrowRightLeft;
 
   return (
     <div className="max-w-2xl mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
