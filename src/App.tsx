@@ -209,7 +209,12 @@ function AppContent() {
   // Initialize activeView from URL so direct navigation works
   const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'Admin'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
-  const isDarkMode = user?.darkMode ?? true;
+  // Local dark mode state for unauthenticated users (initialized from localStorage)
+  const [localDarkMode, setLocalDarkMode] = useState<boolean>(() => {
+    const stored = localStorage.getItem('darkMode');
+    return stored !== null ? stored === 'true' : true;
+  });
+  const isDarkMode = isAuthenticated ? (user?.darkMode ?? true) : localDarkMode;
 
   // Sync dark class to <html> so CSS variables apply to html/body
   // (prevents white bars on mobile in dark mode)
@@ -302,6 +307,10 @@ function AppContent() {
   const handleToggleDarkMode = useCallback(() => {
     if (isAuthenticated) {
       updateProfile({ darkMode: !isDarkMode });
+    } else {
+      const newValue = !isDarkMode;
+      setLocalDarkMode(newValue);
+      localStorage.setItem('darkMode', String(newValue));
     }
   }, [isAuthenticated, isDarkMode, updateProfile]);
 

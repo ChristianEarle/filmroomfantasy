@@ -107,7 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateProfile = useCallback(async (data: UpdateProfileData) => {
     const response = await authService.updateProfile(data);
-    setUser(response.user);
+    // Merge with existing user to preserve fields not returned by /auth/profile
+    // (e.g. subscriptionTier, role, hasGoogle, hasPassword, createdAt)
+    setUser(prev => prev ? { ...prev, ...response.user } : response.user);
   }, []);
 
   const value: AuthContextType = {
