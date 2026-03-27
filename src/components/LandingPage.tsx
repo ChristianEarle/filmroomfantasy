@@ -273,7 +273,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           {[
             { num: '\u{1F4CA}', title: 'Projection breakdowns', desc: 'See exactly why a player is ranked where they are. Vegas lines, stat projections, matchup grades, and scoring breakdowns \u2014 not a black box.' },
             { num: '\u{1F916}', title: 'AI trade analysis', desc: 'Drop in a trade and get an instant AI-powered evaluation. Fair value, positional impact, league context \u2014 so you stop second-guessing.' },
-            { num: '\u{1F3C8}', title: 'Your league, your way', desc: 'Sync your Sleeper, Yahoo, or ESPN league and see everything through the lens of your roster, your matchups, your scoring settings.' },
+            { num: '\u{1F3C8}', title: 'Your league, your way', desc: 'Sync your Sleeper, Yahoo, ESPN, or MyFantasyLeague league and see everything through the lens of your roster, your matchups, your scoring settings.' },
             { num: '\u{1F527}', title: 'Fully customizable', desc: 'Filter by scoring format, position, week, and more. PPR, Half PPR, Standard \u2014 see projections the way your league actually scores.' },
             { num: '\u{1F3C6}', title: 'Dynamic playoff predictor', desc: 'Input scenarios \u2014 wins, losses, tiebreakers \u2014 and see your updated playoff odds in real time. Know exactly what you need to clinch.' },
             { num: '$0', title: 'Free to use', desc: 'Core rankings and projections are free forever. No paywall, no email gate. Just open the page and see the data.' },
@@ -291,7 +291,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <h2>Three steps. That&apos;s it.</h2>
         <div className="how-steps">
           {[
-            { n: '1', title: 'Sync your league', desc: 'Paste your Sleeper username or connect Yahoo/ESPN. Your rosters, matchups, scoring settings, and schedule load instantly.' },
+            { n: '1', title: 'Sync your league', desc: 'Paste your Sleeper username or connect Yahoo, ESPN, or MyFantasyLeague. Your rosters, matchups, scoring settings, and schedule load instantly.' },
             { n: '2', title: 'Break down every projection', desc: "See exactly how each player's projection is built — Vegas lines, stat models, matchup data. Filter by position, format, and week to fit your league." },
             { n: '3', title: 'Win with confidence', desc: 'Run trades through AI analysis, spot waiver pickups early, and make start/sit decisions with real breakdowns behind every number.' },
           ].map((s) => (
@@ -355,7 +355,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           {[
             { title: 'Projection Breakdowns', desc: 'See the full breakdown behind every player projection — Vegas lines, stat models, and matchup context.', view: 'Board' },
             { title: 'AI Trade Analyzer', desc: 'Drop in any trade and get instant AI analysis — fair value, roster impact, and whether you should smash accept.', view: 'TradeAnalyzer' },
-            { title: 'My League Hub', desc: 'Sync your league from Sleeper, Yahoo, or ESPN. Your roster, matchups, waivers, and standings — all in one place.', view: 'Home' },
+            { title: 'My League Hub', desc: 'Sync your league from Sleeper, Yahoo, ESPN, or MyFantasyLeague. Your roster, matchups, waivers, and standings — all in one place.', view: 'Home' },
             { title: 'NFL Game Slate', desc: 'Live scores, spreads, and fantasy-relevant game stats updated throughout the week.', view: 'GameSlate' },
           ].map((t) => (
             <a key={t.title} onClick={nav(t.view)} className="diff-card" style={{ cursor: 'pointer', textDecoration: 'none' }}>
