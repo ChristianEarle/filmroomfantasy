@@ -53,12 +53,14 @@
             "@types/react": "^19.2.14",
             "@types/react-dom": "^19.2.3",
             "@vitejs/plugin-react-swc": "^3.10.2",
+            "puppeteer": "^24.0.0",
             "typescript": "^5.9.3",
             "vite": "6.3.5"
       },
       "scripts": {
             "dev": "vite",
             "build": "vite build && node scripts/generate-static-pages.js",
+            "build:prerender": "vite build && node scripts/generate-static-pages.js && node scripts/prerender.js",
             "typecheck": "tsc --noEmit",
             "typecheck:server": "cd server && tsc --noEmit",
             "preview": "vite preview",
