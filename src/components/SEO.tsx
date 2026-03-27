@@ -90,6 +90,10 @@ const ROUTE_SEO: Record<string, { title: string; description: string }> = {
     title: 'Profile | FilmRoom',
     description: 'View and update your FilmRoom profile and account information.',
   },
+  Articles: {
+    title: 'Fantasy Football Articles & Guides | FilmRoom',
+    description: 'Expert fantasy football strategy guides, rankings analysis, waiver wire tips, and beginner resources.',
+  },
 };
 
 // View name to URL path mapping
@@ -113,6 +117,7 @@ const VIEW_TO_PATH: Record<string, string> = {
   Register: '/register',
   AllPlayers: '/all-players',
   Pricing: '/pricing',
+  Articles: '/articles',
   Admin: '/admin',
 };
 
@@ -206,6 +211,32 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
       },
       {
         '@context': 'https://schema.org',
+        '@type': 'HowTo',
+        'name': 'How to Get Started with FilmRoom Fantasy Football',
+        'description': 'Set up your fantasy football dashboard in three simple steps.',
+        'step': [
+          {
+            '@type': 'HowToStep',
+            'position': 1,
+            'name': 'Connect your league',
+            'text': 'Enter your Sleeper username or link your Yahoo/ESPN account. Your league data, rosters, and schedule sync in under a second.',
+          },
+          {
+            '@type': 'HowToStep',
+            'position': 2,
+            'name': 'Check the numbers',
+            'text': 'Player rankings built off Vegas lines, scoring trends, and real stat breakdowns. Filter by position, scoring format, and week.',
+          },
+          {
+            '@type': 'HowToStep',
+            'position': 3,
+            'name': 'Make better decisions',
+            'text': 'Start/sit calls backed by data. Waiver pickups before your leaguemates notice. Trade offers you can actually evaluate.',
+          },
+        ],
+      },
+      {
+        '@context': 'https://schema.org',
         '@type': 'BreadcrumbList',
         'itemListElement': [
           { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
@@ -267,14 +298,48 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
   }
 
   if (effectiveView === 'Pricing') {
-    props.jsonLd = {
-      '@context': 'https://schema.org',
-      '@type': 'BreadcrumbList',
-      'itemListElement': [
-        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
-        { '@type': 'ListItem', 'position': 2, 'name': 'Pricing', 'item': `${BASE_URL}/pricing` },
-      ],
-    };
+    props.jsonLd = [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        'name': 'FilmRoom Fantasy Football',
+        'description': 'Fantasy football analysis platform with player rankings, trade analyzer, and league management tools.',
+        'brand': { '@type': 'Brand', 'name': 'FilmRoom' },
+        'offers': [
+          {
+            '@type': 'Offer',
+            'name': 'Free',
+            'price': '0',
+            'priceCurrency': 'USD',
+            'description': 'Player rankings, game slate, news, 1 league sync, 3 trade analyses/day',
+          },
+          {
+            '@type': 'Offer',
+            'name': 'Pro',
+            'price': '4.99',
+            'priceCurrency': 'USD',
+            'priceSpecification': { '@type': 'UnitPriceSpecification', 'price': '4.99', 'priceCurrency': 'USD', 'billingDuration': 'P1M' },
+            'description': 'Unlimited league syncs, trending players, 5 trade analyses/day',
+          },
+          {
+            '@type': 'Offer',
+            'name': 'Elite',
+            'price': '9.99',
+            'priceCurrency': 'USD',
+            'priceSpecification': { '@type': 'UnitPriceSpecification', 'price': '9.99', 'priceCurrency': 'USD', 'billingDuration': 'P1M' },
+            'description': 'Deep player research, Vegas props, game logs, unlimited trade analyses',
+          },
+        ],
+      },
+      {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        'itemListElement': [
+          { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+          { '@type': 'ListItem', 'position': 2, 'name': 'Pricing', 'item': `${BASE_URL}/pricing` },
+        ],
+      },
+    ];
   }
 
   if (effectiveView === 'Trends') {
@@ -295,6 +360,29 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
       'itemListElement': [
         { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
         { '@type': 'ListItem', 'position': 2, 'name': 'NFL Games', 'item': `${BASE_URL}/game-slate` },
+      ],
+    };
+  }
+
+  // Breadcrumbs for remaining public pages
+  const breadcrumbOnlyPages: Record<string, string> = {
+    Playoffs: 'Playoff Predictor',
+    DraftRankings: 'Draft Rankings',
+    LeagueAnalyzer: 'League Analyzer',
+    Research: 'Research',
+    Articles: 'Articles',
+    Login: 'Sign In',
+    Register: 'Sign Up',
+  };
+
+  if (breadcrumbOnlyPages[effectiveView] && !props.jsonLd) {
+    const pagePath = VIEW_TO_PATH[effectiveView] || '/';
+    props.jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': breadcrumbOnlyPages[effectiveView], 'item': `${BASE_URL}${pagePath}` },
       ],
     };
   }
