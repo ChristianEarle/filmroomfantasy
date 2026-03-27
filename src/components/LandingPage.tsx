@@ -275,7 +275,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             { num: '\u{1F916}', title: 'AI trade analysis', desc: 'Drop in a trade and get an instant AI-powered evaluation. Fair value, positional impact, league context \u2014 so you stop second-guessing.' },
             { num: '\u{1F3C8}', title: 'Your league, your way', desc: 'Sync your Sleeper, Yahoo, or ESPN league and see everything through the lens of your roster, your matchups, your scoring settings.' },
             { num: '\u{1F527}', title: 'Fully customizable', desc: 'Filter by scoring format, position, week, and more. PPR, Half PPR, Standard \u2014 see projections the way your league actually scores.' },
-            { num: '4hr', title: 'Always fresh data', desc: 'Stats, projections, and line movements updated every 4 hours. Vegas lines, injury news, and trends \u2014 never stale.' },
+            { num: '\u{1F3C6}', title: 'Dynamic playoff predictor', desc: 'Input scenarios \u2014 wins, losses, tiebreakers \u2014 and see your updated playoff odds in real time. Know exactly what you need to clinch.' },
             { num: '$0', title: 'Free to use', desc: 'Core rankings and projections are free forever. No paywall, no email gate. Just open the page and see the data.' },
           ].map((d) => (
             <div key={d.title} className="diff-card">
