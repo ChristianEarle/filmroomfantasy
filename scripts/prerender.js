@@ -12,16 +12,51 @@
  * Requires: puppeteer (devDependency)
  */
 
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
-import puppeteer from 'puppeteer';
+import { spawn, execSync } from 'child_process';
+import puppeteer from 'puppeteer-core';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = join(__dirname, '..', 'build');
 const PORT = 4173; // Vite preview default port
 const ORIGIN = `http://localhost:${PORT}`;
+
+/**
+ * Find a Chrome/Chromium executable on the system.
+ * Checks common locations and environment variables.
+ */
+function findChrome() {
+  // Allow explicit override via env var
+  if (process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)) {
+    return process.env.CHROME_PATH;
+  }
+
+  const candidates = [
+    // Linux
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    // macOS
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    // Common CI paths
+    '/usr/bin/google-chrome-stable',
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  // Try `which` as a fallback
+  try {
+    return execSync('which google-chrome || which chromium-browser || which chromium', { encoding: 'utf-8' }).trim();
+  } catch {
+    return null;
+  }
+}
 
 // Public routes that crawlers should see with full content.
 // Authenticated routes (home, team, matchup, settings, etc.) are excluded
@@ -144,9 +179,20 @@ async function main() {
   console.log(`Preview server running on port ${PORT}`);
 
   // 2. Launch Puppeteer
+  const chromePath = findChrome();
+  if (!chromePath) {
+    console.error('Could not find Chrome/Chromium. Install it or set CHROME_PATH env var.');
+    console.error('On Ubuntu/CI: sudo apt-get install -y google-chrome-stable');
+    console.error('Or: npx @puppeteer/browsers install chrome@stable');
+    server.kill();
+    process.exit(1);
+  }
+  console.log(`Using Chrome at: ${chromePath}`);
+
   const browser = await puppeteer.launch({
+    executablePath: chromePath,
     headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
   });
 
   const page = await browser.newPage();
