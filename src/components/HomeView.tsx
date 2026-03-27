@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TrendingUp, Trophy, Flame, Clock, ChevronRight, AlertCircle, Loader2, ArrowLeftRight, Sparkles } from 'lucide-react';
+import { TrendingUp, Trophy, Clock, ChevronRight, AlertCircle, Loader2, ArrowLeftRight, Sparkles } from 'lucide-react';
 import { Player } from '../App';
 import { NewsSnippet } from './NewsSnippet';
 import type { Game } from '../types/game';
@@ -208,14 +208,20 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
             </button>
 
             <button
-              onClick={() => onViewChange('Waivers')}
-              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:bg-slate-800/50' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+              onClick={() => onViewChange('TradeAnalyzer')}
+              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-gradient-to-br from-purple-900/30 to-slate-900 border-purple-500/30 hover:border-purple-400/50' : 'bg-gradient-to-br from-purple-50 to-white border-purple-200 hover:border-purple-300'}`}
             >
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
-                <Flame className="w-4 h-4 text-orange-400" aria-hidden="true" />
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-purple-500/20 border-purple-500/30' : 'bg-purple-100 border-purple-200'}`}>
+                <ArrowLeftRight className="w-4 h-4 text-purple-400" aria-hidden="true" />
               </div>
-              <div className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Hot Pickups</div>
-              <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{trending.length} trending players</div>
+              <div className="flex items-center gap-1.5">
+                <span className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Trade Analyzer</span>
+                <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${isDarkMode ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-100 text-purple-600'}`}>
+                  <Sparkles className="w-2.5 h-2.5" aria-hidden="true" />
+                  AI
+                </span>
+              </div>
+              <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Who wins the trade?</div>
             </button>
 
             <button
@@ -229,31 +235,6 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
               <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{firstGameLabel}</div>
             </button>
           </div>
-
-          {/* AI Trade Analyzer CTA */}
-          <button
-            onClick={() => onViewChange('TradeAnalyzer')}
-            className={`w-full rounded-lg p-4 sm:p-5 border transition-all text-left group relative overflow-hidden ${isDarkMode ? 'bg-gradient-to-r from-purple-900/40 to-blue-900/40 border-purple-500/30 hover:border-purple-400/50' : 'bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200 hover:border-purple-300'}`}
-          >
-            <div className="flex items-center gap-4">
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${isDarkMode ? 'bg-purple-500/20' : 'bg-purple-100'}`}>
-                <ArrowLeftRight className="w-5 h-5 text-purple-400" aria-hidden="true" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>AI Trade Analyzer</span>
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${isDarkMode ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-100 text-purple-600'}`}>
-                    <Sparkles className="w-3 h-3" aria-hidden="true" />
-                    AI
-                  </span>
-                </div>
-                <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Get instant AI-powered trade evaluations — find out who wins and why.
-                </p>
-              </div>
-              <ChevronRight className={`w-5 h-5 flex-shrink-0 transition-transform group-hover:translate-x-0.5 ${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`} />
-            </div>
-          </button>
 
           {/* Important Updates - News from API */}
           <div className={`rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
