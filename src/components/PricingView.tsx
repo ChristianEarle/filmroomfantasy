@@ -71,7 +71,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         { text: 'News & injury updates', highlight: true },
         { text: 'Current week projections', highlight: true },
         { text: '1 league sync', highlight: false },
-        { text: '3 trade analyses per day', highlight: false },
+        { text: '1 trade analysis per day', highlight: false },
       ],
       cta: !isAuthenticated ? 'Sign Up Free' : userTier === 'free' ? 'Current Plan' : 'Downgrade',
       featured: false,

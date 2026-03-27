@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, gte } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import type { Env, Variables } from '../index';
@@ -44,16 +44,26 @@ function sanitizePromptInput(input: string, maxLength = MAX_FIELD_LENGTH): strin
 
 /** Daily trade analysis limits by subscription tier */
 const TRADE_LIMITS: Record<string, number> = {
-  free: 3,
+  free: 1,
   pro: 5,
   elite: Infinity,
 };
 
-/** Number of analyses allowed for unauthenticated users (lifetime via IP) */
+/** Number of analyses allowed for unauthenticated users per week */
 const ANON_LIMIT = 1;
 
 function getTodayKey(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+/** Returns the ISO date string (YYYY-MM-DD) for the Monday of the current week */
+function getWeekStartKey(): string {
+  const now = new Date();
+  const day = now.getUTCDay(); // 0=Sun, 1=Mon, ...
+  const diff = day === 0 ? 6 : day - 1; // days since Monday
+  const monday = new Date(now);
+  monday.setUTCDate(now.getUTCDate() - diff);
+  return monday.toISOString().slice(0, 10);
 }
 
 function generateId(): string {
@@ -525,18 +535,25 @@ tradesRoutes.get(
     const db = c.get('db');
 
     if (!user) {
-      // Unauthenticated — check IP-based usage
+      // Unauthenticated — check IP-based weekly usage
       const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
       const anonUserId = `anon_${ip}`;
+      const weekStart = getWeekStartKey();
       const used = await db
         .select()
         .from(schema.tradeAnalysisUsage)
-        .where(eq(schema.tradeAnalysisUsage.userId, anonUserId));
+        .where(
+          and(
+            eq(schema.tradeAnalysisUsage.userId, anonUserId),
+            gte(schema.tradeAnalysisUsage.dateKey, weekStart)
+          )
+        );
       return c.json({
         used: used.length,
         limit: ANON_LIMIT,
         remaining: Math.max(0, ANON_LIMIT - used.length),
         resetsDaily: false,
+        resetsWeekly: true,
       });
     }
 
@@ -621,16 +638,22 @@ tradesRoutes.post(
     const today = getTodayKey();
 
     if (!user) {
-      // Unauthenticated: lifetime limit by IP
+      // Unauthenticated: weekly limit by IP
       const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
       const anonUserId = `anon_${ip}`;
+      const weekStart = getWeekStartKey();
       const anonUsage = await db
         .select()
         .from(schema.tradeAnalysisUsage)
-        .where(eq(schema.tradeAnalysisUsage.userId, anonUserId));
+        .where(
+          and(
+            eq(schema.tradeAnalysisUsage.userId, anonUserId),
+            gte(schema.tradeAnalysisUsage.dateKey, weekStart)
+          )
+        );
       if (anonUsage.length >= ANON_LIMIT) {
         return c.json({
-          error: 'You\'ve used your free analysis. Create an account to get 3 per day.',
+          error: 'You\'ve used your free analysis this week. Create an account for 1 per day.',
           code: 'TRADE_LIMIT_REACHED',
         }, 429);
       }
@@ -650,7 +673,7 @@ tradesRoutes.post(
           );
         if (todayUsage.length >= limit) {
           const upgradeHint = tier === 'free'
-            ? 'Upgrade to Pro for 5 per day or Elite for unlimited.'
+            ? 'Upgrade to Pro for 5/day or Elite for unlimited.'
             : 'Upgrade to Elite for unlimited analyses.';
           return c.json({
             error: `You've used all ${limit} analyses today. ${upgradeHint}`,
