@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TrendingUp, Trophy, Clock, ChevronRight, AlertCircle, Loader2, ArrowLeftRight, Sparkles } from 'lucide-react';
+import { TrendingUp, Trophy, Clock, ChevronRight, AlertCircle, Loader2, ArrowLeftRight } from 'lucide-react';
 import { Player } from '../App';
 import { NewsSnippet } from './NewsSnippet';
 import type { Game } from '../types/game';
@@ -116,6 +116,13 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
     return `First game ${day} ${time}`;
   }, [espnGames, espnUnavailable]);
 
+  // Pick a random non-K/non-DEF player from roster for trade analyzer CTA
+  const tradeCtaPlayer = useMemo(() => {
+    const eligible = roster.filter(p => p.position !== 'K' && p.position !== 'DEF' && p.position !== 'D/ST');
+    if (eligible.length === 0) return null;
+    return eligible[Math.floor(Math.random() * eligible.length)];
+  }, [roster]);
+
   // Filter roster for injured/questionable players on the user's team
   const injuredRosterPlayers = roster.filter(p => p.status && INJURY_STATUSES.has(p.status));
 
@@ -209,19 +216,15 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
 
             <button
               onClick={() => onViewChange('TradeAnalyzer')}
-              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-gradient-to-br from-purple-900/30 to-slate-900 border-purple-500/30 hover:border-purple-400/50' : 'bg-gradient-to-br from-purple-50 to-white border-purple-200 hover:border-purple-300'}`}
+              className={`rounded-lg p-4 border transition-all text-left group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:bg-slate-800/50' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
             >
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-purple-500/20 border-purple-500/30' : 'bg-purple-100 border-purple-200'}`}>
-                <ArrowLeftRight className="w-4 h-4 text-purple-400" aria-hidden="true" />
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                <ArrowLeftRight className="w-4 h-4 text-blue-400" aria-hidden="true" />
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Trade Analyzer</span>
-                <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${isDarkMode ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-100 text-purple-600'}`}>
-                  <Sparkles className="w-2.5 h-2.5" aria-hidden="true" />
-                  AI
-                </span>
+              <div className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Trade Analyzer</div>
+              <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                {tradeCtaPlayer ? `See who you could get for ${tradeCtaPlayer.name}` : 'Analyze your trade options'}
               </div>
-              <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Who wins the trade?</div>
             </button>
 
             <button
