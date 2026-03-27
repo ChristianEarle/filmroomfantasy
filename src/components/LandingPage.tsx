@@ -205,8 +205,8 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
 
       <section className="hero">
         <div className="hero-label"><span className="dot" /> 2026 NFL Season — Data Updated Every 4 Hours</div>
-        <h1>Your edge starts<br />before the snap.</h1>
-        <p>Every projection starts with Vegas lines — spreads, totals, implied points — because the sharpest money in sports already did the homework. No expert rankings. No consensus lists. Just the market.</p>
+        <h1>Your league.<br />Your edge.</h1>
+        <p>Sync your fantasy league, break down every projection, and let AI evaluate your trades — all in one place. Built for managers who want real analysis, not recycled rankings.</p>
         <div className="hero-actions">
           <button className="btn-primary" onClick={nav('Login')}>Start free &rarr;</button>
           <a href="#rankings" className="btn-secondary">See the rankings</a>
@@ -258,7 +258,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               ))}
               <tr className="unlock-row">
                 <td colSpan={7}>
-                  <div className="unlock-text">350+ players ranked every week — projections powered by Vegas, not experts</div>
+                  <div className="unlock-text">350+ players ranked every week — full projection breakdowns, not just a number</div>
                   <button className="btn-primary" onClick={nav('Board')}>See full rankings &rarr;</button>
                 </td>
               </tr>
@@ -271,12 +271,12 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="section-header" style={{ marginBottom: 24 }}><h2>Why FilmRoom</h2></div>
         <div className="diff-grid">
           {[
-            { num: '5+', title: 'Vegas lines at the core', desc: 'Spreads, totals, and implied team scores drive every projection. No talking heads, no gut feelings \u2014 the market does the work.' },
-            { num: '4hr', title: 'Data refresh cycle', desc: 'Stats, projections, and line movements updated every 4 hours. Never making decisions on stale numbers.' },
-            { num: '3', title: 'Platforms, one dashboard', desc: 'Sync Sleeper, Yahoo, and ESPN leagues instantly. See all your teams, matchups, and waivers in one place.' },
-            { num: '18', title: 'Weeks of projections', desc: 'Full-season projections across PPR, Half PPR, and Standard. Plan your season, not just your week.' },
-            { num: '0', title: 'Paywalled rankings', desc: 'Core rankings are free forever. No email gate, no "sign up to see #6." Just open the page and see the data.' },
-            { num: '<1s', title: 'Time to sync your league', desc: 'Paste your Sleeper username or connect Yahoo/ESPN with OAuth. Your roster, matchups, and waivers load instantly.' },
+            { num: '\u{1F4CA}', title: 'Projection breakdowns', desc: 'See exactly why a player is ranked where they are. Vegas lines, stat projections, matchup grades, and scoring breakdowns \u2014 not a black box.' },
+            { num: '\u{1F916}', title: 'AI trade analysis', desc: 'Drop in a trade and get an instant AI-powered evaluation. Fair value, positional impact, league context \u2014 so you stop second-guessing.' },
+            { num: '\u{1F3C8}', title: 'Your league, your way', desc: 'Sync your Sleeper, Yahoo, or ESPN league and see everything through the lens of your roster, your matchups, your scoring settings.' },
+            { num: '\u{1F527}', title: 'Fully customizable', desc: 'Filter by scoring format, position, week, and more. PPR, Half PPR, Standard \u2014 see projections the way your league actually scores.' },
+            { num: '4hr', title: 'Always fresh data', desc: 'Stats, projections, and line movements updated every 4 hours. Vegas lines, injury news, and trends \u2014 never stale.' },
+            { num: '$0', title: 'Free to use', desc: 'Core rankings and projections are free forever. No paywall, no email gate. Just open the page and see the data.' },
           ].map((d) => (
             <div key={d.title} className="diff-card">
               <div className="num">{d.num}</div>
@@ -291,9 +291,9 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <h2>Three steps. That&apos;s it.</h2>
         <div className="how-steps">
           {[
-            { n: '1', title: 'Connect your league', desc: 'Enter your Sleeper username or link your Yahoo/ESPN account. Your league data, rosters, and schedule sync in under a second.' },
-            { n: '2', title: 'Check the numbers', desc: "Player rankings built off Vegas lines, scoring trends, and real stat breakdowns \u2014 not some expert's top-10 list. Filter by position, scoring format, and week." },
-            { n: '3', title: 'Make better decisions', desc: 'Start/sit calls backed by data. Waiver pickups before your leaguemates notice. Trade offers you can actually evaluate.' },
+            { n: '1', title: 'Sync your league', desc: 'Paste your Sleeper username or connect Yahoo/ESPN. Your rosters, matchups, scoring settings, and schedule load instantly.' },
+            { n: '2', title: 'Break down every projection', desc: "See exactly how each player's projection is built — Vegas lines, stat models, matchup data. Filter by position, format, and week to fit your league." },
+            { n: '3', title: 'Win with confidence', desc: 'Run trades through AI analysis, spot waiver pickups early, and make start/sit decisions with real breakdowns behind every number.' },
           ].map((s) => (
             <div key={s.n} className="how-step">
               <div className="step-num">{s.n}</div>
@@ -353,10 +353,10 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="section-header" style={{ marginBottom: 24 }}><h2>Explore Our Tools</h2></div>
         <div className="diff-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
           {[
-            { title: 'Player Rankings', desc: 'Weekly projections powered by Vegas lines across PPR, Half PPR, and Standard.', view: 'Board' },
-            { title: 'Trade Analyzer', desc: 'AI-powered trade evaluations with instant fair value analysis.', view: 'TradeAnalyzer' },
-            { title: 'NFL Game Slate', desc: 'Live scores, spreads, and fantasy-relevant game stats.', view: 'GameSlate' },
-            { title: 'Trends', desc: 'Track trending players and roster movement across leagues.', view: 'Trends' },
+            { title: 'Projection Breakdowns', desc: 'See the full breakdown behind every player projection — Vegas lines, stat models, and matchup context.', view: 'Board' },
+            { title: 'AI Trade Analyzer', desc: 'Drop in any trade and get instant AI analysis — fair value, roster impact, and whether you should smash accept.', view: 'TradeAnalyzer' },
+            { title: 'My League Hub', desc: 'Sync your league from Sleeper, Yahoo, or ESPN. Your roster, matchups, waivers, and standings — all in one place.', view: 'Home' },
+            { title: 'NFL Game Slate', desc: 'Live scores, spreads, and fantasy-relevant game stats updated throughout the week.', view: 'GameSlate' },
           ].map((t) => (
             <a key={t.title} onClick={nav(t.view)} className="diff-card" style={{ cursor: 'pointer', textDecoration: 'none' }}>
               <h3>{t.title}</h3>
@@ -368,8 +368,8 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
       </section>
 
       <section className="final-cta fade-in">
-        <h2>Stop guessing. Start winning.</h2>
-        <p>Free rankings built on Vegas lines. No credit card required.</p>
+        <h2>Your league deserves better tools.</h2>
+        <p>Sync your league, break down projections, and analyze trades with AI. Free to start.</p>
         <button className="btn-primary" onClick={nav('Login')}>Get started free &rarr;</button>
       </section>
 
