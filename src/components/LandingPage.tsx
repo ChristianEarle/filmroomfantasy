@@ -317,7 +317,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <li className="highlight">News &amp; injury updates</li>
               <li className="highlight">Current week projections</li>
               <li>1 league sync</li>
-              <li>3 trade analyses per day</li>
+              <li>1 trade analysis per day</li>
             </ul>
             <a className="price-btn outline" onClick={nav('Login')}>Start free</a>
           </div>
