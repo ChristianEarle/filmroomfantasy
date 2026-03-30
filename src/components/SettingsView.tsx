@@ -71,6 +71,9 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
   const [syncSuccessLeagueId, setSyncSuccessLeagueId] = useState<string | null>(null);
   const [disconnectingLeagueId, setDisconnectingLeagueId] = useState<string | null>(null);
 
+  // Background connecting state (shown after modal closes)
+  const [backgroundConnecting, setBackgroundConnecting] = useState<{ name: string; platform: Platform } | null>(null);
+
   // Yahoo connection state
   const [yahooLeagues, setYahooLeagues] = useState<ExternalLeague[]>([]);
   const [loadingYahooLeagues, setLoadingYahooLeagues] = useState(false);
@@ -276,8 +279,11 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
   // Connect a league
   const handleConnectLeague = async (league: ExternalLeague) => {
-    setConnecting(true);
-    setConnectingLeagueId(league.externalId);
+    // Close modal immediately and show background connecting bar
+    const savedSleeperUsername = sleeperUsername;
+    const savedSleeperUserId = sleeperUserId;
+    handleCloseModal();
+    setBackgroundConnecting({ name: league.name, platform: league.platform });
     setConnectError(null);
 
     try {
@@ -286,8 +292,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
         league.platform,
         league.externalId,
         league,
-        league.platform === 'sleeper' ? sleeperUsername : undefined,
-        league.platform === 'sleeper' ? sleeperUserId ?? undefined : undefined
+        league.platform === 'sleeper' ? savedSleeperUsername : undefined,
+        league.platform === 'sleeper' ? savedSleeperUserId ?? undefined : undefined
       );
 
       // Auto-sync the league to import teams and rosters
@@ -297,22 +303,19 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
         } catch (syncError: unknown) {
           const msg = syncError instanceof Error ? syncError.message : 'Sync failed';
           setConnectError(`League connected but sync failed: ${msg}. You can try syncing manually.`);
-          // Don't close modal so user sees the message - they can close manually
           refetchLeagues();
           onLeagueSynced?.();
-          setConnecting(false);
+          setBackgroundConnecting(null);
           return;
         }
       }
 
       refetchLeagues();
-      handleCloseModal();
       onLeagueSynced?.();
     } catch (error: unknown) {
       setConnectError(error instanceof Error ? error.message : 'Failed to connect league. Please try again.');
     } finally {
-      setConnecting(false);
-      setConnectingLeagueId(null);
+      setBackgroundConnecting(null);
     }
   };
 
@@ -413,11 +416,33 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               {connectError}
             </div>
           )}
+          {backgroundConnecting && (
+            <div className={`mb-4 rounded-lg p-4 border ${isDarkMode ? 'bg-slate-800 border-blue-500/30' : 'bg-blue-50 border-blue-200'}`}>
+              <div className="flex items-center gap-4">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${getPlatformColor(backgroundConnecting.platform)}`}>
+                  <Globe className="w-5 h-5" aria-hidden="true" />
+                </div>
+                <div className="flex-1">
+                  <div className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{backgroundConnecting.name}</div>
+                  <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {backgroundConnecting.platform === 'mfl' ? 'MFL' : backgroundConnecting.platform === 'espn' ? 'ESPN' : backgroundConnecting.platform.charAt(0).toUpperCase() + backgroundConnecting.platform.slice(1)}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-blue-500">
+                  <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  <div className="text-right">
+                    <div className="text-sm font-medium">Connecting...</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>This will take a moment</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {leaguesLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
             </div>
-          ) : leagues.length === 0 ? (
+          ) : leagues.length === 0 && !backgroundConnecting ? (
             <div className={`text-center py-8 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               <Globe className="w-12 h-12 mx-auto mb-3 opacity-50" aria-hidden="true" />
               <p className="text-sm">No leagues connected yet.</p>
