@@ -315,7 +315,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
 
       {/* Tags */}
       {article.tags.length > 0 && (
-        <div className={`flex flex-wrap items-center gap-2.5 mt-12 pt-6 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+        <div className="flex flex-wrap items-center gap-2.5 mt-12">
           <span className={`text-xs font-semibold uppercase tracking-wider mr-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             Tags
           </span>
@@ -333,7 +333,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
       )}
 
       {/* CTA */}
-      <div className={`mt-12 p-8 sm:p-10 rounded-2xl text-center ${
+      <div className={`mt-10 p-8 sm:p-10 rounded-2xl text-center ${
         isDarkMode ? 'bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700' : 'bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100'
       }`}>
         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-4">
