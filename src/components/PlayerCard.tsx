@@ -319,6 +319,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
       className={`fixed inset-0 backdrop-blur-sm z-[100] flex items-start justify-center overflow-y-auto p-2 sm:p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-900/50'} ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
+      role="presentation"
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
       <div className={`w-full max-w-5xl mt-2 mb-2 sm:mt-8 sm:mb-8 transition-all duration-300 ${
@@ -337,6 +338,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           </button>
           <button
             onClick={handleClose}
+            aria-label="Close player card"
             className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-white hover:bg-slate-100 border border-slate-200'}`}
           >
             <X className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
@@ -425,10 +427,12 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             </div>
 
             {/* Tabs */}
-            <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} role="tablist">
               {(['props', 'breakdown', 'history'] as const).map((tab) => (
                 <button
                   key={tab}
+                  role="tab"
+                  aria-selected={activeTab === tab}
                   onClick={() => setActiveTab(tab)}
                   className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
                     activeTab === tab
@@ -922,7 +926,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; fin: string; cmp: number; att: number; passYds: number; passTd: number; int: number; rushYds: number; rushTd: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={game.week ?? index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}
@@ -963,7 +967,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; fin: string; fgm: number; fga: number; lng: number; xpm: number; xpa: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={game.week ?? index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}
@@ -1001,7 +1005,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; fin: string; sack: number; int: number; fr: number; td: number; pa: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={game.week ?? index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}
@@ -1043,7 +1047,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; snpPct: number | null; fin: string; tgt: number; rec: number; recYds: number; recTd: number; rushAtt: number; rushYds: number; rushTd: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={game.week ?? index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}
@@ -1090,7 +1094,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                               </thead>
                               <tbody>
                                 {apiGameLogs.map((game: { week: number; opp: string; isAway: boolean; fpts: string | number; snpPct: number | null; fin: string; rushAtt: number; rushYds: number; rushYpa: string | number; rushTd: number; tgt: number; rec: number; recYds: number; recYpr: string | number; recTd: number }, index: number) => (
-                                  <tr key={index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
+                                  <tr key={game.week ?? index} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-slate-200/80 hover:bg-slate-100/50'}`}>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${statMuted(isDarkMode)}`}>{game.week}</td>
                                     <td className={`px-3 py-2.5 font-medium ${colBorder(isDarkMode)} ${game.isAway ? 'text-blue-500' : statText(isDarkMode)}`}>
                                       {game.isAway ? '@' : ''}{game.opp}

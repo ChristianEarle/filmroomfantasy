@@ -136,6 +136,11 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
     [projectionMovers, projFilter]
   );
 
+  // Memoize converted player lists to avoid recreating on every render
+  const convertedTrendingUp = useMemo(() => trendingUp.map(convertTrendingToPlayer), [trendingUp]);
+  const convertedTrendingDown = useMemo(() => trendingDown.map(convertTrendingToPlayer), [trendingDown]);
+  const convertedMovers = useMemo(() => filteredMovers.map(convertMoverToPlayer), [filteredMovers]);
+
   const hasAnyData = trendingUp.length > 0 || trendingDown.length > 0 || projectionMovers.length > 0;
 
   return (

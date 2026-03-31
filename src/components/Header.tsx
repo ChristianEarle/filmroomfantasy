@@ -105,6 +105,8 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
           <div ref={leagueDropdownRef} className="relative">
             <button
               onClick={() => setLeagueDropdownOpen(!leagueDropdownOpen)}
+              aria-label="Switch league"
+              aria-expanded={leagueDropdownOpen}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-700'}`}
             >
               <span className="max-w-[120px] sm:max-w-[180px] truncate font-medium">
@@ -164,6 +166,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                 <input
                   type="text"
                   placeholder="Search players..."
+                  aria-label="Search players"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className={`w-48 sm:w-64 pl-9 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
@@ -192,6 +195,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                   {searchResults.map((player) => (
                     <button
                       key={player.id}
+                      role="option"
                       onClick={() => {
                         onPlayerClick(convertToPlayer(player));
                         setSearchOpen(false);

@@ -242,6 +242,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
             key={game.id}
             role="button"
             tabIndex={0}
+            aria-label={`${game.awayTeam} at ${game.homeTeam}`}
             onClick={() => handleGameClick(game, espnGames[idx])}
             onKeyDown={(e) => handleGameKeyDown(e, game, espnGames[idx])}
             className={`rounded-lg border overflow-hidden hover:shadow-lg transition-all cursor-pointer hover:border-blue-500 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}

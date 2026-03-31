@@ -327,6 +327,12 @@ function AppContent() {
     setSelectedPlayer(player);
   }, []);
 
+  // Clear modals when navigating between views
+  useEffect(() => {
+    setSelectedPlayer(null);
+    setSelectedGame(null);
+  }, [activeView]);
+
   const handlePlayerClick = useCallback((player: Player) => {
     setSelectedPlayer(player);
   }, []);
@@ -355,6 +361,9 @@ function AppContent() {
     logout();
     setAuthView('login');
     setActiveView('Board');
+    setSelectedPlayer(null);
+    setSelectedGame(null);
+    setArticleSlug(null);
   }, [logout]);
 
   const showLoginGate = !isAuthenticated;

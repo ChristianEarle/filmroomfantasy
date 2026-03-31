@@ -9,7 +9,7 @@ interface NewsSnippetProps {
 
 export function NewsSnippet({ item, className = '' }: NewsSnippetProps) {
   // Prefer AI summary when available (fantasy-relevant); otherwise content or headline
-  const text = item.aiSummary || item.content || item.headline || '';
+  const text = item.aiSummary ?? item.content ?? item.headline ?? '';
   const isLong = text.length > MAX_LENGTH;
   const displayText = isLong ? text.slice(0, MAX_LENGTH).trim() + '…' : text;
   const sourceUrl = item.sourceUrl?.trim();
@@ -30,7 +30,7 @@ export function NewsSnippet({ item, className = '' }: NewsSnippetProps) {
         href={sourceUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className={`${className} hover:underline`}
+        className={`${className} hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded`}
         onClick={(e) => e.stopPropagation()}
       >
         {displayText}

@@ -163,9 +163,10 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
 
         {/* Content */}
         <div className={`flex-1 overflow-y-auto p-6 relative ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
-          {isLoading && (
-            <div className={`absolute inset-0 flex items-center justify-center z-10 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-100/80'}`} aria-live="polite">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          {isLoading && !error && (
+            <div className={`absolute inset-0 flex items-center justify-center z-10 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-100/80'}`} role="status" aria-live="polite">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-500" aria-hidden="true" />
+              <span className="sr-only">Loading player data...</span>
             </div>
           )}
           {error && (

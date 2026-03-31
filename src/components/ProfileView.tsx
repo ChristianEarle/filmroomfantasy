@@ -28,6 +28,9 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
       const response = await api.post<{ url: string }>('/billing/create-portal', {
         returnUrl: window.location.href,
       });
+      if (!response.url) {
+        throw new Error('Invalid response: missing portal URL');
+      }
       window.location.href = response.url;
     } catch (err) {
       setPortalError(err instanceof Error ? err.message : 'Failed to open subscription management');
@@ -159,13 +162,13 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
           </div>
 
           {accountError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+            <div role="alert" aria-live="polite" className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {accountError}
             </div>
           )}
           {accountSaved && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-sm">
+            <div role="status" aria-live="polite" className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-sm">
               <Check className="h-4 w-4 shrink-0" />
               Account updated
             </div>
@@ -242,7 +245,7 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
                   className="flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:bg-blue-600/50 disabled:cursor-not-allowed"
                 >
                   {accountLoading ? (
-                    <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" role="status" aria-label="Saving" />
                   ) : (
                     'Save changes'
                   )}

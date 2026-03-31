@@ -180,8 +180,14 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to create checkout session');
+        let errorMsg = 'Failed to create checkout session';
+        try {
+          const error = await response.json();
+          errorMsg = error.error || errorMsg;
+        } catch {
+          errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        alert(errorMsg);
         return;
       }
 

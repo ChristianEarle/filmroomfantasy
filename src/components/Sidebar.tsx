@@ -49,6 +49,8 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
         <div
           className="fixed inset-0 bg-black/50 z-40 md:hidden"
           onClick={onMobileClose}
+          role="presentation"
+          aria-hidden="true"
         />
       )}
 
@@ -58,6 +60,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
           <button
             onClick={() => handleNavClick('Home')}
             className="flex items-center gap-2 cursor-pointer"
+            aria-label="FilmRoom home"
           >
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <LayoutDashboard className="w-5 h-5 text-white" />
@@ -67,12 +70,13 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main navigation">
           <ul className="space-y-1">
-            {menuItems.map((item, index) => (
-              <li key={index}>
+            {menuItems.map((item) => (
+              <li key={item.view}>
                 <button
                   onClick={() => handleNavClick(item.view)}
+                  aria-current={item.view === activeView ? 'page' : undefined}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                     item.view === activeView
                       ? 'bg-blue-600 text-white shadow-sm'

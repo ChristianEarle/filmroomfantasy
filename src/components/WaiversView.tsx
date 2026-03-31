@@ -194,6 +194,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                 <button
                   onClick={fetchPlayers}
                   disabled={loading}
+                  aria-label="Refresh player list"
                   className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
                 >
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -216,6 +217,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                     <input
                       type="text"
                       placeholder="Player or team..."
+                      aria-label="Search players or teams"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className={`py-1.5 bg-transparent text-sm focus:outline-none w-28 ${isDarkMode ? 'text-white placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'}`}
@@ -283,8 +285,9 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                   </button>
                 </div>
               ) : loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                <div className="flex items-center justify-center py-12" role="status">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" aria-hidden="true" />
+                  <span className="sr-only">Loading players...</span>
                 </div>
               ) : sortedPlayers.length === 0 ? (
                 <div className={`text-center py-12 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -293,15 +296,15 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                   <p className="text-sm mt-1">Try changing the position filter or sync your league.</p>
                 </div>
               ) : (
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse" aria-label="Available waiver wire players">
                   <thead>
                     <tr className={`border-b ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                      <th className={`px-6 py-4 text-xs font-medium w-12 text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>#</th>
-                      <th className={`px-4 py-4 text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Player</th>
-                      <th className={`px-4 py-4 text-xs font-medium w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Pos</th>
-                      <th className={`px-4 py-4 text-xs font-medium text-right w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>GP</th>
-                      <th className={`px-4 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Avg</th>
-                      <th className={`px-6 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      <th scope="col" className={`px-6 py-4 text-xs font-medium w-12 text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>#</th>
+                      <th scope="col" className={`px-4 py-4 text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Player</th>
+                      <th scope="col" className={`px-4 py-4 text-xs font-medium w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Pos</th>
+                      <th scope="col" className={`px-4 py-4 text-xs font-medium text-right w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>GP</th>
+                      <th scope="col" className={`px-4 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Avg</th>
+                      <th scope="col" className={`px-6 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {pointsType === 'actual' ? 'Pts' : 'Proj'}
                       </th>
                     </tr>
