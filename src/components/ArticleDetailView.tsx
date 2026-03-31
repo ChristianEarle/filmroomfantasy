@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Loader2, Clock, User, ChevronRight, BookOpen, TrendingUp, Zap, Award, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, Clock, User, ChevronRight, BookOpen, TrendingUp, Zap, Award, HelpCircle, Share2, Link, Check } from 'lucide-react';
 import { api } from '../services/api';
 import { ARTICLE_CATEGORIES } from '../data/articles';
 import { SEO } from './SEO';
@@ -22,9 +22,12 @@ interface ArticleData {
   tags: string[];
   author: string;
   readingTime: number;
+  imageUrl: string | null;
   publishedAt: string | null;
   updatedAt: number;
 }
+
+const BASE_URL = 'https://filmroomfantasy.com';
 
 const CATEGORY_ICONS: Record<string, typeof BookOpen> = {
   strategy: Zap,
@@ -39,6 +42,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [relatedArticles, setRelatedArticles] = useState<ArticleData[]>([]);
+  const [copied, setCopied] = useState(false);
 
   const fetchArticle = useCallback(async () => {
     setLoading(true);
@@ -101,6 +105,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
         description={article.description}
         path={`/articles/${article.slug}`}
         type="article"
+        image={article.imageUrl ? article.imageUrl : undefined}
         jsonLd={[
           {
             '@context': 'https://schema.org',
@@ -175,14 +180,50 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
             {article.description}
           </p>
 
-          {/* Author + date */}
-          <div className={`flex items-center gap-4 pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-              <User className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+          {/* Author + date + share */}
+          <div className={`flex items-center justify-between pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+            <div className="flex items-center gap-4">
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                <User className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+              </div>
+              <div>
+                <p className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{article.author}</p>
+                {date && <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{date}</p>}
+              </div>
             </div>
-            <div>
-              <p className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{article.author}</p>
-              {date && <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{date}</p>}
+
+            {/* Share buttons */}
+            <div className="flex items-center gap-2">
+              <a
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(`${BASE_URL}/articles/${article.slug}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                  isDarkMode
+                    ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                aria-label="Share on X (Twitter)"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                Post
+              </a>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`${BASE_URL}/articles/${article.slug}`);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                  isDarkMode
+                    ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                aria-label="Copy link"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Link className="w-3.5 h-3.5" />}
+                {copied ? 'Copied' : 'Copy link'}
+              </button>
             </div>
           </div>
         </div>

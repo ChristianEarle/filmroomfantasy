@@ -307,17 +307,18 @@ function generatePage(route, template) {
   );
 
   // Add OG, Twitter tags, and JSON-LD before </head>
+  const ogImage = route.image || `${BASE_URL}/og-image.png`;
   const ogTags = `
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content="${route.path.startsWith('/articles/') && route.path !== '/articles' ? 'article' : 'website'}" />
     <meta property="og:url" content="${BASE_URL}${route.path}" />
     <meta property="og:title" content="${route.title}" />
     <meta property="og:description" content="${route.description}" />
-    <meta property="og:image" content="${BASE_URL}/og-image.png" />
+    <meta property="og:image" content="${ogImage}" />
     <meta property="twitter:card" content="summary_large_image" />
     <meta property="twitter:url" content="${BASE_URL}${route.path}" />
     <meta property="twitter:title" content="${route.title}" />
     <meta property="twitter:description" content="${route.description}" />
-    <meta property="twitter:image" content="${BASE_URL}/og-image.png" />`;
+    <meta property="twitter:image" content="${ogImage}" />`;
 
   let jsonLdTag = '';
   if (route.jsonLd) {
