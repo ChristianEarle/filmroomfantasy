@@ -61,7 +61,7 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
   const restArticles = filteredArticles.slice(1);
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-5xl mx-auto px-1 sm:px-2">
       <SEO
         title="Fantasy Football Articles & Guides | FilmRoom"
         description="Expert fantasy football strategy guides, rankings analysis, waiver wire tips, and beginner resources. Learn how to win your fantasy league with data-driven insights."
@@ -153,7 +153,7 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
               <p className="text-sm mt-1">Check back soon for new content!</p>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-8">
               {/* Featured article (first one, large card) */}
               {featuredArticle && (
                 <FeaturedCard
@@ -165,7 +165,7 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
 
               {/* Rest of articles in grid */}
               {restArticles.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {restArticles.map((article) => (
                     <ArticleCard
                       key={article.slug}
@@ -182,7 +182,7 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
       )}
 
       {/* Internal links section */}
-      <div className={`mt-12 pt-8 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+      <div className={`mt-14 pt-8 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
         <h2 className={`text-lg font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
           Explore FilmRoom Tools
         </h2>

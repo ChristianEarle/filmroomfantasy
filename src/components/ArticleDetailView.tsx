@@ -95,7 +95,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
     : '';
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto px-1 sm:px-2">
       <SEO
         title={`${article.title} | FilmRoom`}
         description={article.description}
@@ -190,7 +190,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
 
       {/* Article body */}
       <div
-        className={`prose prose-lg max-w-none ${isDarkMode ? 'prose-invert' : ''}`}
+        className={`prose prose-lg max-w-none mt-10 ${isDarkMode ? 'prose-invert' : ''}`}
         style={{
           ['--tw-prose-body' as string]: isDarkMode ? '#cbd5e1' : '#475569',
           ['--tw-prose-headings' as string]: isDarkMode ? '#f1f5f9' : '#0f172a',
@@ -223,7 +223,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
       )}
 
       {/* CTA */}
-      <div className={`mt-8 p-6 sm:p-8 rounded-2xl border text-center ${
+      <div className={`mt-10 p-6 sm:p-8 rounded-2xl border text-center ${
         isDarkMode ? 'bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700' : 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-100'
       }`}>
         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-4">
@@ -247,11 +247,11 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
 
       {/* Related articles */}
       {relatedArticles.length > 0 && (
-        <div className="mt-10">
+        <div className="mt-12">
           <h2 className={`text-lg font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Related Articles
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {relatedArticles.map((ra) => {
               const raCat = ARTICLE_CATEGORIES[ra.category as keyof typeof ARTICLE_CATEGORIES];
               const RaIcon = CATEGORY_ICONS[ra.category] || BookOpen;
