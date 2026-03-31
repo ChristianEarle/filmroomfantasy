@@ -22,7 +22,7 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: Error): Partial<State> {
-    return { hasError: true, error };
+    return { hasError: true, error, retryCount: 0 };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -81,6 +81,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 </button>
               )}
               <button
+                type="button"
                 onClick={this.handleReload}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
               >

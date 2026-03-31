@@ -122,7 +122,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
     rank: index + 1,
     name: rosterPlayer.name,
     team: rosterPlayer.team,
-    position: rosterPlayer.position as 'WR' | 'RB' | 'QB' | 'TE' | 'K' | 'DEF',
+    position: rosterPlayer.position as 'WR' | 'RB' | 'QB' | 'TE' | 'K' | 'DEF' | 'FLEX',
     keyLine: `Proj: ${rosterPlayer.projectedPoints?.toFixed(1) || '0'} pts`,
     projectedPoints: rosterPlayer.projectedPoints || 0,
     weekChange: 0,
@@ -136,7 +136,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
     ? bench.reduce((prev, current) => {
         const prevGrade = getMatchupGrade(prev.projectedPoints || 0, prev.position);
         const currentGrade = getMatchupGrade(current.projectedPoints || 0, current.position);
-        return currentGrade < prevGrade ? current : prev;
+        return currentGrade > prevGrade ? current : prev;
       })
     : null;
 
@@ -218,7 +218,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
               </button>
               {showWeekDropdown && (
                 <div className={`absolute top-12 right-0 w-32 rounded-lg border shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                  {Array.from({ length: 18 }, (_, i) => i + 1).map(week => (
+                  {Array.from({ length: league?.totalWeeks || 18 }, (_, i) => i + 1).map(week => (
                     <button
                       key={week}
                       onClick={() => { setSelectedWeek(week); setShowWeekDropdown(false); }}
@@ -428,7 +428,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 </defs>
                 <polygon
                   points={`0,110 ${weeklyPoints.map((point, i) => {
-                    const x = (i / (weeklyPoints.length - 1)) * 280;
+                    const x = weeklyPoints.length > 1 ? (i / (weeklyPoints.length - 1)) * 280 : 140;
                     const y = 110 - ((point / maxPoint) * 90);
                     return `${x},${y}`;
                   }).join(' ')} 280,110`}
@@ -438,7 +438,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 {/* Line chart */}
                 <polyline
                   points={weeklyPoints.map((point, i) => {
-                    const x = (i / (weeklyPoints.length - 1)) * 280;
+                    const x = weeklyPoints.length > 1 ? (i / (weeklyPoints.length - 1)) * 280 : 140;
                     const y = 110 - ((point / maxPoint) * 90);
                     return `${x},${y}`;
                   }).join(' ')}
@@ -449,7 +449,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
 
                 {/* Points */}
                 {weeklyPoints.map((point, i) => {
-                  const x = (i / (weeklyPoints.length - 1)) * 280;
+                  const x = weeklyPoints.length > 1 ? (i / (weeklyPoints.length - 1)) * 280 : 140;
                   const y = 110 - ((point / maxPoint) * 90);
                   return (
                     <circle

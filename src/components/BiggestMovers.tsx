@@ -70,7 +70,7 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
             .filter((p: APIPlayer) => {
               const actual = p.seasonStats?.fantasyPointsPPR || 0;
               const projected = p.weeklyProjectedPoints || 0;
-              return actual > 0 && projected > 0;
+              return actual > 0 || projected > 0;
             })
             .map((p: APIPlayer) => {
               const projected = p.weeklyProjectedPoints || 0;

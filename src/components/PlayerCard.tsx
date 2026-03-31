@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
-import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock } from 'lucide-react';
+import { X, ArrowLeft, Zap, Target, Calendar, Star, Clock } from 'lucide-react';
 import { Player } from '../App';
 import api from '../services/api';
 import { playerService } from '../services';
@@ -109,7 +109,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     if (!player?.id) return;
     let cancelled = false;
     setPropsLoading(true);
-    api.get<any>(`/players/${player.id}/props?week=${propsCurrentWeek || 1}&season=${propsSeasonYear || 2025}`)
+    api.get<{ props: Record<string, unknown>; actual: Record<string, unknown> }>(`/players/${player.id}/props?week=${propsCurrentWeek || 1}&season=${propsSeasonYear || new Date().getFullYear()}`)
       .then((res) => { if (!cancelled) { setPropsData(res); setPropsLoading(false); } })
       .catch(() => { if (!cancelled) { setPropsData(null); setPropsLoading(false); } });
     return () => { cancelled = true; };

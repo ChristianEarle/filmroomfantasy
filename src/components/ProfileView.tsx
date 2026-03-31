@@ -104,7 +104,7 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
     }
 
     // Check if anything changed
-    const emailChanged = editEmail.toLowerCase() !== user?.email;
+    const emailChanged = editEmail.toLowerCase() !== (user?.email?.toLowerCase() || '');
     const usernameChanged = editUsername !== user?.username;
     if (!emailChanged && !usernameChanged) {
       setEditingAccount(false);

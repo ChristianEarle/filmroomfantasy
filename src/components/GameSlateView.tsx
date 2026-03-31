@@ -148,12 +148,12 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
   const allFinal = displayGames.length > 0 && displayGames.every(g => g.status === 'final');
   const allScheduled = displayGames.length > 0 && displayGames.every(g => g.status === 'scheduled');
 
-  const handleGameClick = (game: Game, espnGame: (typeof espnGames)[0]) => {
-    const fullGame: Game = { ...game, weather: espnGame.weather ?? undefined };
+  const handleGameClick = (game: Game, espnGame?: (typeof espnGames)[0]) => {
+    const fullGame: Game = { ...game, weather: espnGame?.weather ?? undefined };
     onSelectGame?.(fullGame);
   };
 
-  const handleGameKeyDown = (e: React.KeyboardEvent, game: Game, espnGame: (typeof espnGames)[0]) => {
+  const handleGameKeyDown = (e: React.KeyboardEvent, game: Game, espnGame?: (typeof espnGames)[0]) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       handleGameClick(game, espnGame);

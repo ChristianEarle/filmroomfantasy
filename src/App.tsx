@@ -49,16 +49,15 @@ function PageTransition({ children, viewKey }: { children: React.ReactNode; view
     if (viewKey !== prevKeyRef.current) {
       // View is changing - fade out, then update, then fade in
       setIsVisible(false);
+      let cleanupRaf: number | undefined;
       const timer = setTimeout(() => {
         setDisplayChildren(childrenRef.current);
         prevKeyRef.current = viewKey;
         const rafId = requestAnimationFrame(() => {
           setIsVisible(true);
         });
-        // Store rafId for cleanup on next run
         cleanupRaf = rafId;
       }, 150);
-      let cleanupRaf: number | undefined;
       return () => {
         clearTimeout(timer);
         if (cleanupRaf !== undefined) cancelAnimationFrame(cleanupRaf);
@@ -339,7 +338,6 @@ function AppContent() {
       setActiveView('Home');
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Login failed');
-      throw error;
     }
   }, [login]);
 
@@ -350,7 +348,6 @@ function AppContent() {
       setActiveView('Home');
     } catch (error) {
       setRegisterError(error instanceof Error ? error.message : 'Registration failed');
-      throw error;
     }
   }, [register]);
 
@@ -410,9 +407,11 @@ function AppContent() {
   }
 
   // If authenticated user lands on '/', redirect to Home
-  if (activeView === 'Landing' && isAuthenticated) {
-    setActiveView('Home');
-  }
+  useEffect(() => {
+    if (activeView === 'Landing' && isAuthenticated) {
+      setActiveView('Home');
+    }
+  }, [activeView, isAuthenticated]);
 
   return (
     <div className={`flex h-dvh min-h-screen ${isDarkMode ? 'dark bg-slate-950' : 'bg-slate-100'}`}>

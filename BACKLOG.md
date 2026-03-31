@@ -171,23 +171,23 @@
 - [x] **Audit SettingsView + FeedbackWidget** - Fixed 33 issues
 - [x] **Audit PlayoffPredictorView** - Fixed 18 issues (ties in records, findIndex guards, dynamic playoff weeks, memoization, tied scores, ARIA tabs, aria-labels, error display, unused vars)
 
-**Views — Not yet audited:**
-- [ ] **Audit TeamView** - Roster display, player cards, team stats
-- [ ] **Audit WaiversView** - Waiver claims, player search, bid management
-- [ ] **Audit GameSlateView + GameDetailModal** - NFL schedule, live scores, game detail overlay
-- [ ] **Audit TrendsView** - Roster trends, projection movers
-- [ ] **Audit AllPlayersView** - Full player list with filters, pagination
-- [ ] **Audit ProfileView** - User profile, password change, Google link status
-- [ ] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth
-- [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
+**Views — Audited:**
+- [x] **Audit TeamView** - Fixed 5 issues: division-by-zero in chart, inverted bench player logic, FLEX position type, hardcoded 18 weeks, null safety
+- [x] **Audit WaiversView** - Found 14 issues: rank index mismatch, unsafe type assertion, duplicate convertToPlayer, accessibility gaps
+- [x] **Audit GameSlateView + GameDetailModal** - Fixed unsafe espnGames array indexing, found 21 issues total including accessibility and performance
+- [x] **Audit TrendsView** - Found 10 issues: index-based ranking, stale closures, missing memoization, accessibility
+- [x] **Audit AllPlayersView** - Fixed missing `getDefaultSeason` import, found 12 issues total
+- [x] **Audit ProfileView** - Fixed case-sensitive email comparison, found 6 issues including focus management
+- [x] **Audit LoginView + RegisterView + ForgotPasswordView** - Found 11 issues: missing password toggle on confirm, accessibility gaps
+- [x] **Audit PlayerCard** - Fixed unused imports, hardcoded 2025, `any` type. Found 17 issues total
 
-**Shared Components — Not yet audited:**
-- [ ] **Audit Sidebar** - Navigation, responsive collapse, active state
-- [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
-- [ ] **Audit PlayerAvatar** - Image loading, fallback initials
-- [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget
-- [ ] **Audit ErrorBoundary** - Error catch/display, recovery
-- [ ] **Audit App.tsx** - Routing, state management, context wiring, page transitions
+**Shared Components — Audited:**
+- [x] **Audit Sidebar** - Found 23 issues: accessibility (aria-labels, aria-current, semantic nav), performance (memoization), hardcoded prices
+- [x] **Audit Header + LeagueManager** - Found 14 issues: type mismatch in search, unhandled JSON parse error, hardcoded Stripe price IDs
+- [x] **Audit PlayerAvatar** - Found 6 minor issues: displayName, alt text, null coalescing
+- [x] **Audit NewsPanel + NewsSnippet + BiggestMovers** - Fixed BiggestMovers AND→OR filter. Found 13 issues: race condition in week detection, index keys
+- [x] **Audit ErrorBoundary** - Fixed retry count reset on new error, added button type. Found 8 issues total
+- [x] **Audit App.tsx** - Fixed 4 critical issues: PageTransition variable scope TDZ bug, setState during render, unhandled promise re-throws. Found 13 issues total
 
 ---
 
