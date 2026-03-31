@@ -103,10 +103,10 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
       </div>
 
       {/* Category filter pills */}
-      <div className="flex flex-wrap gap-2 mb-8">
+      <div className="flex flex-wrap gap-2.5 mb-8">
         <button
           onClick={() => setSelectedCategory('all')}
-          className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
+          className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
             selectedCategory === 'all'
               ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
               : isDarkMode ? 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 border border-slate-700' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
@@ -118,7 +118,7 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
           <button
             key={key}
             onClick={() => setSelectedCategory(key)}
-            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
+            className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
               selectedCategory === key
                 ? 'text-white shadow-md'
                 : isDarkMode ? 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 border border-slate-700' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
@@ -165,7 +165,7 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
 
               {/* Rest of articles in grid */}
               {restArticles.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {restArticles.map((article) => (
                     <ArticleCard
                       key={article.slug}
@@ -182,7 +182,7 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
       )}
 
       {/* Internal links section */}
-      <div className={`mt-14 pt-8 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+      <div className="mt-14 pt-8">
         <h2 className={`text-lg font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
           Explore FilmRoom Tools
         </h2>
