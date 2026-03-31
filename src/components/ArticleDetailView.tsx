@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, Loader2, Clock, User, ChevronRight, BookOpen, TrendingUp, Zap, Award, HelpCircle, Calendar, Share2, Link, Check } from 'lucide-react';
 import { api } from '../services/api';
 import { ARTICLE_CATEGORIES } from '../data/articles';
@@ -29,6 +29,27 @@ interface ArticleData {
 
 const BASE_URL = 'https://filmroomfantasy.com';
 
+const PATH_TO_VIEW: Record<string, string> = {
+  '/': 'Landing',
+  '/home': 'Home',
+  '/player-rankings': 'Board',
+  '/matchup': 'Matchup',
+  '/team': 'Team',
+  '/waivers': 'Waivers',
+  '/game-slate': 'GameSlate',
+  '/trends': 'Trends',
+  '/research': 'Research',
+  '/playoff-predictor': 'Playoffs',
+  '/draft-rankings': 'DraftRankings',
+  '/league-analyzer': 'LeagueAnalyzer',
+  '/trade-analyzer': 'TradeAnalyzer',
+  '/settings': 'Settings',
+  '/profile': 'Profile',
+  '/pricing': 'Pricing',
+  '/articles': 'Articles',
+  '/all-players': 'AllPlayers',
+};
+
 const CATEGORY_ICONS: Record<string, typeof BookOpen> = {
   strategy: Zap,
   rankings: TrendingUp,
@@ -43,6 +64,59 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
   const [error, setError] = useState<string | null>(null);
   const [relatedArticles, setRelatedArticles] = useState<ArticleData[]>([]);
   const [copied, setCopied] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Intercept clicks on internal links within article content
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+
+    const handleClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest('a');
+      if (!anchor) return;
+
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+
+      // Handle internal paths (starting with /)
+      if (href.startsWith('/')) {
+        e.preventDefault();
+
+        // Check for article detail links like /articles/some-slug
+        if (href.startsWith('/articles/') && href.length > '/articles/'.length) {
+          const articleSlug = href.slice('/articles/'.length);
+          onArticleSelect(articleSlug);
+          return;
+        }
+
+        const view = PATH_TO_VIEW[href];
+        if (view) {
+          onNavigate(view);
+        }
+        return;
+      }
+
+      // Handle links to our own domain
+      if (href.startsWith(BASE_URL)) {
+        e.preventDefault();
+        const path = href.slice(BASE_URL.length) || '/';
+
+        if (path.startsWith('/articles/') && path.length > '/articles/'.length) {
+          const articleSlug = path.slice('/articles/'.length);
+          onArticleSelect(articleSlug);
+          return;
+        }
+
+        const view = PATH_TO_VIEW[path];
+        if (view) {
+          onNavigate(view);
+        }
+      }
+    };
+
+    el.addEventListener('click', handleClick);
+    return () => el.removeEventListener('click', handleClick);
+  }, [onNavigate, onArticleSelect]);
 
   const fetchArticle = useCallback(async () => {
     setLoading(true);
@@ -234,6 +308,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
 
       {/* Article body */}
       <div
+        ref={contentRef}
         className="article-content"
         dangerouslySetInnerHTML={{ __html: article.content }}
       />
@@ -294,26 +369,26 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
                 <button
                   key={ra.slug}
                   onClick={() => onArticleSelect(ra.slug)}
-                  className={`group text-left p-5 rounded-xl border transition-all ${
+                  className={`group text-left p-6 rounded-xl border transition-all ${
                     isDarkMode
                       ? 'bg-slate-900 border-slate-700 hover:border-slate-500'
                       : 'bg-white border-slate-200 hover:shadow-md hover:shadow-slate-200/50'
                   }`}
                 >
                   {raCat && (
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2.5 mb-4">
                       <div
-                        className="w-7 h-7 rounded-md flex items-center justify-center"
+                        className="w-8 h-8 rounded-md flex items-center justify-center"
                         style={{ background: `${raCat.color}15` }}
                       >
-                        <RaIcon className="w-3.5 h-3.5" style={{ color: raCat.color }} />
+                        <RaIcon className="w-4 h-4" style={{ color: raCat.color }} />
                       </div>
                       <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: raCat.color }}>
                         {raCat.label}
                       </span>
                     </div>
                   )}
-                  <h3 className={`text-sm font-bold leading-snug group-hover:text-blue-500 transition-colors line-clamp-2 mb-3 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  <h3 className={`text-sm font-bold leading-snug group-hover:text-blue-500 transition-colors line-clamp-2 mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {ra.title}
                   </h3>
                   <span className={`text-xs flex items-center gap-1 font-semibold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
