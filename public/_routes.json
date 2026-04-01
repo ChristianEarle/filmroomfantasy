@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/ads.txt",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/manifest.json",
+    "/favicon.svg",
+    "/og-image.png",
+    "/apple-touch-icon.png",
+    "/sw.js",
+    "/assets/*"
+  ]
+}
