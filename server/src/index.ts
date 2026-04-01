@@ -116,21 +116,22 @@ app.use('*', async (c, next) => {
   if (c.env.ENVIRONMENT === 'production') {
     c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
-  // Content Security Policy
+  // Content Security Policy (report-only to identify violations before enforcing)
+  const nonce = crypto.randomUUID().replace(/-/g, '');
   const cspDirectives = [
     "default-src 'self'",
-    "script-src 'self'",
-    "style-src 'self' 'unsafe-inline'", // Tailwind uses inline styles
-    "img-src 'self' https://sleepercdn.com https://a.espncdn.com https://*.googleusercontent.com data: blob:",
-    "font-src 'self'",
-    "connect-src 'self' https://accounts.google.com https://api.sleeper.app",
-    "frame-src 'none'",
+    `script-src 'self' https://pagead2.googlesyndication.com 'nonce-${nonce}'`,
+    "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'",
+    "font-src https://fonts.gstatic.com",
+    "connect-src 'self' https://filmroom-api.earle2001.workers.dev",
+    "img-src 'self' data: https:",
+    "frame-src https://googleads.g.doubleclick.net",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
   ];
-  c.header('Content-Security-Policy', cspDirectives.join('; '));
+  c.header('Content-Security-Policy-Report-Only', cspDirectives.join('; '));
 });
 
 // Environment validation middleware — warn on missing critical config
