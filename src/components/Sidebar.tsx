@@ -54,7 +54,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
 
       <aside className={`w-64 border-r z-50 flex flex-col ${mobileOpen ? 'sidebar-open' : 'sidebar-responsive'} ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Logo */}
-        <div className={`py-5 sm:py-6 flex items-center px-6 border-b flex-shrink-0 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+        <div className={`h-14 sm:h-16 flex items-center px-6 border-b flex-shrink-0 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <button
             onClick={() => handleNavClick('Home')}
             className="flex items-center gap-2.5 cursor-pointer"
