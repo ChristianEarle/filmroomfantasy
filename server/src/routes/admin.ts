@@ -716,6 +716,15 @@ adminRoutes.post('/sync-stats', async (c) => {
         // Throttle: 150ms delay between sequential stats fetches
         if (week > weeksToSync[0]) await sleep(150);
 
+        // Delete existing stats for this week first, then insert fresh
+        // This avoids per-player existence checks that blow past subrequest limits
+        await db.delete(schema.playerWeeklyStats).where(
+          and(
+            eq(schema.playerWeeklyStats.week, week),
+            eq(schema.playerWeeklyStats.seasonYear, seasonYear)
+          )
+        );
+
         const statsResponse = await fetch(
           `https://api.sleeper.com/stats/nfl/${seasonYear}/${week}?season_type=regular`
         );
@@ -792,14 +801,10 @@ adminRoutes.post('/sync-stats', async (c) => {
             fantasyPointsStd: playerStats.pts_std || 0,
           };
 
-          // Upsert: insert or update on unique(playerId, week, seasonYear)
           statsStatements.push(
             db.insert(schema.playerWeeklyStats).values({
               id: generateId(),
               ...statsData,
-            }).onConflictDoUpdate({
-              target: [schema.playerWeeklyStats.playerId, schema.playerWeeklyStats.week, schema.playerWeeklyStats.seasonYear],
-              set: statsData,
             })
           );
           statsImported++;
