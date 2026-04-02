@@ -11,7 +11,8 @@ const LANDING_CSS = `
 .lp nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 16px 0; transition: background 0.3s, backdrop-filter 0.3s; }
 .lp nav.scrolled { background: rgba(10,10,10,0.85); backdrop-filter: blur(16px); border-bottom: 1px solid var(--border); }
 .lp .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
-.lp .nav-logo { font-weight: 800; font-size: 18px; letter-spacing: -0.5px; color: white; text-decoration: none; cursor: pointer; background: none; border: none; }
+.lp .nav-logo { font-weight: 800; font-size: 18px; letter-spacing: -0.5px; color: white; text-decoration: none; cursor: pointer; background: none; border: none; display: flex; align-items: center; gap: 8px; }
+.lp .nav-logo img { height: 28px; width: auto; }
 .lp .nav-logo span { color: var(--accent); }
 .lp .nav-links { display: flex; gap: 32px; align-items: center; }
 .lp .nav-links a { color: var(--text-muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 0.2s; cursor: pointer; }
@@ -199,7 +200,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
     <div className="lp" ref={containerRef}>
       <nav ref={navRef}>
         <div className="nav-inner">
-          <button className="nav-logo" onClick={nav('Board')}>Film<span>Room</span></button>
+          <button className="nav-logo" onClick={nav('Board')}><img src="/logo.png" alt="FilmRoom logo" />Film<span>Room</span></button>
           <div className="nav-links">
             <a href="#rankings">Rankings</a>
             <a href="#features">Why FilmRoom</a>
