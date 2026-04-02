@@ -42,23 +42,18 @@
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
+  <!-- draft-rankings, league-analyzer, research removed: Coming Soon placeholder pages (no real content) -->
   <url>
-    <loc>https://filmroomfantasy.com/draft-rankings</loc>
-    <lastmod>2026-03-26</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://filmroomfantasy.com/privacy</loc>
+    <lastmod>2026-04-02</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://filmroomfantasy.com/league-analyzer</loc>
-    <lastmod>2026-03-26</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://filmroomfantasy.com/research</loc>
-    <lastmod>2026-03-26</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://filmroomfantasy.com/terms</loc>
+    <lastmod>2026-04-02</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.4</priority>
   </url>
   <url>
     <loc>https://filmroomfantasy.com/pricing</loc>
@@ -66,18 +61,7 @@
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
-  <url>
-    <loc>https://filmroomfantasy.com/login</loc>
-    <lastmod>2026-03-26</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://filmroomfantasy.com/register</loc>
-    <lastmod>2026-03-26</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
+  <!-- login, register removed: utility/dead-end screens without publisher content -->
   <url>
     <loc>https://filmroomfantasy.com/articles</loc>
     <lastmod>2026-03-26</lastmod>

@@ -134,32 +134,7 @@ const ROUTES = [
       },
     ],
   },
-  {
-    path: '/login',
-    title: 'Sign In | FilmRoom',
-    description: 'Sign in to your FilmRoom account to access your fantasy football leagues, rankings, and personalized projections.',
-    jsonLd: {
-      '@context': 'https://schema.org',
-      '@type': 'BreadcrumbList',
-      'itemListElement': [
-        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
-        { '@type': 'ListItem', 'position': 2, 'name': 'Sign In', 'item': `${BASE_URL}/login` },
-      ],
-    },
-  },
-  {
-    path: '/register',
-    title: 'Sign Up Free | FilmRoom',
-    description: 'Create a free FilmRoom account. Get access to fantasy football rankings, projections, and league management tools.',
-    jsonLd: {
-      '@context': 'https://schema.org',
-      '@type': 'BreadcrumbList',
-      'itemListElement': [
-        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
-        { '@type': 'ListItem', 'position': 2, 'name': 'Sign Up', 'item': `${BASE_URL}/register` },
-      ],
-    },
-  },
+  // login & register removed: utility screens without publisher content (AdSense compliance)
   {
     path: '/articles',
     title: 'Fantasy Football Articles & Guides | FilmRoom',
@@ -186,42 +161,30 @@ const ROUTES = [
       ],
     },
   },
+  // draft-rankings, league-analyzer, research removed: Coming Soon placeholder pages (AdSense compliance)
   {
-    path: '/draft-rankings',
-    title: 'Fantasy Football Draft Rankings | FilmRoom',
-    description: 'AI-powered fantasy football draft rankings with ADP tracking, tier breakdowns, and custom scoring projections.',
+    path: '/privacy',
+    title: 'Privacy Policy | FilmRoom',
+    description: 'FilmRoom Fantasy privacy policy. Learn how we collect, use, and protect your personal information and league data.',
     jsonLd: {
       '@context': 'https://schema.org',
       '@type': 'BreadcrumbList',
       'itemListElement': [
         { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
-        { '@type': 'ListItem', 'position': 2, 'name': 'Draft Rankings', 'item': `${BASE_URL}/draft-rankings` },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Privacy Policy', 'item': `${BASE_URL}/privacy` },
       ],
     },
   },
   {
-    path: '/league-analyzer',
-    title: 'League Analyzer | FilmRoom',
-    description: 'Deep dive into your fantasy football league with power rankings, strength of schedule analysis, and roster composition breakdowns.',
+    path: '/terms',
+    title: 'Terms of Service | FilmRoom',
+    description: 'FilmRoom Fantasy terms of service. Read the terms and conditions governing your use of our fantasy football analysis platform.',
     jsonLd: {
       '@context': 'https://schema.org',
       '@type': 'BreadcrumbList',
       'itemListElement': [
         { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
-        { '@type': 'ListItem', 'position': 2, 'name': 'League Analyzer', 'item': `${BASE_URL}/league-analyzer` },
-      ],
-    },
-  },
-  {
-    path: '/research',
-    title: 'Player Research & Analysis | FilmRoom',
-    description: 'In-depth fantasy football player analysis with Vegas props, game logs, projection accuracy tracking, and advanced metrics.',
-    jsonLd: {
-      '@context': 'https://schema.org',
-      '@type': 'BreadcrumbList',
-      'itemListElement': [
-        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
-        { '@type': 'ListItem', 'position': 2, 'name': 'Research', 'item': `${BASE_URL}/research` },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Terms of Service', 'item': `${BASE_URL}/terms` },
       ],
     },
   },

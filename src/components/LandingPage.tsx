@@ -381,6 +381,8 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           <a onClick={nav('GameSlate')}>NFL Games</a>
           <a onClick={nav('Pricing')}>Pricing</a>
           <a onClick={nav('Articles')}>Articles</a>
+          <a onClick={nav('Privacy')}>Privacy Policy</a>
+          <a onClick={nav('Terms')}>Terms of Service</a>
           <a onClick={nav('Login')}>Login</a>
         </div>
       </footer>
