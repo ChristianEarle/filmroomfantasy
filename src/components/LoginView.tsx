@@ -84,8 +84,8 @@ export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDar
     <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-slate-200'}`}>
-            <span className="text-xl font-bold text-blue-600">FR</span>
+          <div className="inline-flex items-center justify-center mb-4">
+            <img src="/logo.png" alt="FilmRoom logo" className="h-12 w-auto" />
           </div>
           <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Welcome back</h1>
           <p className={`mt-2 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Sign in to your FilmRoom account</p>
