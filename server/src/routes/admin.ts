@@ -711,22 +711,6 @@ adminRoutes.post('/sync-stats', async (c) => {
     const statsStatements: any[] = [];
     const BATCH_SIZE = 50;
 
-    // Pre-fetch all existing stats for the requested weeks (one query per week)
-    // This avoids individual findFirst queries per player (which blow past subrequest limits)
-    const existingStatsMap = new Map<string, string>();
-    for (const week of weeksToSync) {
-      const rows = await db.query.playerWeeklyStats.findMany({
-        columns: { id: true, playerId: true, week: true },
-        where: and(
-          eq(schema.playerWeeklyStats.week, week),
-          eq(schema.playerWeeklyStats.seasonYear, seasonYear)
-        ),
-      });
-      for (const s of rows) {
-        existingStatsMap.set(`${s.playerId}-${s.week}`, s.id);
-      }
-    }
-
     for (const week of weeksToSync) {
       try {
         // Throttle: 150ms delay between sequential stats fetches
@@ -764,9 +748,6 @@ adminRoutes.post('/sync-stats', async (c) => {
         for (const { sleeperPlayerId, playerStats } of weekEntries) {
           const playerId = playerMap.get(sleeperPlayerId);
           if (!playerId) continue;
-
-          // Use pre-fetched existing stats instead of individual queries
-          const existingId = existingStatsMap.get(`${playerId}-${week}`);
 
           const statsData = {
             playerId,
@@ -811,23 +792,17 @@ adminRoutes.post('/sync-stats', async (c) => {
             fantasyPointsStd: playerStats.pts_std || 0,
           };
 
-          if (existingId) {
-            statsStatements.push(
-              db
-                .update(schema.playerWeeklyStats)
-                .set(statsData)
-                .where(eq(schema.playerWeeklyStats.id, existingId))
-            );
-            statsUpdated++;
-          } else {
-            statsStatements.push(
-              db.insert(schema.playerWeeklyStats).values({
-                id: generateId(),
-                ...statsData,
-              })
-            );
-            statsImported++;
-          }
+          // Upsert: insert or update on unique(playerId, week, seasonYear)
+          statsStatements.push(
+            db.insert(schema.playerWeeklyStats).values({
+              id: generateId(),
+              ...statsData,
+            }).onConflictDoUpdate({
+              target: [schema.playerWeeklyStats.playerId, schema.playerWeeklyStats.week, schema.playerWeeklyStats.seasonYear],
+              set: statsData,
+            })
+          );
+          statsImported++;
 
           // Flush batch when reaching size
           if (statsStatements.length >= BATCH_SIZE) {
