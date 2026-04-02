@@ -711,20 +711,17 @@ adminRoutes.post('/sync-stats', async (c) => {
     const statsStatements: any[] = [];
     const BATCH_SIZE = 50;
 
-    // Pre-fetch all existing stats for the requested weeks in one query
+    // Pre-fetch all existing stats for the requested weeks (one query per week)
     // This avoids individual findFirst queries per player (which blow past subrequest limits)
     const existingStatsMap = new Map<string, string>();
     for (const week of weeksToSync) {
-      const rows = await db.select({
-        id: schema.playerWeeklyStats.id,
-        playerId: schema.playerWeeklyStats.playerId,
-        week: schema.playerWeeklyStats.week,
-      })
-        .from(schema.playerWeeklyStats)
-        .where(and(
+      const rows = await db.query.playerWeeklyStats.findMany({
+        columns: { id: true, playerId: true, week: true },
+        where: and(
           eq(schema.playerWeeklyStats.week, week),
           eq(schema.playerWeeklyStats.seasonYear, seasonYear)
-        ));
+        ),
+      });
       for (const s of rows) {
         existingStatsMap.set(`${s.playerId}-${s.week}`, s.id);
       }
