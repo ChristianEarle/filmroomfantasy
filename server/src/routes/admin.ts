@@ -716,6 +716,15 @@ adminRoutes.post('/sync-stats', async (c) => {
         // Throttle: 150ms delay between sequential stats fetches
         if (week > weeksToSync[0]) await sleep(150);
 
+        // Delete existing stats for this week first, then insert fresh
+        // This avoids per-player existence checks that blow past subrequest limits
+        await db.delete(schema.playerWeeklyStats).where(
+          and(
+            eq(schema.playerWeeklyStats.week, week),
+            eq(schema.playerWeeklyStats.seasonYear, seasonYear)
+          )
+        );
+
         const statsResponse = await fetch(
           `https://api.sleeper.com/stats/nfl/${seasonYear}/${week}?season_type=regular`
         );
@@ -748,15 +757,6 @@ adminRoutes.post('/sync-stats', async (c) => {
         for (const { sleeperPlayerId, playerStats } of weekEntries) {
           const playerId = playerMap.get(sleeperPlayerId);
           if (!playerId) continue;
-
-          // Check if stats already exist for this week
-          const existingStats = await db.query.playerWeeklyStats.findFirst({
-            where: and(
-              eq(schema.playerWeeklyStats.playerId, playerId),
-              eq(schema.playerWeeklyStats.week, week),
-              eq(schema.playerWeeklyStats.seasonYear, seasonYear)
-            ),
-          });
 
           const statsData = {
             playerId,
@@ -801,23 +801,13 @@ adminRoutes.post('/sync-stats', async (c) => {
             fantasyPointsStd: playerStats.pts_std || 0,
           };
 
-          if (existingStats) {
-            statsStatements.push(
-              db
-                .update(schema.playerWeeklyStats)
-                .set(statsData)
-                .where(eq(schema.playerWeeklyStats.id, existingStats.id))
-            );
-            statsUpdated++;
-          } else {
-            statsStatements.push(
-              db.insert(schema.playerWeeklyStats).values({
-                id: generateId(),
-                ...statsData,
-              })
-            );
-            statsImported++;
-          }
+          statsStatements.push(
+            db.insert(schema.playerWeeklyStats).values({
+              id: generateId(),
+              ...statsData,
+            })
+          );
+          statsImported++;
 
           // Flush batch when reaching size
           if (statsStatements.length >= BATCH_SIZE) {
