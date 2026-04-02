@@ -711,6 +711,22 @@ adminRoutes.post('/sync-stats', async (c) => {
     const statsStatements: any[] = [];
     const BATCH_SIZE = 50;
 
+    // Pre-fetch all existing stats for the requested weeks in one query
+    // This avoids individual findFirst queries per player (which blow past subrequest limits)
+    const existingStatsMap = new Map<string, string>();
+    if (weeksToSync.length > 0) {
+      const existingStats = await db.query.playerWeeklyStats.findMany({
+        columns: { id: true, playerId: true, week: true },
+        where: and(
+          inArray(schema.playerWeeklyStats.week, weeksToSync),
+          eq(schema.playerWeeklyStats.seasonYear, seasonYear)
+        ),
+      });
+      for (const s of existingStats) {
+        existingStatsMap.set(`${s.playerId}-${s.week}`, s.id);
+      }
+    }
+
     for (const week of weeksToSync) {
       try {
         // Throttle: 150ms delay between sequential stats fetches
@@ -749,14 +765,8 @@ adminRoutes.post('/sync-stats', async (c) => {
           const playerId = playerMap.get(sleeperPlayerId);
           if (!playerId) continue;
 
-          // Check if stats already exist for this week
-          const existingStats = await db.query.playerWeeklyStats.findFirst({
-            where: and(
-              eq(schema.playerWeeklyStats.playerId, playerId),
-              eq(schema.playerWeeklyStats.week, week),
-              eq(schema.playerWeeklyStats.seasonYear, seasonYear)
-            ),
-          });
+          // Use pre-fetched existing stats instead of individual queries
+          const existingId = existingStatsMap.get(`${playerId}-${week}`);
 
           const statsData = {
             playerId,
@@ -801,12 +811,12 @@ adminRoutes.post('/sync-stats', async (c) => {
             fantasyPointsStd: playerStats.pts_std || 0,
           };
 
-          if (existingStats) {
+          if (existingId) {
             statsStatements.push(
               db
                 .update(schema.playerWeeklyStats)
                 .set(statsData)
-                .where(eq(schema.playerWeeklyStats.id, existingStats.id))
+                .where(eq(schema.playerWeeklyStats.id, existingId))
             );
             statsUpdated++;
           } else {
