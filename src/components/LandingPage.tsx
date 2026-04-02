@@ -13,7 +13,8 @@ const LANDING_CSS = `
 .lp .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
 .lp .nav-logo { font-weight: 800; font-size: 18px; letter-spacing: -0.5px; color: white; text-decoration: none; cursor: pointer; background: none; border: none; display: flex; align-items: center; gap: 8px; }
 .lp .nav-logo img { height: 28px; width: auto; }
-.lp .nav-logo span { color: var(--accent); }
+.lp .nav-logo-text { color: white; }
+.lp .nav-logo-text span { color: var(--accent); }
 .lp .nav-links { display: flex; gap: 32px; align-items: center; }
 .lp .nav-links a { color: var(--text-muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 0.2s; cursor: pointer; }
 .lp .nav-links a:hover { color: white; }
@@ -200,7 +201,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
     <div className="lp" ref={containerRef}>
       <nav ref={navRef}>
         <div className="nav-inner">
-          <button className="nav-logo" onClick={nav('Board')}><img src="/logo.png" alt="FilmRoom logo" />Film<span>Room</span></button>
+          <button className="nav-logo" onClick={nav('Board')}><img src="/logo.png" alt="FilmRoom logo" /><span className="nav-logo-text">Film<span>Room</span></span></button>
           <div className="nav-links">
             <a href="#rankings">Rankings</a>
             <a href="#features">Why FilmRoom</a>
