@@ -444,6 +444,7 @@ export const nflPlayersRelations = relations(nflPlayers, ({ many }) => ({
   projections: many(playerProjections),
   news: many(playerNews),
   rosterSpots: many(rosterSpots),
+  articleLinks: many(articlePlayers),
 }));
 
 export const playerWeeklyStatsRelations = relations(playerWeeklyStats, ({ one }) => ({
@@ -523,6 +524,28 @@ export const articles = sqliteTable('articles', {
 
 export type Article = typeof articles.$inferSelect;
 export type NewArticle = typeof articles.$inferInsert;
+
+// ============================================
+// ARTICLE ↔ PLAYER (many-to-many)
+// ============================================
+
+export const articlePlayers = sqliteTable('article_players', {
+  articleId: text('article_id').notNull().references(() => articles.id, { onDelete: 'cascade' }),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.articleId, table.playerId] }),
+  articlePlayersPlayerIdx: index('idx_article_players_player').on(table.playerId),
+  articlePlayersArticleIdx: index('idx_article_players_article').on(table.articleId),
+}));
+
+export const articlesRelations = relations(articles, ({ many }) => ({
+  playerLinks: many(articlePlayers),
+}));
+
+export const articlePlayersRelations = relations(articlePlayers, ({ one }) => ({
+  article: one(articles, { fields: [articlePlayers.articleId], references: [articles.id] }),
+  player: one(nflPlayers, { fields: [articlePlayers.playerId], references: [nflPlayers.id] }),
+}));
 
 // ============================================
 // PASSWORD RESET TOKENS

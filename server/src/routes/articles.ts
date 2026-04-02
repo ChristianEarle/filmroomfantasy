@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
@@ -100,11 +100,18 @@ articleRoutes.get('/admin/all', async (c) => {
 
   const items = await db.query.articles.findMany({
     orderBy: [desc(schema.articles.updatedAt)],
+    with: {
+      playerLinks: {
+        with: { player: true },
+      },
+    },
   });
 
   const parsed = items.map(a => ({
     ...a,
     tags: JSON.parse(a.tags || '[]') as string[],
+    players: a.playerLinks.map((lnk: any) => lnk.player).filter(Boolean),
+    playerIds: a.playerLinks.map((lnk: any) => lnk.playerId),
   }));
 
   return c.json({ articles: parsed });
@@ -115,7 +122,7 @@ articleRoutes.post('/admin', async (c) => {
   const db = c.get('db');
   const body = await c.req.json();
 
-  const { title, description, content, category, tags, author, status, imageUrl } = body;
+  const { title, description, content, category, tags, author, status, imageUrl, playerIds } = body;
 
   if (!title || typeof title !== 'string' || title.trim().length < 1) {
     return c.json({ error: 'Title is required' }, 400);
@@ -161,14 +168,29 @@ articleRoutes.post('/admin', async (c) => {
     updatedAt: now,
   });
 
+  // Link players to this article
+  const validPlayerIds = Array.isArray(playerIds) ? playerIds.filter((id: any) => typeof id === 'string') : [];
+  if (validPlayerIds.length > 0) {
+    await db.insert(schema.articlePlayers).values(
+      validPlayerIds.map((pid: string) => ({ articleId: id, playerId: pid }))
+    );
+  }
+
   const article = await db.query.articles.findFirst({
     where: eq(schema.articles.id, id),
+    with: {
+      playerLinks: {
+        with: { player: true },
+      },
+    },
   });
 
   return c.json({
     article: {
       ...article,
       tags: JSON.parse(article?.tags || '[]'),
+      players: article?.playerLinks?.map((lnk: any) => lnk.player).filter(Boolean) || [],
+      playerIds: article?.playerLinks?.map((lnk: any) => lnk.playerId) || [],
     },
   }, 201);
 });
@@ -186,7 +208,7 @@ articleRoutes.put('/admin/:id', async (c) => {
     return c.json({ error: 'Article not found' }, 404);
   }
 
-  const { title, description, content, category, tags, author, status, imageUrl } = body;
+  const { title, description, content, category, tags, author, status, imageUrl, playerIds } = body;
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
 
@@ -236,14 +258,34 @@ articleRoutes.put('/admin/:id', async (c) => {
 
   await db.update(schema.articles).set(updates).where(eq(schema.articles.id, id));
 
+  // Update player associations if provided
+  if (playerIds !== undefined) {
+    // Remove existing associations
+    await db.delete(schema.articlePlayers).where(eq(schema.articlePlayers.articleId, id));
+    // Insert new ones
+    const validPlayerIds = Array.isArray(playerIds) ? playerIds.filter((pid: any) => typeof pid === 'string') : [];
+    if (validPlayerIds.length > 0) {
+      await db.insert(schema.articlePlayers).values(
+        validPlayerIds.map((pid: string) => ({ articleId: id, playerId: pid }))
+      );
+    }
+  }
+
   const updated = await db.query.articles.findFirst({
     where: eq(schema.articles.id, id),
+    with: {
+      playerLinks: {
+        with: { player: true },
+      },
+    },
   });
 
   return c.json({
     article: {
       ...updated,
       tags: JSON.parse(updated?.tags || '[]'),
+      players: updated?.playerLinks?.map((lnk: any) => lnk.player).filter(Boolean) || [],
+      playerIds: updated?.playerLinks?.map((lnk: any) => lnk.playerId) || [],
     },
   });
 });

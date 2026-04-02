@@ -415,7 +415,13 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                           </span>
                         </div>
                         <p className={`text-sm leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                          <NewsSnippet item={item} />
+                          {(item as any).isArticle && item.sourceUrl ? (
+                            <a href={item.sourceUrl} className="hover:underline font-medium">
+                              {item.headline}
+                            </a>
+                          ) : (
+                            <NewsSnippet item={item} />
+                          )}
                         </p>
                       </div>
                     </div>

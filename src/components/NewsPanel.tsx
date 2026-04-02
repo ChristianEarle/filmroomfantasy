@@ -24,7 +24,7 @@ function formatTimeAgo(dateString: string): string {
 }
 
 export function NewsPanel({ isDarkMode }: NewsPanelProps) {
-  const [news, setNews] = useState<(PlayerNews & { source?: string; isArticle?: boolean })[]>([]);
+  const [news, setNews] = useState<(PlayerNews & { source?: string; isArticle?: boolean; players?: Array<{ id: string; name: string; position: string; team: string }> })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,7 +93,9 @@ export function NewsPanel({ isDarkMode }: NewsPanelProps) {
               {item.isArticle ? (
                 <p className={`text-xs mt-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   <FileText className="w-3 h-3" aria-hidden="true" />
-                  Article
+                  {item.players && item.players.length > 0
+                    ? item.players.map(p => p.name).join(', ')
+                    : 'Article'}
                 </p>
               ) : item.player && (
                 <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>

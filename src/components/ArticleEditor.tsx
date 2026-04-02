@@ -1,9 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Edit3, Trash2, Eye, Loader2, Save, ArrowLeft, ExternalLink } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Plus, Edit3, Trash2, Eye, Loader2, Save, ArrowLeft, ExternalLink, X, Search, Users } from 'lucide-react';
 import { api } from '../services/api';
 
 interface ArticleEditorProps {
   isDarkMode: boolean;
+}
+
+interface LinkedPlayer {
+  id: string;
+  name: string;
+  position: string;
+  team: string;
 }
 
 interface ArticleData {
@@ -21,6 +28,8 @@ interface ArticleData {
   publishedAt: string | null;
   createdAt: number;
   updatedAt: number;
+  players?: LinkedPlayer[];
+  playerIds?: string[];
 }
 
 const CATEGORIES = [
@@ -53,6 +62,13 @@ export function ArticleEditor({ isDarkMode }: ArticleEditorProps) {
   const [author, setAuthor] = useState('FilmRoom');
   const [status, setStatus] = useState<'draft' | 'published'>('draft');
 
+  // Player linking
+  const [linkedPlayers, setLinkedPlayers] = useState<LinkedPlayer[]>([]);
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [playerResults, setPlayerResults] = useState<LinkedPlayer[]>([]);
+  const [playerSearching, setPlayerSearching] = useState(false);
+  const playerSearchTimeout = useRef<ReturnType<typeof setTimeout>>();
+
   const cardBg = isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200';
   const textPrimary = isDarkMode ? 'text-white' : 'text-slate-900';
   const textSecondary = isDarkMode ? 'text-slate-400' : 'text-slate-500';
@@ -75,6 +91,45 @@ export function ArticleEditor({ isDarkMode }: ArticleEditorProps) {
     fetchArticles();
   }, [fetchArticles]);
 
+  // Debounced player search
+  const searchPlayers = useCallback(async (query: string) => {
+    if (query.trim().length < 2) {
+      setPlayerResults([]);
+      return;
+    }
+    setPlayerSearching(true);
+    try {
+      const data = await api.get<{ players: LinkedPlayer[] }>(`/players/search?q=${encodeURIComponent(query)}&limit=8`);
+      // Filter out already-linked players
+      const linkedIds = new Set(linkedPlayers.map(p => p.id));
+      setPlayerResults(data.players.filter(p => !linkedIds.has(p.id)));
+    } catch {
+      setPlayerResults([]);
+    } finally {
+      setPlayerSearching(false);
+    }
+  }, [linkedPlayers]);
+
+  useEffect(() => {
+    if (playerSearchTimeout.current) clearTimeout(playerSearchTimeout.current);
+    if (playerSearch.trim().length < 2) {
+      setPlayerResults([]);
+      return;
+    }
+    playerSearchTimeout.current = setTimeout(() => searchPlayers(playerSearch), 300);
+    return () => { if (playerSearchTimeout.current) clearTimeout(playerSearchTimeout.current); };
+  }, [playerSearch, searchPlayers]);
+
+  const addPlayer = (player: LinkedPlayer) => {
+    setLinkedPlayers(prev => [...prev, player]);
+    setPlayerSearch('');
+    setPlayerResults([]);
+  };
+
+  const removePlayer = (playerId: string) => {
+    setLinkedPlayers(prev => prev.filter(p => p.id !== playerId));
+  };
+
   const openNewEditor = () => {
     setEditing(null);
     setIsNew(true);
@@ -85,6 +140,7 @@ export function ArticleEditor({ isDarkMode }: ArticleEditorProps) {
     setTagsInput('');
     setAuthor('FilmRoom');
     setStatus('draft');
+    setLinkedPlayers([]);
     setSaveResult(null);
   };
 
@@ -98,6 +154,7 @@ export function ArticleEditor({ isDarkMode }: ArticleEditorProps) {
     setTagsInput(article.tags.join(', '));
     setAuthor(article.author);
     setStatus(article.status as 'draft' | 'published');
+    setLinkedPlayers(article.players || []);
     setSaveResult(null);
   };
 
@@ -118,7 +175,8 @@ export function ArticleEditor({ isDarkMode }: ArticleEditorProps) {
     setSaveResult(null);
 
     const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-    const payload = { title, description, content, category, tags, author, status };
+    const playerIds = linkedPlayers.map(p => p.id);
+    const payload = { title, description, content, category, tags, author, status, playerIds };
 
     try {
       if (isNew) {
@@ -283,6 +341,53 @@ export function ArticleEditor({ isDarkMode }: ArticleEditorProps) {
                   className={`w-full px-3 py-2 rounded-lg border text-sm ${inputBg}`}
                 />
               </div>
+            </div>
+
+            {/* Linked Players */}
+            <div>
+              <label className={`block text-sm font-medium mb-1 ${textSecondary}`}>
+                <Users className="w-3.5 h-3.5 inline mr-1" />Linked Players
+              </label>
+              <p className={`text-xs mb-2 ${textSecondary}`}>
+                Articles linked to players will appear in their news tab.
+              </p>
+              {linkedPlayers.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {linkedPlayers.map(p => (
+                    <span key={p.id} className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${isDarkMode ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-50 text-blue-700'}`}>
+                      {p.name} <span className={`${isDarkMode ? 'text-blue-400' : 'text-blue-500'}`}>{p.position} · {p.team}</span>
+                      <button onClick={() => removePlayer(p.id)} className="hover:text-red-400 transition-colors">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="relative">
+                <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${textSecondary}`} />
+                <input
+                  type="text"
+                  value={playerSearch}
+                  onChange={(e) => setPlayerSearch(e.target.value)}
+                  placeholder="Search players to link..."
+                  className={`w-full pl-9 pr-3 py-2 rounded-lg border text-sm ${inputBg}`}
+                />
+                {playerSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-blue-500" />}
+              </div>
+              {playerResults.length > 0 && (
+                <div className={`mt-1 rounded-lg border max-h-48 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'}`}>
+                  {playerResults.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => addPlayer(p)}
+                      className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between transition-colors ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}
+                    >
+                      <span className={textPrimary}>{p.name}</span>
+                      <span className={`text-xs ${textSecondary}`}>{p.position} · {p.team}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Content */}

@@ -719,24 +719,33 @@ playerRoutes.get('/news', optionalAuthMiddleware, async (c) => {
           where: eq(schema.articles.status, 'published'),
           orderBy: [desc(schema.articles.createdAt)],
           limit,
+          with: {
+            playerLinks: {
+              with: { player: true },
+            },
+          },
         }),
       ]);
 
-      // Convert articles to news-shaped items
-      const articleNewsItems = articleItems.map((a: any) => ({
-        id: `article-${a.id}`,
-        playerId: null,
-        headline: a.title,
-        content: a.description,
-        source: a.author || 'FilmRoom',
-        sourceUrl: `/articles/${a.slug}`,
-        aiSummary: null,
-        impactLevel: null,
-        publishedAt: a.publishedAt ? new Date(a.publishedAt) : a.createdAt,
-        createdAt: a.createdAt,
-        player: null,
-        isArticle: true,
-      }));
+      // Convert articles to news-shaped items, including linked players
+      const articleNewsItems = articleItems.map((a: any) => {
+        const linkedPlayers = a.playerLinks?.map((lnk: any) => lnk.player).filter(Boolean) || [];
+        return {
+          id: `article-${a.id}`,
+          playerId: linkedPlayers[0]?.id || null,
+          headline: a.title,
+          content: a.description,
+          source: a.author || 'FilmRoom',
+          sourceUrl: `/articles/${a.slug}`,
+          aiSummary: null,
+          impactLevel: null,
+          publishedAt: a.publishedAt ? new Date(a.publishedAt) : a.createdAt,
+          createdAt: a.createdAt,
+          player: linkedPlayers[0] || null,
+          players: linkedPlayers,
+          isArticle: true,
+        };
+      });
 
       // Merge and sort by publishedAt descending, take up to limit
       const merged = [...playerNewsItems, ...articleNewsItems]
@@ -1170,19 +1179,54 @@ playerRoutes.get('/:id/projections', optionalAuthMiddleware, async (c) => {
   }
 });
 
-// Get player news
+// Get player news + articles linked to this player
 playerRoutes.get('/:id/news', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const playerId = c.req.param('id');
 
   try {
-    const news = await db.query.playerNews.findMany({
-      where: eq(schema.playerNews.playerId, playerId),
-      orderBy: desc(schema.playerNews.publishedAt),
-      limit: 3,
-    });
+    // Fetch player news and linked articles in parallel
+    const [newsItems, articleLinks] = await Promise.all([
+      db.query.playerNews.findMany({
+        where: eq(schema.playerNews.playerId, playerId),
+        orderBy: desc(schema.playerNews.publishedAt),
+        limit: 10,
+      }),
+      db.query.articlePlayers.findMany({
+        where: eq(schema.articlePlayers.playerId, playerId),
+        with: {
+          article: true,
+        },
+      }),
+    ]);
 
-    return c.json({ news });
+    // Convert linked articles to news-shaped items (only published ones)
+    const articleNewsItems = articleLinks
+      .filter((lnk: any) => lnk.article?.status === 'published')
+      .map((lnk: any) => ({
+        id: `article-${lnk.article.id}`,
+        playerId,
+        headline: lnk.article.title,
+        content: lnk.article.description,
+        source: lnk.article.author || 'FilmRoom',
+        sourceUrl: `/articles/${lnk.article.slug}`,
+        aiSummary: null,
+        impactLevel: null,
+        publishedAt: lnk.article.publishedAt ? new Date(lnk.article.publishedAt) : lnk.article.createdAt,
+        createdAt: lnk.article.createdAt,
+        isArticle: true,
+      }));
+
+    // Merge and sort by date, limit to 10
+    const merged = [...newsItems, ...articleNewsItems]
+      .sort((a: any, b: any) => {
+        const dateA = a.publishedAt instanceof Date ? a.publishedAt : new Date(a.publishedAt);
+        const dateB = b.publishedAt instanceof Date ? b.publishedAt : new Date(b.publishedAt);
+        return dateB.getTime() - dateA.getTime();
+      })
+      .slice(0, 10);
+
+    return c.json({ news: merged });
   } catch (error) {
     console.error('Get player news error:', error);
     return c.json({ error: 'Failed to fetch player news' }, 500);
