@@ -697,22 +697,57 @@ playerRoutes.get('/search', playerSearchRateLimit, optionalAuthMiddleware, async
   }
 });
 
-// Get all recent news across all players (player-relevant only, includes source/author)
+// Get all recent news across all players + published articles
 // Cached for 5 minutes — news doesn't change frequently and this is a high-traffic endpoint
 playerRoutes.get('/news', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const limit = Math.min(parseInt(c.req.query('limit') || '10'), 50);
 
   try {
-    const cacheKey = `player-news:${limit}`;
+    const cacheKey = `player-news-with-articles:${limit}`;
     const news = await cached(cacheKey, 5 * 60 * 1000, async () => {
-      return db.query.playerNews.findMany({
-        orderBy: desc(schema.playerNews.publishedAt),
-        limit,
-        with: {
-          player: true,
-        },
-      });
+      // Fetch player news and published articles in parallel
+      const [playerNewsItems, articleItems] = await Promise.all([
+        db.query.playerNews.findMany({
+          orderBy: desc(schema.playerNews.publishedAt),
+          limit,
+          with: {
+            player: true,
+          },
+        }),
+        db.query.articles.findMany({
+          where: eq(schema.articles.status, 'published'),
+          orderBy: [desc(schema.articles.createdAt)],
+          limit,
+        }),
+      ]);
+
+      // Convert articles to news-shaped items
+      const articleNewsItems = articleItems.map((a: any) => ({
+        id: `article-${a.id}`,
+        playerId: null,
+        headline: a.title,
+        content: a.description,
+        source: a.author || 'FilmRoom',
+        sourceUrl: `/articles/${a.slug}`,
+        aiSummary: null,
+        impactLevel: null,
+        publishedAt: a.publishedAt ? new Date(a.publishedAt) : a.createdAt,
+        createdAt: a.createdAt,
+        player: null,
+        isArticle: true,
+      }));
+
+      // Merge and sort by publishedAt descending, take up to limit
+      const merged = [...playerNewsItems, ...articleNewsItems]
+        .sort((a: any, b: any) => {
+          const dateA = a.publishedAt instanceof Date ? a.publishedAt : new Date(a.publishedAt);
+          const dateB = b.publishedAt instanceof Date ? b.publishedAt : new Date(b.publishedAt);
+          return dateB.getTime() - dateA.getTime();
+        })
+        .slice(0, limit);
+
+      return merged;
     });
 
     return c.json({ news });

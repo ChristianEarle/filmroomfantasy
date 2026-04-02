@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Clock, AlertCircle } from 'lucide-react';
+import { Clock, AlertCircle, FileText } from 'lucide-react';
 import { playerService } from '../services';
 import type { PlayerNews } from '../services';
 import { NewsSnippet } from './NewsSnippet';
@@ -24,7 +24,7 @@ function formatTimeAgo(dateString: string): string {
 }
 
 export function NewsPanel({ isDarkMode }: NewsPanelProps) {
-  const [news, setNews] = useState<(PlayerNews & { source?: string })[]>([]);
+  const [news, setNews] = useState<(PlayerNews & { source?: string; isArticle?: boolean })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,9 +82,20 @@ export function NewsPanel({ isDarkMode }: NewsPanelProps) {
                 </span>
               </div>
               <p className={`text-sm font-bold leading-relaxed ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-                <NewsSnippet item={item} />
+                {item.isArticle && item.sourceUrl ? (
+                  <a href={item.sourceUrl} className="hover:underline">
+                    {item.headline}
+                  </a>
+                ) : (
+                  <NewsSnippet item={item} />
+                )}
               </p>
-              {item.player && (
+              {item.isArticle ? (
+                <p className={`text-xs mt-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  <FileText className="w-3 h-3" aria-hidden="true" />
+                  Article
+                </p>
+              ) : item.player && (
                 <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   {item.player.name} · {item.player.position} · {item.player.team}
                 </p>
