@@ -94,6 +94,14 @@ const ROUTE_SEO: Record<string, { title: string; description: string }> = {
     title: 'Fantasy Football Articles & Guides | FilmRoom',
     description: 'Expert fantasy football strategy guides, rankings analysis, waiver wire tips, and beginner resources.',
   },
+  Privacy: {
+    title: 'Privacy Policy | FilmRoom',
+    description: 'FilmRoom Fantasy privacy policy. Learn how we collect, use, and protect your personal information and league data.',
+  },
+  Terms: {
+    title: 'Terms of Service | FilmRoom',
+    description: 'FilmRoom Fantasy terms of service. Read the terms and conditions governing your use of our fantasy football analysis platform.',
+  },
 };
 
 // View name to URL path mapping
@@ -119,6 +127,8 @@ const VIEW_TO_PATH: Record<string, string> = {
   Pricing: '/pricing',
   Articles: '/articles',
   Admin: '/admin',
+  Privacy: '/privacy',
+  Terms: '/terms',
 };
 
 export function SEO({ title, description, path, type = 'website', image, noindex, jsonLd }: SEOProps) {
@@ -173,8 +183,13 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
   };
 
   // Noindex private/authenticated pages
-  const privateViews = ['Home', 'Team', 'Matchup', 'Settings', 'Profile', 'Admin', 'AllPlayers'];
-  if (privateViews.includes(effectiveView)) {
+  // Noindex private/authenticated pages and thin-content pages (AdSense compliance)
+  const noindexViews = [
+    'Home', 'Team', 'Matchup', 'Settings', 'Profile', 'Admin', 'AllPlayers', // private
+    'Login', 'Register',                                                       // utility screens
+    'Research', 'DraftRankings', 'LeagueAnalyzer',                             // Coming Soon placeholders
+  ];
+  if (noindexViews.includes(effectiveView)) {
     props.noindex = true;
   }
 

@@ -26,6 +26,8 @@ const AllPlayersView = lazy(() => import('./components/AllPlayersView').then(m =
 const ProfileView = lazy(() => import('./components/ProfileView').then(m => ({ default: m.ProfileView })));
 const ArticlesView = lazy(() => import('./components/ArticlesView').then(m => ({ default: m.ArticlesView })));
 const ArticleDetailView = lazy(() => import('./components/ArticleDetailView').then(m => ({ default: m.ArticleDetailView })));
+const PrivacyPolicyView = lazy(() => import('./components/PrivacyPolicyView').then(m => ({ default: m.PrivacyPolicyView })));
+const TermsOfServiceView = lazy(() => import('./components/TermsOfServiceView').then(m => ({ default: m.TermsOfServiceView })));
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
 import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswordView';
@@ -177,6 +179,8 @@ const VIEW_TO_PATH: Record<string, string> = {
   Admin: '/admin',
   Articles: '/articles',
   ArticleDetail: '/articles', // handled with slug in URL
+  Privacy: '/privacy',
+  Terms: '/terms',
 };
 
 const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
@@ -227,7 +231,7 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works
-  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'Privacy' | 'Terms'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [articleSlug, setArticleSlug] = useState<string | null>(() => getArticleSlugFromURL());
   // Local dark mode state for unauthenticated users (initialized from localStorage)
@@ -648,6 +652,10 @@ function AppContent() {
                   onNavigate={(view) => setActiveView(view as any)}
                 />
               </Suspense>
+            ) : activeView === 'Privacy' ? (
+              <Suspense fallback={suspenseFallback}><PrivacyPolicyView isDarkMode={isDarkMode} /></Suspense>
+            ) : activeView === 'Terms' ? (
+              <Suspense fallback={suspenseFallback}><TermsOfServiceView isDarkMode={isDarkMode} /></Suspense>
             ) : (
               <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
                 <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Page Not Found</h2>
