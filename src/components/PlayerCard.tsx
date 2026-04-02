@@ -103,17 +103,18 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [matchupData, setMatchupData] = useState<MatchupGradeResponse | null>(null);
   const [propsData, setPropsData] = useState<any>(null);
   const [propsLoading, setPropsLoading] = useState(true);
+  const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || 1);
 
   // Fetch player props when card opens
   useEffect(() => {
     if (!player?.id) return;
     let cancelled = false;
     setPropsLoading(true);
-    api.get<any>(`/players/${player.id}/props?week=${propsCurrentWeek || 1}&season=${propsSeasonYear || 2025}`)
+    api.get<any>(`/players/${player.id}/props?week=${selectedWeek}&season=${propsSeasonYear || 2025}`)
       .then((res) => { if (!cancelled) { setPropsData(res); setPropsLoading(false); } })
       .catch(() => { if (!cancelled) { setPropsData(null); setPropsLoading(false); } });
     return () => { cancelled = true; };
-  }, [player.id, propsCurrentWeek, propsSeasonYear]);
+  }, [player.id, selectedWeek, propsSeasonYear]);
 
   // Fetch years for which this player has data (dropdown only shows years with stats)
   useEffect(() => {
@@ -164,14 +165,14 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     let cancelled = false;
     playerService.getMatchupGrade(player.id, {
       season: propsSeasonYear,
-      week: propsCurrentWeek,
+      week: selectedWeek,
     }).then((res) => {
       if (!cancelled) setMatchupData(res);
     }).catch(() => {
       if (!cancelled) setMatchupData(null);
     });
     return () => { cancelled = true; };
-  }, [player.id, propsSeasonYear, propsCurrentWeek]);
+  }, [player.id, propsSeasonYear, selectedWeek]);
 
   // Fetch player details (for headshot) and stats when card opens or season changes
   useEffect(() => {
@@ -373,7 +374,18 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                         </span>
                       )}
                     </div>
-                    <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.team} • {player.position}{propsCurrentWeek ? ` • Week ${propsCurrentWeek}` : ''}</p>
+                    <div className={`flex items-center gap-1.5 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      <span>{player.team} • {player.position} •</span>
+                      <select
+                        value={selectedWeek}
+                        onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                        className={`text-sm font-medium rounded px-1.5 py-0.5 cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                      >
+                        {Array.from({ length: 18 }, (_, i) => i + 1).map((w) => (
+                          <option key={w} value={w}>Week {w}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
                 {matchupGrade && (
@@ -472,7 +484,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                 <div className="space-y-4">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Vegas Prop Lines</h3>
-                    <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>FanDuel • Week {propsCurrentWeek || 1}</span>
+                    <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>FanDuel • Week {selectedWeek}</span>
                   </div>
                   {propsLoading ? (
                     <div className="flex justify-center py-8">
