@@ -184,6 +184,12 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
     };
   }, []);
 
+  const viewPath: Record<string, string> = {
+    Board: '/player-rankings', TradeAnalyzer: '/trade-analyzer', GameSlate: '/game-slate',
+    Pricing: '/pricing', Articles: '/articles', Login: '/login', Privacy: '/privacy', Terms: '/terms',
+    Home: '/home',
+  };
+
   const nav = (view: string) => (e: React.MouseEvent) => {
     e.preventDefault();
     onNavigate(view);
@@ -198,7 +204,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <a href="#rankings">Rankings</a>
             <a href="#features">Why FilmRoom</a>
             <a href="#pricing">Pricing</a>
-            <a onClick={nav('Login')} className="nav-cta">Sign Up Free</a>
+            <a href="/login" onClick={nav('Login')} className="nav-cta">Sign Up Free</a>
           </div>
         </div>
       </nav>
@@ -229,7 +235,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
       <section className="rankings-section fade-in" id="rankings">
         <div className="section-header">
           <h2>Week 1 Rankings &mdash; PPR</h2>
-          <a onClick={nav('Board')}>Full rankings &rarr;</a>
+          <a href="/player-rankings" onClick={nav('Board')}>Full rankings &rarr;</a>
         </div>
         <div className="blur-overlay">
           <table className="rankings-table">
@@ -319,7 +325,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <li>1 league sync</li>
               <li>1 trade analysis per day</li>
             </ul>
-            <a className="price-btn outline" onClick={nav('Login')}>Start free</a>
+            <a href="/login" className="price-btn outline" onClick={nav('Login')}>Start free</a>
           </div>
           <div className="price-card featured">
             <div className="tier pop">Pro &mdash; Most Popular</div>
@@ -331,7 +337,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <li className="highlight">Trending players &amp; add/drop data</li>
               <li className="highlight">5 trade analyses per day</li>
             </ul>
-            <a className="price-btn fill" onClick={nav('Pricing')}>Try Pro free for 3 days</a>
+            <a href="/pricing" className="price-btn fill" onClick={nav('Pricing')}>Try Pro free for 3 days</a>
           </div>
           <div className="price-card">
             <div className="tier">Elite</div>
@@ -344,7 +350,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <li>Custom scoring models (coming soon)</li>
               <li>Early access to new features</li>
             </ul>
-            <a className="price-btn outline" onClick={nav('Pricing')}>Try Elite free for 3 days</a>
+            <a href="/pricing" className="price-btn outline" onClick={nav('Pricing')}>Try Elite free for 3 days</a>
           </div>
         </div>
       </section>
@@ -358,7 +364,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             { title: 'My League Hub', desc: 'Sync your league from Sleeper, Yahoo, ESPN, or MyFantasyLeague. Your roster, matchups, waivers, and standings — all in one place.', view: 'Home' },
             { title: 'NFL Game Slate', desc: 'Live scores, spreads, and fantasy-relevant game stats updated throughout the week.', view: 'GameSlate' },
           ].map((t) => (
-            <a key={t.title} onClick={nav(t.view)} className="diff-card" style={{ cursor: 'pointer', textDecoration: 'none' }}>
+            <a key={t.title} href={viewPath[t.view] || '/'} onClick={nav(t.view)} className="diff-card" style={{ cursor: 'pointer', textDecoration: 'none' }}>
               <h3>{t.title}</h3>
               <p>{t.desc}</p>
               <span style={{ color: 'var(--accent)', fontSize: '13px', fontWeight: 600, marginTop: '12px', display: 'inline-block' }}>Explore &rarr;</span>
@@ -376,14 +382,14 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
       <footer>
         <div className="left">&copy; 2026 FilmRoom Fantasy</div>
         <div className="right">
-          <a onClick={nav('Board')}>Player Rankings</a>
-          <a onClick={nav('TradeAnalyzer')}>Trade Analyzer</a>
-          <a onClick={nav('GameSlate')}>NFL Games</a>
-          <a onClick={nav('Pricing')}>Pricing</a>
-          <a onClick={nav('Articles')}>Articles</a>
-          <a onClick={nav('Privacy')}>Privacy Policy</a>
-          <a onClick={nav('Terms')}>Terms of Service</a>
-          <a onClick={nav('Login')}>Login</a>
+          <a href="/player-rankings" onClick={nav('Board')}>Player Rankings</a>
+          <a href="/trade-analyzer" onClick={nav('TradeAnalyzer')}>Trade Analyzer</a>
+          <a href="/game-slate" onClick={nav('GameSlate')}>NFL Games</a>
+          <a href="/pricing" onClick={nav('Pricing')}>Pricing</a>
+          <a href="/articles" onClick={nav('Articles')}>Articles</a>
+          <a href="/privacy" onClick={nav('Privacy')}>Privacy Policy</a>
+          <a href="/terms" onClick={nav('Terms')}>Terms of Service</a>
+          <a href="/login" onClick={nav('Login')}>Login</a>
         </div>
       </footer>
     </div>

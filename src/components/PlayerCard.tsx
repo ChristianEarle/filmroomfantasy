@@ -352,7 +352,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                   <div className={`w-11 h-13 sm:w-14 sm:h-16 flex-shrink-0 rounded-lg overflow-hidden border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                     {player.headshotUrl ? (
-                      <img src={player.headshotUrl} alt={player.name} className="w-full h-full object-contain" />
+                      <img src={player.headshotUrl} alt={player.name} className="w-full h-full object-contain" loading="lazy" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>

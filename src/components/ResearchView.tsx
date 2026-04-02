@@ -292,6 +292,7 @@ export function ResearchView({
                     src={player.headshotUrl}
                     alt={player.name}
                     className="w-16 h-16 rounded-full mb-3 object-cover"
+                    loading="lazy"
                   />
                 )}
                 <h3
@@ -355,6 +356,7 @@ export function ResearchView({
               src={selectedPlayer.headshotUrl}
               alt={selectedPlayer.name}
               className="w-24 h-24 rounded-full object-cover"
+              loading="lazy"
             />
           )}
           <div className="flex-1">
