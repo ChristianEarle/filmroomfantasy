@@ -616,6 +616,43 @@ authRoutes.post('/logout', authMiddleware, async (c) => {
   }
 });
 
+// Refresh token — issue a new JWT and extend the session
+authRoutes.post('/refresh', authMiddleware, async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user) {
+      return c.json({ error: 'Not authenticated' }, 401);
+    }
+
+    // Read current token to find existing session
+    const cookieToken = getCookie(c, AUTH_COOKIE_NAME);
+    const authHeader = c.req.header('Authorization');
+    const oldToken = cookieToken || authHeader?.substring(7);
+
+    if (!oldToken) {
+      return c.json({ error: 'No token provided' }, 400);
+    }
+
+    const db = c.get('db');
+
+    // Generate new token and update the session atomically
+    const newToken = await generateToken(user.id, c.env.JWT_SECRET);
+    const newExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await db
+      .update(schema.sessions)
+      .set({ token: newToken, expiresAt: newExpiry })
+      .where(eq(schema.sessions.token, oldToken));
+
+    setAuthCookie(c, newToken);
+
+    return c.json({ token: newToken });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    return c.json({ error: 'Token refresh failed' }, 500);
+  }
+});
+
 // Forgot password — request a password reset link
 authRoutes.post('/forgot-password', passwordResetRateLimit, async (c) => {
   try {

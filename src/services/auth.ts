@@ -117,6 +117,13 @@ export const authService = {
     return res;
   },
 
+  // Refresh token — extend session with a new JWT
+  refresh: async (): Promise<{ token: string }> => {
+    const res = await api.post<{ token: string }>('/auth/refresh', {});
+    if (res.token) setAuthToken(res.token);
+    return res;
+  },
+
   // Forgot password — request a reset link
   forgotPassword: async (email: string): Promise<{ message: string }> => {
     return api.post<{ message: string }>('/auth/forgot-password', { email });

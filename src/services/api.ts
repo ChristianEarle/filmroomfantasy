@@ -14,6 +14,43 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+// Token refresh state — prevents concurrent refresh attempts
+let refreshPromise: Promise<boolean> | null = null;
+
+// Callback set by AuthContext to handle forced logout
+let onAuthExpired: (() => void) | null = null;
+export function setOnAuthExpired(callback: (() => void) | null) {
+  onAuthExpired = callback;
+}
+
+async function tryRefreshToken(): Promise<boolean> {
+  // If a refresh is already in flight, piggyback on it
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        credentials: 'include',
+        body: '{}',
+      });
+      if (!res.ok) return false;
+      const data = await res.json() as { token?: string };
+      if (data.token) setAuthToken(data.token);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
 // API Error class
 export class ApiError extends Error {
   constructor(
@@ -65,6 +102,33 @@ export async function apiFetch<T>(
   }
 
   if (!response.ok) {
+    // On 401, attempt a silent token refresh and retry the original request once.
+    // Skip refresh for auth endpoints to avoid infinite loops.
+    if (response.status === 401 && !endpoint.startsWith('/auth/')) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        // Retry the original request with the fresh token
+        const retryHeaders: HeadersInit = {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        };
+        if (authToken) {
+          (retryHeaders as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
+        }
+        const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
+          ...options,
+          headers: retryHeaders,
+          credentials: 'include',
+        });
+        if (retryResponse.ok) {
+          const retryText = await retryResponse.text();
+          return (retryText ? JSON.parse(retryText) : {}) as T;
+        }
+      }
+      // Refresh failed or retry still 401 — session is truly expired
+      if (onAuthExpired) onAuthExpired();
+    }
+
     const errorObj = data as { error?: string };
     throw new ApiError(response.status, errorObj.error || 'An error occurred', data);
   }
