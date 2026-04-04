@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authService } from '../services';
+import { setOnAuthExpired } from '../services/api';
 import type { User, League, UpdateProfileData, GoogleAuthResponse } from '../services/auth';
 
 interface AuthContextType {
@@ -94,6 +95,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setLeagues([]);
   }, []);
+
+  // Register the auth-expired callback so the API layer can force logout
+  useEffect(() => {
+    setOnAuthExpired(() => {
+      setUser(null);
+      setLeagues([]);
+    });
+    return () => setOnAuthExpired(null);
+  }, []);
+
+  // Proactively refresh the token every hour while the user is authenticated
+  useEffect(() => {
+    if (!user) return;
+
+    const REFRESH_INTERVAL = 60 * 60 * 1000; // 1 hour
+    const intervalId = setInterval(() => {
+      authService.refresh().catch(() => {
+        // Refresh failed — session likely expired, force logout
+        setUser(null);
+        setLeagues([]);
+      });
+    }, REFRESH_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [user]);
 
   const refreshUser = useCallback(async () => {
     try {
