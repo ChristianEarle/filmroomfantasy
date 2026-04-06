@@ -521,7 +521,13 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                         }
 
                         return (
-                          <div key={mkt} className={`flex items-center justify-between py-3 px-4 rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                          <div
+                            key={mkt}
+                            style={actualVal != null ? { backgroundColor: isDarkMode ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.10)' } : undefined}
+                            className={`flex items-center justify-between py-3 px-4 rounded-lg ${
+                              actualVal != null ? '' : isDarkMode ? 'bg-slate-800' : 'bg-slate-50'
+                            }`}
+                          >
                             <div className="flex-1">
                               <div className={`text-xs font-semibold uppercase tracking-wide ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{label}</div>
                               <div className="flex items-center gap-3 mt-1">
