@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock } from 'lucide-react';
 import { Player } from '../App';
 import api from '../services/api';
@@ -315,7 +316,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     return { color: isDarkMode ? '#fb7185' : '#e11d48', backgroundColor: isDarkMode ? 'rgba(244,63,94,0.25)' : '#ffe4e6', borderColor: isDarkMode ? 'rgba(244,63,94,0.4)' : '#fda4af' };
   };
 
-  return (
+  return createPortal(
     <div
       className={`fixed inset-0 backdrop-blur-sm z-[9999] flex items-start justify-center overflow-y-auto p-2 sm:p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-900/50'} ${
         isVisible ? 'opacity-100' : 'opacity-0'
@@ -458,7 +459,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   {tab === 'breakdown' && 'Averages'}
                   {tab === 'history' && 'History'}
                   {activeTab === tab && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500"></div>
+                    <div className="absolute -bottom-px left-0 right-0 h-[3px] bg-blue-500 pointer-events-none"></div>
                   )}
                 </button>
               ))}
@@ -1242,6 +1243,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
