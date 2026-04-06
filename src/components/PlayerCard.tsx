@@ -445,12 +445,13 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             </div>
 
             {/* Tabs */}
-            <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} style={{ marginBottom: -1 }}>
               {(['props', 'breakdown', 'history'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
+                  style={{ borderBottom: activeTab === tab ? '3px solid #3b82f6' : '3px solid transparent' }}
+                  className={`flex-1 py-3 text-sm font-medium transition-colors ${
                     activeTab === tab
                       ? isDarkMode ? 'text-white' : 'text-slate-900'
                       : isDarkMode ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'
@@ -459,11 +460,6 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   {tab === 'props' && 'Props'}
                   {tab === 'breakdown' && 'Averages'}
                   {tab === 'history' && 'History'}
-                  {activeTab === tab && (
-                    <div
-                      style={{ position: 'absolute', height: 3, bottom: -1, left: 0, right: 0, backgroundColor: '#3b82f6', pointerEvents: 'none' }}
-                    />
-                  )}
                 </button>
               ))}
             </div>
