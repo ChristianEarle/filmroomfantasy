@@ -70,8 +70,8 @@ function formatTimeAgo(dateString: string | Date): string {
 }
 
 // Neutral text and border for stat tables (no green/red coloring)
-const statText = (isDarkMode: boolean) => isDarkMode ? 'text-slate-300' : 'text-slate-600';
-const statMuted = (isDarkMode: boolean) => isDarkMode ? 'text-slate-400' : 'text-slate-500';
+const statText = (isDarkMode: boolean) => isDarkMode ? 'text-slate-300' : 'text-slate-800';
+const statMuted = (isDarkMode: boolean) => isDarkMode ? 'text-slate-400' : 'text-slate-700';
 const colBorder = (isDarkMode: boolean) => isDarkMode ? 'border-r border-slate-600' : 'border-r border-slate-200';
 
 export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeasonYear, currentWeek: propsCurrentWeek, scoringFormat: propsScoringFormat }: PlayerCardProps) {
@@ -317,7 +317,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
   return (
     <div
-      className={`fixed inset-0 backdrop-blur-sm z-[100] flex items-start justify-center overflow-y-auto p-2 sm:p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-900/50'} ${
+      className={`fixed inset-0 backdrop-blur-sm z-[9999] flex items-start justify-center overflow-y-auto p-2 sm:p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-900/50'} ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
