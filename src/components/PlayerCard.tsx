@@ -1228,10 +1228,10 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             {player.keyLine ? (() => {
               const hasActualStats = weeklyStats?.some(s => s.week === propsCurrentWeek);
               return (
-              <div className={`bg-gradient-to-br ${hasActualStats ? 'from-emerald-600 to-emerald-800 border-emerald-500/30' : 'from-blue-600 to-blue-800 border-blue-500/30'} rounded-lg p-4 sm:p-6 border`}>
+              <div className="bg-gradient-to-br from-blue-600 to-blue-800 border-blue-500/30 rounded-lg p-4 sm:p-6 border">
                 <h4 className="text-white font-bold mb-2">{hasActualStats ? `Week ${propsCurrentWeek} Stats` : 'Key Line'}</h4>
                 <p className="text-xl sm:text-2xl font-bold text-white mb-1">{player.keyLine}</p>
-                <p className={`${hasActualStats ? 'text-emerald-200' : 'text-blue-200'} text-sm`}>
+                <p className="text-blue-200 text-sm">
                   {hasActualStats ? 'Final results' : 'Market consensus across major sportsbooks'}
                 </p>
               </div>
