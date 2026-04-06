@@ -445,13 +445,17 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             </div>
 
             {/* Tabs */}
-            <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} style={{ marginBottom: -1 }}>
+            <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               {(['props', 'breakdown', 'history'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  style={{ borderBottom: activeTab === tab ? '3px solid #3b82f6' : '3px solid transparent' }}
-                  className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  style={{
+                    boxShadow: activeTab === tab ? 'inset 0 -3px 0 0 #3b82f6' : 'none',
+                    border: 'none',
+                    background: 'transparent',
+                  }}
+                  className={`flex-1 py-3 text-sm font-medium ${
                     activeTab === tab
                       ? isDarkMode ? 'text-white' : 'text-slate-900'
                       : isDarkMode ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'
