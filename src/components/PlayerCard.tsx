@@ -461,8 +461,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   {tab === 'history' && 'History'}
                   {activeTab === tab && (
                     <div
-                      style={{ height: 3, bottom: -1 }}
-                      className="absolute left-0 right-0 bg-blue-500 pointer-events-none"
+                      style={{ position: 'absolute', height: 3, bottom: -1, left: 0, right: 0, backgroundColor: '#3b82f6', pointerEvents: 'none' }}
                     />
                   )}
                 </button>
