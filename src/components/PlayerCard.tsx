@@ -318,7 +318,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
   return createPortal(
     <div
-      className={`fixed inset-0 backdrop-blur-sm z-[9999] flex items-start justify-center overflow-y-auto p-2 sm:p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-900/50'} ${
+      style={{ zIndex: 9999 }}
+      className={`fixed inset-0 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-2 sm:p-4 transition-opacity duration-200 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-900/50'} ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
@@ -459,7 +460,10 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   {tab === 'breakdown' && 'Averages'}
                   {tab === 'history' && 'History'}
                   {activeTab === tab && (
-                    <div className="absolute -bottom-px left-0 right-0 h-[3px] bg-blue-500 pointer-events-none"></div>
+                    <div
+                      style={{ height: 3, bottom: -1 }}
+                      className="absolute left-0 right-0 bg-blue-500 pointer-events-none"
+                    />
                   )}
                 </button>
               ))}
