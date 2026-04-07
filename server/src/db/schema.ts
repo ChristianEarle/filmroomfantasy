@@ -29,7 +29,9 @@ export const users = sqliteTable('users', {
 
 export const tradeAnalysisUsage = sqliteTable('trade_analysis_usage', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  // No FK to users(id): rows may use synthetic ids like `anon_<ip>` for
+  // anonymous rate limiting, which would otherwise violate the constraint.
+  userId: text('user_id').notNull(),
   usedAt: text('used_at').notNull(),
   dateKey: text('date_key').notNull(), // YYYY-MM-DD
 });
