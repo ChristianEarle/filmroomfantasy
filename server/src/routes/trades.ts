@@ -778,8 +778,9 @@ Provide your analysis as JSON.`;
           dateKey: today,
         });
       } catch (usageErr) {
-        console.error('Failed to record trade usage:', usageErr);
-        // Don't fail the response if usage tracking fails
+        // Log loudly — if this silently fails, rate limits effectively stop
+        // working because the next check will see a usage count of 0.
+        console.error('[CRITICAL] Failed to record trade usage — limits may not enforce:', usageErr);
       }
 
       return c.json(parsed);
