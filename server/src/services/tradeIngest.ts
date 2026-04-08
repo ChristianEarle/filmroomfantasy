@@ -48,6 +48,9 @@ export interface IngestStats {
    *  if this is non-empty after a sync, some trades are being silently
    *  dropped because a roster has no corresponding team row. */
   unmappedRosterIds: number[];
+  /** Count of every status seen on type=trade transactions. Lets the
+   *  user see exactly what Sleeper returned and which got rejected. */
+  tradeStatusCounts: Record<string, number>;
 }
 
 function recordSkip(stats: IngestStats, reason: string) {
@@ -92,6 +95,7 @@ export async function ingestSleeperTrades(
     errors: 0,
     skipReasons: {},
     unmappedRosterIds: [],
+    tradeStatusCounts: {},
   };
 
   // 1. Load league, teams, and existing ingested trades
@@ -263,10 +267,28 @@ export async function ingestSleeperTrades(
 
   stats.fetched = allTx.length;
 
-  // 3. Filter to completed trades
-  const tradeTxs = allTx.filter(
-    ({ tx }) => tx.type === 'trade' && tx.status === 'complete'
+  // 3. Filter to completed trades.
+  //
+  // Status notes from observation: Sleeper most commonly uses 'complete'
+  // for accepted+processed trades, but legacy or unusual flows may use
+  // 'processed' or leave the field unset. The only statuses we KNOW
+  // mean "not a real trade" are 'pending' (still awaiting approval)
+  // and 'failed' (vetoed / rejected). Anything else, accept.
+  const REJECTED_STATUSES = new Set(['pending', 'failed']);
+  const tradeTypeTxs = allTx.filter(({ tx }) => tx.type === 'trade');
+  const tradeTxs = tradeTypeTxs.filter(
+    ({ tx }) => !tx.status || !REJECTED_STATUSES.has(tx.status)
   );
+
+  // Diagnostics: track every status we saw on type=trade transactions
+  // so the user can see exactly what Sleeper returned and why anything
+  // got dropped.
+  const statusCounts: Record<string, number> = {};
+  for (const { tx } of tradeTypeTxs) {
+    const key = tx.status || '(none)';
+    statusCounts[key] = (statusCounts[key] ?? 0) + 1;
+  }
+  stats.tradeStatusCounts = statusCounts;
   stats.trades = tradeTxs.length;
 
   if (tradeTxs.length === 0) return stats;

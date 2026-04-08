@@ -201,6 +201,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
           errors: number;
           skipReasons: Record<string, number>;
           unmappedRosterIds: number[];
+          tradeStatusCounts: Record<string, number>;
         };
       }>(`/trade-history/ingest/${selectedLeagueId}`);
       await fetchAll();
@@ -210,6 +211,14 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
       parts.push(
         `Synced ${s.trades} trade${s.trades === 1 ? '' : 's'} (${s.inserted} new, ${s.updated} updated)`
       );
+      const statusBreakdown = s.tradeStatusCounts
+        ? Object.entries(s.tradeStatusCounts)
+            .map(([status, n]) => `${status}: ${n}`)
+            .join(', ')
+        : '';
+      if (statusBreakdown) {
+        parts.push(`Sleeper returned trades with statuses → ${statusBreakdown}`);
+      }
       if (s.skipped > 0) {
         const reasonStr = Object.entries(s.skipReasons || {})
           .map(([reason, n]) => `${reason}: ${n}`)
@@ -217,6 +226,9 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         parts.push(
           `${s.skipped} skipped${reasonStr ? ` (${reasonStr})` : ''}`
         );
+      }
+      if (s.errors > 0) {
+        parts.push(`${s.errors} errors (check server logs)`);
       }
       if (s.unmappedRosterIds && s.unmappedRosterIds.length > 0) {
         parts.push(
