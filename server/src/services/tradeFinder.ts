@@ -1,18 +1,33 @@
 /**
  * Trade Finder (Feature 2).
  *
- * Workflow for finding recommendations:
- *  1. Load rosters for all teams in the league.
- *  2. Identify each team's best players (by facts — no judgment here).
- *  3. For each OPPONENT team, generate candidate packages between the user
- *     and that team using candidateFilter.generateCandidates.
- *  4. Pre-filter to the top ~10 across all opponents with scoreCandidate.
- *  5. Hand each surviving candidate to Claude in parallel for a full
- *     AI-graded analysis, then return the AI outputs to the caller.
+ * Two-stage pipeline:
  *
- * Team Needs Dashboard is also AI-generated, not hard-coded grades. We
- * build a per-team roster + TradeContext and ask Claude for a structured
- * {window, positionGrades, topNeeds, topStrengths} response.
+ *  Stage A — deterministic structure (no AI):
+ *   1. Load rosters for every team in the league.
+ *   2. Build a single TradeContext with facts for every rostered player.
+ *   3. Compute PlayerValuations (ROS pts × scarcity × schedule × injury).
+ *   4. Build a TeamComposition for every team: who is a starter, who is
+ *      depth, who is surplus, and which positions are a real need.
+ *   5. Run the needs-aware matcher — for each partner, pair the user's
+ *      surplus with their needs AND the partner's surplus with theirs.
+ *      Every surviving candidate has mutual-benefit fit reasons attached.
+ *
+ *  Stage B — qualitative AI analysis (per survivor, in parallel):
+ *   6. Hand each candidate to Claude with the matcher's fit reasons as
+ *      a HINT block. Claude reasons about real-world trade dynamics
+ *      (injury timing, schedule, playoff leverage, strategy) and
+ *      returns a fairness score + team grades + winner explanation.
+ *   7. Filter trades whose fairness diff exceeds MAX_FAIRNESS_DIFF and
+ *      return the survivors sorted most-fair-first.
+ *
+ * If the matcher returns nothing (edge case: over-filtered), we fall
+ * back to the legacy brute-force generator in candidateFilter.ts so
+ * the user still sees something.
+ *
+ * Team Needs Dashboard is still AI-generated narrative — the matcher
+ * operates on a separate deterministic need model (teamComposition.ts)
+ * that produces machine-readable surplus/need data.
  */
 
 import { eq, inArray } from 'drizzle-orm';
@@ -33,6 +48,19 @@ import {
   scoreCandidate,
   type ScoredCandidate,
 } from './candidateFilter';
+import {
+  buildValuationMap,
+  type PlayerValuation,
+} from './playerValuation';
+import {
+  buildTeamComposition,
+  type TeamComposition,
+} from './teamComposition';
+import {
+  matchTrades,
+  pickDiverseMatches,
+  type MatchedCandidate,
+} from './tradeMatcher';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -70,6 +98,19 @@ export interface TradeRecommendation {
    *  "required assets" input). Not valued by the candidate pre-filter
    *  — the AI reasons about them in the analysis step. */
   userSendsPicks: DraftPickAsset[];
+  /** Deterministic pre-AI fit metadata surfaced by the matcher. The AI
+   *  agrees/disagrees in its analysis, but these reasons give the user
+   *  a clear explanation of WHY the trade is on the list in the first
+   *  place. Arrays are never null — empty means "no matcher rationale". */
+  fit: {
+    /** Short phrases like "Fills a starter-level hole at RB" */
+    forYou: string[];
+    /** Phrases describing why the partner would consider it */
+    forThem: string[];
+    /** Positions the matcher considered "addressed" on each side */
+    userNeedsMet: string[];
+    partnerNeedsMet: string[];
+  };
   analysis: {
     winner: string;
     winnerExplanation: string;
@@ -260,22 +301,30 @@ export async function findTradeRecommendations(
   const factsById = new Map<string, PlayerFacts>();
   for (const p of megaContext.players) factsById.set(p.id, p);
 
-  // 3. Pick user's "tradeable" assets.
-  //    - By default: every rostered player minus K/DEF. The AI decides
-  //      who is untouchable.
-  //    - If userPlayerIds is provided: restrict to those IDs (but still
-  //      drop anything not actually on the user's roster, defensively).
-  const userRoster = rosterByTeam.get(userTeamId) || [];
-  const userRosterPlayerIds = new Set(userRoster.map((r) => r.playerId));
-  const fullUserAssetIds = userRoster
-    .filter((r) => r.player && !['K', 'DEF'].includes(r.player.position))
-    .map((r) => r.playerId);
-
-  const requestedIds = (userPlayerIds || []).filter((id) =>
-    userRosterPlayerIds.has(id)
+  // 3. Build deterministic valuations for every rostered player once.
+  //    These power both the team-composition analysis and the matcher.
+  const valuations = buildValuationMap(
+    megaContext.players,
+    leagueSettings,
+    currentWeek
   );
-  const userAssetIds =
-    requestedIds.length > 0 ? requestedIds : fullUserAssetIds;
+
+  // 4. Build a TeamComposition for every team in the league. This gives
+  //    us needs / surplus / role per player — the structure the matcher
+  //    needs to pair trades intelligently instead of brute-forcing.
+  const compositionsByTeam = new Map<string, TeamComposition>();
+  for (const team of allTeams) {
+    const roster = rosterByTeam.get(team.id) || [];
+    const comp = buildTeamComposition({
+      teamId: team.id,
+      rosteredPlayerIds: roster.map((r) => r.playerId),
+      valuations,
+      settings: leagueSettings,
+    });
+    compositionsByTeam.set(team.id, comp);
+  }
+  const userComp = compositionsByTeam.get(userTeamId);
+  if (!userComp) return [];
 
   // Normalize the pick list (only numeric year + round, dedup by year+round)
   const normalizedPicks: DraftPickAsset[] = Array.isArray(userPicks)
@@ -288,124 +337,193 @@ export async function findTradeRecommendations(
         .map((p) => ({ year: Math.trunc(p.year), round: Math.trunc(p.round) }))
     : [];
 
-  // 4. For each potential partner team, generate candidates and pre-filter.
-  //
-  // Two things matter here:
-  //  1. Sort both sides' asset ids by roughProxy DESC before generation,
-  //     so when the per-size caps in generateCandidates fire, the
-  //     strongest combos are preserved (we iterate best-first).
-  //  2. Use per-size caps — NOT a single total cap — so 2-for-1 and
-  //     1-for-2 variants actually get generated instead of being
-  //     starved by the 225-combo 1-for-1 matrix.
+  // Respect the "Trade Assets" restriction: user only willing to send
+  // these specific player ids. Defensively drop anything not on the
+  // user's roster so a stale client payload can't smuggle in foreign ids.
+  const userRoster = rosterByTeam.get(userTeamId) || [];
+  const userRosterPlayerIds = new Set(userRoster.map((r) => r.playerId));
+  const restrictUserAssets =
+    userPlayerIds && userPlayerIds.length > 0
+      ? userPlayerIds.filter((id) => userRosterPlayerIds.has(id))
+      : null;
+
+  // 5. Run the needs-aware matcher against each potential partner.
   const partnerTeamIds = targetTeamId
     ? [targetTeamId]
     : allTeams.filter((t) => t.id !== userTeamId).map((t) => t.id);
 
-  const sortedUserAssetIds = sortByProxy(userAssetIds, factsById);
-
-  const allScored: Array<ScoredCandidate & { targetTeamId: string }> = [];
+  const allMatched: Array<MatchedCandidate & { targetTeamId: string }> = [];
 
   for (const partnerId of partnerTeamIds) {
-    const partnerRoster = rosterByTeam.get(partnerId) || [];
-    const partnerAssetIds = partnerRoster
-      .filter((r) => r.player && !['K', 'DEF'].includes(r.player.position))
-      .filter((r) => {
-        if (!targetPosition) return true;
-        return r.player?.position === targetPosition;
-      })
-      .map((r) => r.playerId);
+    const partnerComp = compositionsByTeam.get(partnerId);
+    if (!partnerComp) continue;
 
-    if (partnerAssetIds.length === 0) continue;
+    const matched = matchTrades({
+      userComp,
+      partnerComp,
+      valuations,
+      factsById,
+      settings: leagueSettings,
+      options: {
+        maxCandidates: 10,
+        imbalanceTolerance: 0.25,
+        targetPosition: targetPosition ?? null,
+        restrictUserAssets,
+      },
+    });
 
-    const sortedPartnerAssetIds = sortByProxy(partnerAssetIds, factsById);
-
-    const candidates = generateCandidates(
-      sortedUserAssetIds,
-      sortedPartnerAssetIds,
-      { max1v1: 40, max2v1: 25, max1v2: 25 }
-    );
-
-    // Score every candidate and keep the top 12 per partner (up from 5)
-    // so we have enough variety for the global diversity pass.
-    const scored = candidates.map((c) => scoreCandidate(c, factsById));
-    scored.sort((a, b) => a.preFilterScore - b.preFilterScore);
-    for (const s of scored.slice(0, 12)) {
-      allScored.push({ ...s, targetTeamId: partnerId });
+    for (const m of matched) {
+      allMatched.push({ ...m, targetTeamId: partnerId });
     }
   }
 
-  // Avoid unused-import warning for topCandidates — kept exported for
-  // callers that want the simple non-diverse selection.
-  void topCandidates;
+  // 6. Fallback: if the needs-aware matcher produced nothing (e.g.
+  //    extreme filter combination), fall back to the legacy brute-force
+  //    generator so the user still sees SOMETHING rather than an empty
+  //    state. We mark these as "no fit rationale".
+  let topGlobal: Array<{
+    targetTeamId: string;
+    sendPlayerIds: string[];
+    receivePlayerIds: string[];
+    fit: TradeRecommendation['fit'];
+  }>;
 
-  // 5. Global top-N across partners with DIVERSITY:
-  //    - No single user player (or target player) may dominate more
-  //      than 2 of the returned candidates, so you don't see
-  //      "Bijan for X, Bijan for Y, Bijan for Z".
-  //    - We over-fetch (3x the final count) so there's room for the
-  //      diversity pass to discard dominant candidates without
-  //      starving the result list.
-  const overFetch = Math.max(maxRecommendations * 3, 16);
-  allScored.sort((a, b) => a.preFilterScore - b.preFilterScore);
-  const diversePool = pickDiverseTop(
-    allScored.slice(0, overFetch),
-    maxRecommendations,
-    2
-  ) as Array<ScoredCandidate & { targetTeamId: string }>;
-  const topGlobal = diversePool;
+  if (allMatched.length > 0) {
+    // Primary path: sort by matcher score (lower = better) and apply
+    // a per-player diversity cap so no single player dominates output.
+    // The generic pickDiverseMatches preserves the attached targetTeamId.
+    allMatched.sort((a, b) => a.score - b.score);
+    const overFetch = Math.max(maxRecommendations * 3, 16);
+    const diverse = pickDiverseMatches(
+      allMatched.slice(0, overFetch),
+      maxRecommendations,
+      2
+    );
+    topGlobal = diverse.map((m) => ({
+      targetTeamId: m.targetTeamId,
+      sendPlayerIds: m.sendPlayerIds,
+      receivePlayerIds: m.receivePlayerIds,
+      fit: {
+        forYou: m.fitReasons.forYou,
+        forThem: m.fitReasons.forThem,
+        userNeedsMet: m.userNeedsMet,
+        partnerNeedsMet: m.partnerNeedsMet,
+      },
+    }));
+  } else {
+    // Fallback path: the old brute-force generator. Kept as a safety net.
+    const fullUserAssetIds = userRoster
+      .filter((r) => r.player && !['K', 'DEF'].includes(r.player.position))
+      .map((r) => r.playerId);
+    const userAssetIds = restrictUserAssets ?? fullUserAssetIds;
+    const sortedUserAssetIds = sortByProxy(userAssetIds, factsById);
+    const allScored: Array<ScoredCandidate & { targetTeamId: string }> = [];
+
+    for (const partnerId of partnerTeamIds) {
+      const partnerRoster = rosterByTeam.get(partnerId) || [];
+      const partnerAssetIds = partnerRoster
+        .filter((r) => r.player && !['K', 'DEF'].includes(r.player.position))
+        .filter((r) => {
+          if (!targetPosition) return true;
+          return r.player?.position === targetPosition;
+        })
+        .map((r) => r.playerId);
+      if (partnerAssetIds.length === 0) continue;
+      const sortedPartnerAssetIds = sortByProxy(partnerAssetIds, factsById);
+      const candidates = generateCandidates(
+        sortedUserAssetIds,
+        sortedPartnerAssetIds,
+        { max1v1: 40, max2v1: 25, max1v2: 25 }
+      );
+      const scored = candidates.map((c) => scoreCandidate(c, factsById));
+      scored.sort((a, b) => a.preFilterScore - b.preFilterScore);
+      for (const s of scored.slice(0, 12)) {
+        allScored.push({ ...s, targetTeamId: partnerId });
+      }
+    }
+    // Silence unused-import warning; topCandidates is still exported
+    // from candidateFilter for other callers.
+    void topCandidates;
+
+    allScored.sort((a, b) => a.preFilterScore - b.preFilterScore);
+    const overFetch = Math.max(maxRecommendations * 3, 16);
+    const diverse = pickDiverseTop(
+      allScored.slice(0, overFetch),
+      maxRecommendations,
+      2
+    );
+    topGlobal = diverse.map((s) => {
+      const fallback = s as ScoredCandidate & { targetTeamId: string };
+      return {
+        targetTeamId: fallback.targetTeamId,
+        sendPlayerIds: fallback.candidate.sendPlayerIds,
+        receivePlayerIds: fallback.candidate.receivePlayerIds,
+        fit: {
+          forYou: [],
+          forThem: [],
+          userNeedsMet: [],
+          partnerNeedsMet: [],
+        },
+      };
+    });
+  }
 
   if (topGlobal.length === 0) return [];
 
-  // 6. Run AI analysis on each survivor in parallel
+  // 7. Run AI analysis on each survivor in parallel, passing the fit
+  //    reasons as additional context so Claude can agree/disagree with
+  //    the matcher's rationale rather than reasoning from raw rosters.
   const results = await Promise.all(
-    topGlobal.map((scored) =>
+    topGlobal.map((surv) =>
       analyzeCandidateWithAI({
         anthropicKey,
         userTeam,
-        targetTeam: allTeams.find((t) => t.id === scored.targetTeamId)!,
-        candidate: scored,
+        targetTeam: allTeams.find((t) => t.id === surv.targetTeamId)!,
+        sendPlayerIds: surv.sendPlayerIds,
+        receivePlayerIds: surv.receivePlayerIds,
+        fit: surv.fit,
         factsById,
         context: megaContext,
         extraUserPicks: normalizedPicks,
+        valuations,
       })
     )
   );
 
-  // 7. Post-process: drop wildly unfair trades and sort by fairness.
+  // 8. Post-process: drop wildly unfair trades and sort by fairness.
   //
-  // The fairnessScore is 0-100 with 50 = perfectly fair, and `diff`
-  // is |score - 50|. We cut off at diff > MAX_FAIRNESS_DIFF because
-  // anything beyond that is in "Heavily Favored" territory — the
-  // target team would never accept it in real life and showing it
-  // is just noise. Trade Finder's job is to surface REALISTIC trades.
-  //
-  // We filter in both directions: a trade that unfairly favors the
-  // USER is also dropped, because the partner team would reject it.
-  const MAX_FAIRNESS_DIFF = 25;
-
-  const valid = results.filter(
-    (r): r is TradeRecommendation => r != null
-  );
+  // Because the matcher already enforces a 25% value tolerance AND
+  // needs-mutual-benefit, the AI almost never returns a "robbery"
+  // now. We keep a looser MAX_FAIRNESS_DIFF (30) as a belt-and-braces
+  // filter — anything beyond that is truly one-sided and would be
+  // rejected in real life.
+  const MAX_FAIRNESS_DIFF = 30;
+  const valid = results.filter((r): r is TradeRecommendation => r != null);
 
   return valid
     .filter((rec) => rec.analysis.fairnessScore.diff <= MAX_FAIRNESS_DIFF)
-    .sort(
-      (a, b) =>
-        a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff
-    );
+    .sort((a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff);
 }
 
 interface AnalyzeArgs {
   anthropicKey: string;
   userTeam: { id: string; name: string };
   targetTeam: { id: string; name: string };
-  candidate: ScoredCandidate & { targetTeamId: string };
+  /** Exact player ids to send/receive for this candidate */
+  sendPlayerIds: string[];
+  receivePlayerIds: string[];
+  /** Pre-computed fit reasons from the matcher. Empty arrays if the
+   *  fallback brute-force generator produced this candidate. */
+  fit: TradeRecommendation['fit'];
   factsById: Map<string, PlayerFacts>;
   context: TradeContext;
   /** Picks appended to the user's send side for every candidate
    *  (from the "required assets" input). Passed to the AI as context
    *  and echoed back on the TradeRecommendation. */
   extraUserPicks?: DraftPickAsset[];
+  /** Deterministic valuations — used only to surface debug numbers
+   *  in the AI prompt for transparency; the AI is still the authority. */
+  valuations?: Map<string, PlayerValuation>;
 }
 
 function formatPick(pick: DraftPickAsset): string {
@@ -427,16 +545,18 @@ async function analyzeCandidateWithAI(
     anthropicKey,
     userTeam,
     targetTeam,
-    candidate,
+    sendPlayerIds,
+    receivePlayerIds,
+    fit,
     factsById,
     context,
     extraUserPicks = [],
   } = args;
 
-  const sendFacts = candidate.candidate.sendPlayerIds
+  const sendFacts = sendPlayerIds
     .map((id) => factsById.get(id))
     .filter((p): p is PlayerFacts => p != null);
-  const receiveFacts = candidate.candidate.receivePlayerIds
+  const receiveFacts = receivePlayerIds
     .map((id) => factsById.get(id))
     .filter((p): p is PlayerFacts => p != null);
 
@@ -459,7 +579,32 @@ async function analyzeCandidateWithAI(
     players: relevantFacts,
   };
 
+  // If the matcher produced fit reasons, format them into a block the
+  // AI can reference. The AI is free to agree or disagree — these are
+  // hints, not facts.
+  const hasFitReasons =
+    fit.forYou.length > 0 || fit.forThem.length > 0 ||
+    fit.userNeedsMet.length > 0 || fit.partnerNeedsMet.length > 0;
+  const fitBlock = hasFitReasons
+    ? `\n--- MATCHER RATIONALE (why this trade was surfaced) ---\n` +
+      (fit.forYou.length > 0
+        ? `Reasons for ${userTeam.name}:\n${fit.forYou.map((r) => `  - ${r}`).join('\n')}\n`
+        : '') +
+      (fit.forThem.length > 0
+        ? `Reasons for ${targetTeam.name}:\n${fit.forThem.map((r) => `  - ${r}`).join('\n')}\n`
+        : '') +
+      (fit.userNeedsMet.length > 0
+        ? `Positions addressed for ${userTeam.name}: ${fit.userNeedsMet.join(', ')}\n`
+        : '') +
+      (fit.partnerNeedsMet.length > 0
+        ? `Positions addressed for ${targetTeam.name}: ${fit.partnerNeedsMet.join(', ')}\n`
+        : '') +
+      `Note: the matcher uses a deterministic surplus/need model. You are the final judge — agree or disagree with the rationale based on the player facts.\n`
+    : '';
+
   const systemPrompt = `You are an expert fantasy football trade analyst scoring a proposed trade that the Trade Finder pre-filtered as a potentially interesting candidate. Apply the same AI-first principles you always use: no rigid rules, reason about context, use the TRADE CONTEXT facts as ground truth.
+
+The Trade Finder's matcher surfaces trades by pairing one team's SURPLUS with the other team's NEED. When you see a "MATCHER RATIONALE" block in the user message, treat it as a HINT about why the trade was proposed — you may confirm, refine, or reject the reasoning. Your fairness score and winner judgment are what the user sees.
 
 Respond with ONLY valid JSON:
 {
@@ -476,7 +621,7 @@ Teams in this trade: ${userTeam.name}, ${targetTeam.name}.`;
   const userMessage = `Analyze this trade the Trade Finder surfaced:
 
 ${tradeDescription}
-
+${fitBlock}
 ${formatTradeContextForPrompt(subsetContext)}`;
 
   try {
@@ -538,6 +683,7 @@ ${formatTradeContextForPrompt(subsetContext)}`;
         position: p.position,
       })),
       userSendsPicks: extraUserPicks,
+      fit,
       analysis: parsed,
     };
   } catch (err) {
