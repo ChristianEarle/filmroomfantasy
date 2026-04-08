@@ -62,8 +62,13 @@ export interface ConstructorFilters {
    *  but the AI does NOT include them in sentPlayerIds — picks are
    *  threaded through separately by the caller). */
   userPicks?: Array<{ year: number; round: number }> | null;
-  /** How many candidates to ask for. Defaults to 6. */
+  /** How many candidates to ask for. Defaults to 8. */
   desiredCount?: number;
+  /** 'standard' uses the default conservative prompt. 'creative' tells
+   *  the constructor to explore unconventional packages: positional
+   *  arbitrage, bench-for-starter swaps, multi-piece builds, etc.
+   *  Used for the retry pass when the standard call finds nothing. */
+  mode?: 'standard' | 'creative';
 }
 
 export interface ConstructorArgs {
@@ -83,7 +88,34 @@ function formatPickAsset(p: { year: number; round: number }): string {
   return `${p.year} ${ord}`;
 }
 
-function buildSystemPrompt(): string {
+// ── Pick value reference ─────────────────────────────────────────────
+//
+// Rough consensus values for draft picks in standard fantasy leagues.
+// The constructor uses these as ANCHORS when it has to decide how much
+// additional player value a pick is worth. Redraft values are ~60% of
+// dynasty values because redraft picks only cover one season. These
+// are intentionally wide ranges — the AI is expected to apply judgment
+// based on league format, class strength, and user's draft slot.
+const PICK_VALUE_REFERENCE = `
+Pick value anchors (use these to decide how many players to pair with
+a pick, but feel free to adjust for context like class strength or
+dynasty vs redraft):
+
+  2026 1st-round pick  ≈ RB10-RB15 or WR8-WR15 equivalent in dynasty,
+                         ~half that in redraft
+  2026 2nd-round pick  ≈ RB25-RB35 or WR25-WR35 in dynasty, low bench
+                         value in redraft
+  2026 3rd-round pick  ≈ depth-tier flyer, use as a sweetener only
+  2027+ picks          ≈ discount by ~20% per year further out
+
+When the user side includes a pick, the partner is receiving FUTURE
+value instead of a current player, so you can pair the pick with a
+relatively low-value current player and still build a balanced offer.
+Example: "Rookie_RB [35/depth/bench] + 2026 1st" for a WR2 in the
+[110-140] range is a realistic package.
+`;
+
+function buildStandardSystemPrompt(): string {
   return `You are an elite fantasy football trade architect. Your job is to look at a whole league and construct REALISTIC, mutually beneficial trades between the user's team and other teams.
 
 ### TWO HARD RULES
@@ -91,13 +123,13 @@ function buildSystemPrompt(): string {
 RULE 1: THE TRADE MUST MAKE THE USER'S TEAM BETTER.
 RULE 2: THE PARTNER'S GM MUST ACTUALLY ACCEPT IT IN REAL LIFE.
 
-Both rules bind at the same time. If either fails, DO NOT propose the trade. It is MUCH better to return 2 great trades than 6 trades where some are one-sided in either direction.
+Both rules bind at the same time. If either fails, DO NOT propose the trade. It is MUCH better to return 2 great trades than 8 trades where some are one-sided in either direction.
 
-### The packaging rule — this is how you avoid lopsided trades
+### The packaging rule — how to avoid lopsided trades
 
-When the user wants an elite player from a partner, a SINGLE player on the user's side almost never matches value. Real GMs don't accept 1-for-1 steals. You MUST pad the user's side with additional players or assets until the deterministic values on both sides are within ~15% of each other.
+When the user wants an elite player from a partner, a SINGLE player on the user's side almost never matches value. Real GMs don't accept 1-for-1 steals. You MUST pad the user's side with additional players or picks until the values on both sides are within ~15% of each other.
 
-Example of a BAD trade the finder has shipped before:
+Example of a BAD trade to never propose:
   user sends: Jaxson Dart (rookie QB, [45/depth/bench])
   user receives: Lamar Jackson (elite QB, [180/elite/starter])
   → This is a ~75% value delta. No real GM accepts it. DROP or PAD.
@@ -105,29 +137,33 @@ Example of a BAD trade the finder has shipped before:
 How to fix it:
   user sends: Jaxson Dart + Breece Hall + 2026 2nd-round pick
   user receives: Lamar Jackson
-  → Now the values are roughly matched. Partner sees useful assets coming back and might actually accept.
+  → Now the values are roughly matched.
 
-Process for every acquisition you consider:
-  1. Identify the target player from the partner's roster.
+${PICK_VALUE_REFERENCE}
+
+### Process for every acquisition you consider
+
+  1. Identify the target player(s) from the partner's roster.
   2. Sum the partner target's [val] number(s) from the snapshot.
   3. Find user-side players whose [val] numbers add up to within 15%
-     of the partner's total — preferably using players from a
-     position where the user has SURPLUS or DEPTH (not starters).
-  4. If no combination gets you within 15%, consider throwing in a
-     draft pick on the user's side (the caller handles picks
-     separately, but you can note it in partnerReasoning).
-  5. If you cannot construct a balanced package even with multiple
-     players, DROP the target. Do not propose a one-sided steal.
+     of the partner's total — preferably from a position where the
+     user has SURPLUS or DEPTH (not starters).
+  4. If the user has picks available (listed under BONUS USER ASSETS
+     in the user message), factor their value in — they fill gaps
+     the player-only side can't match.
+  5. If you still can't build a balanced package, DROP the target.
+     Don't propose one-sided steals.
 
 ### Before finalizing any trade, answer these four questions
 
   A. Is the user upgrading at a position they actually need, or
      sidegrading? (If sidegrading, drop.)
   B. If I were the partner's GM looking at just my side of the
-     trade, would I be disgusted to accept it? (If yes, add more
-     to the user's side until the partner side feels fair.)
+     trade, would I be disgusted to accept it? (If yes, pad the
+     user's side until the partner side feels fair.)
   C. Is the deterministic value the user SENDS within 15% of what
-     they RECEIVE, using the [val] tags in the snapshot?
+     they RECEIVE, using the [val] tags (plus pick value if the
+     user is throwing a pick in)?
   D. Does the trade feel like something two reasonable owners
      would agree on after a text exchange?
 
@@ -148,7 +184,7 @@ Process for every acquisition you consider:
 - Every sent player must be on the USER's roster (the team marked
   YOU in the snapshot).
 - Every received player must be on the named PARTNER team's roster.
-- Packages can include 1-4 players on either side. Use as many as
+- Packages can include 1-5 players on either side. Use as many as
   needed to balance value. DO NOT default to 1-for-1.
 - Use the player IDs from the snapshot exactly. NEVER invent or
   rename players.
@@ -183,11 +219,93 @@ Rules for the JSON:
   quantity.`;
 }
 
+function buildCreativeSystemPrompt(): string {
+  return `You are an elite fantasy football trade architect running a CREATIVE SECOND PASS. The first pass returned too few trades, so the user needs you to explore less-obvious angles.
+
+### CRITICAL CONTEXT
+
+You're the second attempt. The standard construction pass already
+looked at the league and either returned nothing or only a couple of
+ideas. The filter downstream is strict — trades need to be balanced
+AND mutually beneficial AND something the partner GM would actually
+accept. But the user wants OPTIONS. Your job is to find creative
+angles the standard pass missed, without lowering the bar on fairness.
+
+### Creative angles to explore (use ALL of them)
+
+1. POSITIONAL ARBITRAGE. A user's "starter" at a deep position (e.g.
+   a mid-tier WR in a WR-heavy roster) can be treated as tradeable
+   surplus. Pair that WR with a user need from a partner who is deep
+   at the opposite position.
+
+2. BENCH-FOR-STARTER SWAPS. A partner with a weak starter at a
+   position of user strength might accept the user's backup/flex
+   piece + a pick for their weak starter. The partner moves on from
+   a player they're lukewarm on; the user gets a clear upgrade.
+
+3. MULTI-PIECE BUILDS. Don't default to the smallest package that
+   balances. If 3 user players + a pick lets you acquire 2 partner
+   players where one is a clear upgrade and the other is a
+   positional filler, go for it. Packages can be 1-5 players per side.
+
+4. PARTNERS YOU MIGHT SKIP. The weakest teams in the league are
+   usually willing to trade established veterans for younger assets
+   or picks. Don't skip them just because they're worse. They're
+   often the BEST trade partners for a contender user.
+
+5. PICK-CENTRIC DEALS. If the user has a pick in their BONUS ASSETS,
+   lead with it. Many partners will accept (user's cheap player +
+   user's pick) for a mid-tier starter because the pick is the
+   prize, not the player.
+
+6. BUY-LOW ON SLUMPING PLAYERS. If the snapshot shows a player with
+   a weak recent trend but strong positional value tag, they might
+   be available at a discount because their owner is frustrated.
+
+### Same hard rules as the standard pass
+
+- RULE 1: The trade must make the user's team better.
+- RULE 2: The partner's GM must actually accept it.
+- Package values must balance within ~15% (including pick value).
+- Drop the target if you can't build a balanced realistic package.
+
+Refer to the pick value anchors in the user message for how to size
+packages that include picks. Use the full 1-5 players per side range
+when the packaging calls for it.
+
+### Response format
+
+Same JSON shape as the standard pass:
+{
+  "trades": [
+    {
+      "partnerTeamId": "team_id_from_snapshot",
+      "sentPlayerIds": ["player_id", ...],
+      "receivedPlayerIds": ["player_id", ...],
+      "userReasoning": "1-2 sentences",
+      "partnerReasoning": "1-2 sentences",
+      "confidence": "high" | "medium" | "low"
+    }
+  ],
+  "notes": "Optional short overall commentary or null"
+}
+
+Return up to 8 trades. Quality still wins over quantity, but
+creativity is explicitly valued here. Return fewer only if you
+genuinely can't find realistic options.`;
+}
+
+function buildSystemPrompt(mode: 'standard' | 'creative' = 'standard'): string {
+  return mode === 'creative'
+    ? buildCreativeSystemPrompt()
+    : buildStandardSystemPrompt();
+}
+
 function buildUserMessage(
   snapshot: LeagueContextSnapshot,
   filters: ConstructorFilters
 ): string {
-  const desiredCount = filters.desiredCount ?? 6;
+  const desiredCount = filters.desiredCount ?? 8;
   const lines: string[] = [];
 
   lines.push(`Construct up to ${desiredCount} mutually beneficial trades for the YOU team in the league snapshot below.`);
@@ -209,7 +327,19 @@ function buildUserMessage(
   if (filters.userPicks && filters.userPicks.length > 0) {
     const picks = filters.userPicks.map(formatPickAsset).join(', ');
     filterLines.push(
-      `- BONUS USER ASSETS (not in sentPlayerIds): the user is also willing to throw in these picks across every trade: ${picks}. Factor them into the partner's acceptance reasoning, but do NOT add them to sentPlayerIds — the caller threads picks in separately.`
+      `- BONUS USER ASSETS: the user is offering these draft picks AS PART of every trade you construct: ${picks}.`
+    );
+    filterLines.push(
+      `  * Do NOT add picks to sentPlayerIds — the caller threads them separately.`
+    );
+    filterLines.push(
+      `  * DO factor the pick value into your packaging — see the pick value anchors in the system prompt. A 1st-round pick is real value.`
+    );
+    filterLines.push(
+      `  * Because a pick is already on the user's side, the user-side PLAYER total can be LOWER than the partner-side player total. The pick fills the gap.`
+    );
+    filterLines.push(
+      `  * Many trades here should lead with a pick-plus-small-player combo aimed at a partner starter the user actually wants.`
     );
   }
   if (filterLines.length > 0) {
@@ -222,7 +352,9 @@ function buildUserMessage(
   lines.push(formatLeagueContextForConstructor(snapshot));
 
   lines.push('');
-  lines.push('Now produce the JSON response. Remember: realistic trades only, both sides must benefit, return fewer than the requested count if you cannot find enough good ones.');
+  lines.push(
+    `Now produce the JSON response. Aim for ${desiredCount} trades if realistic options exist. An empty array is a valid answer ONLY if you've genuinely exhausted the partner roster and can't build a single balanced package — don't give up early.`
+  );
 
   return lines.join('\n');
 }
@@ -292,9 +424,15 @@ export async function constructTrades(
   args: ConstructorArgs
 ): Promise<ConstructorResult | null> {
   const { anthropicKey, snapshot, filters = {} } = args;
+  const mode = filters.mode ?? 'standard';
 
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = buildSystemPrompt(mode);
   const userMessage = buildUserMessage(snapshot, filters);
+
+  // Standard pass runs at moderate temperature. Creative pass runs
+  // hotter so the second-look actually explores different territory
+  // rather than re-proposing the same ideas.
+  const temperature = mode === 'creative' ? 0.7 : 0.5;
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -307,12 +445,12 @@ export async function constructTrades(
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         // Larger budget than the analyzer pass — the constructor returns
-        // multiple trades each with reasoning text. 3500 leaves room for
-        // ~6 trades × ~500 tokens each plus notes.
-        max_tokens: 3500,
+        // multiple trades each with reasoning text. 4500 leaves room for
+        // up to ~8 trades × ~500 tokens each plus notes.
+        max_tokens: 4500,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
-        temperature: 0.4,
+        temperature,
       }),
       // Mega-call gets a longer timeout — it's doing more thinking than
       // the per-trade analyzer calls.
