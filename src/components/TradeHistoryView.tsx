@@ -202,6 +202,8 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
           skipReasons: Record<string, number>;
           unmappedRosterIds: number[];
           tradeStatusCounts: Record<string, number>;
+          weeklyTradeBreakdown: Record<number, number>;
+          totalRawTransactions: number;
         };
       }>(`/trade-history/ingest/${selectedLeagueId}`);
       await fetchAll();
@@ -209,15 +211,26 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
       const s = res.stats;
       const parts: string[] = [];
       parts.push(
-        `Synced ${s.trades} trade${s.trades === 1 ? '' : 's'} (${s.inserted} new, ${s.updated} updated)`
+        `Sleeper returned ${s.totalRawTransactions} total transactions, ` +
+        `${s.trades} accepted as trades (${s.inserted} new, ${s.updated} updated)`
       );
+      const weekBreakdown = s.weeklyTradeBreakdown
+        ? Object.entries(s.weeklyTradeBreakdown)
+            .map(([w, n]) => [parseInt(w, 10), n] as [number, number])
+            .sort((a, b) => a[0] - b[0])
+            .map(([w, n]) => `W${w}: ${n}`)
+            .join(', ')
+        : '';
+      if (weekBreakdown) {
+        parts.push(`Per-week trades → ${weekBreakdown}`);
+      }
       const statusBreakdown = s.tradeStatusCounts
         ? Object.entries(s.tradeStatusCounts)
             .map(([status, n]) => `${status}: ${n}`)
             .join(', ')
         : '';
       if (statusBreakdown) {
-        parts.push(`Sleeper returned trades with statuses → ${statusBreakdown}`);
+        parts.push(`Statuses → ${statusBreakdown}`);
       }
       if (s.skipped > 0) {
         const reasonStr = Object.entries(s.skipReasons || {})
