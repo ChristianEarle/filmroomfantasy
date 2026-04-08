@@ -505,6 +505,137 @@ tradeHistoryRoutes.get('/record-impact/:leagueId', authMiddleware, async (c) => 
   return c.json({ impact: primary, impacts: filteredImpacts });
 });
 
+// ── GET /debug/:leagueId — raw trade dump for diagnosing missing rows ─
+//
+// Returns every trade row stored for the league with its items + the
+// caller's resolved team id so we can see WHY a trade might be filtered
+// out by /history. Auth-gated by membership.
+
+tradeHistoryRoutes.get('/debug/:leagueId', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const leagueId = c.req.param('leagueId');
+
+  const membership = await db.query.leagueMembers.findFirst({
+    where: and(
+      eq(schema.leagueMembers.userId, user.id),
+      eq(schema.leagueMembers.leagueId, leagueId)
+    ),
+  });
+  if (!membership) {
+    return c.json({ error: 'Not a member of this league' }, 403);
+  }
+
+  // Resolve the caller's team — same logic as /history so we can see
+  // exactly what /history is using.
+  const leagueTeams = await db.query.teams.findMany({
+    where: eq(schema.teams.leagueId, leagueId),
+  });
+  let callerTeam = null;
+  let callerResolution: string;
+  if (membership.externalUsername) {
+    callerTeam = leagueTeams.find(
+      (t) => t.externalOwnerId === membership.externalUsername
+    );
+    callerResolution = callerTeam
+      ? `externalOwnerId match (${membership.externalUsername})`
+      : `externalUsername set but no team matched`;
+  } else {
+    callerResolution = 'no externalUsername on membership';
+  }
+  if (!callerTeam) {
+    callerTeam = leagueTeams.find((t) => t.ownerId === user.id) ?? null;
+    if (callerTeam) callerResolution += ' → fell back to ownerId match';
+  }
+
+  // Pull every trade row regardless of status
+  const allTrades = await db.query.trades.findMany({
+    where: eq(schema.trades.leagueId, leagueId),
+    orderBy: [desc(schema.trades.executedAt)],
+  });
+
+  if (allTrades.length === 0) {
+    return c.json({
+      callerTeam: callerTeam
+        ? { id: callerTeam.id, name: callerTeam.name }
+        : null,
+      callerResolution,
+      tradeCount: 0,
+      trades: [],
+      teams: leagueTeams.map((t) => ({
+        id: t.id,
+        name: t.name,
+        externalOwnerId: t.externalOwnerId,
+      })),
+    });
+  }
+
+  const allItems = await chunkedInArrayFetch(
+    allTrades.map((t) => t.id),
+    DEFAULT_ID_CHUNK,
+    (chunk) =>
+      db.query.tradeItems.findMany({
+        where: inArray(schema.tradeItems.tradeId, chunk),
+      })
+  );
+  const itemsByTradeId = new Map<string, typeof allItems>();
+  for (const item of allItems) {
+    const list = itemsByTradeId.get(item.tradeId) || [];
+    list.push(item);
+    itemsByTradeId.set(item.tradeId, list);
+  }
+
+  const debugTrades = allTrades.map((t) => {
+    const items = itemsByTradeId.get(t.id) || [];
+    const fromIds = Array.from(new Set(items.map((i) => i.fromTeamId)));
+    const toIds = Array.from(new Set(items.map((i) => i.toTeamId)));
+    const callerIsInvolved =
+      callerTeam != null &&
+      items.some(
+        (i) =>
+          i.fromTeamId === callerTeam!.id || i.toTeamId === callerTeam!.id
+      );
+    return {
+      id: t.id,
+      externalId: t.externalId,
+      status: t.status,
+      source: t.source,
+      seasonYear: t.seasonYear,
+      weekExecuted: t.weekExecuted,
+      executedAt: t.executedAt ? t.executedAt.toISOString() : null,
+      itemCount: items.length,
+      fromTeamIds: fromIds,
+      toTeamIds: toIds,
+      callerIsInvolved,
+      // Why might /history be hiding this trade?
+      hiddenReason:
+        t.status !== 'executed'
+          ? `status="${t.status}" (expected "executed")`
+          : !callerIsInvolved
+          ? 'caller team not in fromTeamIds/toTeamIds'
+          : null,
+    };
+  });
+
+  return c.json({
+    callerTeam: callerTeam
+      ? { id: callerTeam.id, name: callerTeam.name }
+      : null,
+    callerResolution,
+    tradeCount: allTrades.length,
+    visibleToCaller: debugTrades.filter((t) => !t.hiddenReason).length,
+    hiddenFromCaller: debugTrades.filter((t) => t.hiddenReason).length,
+    teams: leagueTeams.map((t) => ({
+      id: t.id,
+      name: t.name,
+      externalOwnerId: t.externalOwnerId,
+    })),
+    trades: debugTrades,
+  });
+});
+
 // ── POST /ingest/:leagueId — manually trigger ingest ─────────────────
 
 tradeHistoryRoutes.post('/ingest/:leagueId', authMiddleware, async (c) => {
