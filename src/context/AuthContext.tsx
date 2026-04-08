@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authService } from '../services';
-import { setOnAuthExpired } from '../services/api';
+import { setOnAuthExpired, hydrateAuthTokenFromStorage } from '../services/api';
 import type { User, League, UpdateProfileData, GoogleAuthResponse } from '../services/auth';
 
 interface AuthContextType {
@@ -26,9 +26,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = !!user;
 
   // Check for existing session on mount by calling /auth/me
-  // The httpOnly cookie is sent automatically — no localStorage check needed
+  // The httpOnly cookie is sent automatically. As a fallback for browsers that
+  // block cross-origin cookies (Safari ITP), we also restore the bearer token
+  // from localStorage so apiFetch can send it as Authorization: Bearer.
   useEffect(() => {
     const initAuth = async () => {
+      hydrateAuthTokenFromStorage();
       try {
         const response = await authService.me();
         setUser(response.user);
