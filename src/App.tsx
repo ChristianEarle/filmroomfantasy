@@ -18,7 +18,7 @@ const MatchupView = lazy(() => import('./components/MatchupView').then(m => ({ d
 const WaiversView = lazy(() => import('./components/WaiversView').then(m => ({ default: m.WaiversView })));
 const HomeView = lazy(() => import('./components/HomeView').then(m => ({ default: m.HomeView })));
 const GameSlateView = lazy(() => import('./components/GameSlateView').then(m => ({ default: m.GameSlateView })));
-const TradeAnalyzerView = lazy(() => import('./components/TradeAnalyzerView').then(m => ({ default: m.TradeAnalyzerView })));
+const TradeAnalyzerShell = lazy(() => import('./components/TradeAnalyzerShell').then(m => ({ default: m.TradeAnalyzerShell })));
 const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
 const PricingView = lazy(() => import('./components/PricingView').then(m => ({ default: m.PricingView })));
 const AdminView = lazy(() => import('./components/AdminView').then(m => ({ default: m.AdminView })));
@@ -619,7 +619,7 @@ function AppContent() {
             ) : activeView === 'LeagueAnalyzer' ? (
               <ComingSoonView title="League Analyzer" description="Deep dive into your league with power rankings, strength of schedule analysis, and roster composition breakdowns." icon="league" isDarkMode={isDarkMode} />
             ) : activeView === 'TradeAnalyzer' ? (
-              <Suspense fallback={suspenseFallback}><TradeAnalyzerView isDarkMode={isDarkMode} /></Suspense>
+              <Suspense fallback={suspenseFallback}><TradeAnalyzerShell isDarkMode={isDarkMode} /></Suspense>
             ) : activeView === 'Admin' ? (
               user?.role === 'admin' ? (
                 <Suspense fallback={suspenseFallback}><AdminView isDarkMode={isDarkMode} /></Suspense>

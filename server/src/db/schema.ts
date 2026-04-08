@@ -339,11 +339,32 @@ export const trades = sqliteTable('trades', {
   leagueId: text('league_id').notNull().references(() => leagues.id, { onDelete: 'cascade' }),
   proposingTeamId: text('proposing_team_id').notNull().references(() => teams.id),
   receivingTeamId: text('receiving_team_id').notNull().references(() => teams.id),
-  status: text('status').notNull().default('pending'), // 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'vetoed'
+  status: text('status').notNull().default('pending'), // 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'vetoed' | 'executed'
   expiresAt: integer('expires_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   respondedAt: integer('responded_at', { mode: 'timestamp' }),
-});
+
+  // Historical trade tracking (Feature 3)
+  source: text('source').notNull().default('manual'), // 'sleeper' | 'yahoo' | 'espn' | 'manual'
+  externalId: text('external_id'), // Sleeper transaction_id, etc.
+  executedAt: integer('executed_at', { mode: 'timestamp' }),
+  seasonYear: integer('season_year'),
+  weekExecuted: integer('week_executed'),
+
+  // AI retroactive grading outputs (cached)
+  aiFairnessScore: real('ai_fairness_score'),
+  aiGrade: text('ai_grade'),
+  aiAnalysisJson: text('ai_analysis_json'), // JSON-encoded TradeAnalysisResult
+  aiGradedAt: integer('ai_graded_at', { mode: 'timestamp' }),
+  /** Snapshot of the TradeContext used at grading time (debug + future transparency) */
+  tradeContextSnapshotJson: text('trade_context_snapshot_json'),
+}, (table) => ({
+  tradeSourceExternalUnique: uniqueIndex('trades_source_external_unique')
+    .on(table.leagueId, table.source, table.externalId),
+  tradeLeagueExecutedIdx: index('idx_trades_league_executed')
+    .on(table.leagueId, table.executedAt),
+  tradeAiGradedIdx: index('idx_trades_ai_graded_at').on(table.aiGradedAt),
+}));
 
 export const tradeItems = sqliteTable('trade_items', {
   id: text('id').primaryKey(),

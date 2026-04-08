@@ -1263,14 +1263,31 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         console.error('Failed to fetch projections:', e);
       }
 
+      // Auto-ingest executed trades into the historical trades table.
+      // Safe + idempotent — failures don't block the rest of the sync.
+      let tradesIngested = 0;
+      try {
+        const { ingestSleeperTrades } = await import('../services/tradeIngest');
+        const stats = await ingestSleeperTrades(db, league.id);
+        tradesIngested = stats.inserted + stats.updated;
+        if (stats.errors > 0) {
+          console.warn(
+            `[sleeper sync] Trade ingest completed with ${stats.errors} errors for league ${league.id}`
+          );
+        }
+      } catch (e) {
+        console.error('Trade ingest failed (non-blocking):', e);
+      }
+
       return c.json({
         success: true,
-        message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, ${statsImported} player stats, ${propsProjectionsCount} projections from book lines, and ${projectionsImported} projections from Sleeper updated.`,
+        message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, ${statsImported} player stats, ${propsProjectionsCount} projections from book lines, ${projectionsImported} projections from Sleeper, and ${tradesIngested} trades updated.`,
         teamsUpdated: rosters.length,
         matchupsImported,
         statsImported,
         projectionsImported,
         propsProjections: propsProjectionsCount,
+        tradesIngested,
       });
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));

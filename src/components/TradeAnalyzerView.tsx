@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   ArrowRightLeft,
   Plus,
@@ -8,10 +8,16 @@ import {
   Users,
   AlertCircle,
   ChevronDown,
+  ChevronRight,
   Sparkles,
+  Settings2,
+  Send,
+  Lightbulb,
+  Crown,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useLeaguesContext } from '../context/LeaguesContext';
 
 interface TradeUsage {
   used: number;
@@ -45,14 +51,68 @@ interface TeamGrade {
   summary: string;
 }
 
+interface FairnessScore {
+  score: number; // 0-100
+  diff: number;
+  favored: string;
+}
+
 interface TradeResult {
   winner: string;
   winnerExplanation: string;
   teamGrades: TeamGrade[];
+  fairnessScore: FairnessScore;
+  improvements: string[];
+  keyFactors: string[];
 }
 
 type LeagueType = 'redraft' | 'dynasty' | 'keeper';
 type TeamStrategy = 'win-now' | 'rebuilding' | 'balanced';
+type ScoringFormat = 'ppr' | 'half-ppr' | 'standard';
+
+interface AdvancedSettings {
+  scoringFormat: ScoringFormat;
+  superflex: boolean;
+  tePremium: boolean;
+  teamCount: number;
+}
+
+const DEFAULT_ADVANCED_SETTINGS: AdvancedSettings = {
+  scoringFormat: 'ppr',
+  superflex: false,
+  tePremium: false,
+  teamCount: 12,
+};
+
+interface RosterPlayer {
+  playerId: string;
+  name: string;
+  position: string;
+  nflTeam: string;
+  slot: string;
+  isStarter: boolean;
+  status: string;
+  byeWeek: number | null;
+}
+
+interface MyRoster {
+  teamId: string;
+  teamName: string;
+  record: { wins: number; losses: number; ties: number };
+  roster: {
+    starters: RosterPlayer[];
+    bench: RosterPlayer[];
+    ir: RosterPlayer[];
+  };
+}
+
+interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+const LEAGUE_SELECTION_KEY = 'filmroom.tradeAnalyzer.selectedLeagueId';
+const ADVANCED_KEY = 'filmroom.tradeAnalyzer.advanced';
 
 // ── Player Search ──────────────────────────────────────────────────────
 
@@ -488,18 +548,243 @@ function GradeBadge({ grade, isDarkMode }: { grade: string; isDarkMode: boolean 
   );
 }
 
+// ── Fairness Meter ────────────────────────────────────────────────────
+
+function FairnessMeter({
+  score,
+  favored,
+  isDarkMode,
+}: {
+  score: number;
+  favored: string;
+  isDarkMode: boolean;
+}) {
+  // The meter is a horizontal bar from 0..100 with 50 as fair
+  // We render a marker at `score`. Distance from 50 = how lopsided.
+  const leftPct = Math.max(0, Math.min(100, score));
+  const diff = Math.abs(score - 50);
+  const label =
+    diff < 5
+      ? 'Perfectly Fair'
+      : diff < 15
+      ? 'Slightly Favored'
+      : diff < 30
+      ? 'Favored'
+      : 'Heavily Favored';
+
+  const barColor =
+    diff < 5
+      ? isDarkMode
+        ? 'bg-emerald-500'
+        : 'bg-emerald-600'
+      : diff < 15
+      ? isDarkMode
+        ? 'bg-lime-500'
+        : 'bg-lime-600'
+      : diff < 30
+      ? isDarkMode
+        ? 'bg-amber-500'
+        : 'bg-amber-600'
+      : isDarkMode
+      ? 'bg-orange-500'
+      : 'bg-orange-600';
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p
+          className={`text-sm font-semibold ${
+            isDarkMode ? 'text-slate-300' : 'text-slate-700'
+          }`}
+        >
+          Fairness
+        </p>
+        <p
+          className={`text-xs font-medium ${
+            isDarkMode ? 'text-slate-400' : 'text-slate-500'
+          }`}
+        >
+          {label} — {diff < 5 ? 'even' : favored}
+        </p>
+      </div>
+      <div
+        className={`relative h-3 rounded-full overflow-hidden ${
+          isDarkMode ? 'bg-slate-800' : 'bg-slate-200'
+        }`}
+      >
+        {/* Fair midpoint marker */}
+        <div
+          className={`absolute top-0 bottom-0 w-px ${
+            isDarkMode ? 'bg-slate-600' : 'bg-slate-400'
+          }`}
+          style={{ left: '50%' }}
+        />
+        {/* Score marker */}
+        <div
+          className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 ${
+            isDarkMode ? 'border-white' : 'border-slate-900'
+          } ${barColor} transition-all duration-500`}
+          style={{ left: `calc(${leftPct}% - 8px)` }}
+        />
+      </div>
+      <div
+        className={`flex justify-between text-[10px] font-medium ${
+          isDarkMode ? 'text-slate-500' : 'text-slate-400'
+        }`}
+      >
+        <span>0 • Team A robs</span>
+        <span>50 • Fair</span>
+        <span>Team B robs • 100</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Follow-up Chat ────────────────────────────────────────────────────
+
+function FollowUpChat({
+  isDarkMode,
+  turns,
+  onSend,
+  isSending,
+  isAllowed,
+  disabledReason,
+}: {
+  isDarkMode: boolean;
+  turns: ChatTurn[];
+  onSend: (question: string) => void;
+  isSending: boolean;
+  isAllowed: boolean;
+  disabledReason: string | null;
+}) {
+  const [draft, setDraft] = useState('');
+  const handleSend = () => {
+    const q = draft.trim();
+    if (!q || !isAllowed) return;
+    onSend(q);
+    setDraft('');
+  };
+
+  return (
+    <div
+      className={`space-y-3 p-4 rounded-lg ${
+        isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <Sparkles
+          className={`w-4 h-4 ${
+            isDarkMode ? 'text-blue-400' : 'text-blue-600'
+          }`}
+        />
+        <p
+          className={`text-sm font-semibold ${
+            isDarkMode ? 'text-white' : 'text-slate-900'
+          }`}
+        >
+          Ask a Follow-up
+        </p>
+        {!isAllowed && (
+          <span
+            className={`ml-auto inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+              isDarkMode
+                ? 'bg-amber-500/20 text-amber-300'
+                : 'bg-amber-100 text-amber-700'
+            }`}
+          >
+            <Crown className="w-3 h-3" /> Pro
+          </span>
+        )}
+      </div>
+      {turns.length > 0 && (
+        <div className="space-y-2 max-h-60 overflow-y-auto">
+          {turns.map((t, i) => (
+            <div
+              key={i}
+              className={`text-sm rounded-lg px-3 py-2 ${
+                t.role === 'user'
+                  ? isDarkMode
+                    ? 'bg-blue-500/10 text-blue-200'
+                    : 'bg-blue-50 text-blue-900'
+                  : isDarkMode
+                  ? 'bg-slate-900 text-slate-200'
+                  : 'bg-white text-slate-700 border border-slate-200'
+              }`}
+            >
+              {t.content}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+          disabled={!isAllowed || isSending}
+          placeholder={
+            isAllowed
+              ? 'Ask about roster fit, a counter-offer, etc...'
+              : disabledReason || 'Upgrade to Pro for follow-ups'
+          }
+          className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+            isDarkMode
+              ? 'bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500'
+              : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
+          } outline-none disabled:opacity-50 disabled:cursor-not-allowed`}
+        />
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={!isAllowed || isSending || !draft.trim()}
+          className={`px-3 rounded-lg font-medium transition-colors ${
+            !isAllowed || isSending || !draft.trim()
+              ? isDarkMode
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          }`}
+        >
+          {isSending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Send className="w-4 h-4" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Results Card ───────────────────────────────────────────────────────
 
 function TradeResultsCard({
   result,
   isDarkMode,
   resultsRef,
+  chatTurns,
+  onSendFollowUp,
+  isSendingFollowUp,
+  followUpAllowed,
+  followUpDisabledReason,
 }: {
   result: TradeResult;
   isDarkMode: boolean;
   resultsRef: React.RefObject<HTMLDivElement | null>;
+  chatTurns: ChatTurn[];
+  onSendFollowUp: (question: string) => void;
+  isSendingFollowUp: boolean;
+  followUpAllowed: boolean;
+  followUpDisabledReason: string | null;
 }) {
   const [visible, setVisible] = useState(false);
+  const [showKeyFactors, setShowKeyFactors] = useState(false);
 
   useEffect(() => {
     // Scroll into view
@@ -540,6 +825,13 @@ function TradeResultsCard({
           </div>
         </div>
 
+        {/* Fairness meter */}
+        <FairnessMeter
+          score={result.fairnessScore.score}
+          favored={result.fairnessScore.favored}
+          isDarkMode={isDarkMode}
+        />
+
         {/* Per-team grades */}
         <div className="space-y-4">
           <h4 className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
@@ -563,6 +855,88 @@ function TradeResultsCard({
             </div>
           ))}
         </div>
+
+        {/* Improvements */}
+        {result.improvements.length > 0 && (
+          <div
+            className={`p-4 rounded-lg ${
+              isDarkMode
+                ? 'bg-blue-500/10 border border-blue-500/20'
+                : 'bg-blue-50 border border-blue-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Lightbulb
+                className={`w-4 h-4 ${
+                  isDarkMode ? 'text-blue-400' : 'text-blue-600'
+                }`}
+              />
+              <p
+                className={`text-sm font-semibold ${
+                  isDarkMode ? 'text-blue-200' : 'text-blue-900'
+                }`}
+              >
+                How to make it more balanced
+              </p>
+            </div>
+            <ul
+              className={`text-sm space-y-1 list-disc list-inside ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-700'
+              }`}
+            >
+              {result.improvements.map((imp, i) => (
+                <li key={i}>{imp}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Key Factors (collapsible) */}
+        {result.keyFactors.length > 0 && (
+          <div
+            className={`rounded-lg border ${
+              isDarkMode ? 'border-slate-700' : 'border-slate-200'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setShowKeyFactors((v) => !v)}
+              className={`w-full flex items-center justify-between px-4 py-3 text-sm font-semibold transition-colors ${
+                isDarkMode
+                  ? 'text-slate-200 hover:bg-slate-800/50'
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span>Key Factors Considered</span>
+              {showKeyFactors ? (
+                <ChevronDown className="w-4 h-4" />
+              ) : (
+                <ChevronRight className="w-4 h-4" />
+              )}
+            </button>
+            {showKeyFactors && (
+              <ul
+                className={`px-4 pb-4 text-sm space-y-2 list-disc list-inside ${
+                  isDarkMode ? 'text-slate-400' : 'text-slate-600'
+                }`}
+              >
+                {result.keyFactors.map((kf, i) => (
+                  <li key={i}>{kf}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Follow-up chat */}
+        <FollowUpChat
+          isDarkMode={isDarkMode}
+          turns={chatTurns}
+          onSend={onSendFollowUp}
+          isSending={isSendingFollowUp}
+          isAllowed={followUpAllowed}
+          disabledReason={followUpDisabledReason}
+        />
       </div>
     </div>
   );
@@ -586,6 +960,7 @@ function createInitialTeams(count: number): TradeTeam[] {
 
 export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const { user } = useAuth();
+  const { leagues } = useLeaguesContext();
   const [teamCount, setTeamCount] = useState<2 | 3 | 4>(2);
   const [teams, setTeams] = useState<TradeTeam[]>(createInitialTeams(2));
   const [leagueType, setLeagueType] = useState<LeagueType>('redraft');
@@ -596,6 +971,104 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const [error, setError] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const [usage, setUsage] = useState<TradeUsage | null>(null);
+
+  // League selection (persisted to localStorage)
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(LEAGUE_SELECTION_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (selectedLeagueId) {
+        localStorage.setItem(LEAGUE_SELECTION_KEY, selectedLeagueId);
+      } else {
+        localStorage.removeItem(LEAGUE_SELECTION_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [selectedLeagueId]);
+
+  // Advanced settings (persisted to localStorage)
+  const [advanced, setAdvanced] = useState<AdvancedSettings>(() => {
+    try {
+      const raw = localStorage.getItem(ADVANCED_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return { ...DEFAULT_ADVANCED_SETTINGS, ...parsed };
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_ADVANCED_SETTINGS;
+  });
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADVANCED_KEY, JSON.stringify(advanced));
+    } catch {
+      // ignore
+    }
+  }, [advanced]);
+
+  // Roster panel
+  const [myRoster, setMyRoster] = useState<MyRoster | null>(null);
+  const [isLoadingRoster, setIsLoadingRoster] = useState(false);
+  const [showMyRoster, setShowMyRoster] = useState(true);
+
+  // Follow-up chat
+  const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
+  const [isSendingFollowUp, setIsSendingFollowUp] = useState(false);
+
+  // Reset chat whenever the main analysis changes
+  useEffect(() => {
+    setChatTurns([]);
+  }, [result]);
+
+  // Auto-sync advanced settings from the chosen league's scoringFormat
+  const selectedLeague = useMemo(
+    () => leagues.find((l) => l.id === selectedLeagueId) || null,
+    [leagues, selectedLeagueId]
+  );
+  useEffect(() => {
+    if (selectedLeague) {
+      setAdvanced((prev) => ({
+        ...prev,
+        scoringFormat:
+          (selectedLeague.scoringFormat as ScoringFormat) || prev.scoringFormat,
+        teamCount: selectedLeague.teamCount || prev.teamCount,
+      }));
+    }
+  }, [selectedLeague]);
+
+  // Fetch my roster whenever selectedLeagueId changes
+  useEffect(() => {
+    if (!selectedLeagueId) {
+      setMyRoster(null);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingRoster(true);
+    api
+      .get<{ team: MyRoster }>(`/rosters/${selectedLeagueId}/mine`)
+      .then((data) => {
+        if (!cancelled) setMyRoster(data.team);
+      })
+      .catch(() => {
+        if (!cancelled) setMyRoster(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingRoster(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLeagueId]);
 
   const fetchUsage = useCallback(async () => {
     try {
@@ -609,6 +1082,47 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   useEffect(() => {
     fetchUsage();
   }, [fetchUsage]);
+
+  // Pick up a recommendation sent from the Trade Finder tab on mount
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('filmroom.tradeAnalyzer.incoming');
+      if (!raw) return;
+      sessionStorage.removeItem('filmroom.tradeAnalyzer.incoming');
+      const rec = JSON.parse(raw) as {
+        targetTeamName: string;
+        userSends: Array<{ playerId: string; name: string; position: string }>;
+        userReceives: Array<{ playerId: string; name: string; position: string }>;
+      };
+      if (!rec || !rec.userSends || !rec.userReceives) return;
+      setTeamCount(2);
+      setTeams([
+        {
+          id: 0,
+          label: 'Me',
+          sends: rec.userSends.map((p) => ({
+            id: `rec-send-${p.playerId}`,
+            type: 'player' as const,
+            name: p.name,
+            position: p.position,
+          })),
+        },
+        {
+          id: 1,
+          label: rec.targetTeamName,
+          sends: rec.userReceives.map((p) => ({
+            id: `rec-recv-${p.playerId}`,
+            type: 'player' as const,
+            name: p.name,
+            position: p.position,
+          })),
+        },
+      ]);
+      setResult(null);
+    } catch {
+      // ignore malformed payload
+    }
+  }, []);
 
   const isUnlimited = usage?.limit === -1;
   const hasUsesLeft = !usage || isUnlimited || usage.remaining > 0;
@@ -714,6 +1228,14 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         leagueType,
         strategy: leagueType !== 'redraft' ? strategy : undefined,
         context: context.trim() || undefined,
+        leagueSettings: {
+          scoringFormat: advanced.scoringFormat,
+          superflex: advanced.superflex,
+          tePremium: advanced.tePremium,
+          teamCount: advanced.teamCount,
+        },
+        connectedLeagueId: selectedLeagueId || null,
+        userTeamId: myRoster?.teamId ?? null,
       };
 
       const data = await api.post<TradeResult>('/trades/analyze', payload);
@@ -727,6 +1249,77 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     } finally {
       setIsAnalyzing(false);
       fetchUsage();
+    }
+  };
+
+  // Follow-up chat handler (Pro/Elite only)
+  const followUpAllowed =
+    !!user && (user.subscriptionTier === 'pro' || user.subscriptionTier === 'elite');
+  const followUpDisabledReason = !user
+    ? 'Sign in to ask follow-ups'
+    : !followUpAllowed
+    ? 'Upgrade to Pro for follow-up questions'
+    : null;
+
+  const handleSendFollowUp = async (question: string) => {
+    if (!result || !followUpAllowed || isSendingFollowUp) return;
+
+    // Seed initial context if this is the first follow-up turn
+    const seedHistory: ChatTurn[] =
+      chatTurns.length === 0
+        ? [
+            {
+              role: 'user',
+              content:
+                `Trade: ${teams
+                  .map(
+                    (t) =>
+                      `${t.label} sends ${t.sends.map((a) => a.name).join(', ')}`
+                  )
+                  .join(' | ')}`,
+            },
+            {
+              role: 'assistant',
+              content: `Analysis: Winner: ${result.winner}. ${result.winnerExplanation} ` +
+                `Grades: ${result.teamGrades
+                  .map((g) => `${g.team} ${g.grade}`)
+                  .join(', ')}. ` +
+                (result.keyFactors.length > 0
+                  ? `Key factors: ${result.keyFactors.join('; ')}`
+                  : ''),
+            },
+          ]
+        : chatTurns;
+
+    const newTurns: ChatTurn[] = [
+      ...seedHistory,
+      { role: 'user', content: question },
+    ];
+    setChatTurns(newTurns);
+    setIsSendingFollowUp(true);
+
+    try {
+      const data = await api.post<{ answer: string }>('/trades/follow-up', {
+        conversationHistory: newTurns,
+        question,
+      });
+      setChatTurns([
+        ...newTurns,
+        { role: 'assistant', content: data.answer },
+      ]);
+    } catch (err) {
+      setChatTurns([
+        ...newTurns,
+        {
+          role: 'assistant',
+          content:
+            err instanceof Error
+              ? `Sorry — ${err.message}`
+              : 'Sorry, the follow-up failed. Please try again.',
+        },
+      ]);
+    } finally {
+      setIsSendingFollowUp(false);
     }
   };
 
@@ -818,6 +1411,56 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
           isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
         }`}
       >
+        {/* League Selector */}
+        {user && (
+          <div>
+            <label
+              className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${
+                isDarkMode ? 'text-slate-400' : 'text-slate-500'
+              }`}
+            >
+              Connected League
+            </label>
+            <div className="relative">
+              <select
+                value={selectedLeagueId}
+                onChange={(e) => {
+                  setSelectedLeagueId(e.target.value);
+                  setResult(null);
+                }}
+                className={`w-full appearance-none pr-9 pl-3 py-2 text-sm rounded-lg border transition-colors ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-slate-600 text-white'
+                    : 'bg-white border-slate-300 text-slate-900'
+                } outline-none`}
+              >
+                <option value="">Custom Scenario (no league)</option>
+                {leagues.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                    {l.platform ? ` (${l.platform})` : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${
+                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              />
+            </div>
+            {selectedLeagueId && (
+              <p
+                className={`text-xs mt-1 ${
+                  isDarkMode ? 'text-slate-500' : 'text-slate-400'
+                }`}
+              >
+                The AI will use your team's record, standings, and roster when
+                analyzing.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Trade Type (team count) */}
         <div>
           <label className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -855,7 +1498,242 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
             </div>
           </div>
         )}
+
+        {/* Advanced Settings (collapsible) */}
+        <div
+          className={`border-t pt-4 ${
+            isDarkMode ? 'border-slate-800' : 'border-slate-200'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${
+              isDarkMode
+                ? 'text-slate-400 hover:text-slate-300'
+                : 'text-slate-500 hover:text-slate-600'
+            }`}
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            Advanced Settings
+            {showAdvanced ? (
+              <ChevronDown className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5" />
+            )}
+          </button>
+          {showAdvanced && (
+            <div className="mt-3 space-y-3">
+              <div>
+                <label
+                  className={`block text-xs font-medium mb-1 ${
+                    isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                  }`}
+                >
+                  Scoring Format
+                </label>
+                <div className="flex gap-2">
+                  {(['ppr', 'half-ppr', 'standard'] as const).map((fmt) =>
+                    optionBtn(
+                      advanced.scoringFormat === fmt,
+                      () => {
+                        setAdvanced((a) => ({ ...a, scoringFormat: fmt }));
+                        setResult(null);
+                      },
+                      fmt === 'ppr'
+                        ? 'Full PPR'
+                        : fmt === 'half-ppr'
+                        ? 'Half PPR'
+                        : 'Standard'
+                    )
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label
+                  className={`flex items-center gap-2 text-sm cursor-pointer ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={advanced.superflex}
+                    onChange={(e) => {
+                      setAdvanced((a) => ({ ...a, superflex: e.target.checked }));
+                      setResult(null);
+                    }}
+                    className="accent-blue-600"
+                  />
+                  Superflex
+                </label>
+                <label
+                  className={`flex items-center gap-2 text-sm cursor-pointer ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={advanced.tePremium}
+                    onChange={(e) => {
+                      setAdvanced((a) => ({ ...a, tePremium: e.target.checked }));
+                      setResult(null);
+                    }}
+                    className="accent-blue-600"
+                  />
+                  TE Premium
+                </label>
+              </div>
+              <div>
+                <label
+                  className={`block text-xs font-medium mb-1 ${
+                    isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                  }`}
+                >
+                  Team Count
+                </label>
+                <input
+                  type="number"
+                  min={4}
+                  max={20}
+                  value={advanced.teamCount}
+                  onChange={(e) => {
+                    const n = Math.max(
+                      4,
+                      Math.min(20, parseInt(e.target.value, 10) || 12)
+                    );
+                    setAdvanced((a) => ({ ...a, teamCount: n }));
+                    setResult(null);
+                  }}
+                  className={`w-24 px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                    isDarkMode
+                      ? 'bg-slate-800 border-slate-600 text-white'
+                      : 'bg-white border-slate-300 text-slate-900'
+                  } outline-none`}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* My Roster Panel */}
+      {selectedLeagueId && (
+        <div
+          className={`rounded-xl border ${
+            isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => setShowMyRoster((v) => !v)}
+            className={`w-full flex items-center justify-between p-4 ${
+              isDarkMode ? 'text-white' : 'text-slate-900'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Users
+                className={`w-4 h-4 ${
+                  isDarkMode ? 'text-blue-400' : 'text-blue-600'
+                }`}
+              />
+              <span className="text-sm font-semibold">
+                {myRoster ? myRoster.teamName : 'My Roster'}
+              </span>
+              {myRoster && (
+                <span
+                  className={`text-xs font-medium ${
+                    isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                  }`}
+                >
+                  {myRoster.record.wins}-{myRoster.record.losses}
+                  {myRoster.record.ties ? `-${myRoster.record.ties}` : ''}
+                </span>
+              )}
+            </div>
+            {showMyRoster ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
+          </button>
+          {showMyRoster && (
+            <div className="px-4 pb-4">
+              {isLoadingRoster ? (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading roster...
+                </div>
+              ) : myRoster ? (
+                <div className="space-y-3">
+                  {myRoster.roster.starters.length > 0 && (
+                    <div>
+                      <p
+                        className={`text-[10px] font-bold uppercase mb-1 ${
+                          isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                        }`}
+                      >
+                        Starters
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {myRoster.roster.starters.map((p) => (
+                          <span
+                            key={p.playerId}
+                            className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded ${
+                              isDarkMode
+                                ? 'bg-blue-500/10 text-blue-300 border border-blue-500/20'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}
+                          >
+                            <span className="text-[9px] opacity-70">
+                              {p.slot}
+                            </span>
+                            {p.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {myRoster.roster.bench.length > 0 && (
+                    <div>
+                      <p
+                        className={`text-[10px] font-bold uppercase mb-1 ${
+                          isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                        }`}
+                      >
+                        Bench
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {myRoster.roster.bench.map((p) => (
+                          <span
+                            key={p.playerId}
+                            className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded ${
+                              isDarkMode
+                                ? 'bg-slate-800 text-slate-300'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            <span className="text-[9px] opacity-70">
+                              {p.position}
+                            </span>
+                            {p.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p
+                  className={`text-sm ${
+                    isDarkMode ? 'text-slate-500' : 'text-slate-400'
+                  }`}
+                >
+                  Could not load roster for this league.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Trade Teams */}
       <div className={`grid gap-4 ${teamCount <= 2 ? 'md:grid-cols-2' : teamCount === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'}`}>
@@ -961,7 +1839,18 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
       )}
 
       {/* Results */}
-      {result && <TradeResultsCard result={result} isDarkMode={isDarkMode} resultsRef={resultsRef} />}
+      {result && (
+        <TradeResultsCard
+          result={result}
+          isDarkMode={isDarkMode}
+          resultsRef={resultsRef}
+          chatTurns={chatTurns}
+          onSendFollowUp={handleSendFollowUp}
+          isSendingFollowUp={isSendingFollowUp}
+          followUpAllowed={followUpAllowed}
+          followUpDisabledReason={followUpDisabledReason}
+        />
+      )}
     </div>
   );
 }
