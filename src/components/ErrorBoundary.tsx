@@ -26,11 +26,10 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // In production, you could send this to an error tracking service
-    if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
-      console.error('Error caught by boundary:', error, errorInfo);
-    }
+    // Log in both dev and prod so the underlying failure is visible in the
+    // browser console (otherwise the fallback UI hides the cause entirely).
+    // eslint-disable-next-line no-console
+    console.error('Error caught by boundary:', error, errorInfo);
   }
 
   private handleReset = () => {
@@ -64,7 +63,7 @@ export class ErrorBoundary extends Component<Props, State> {
               We encountered an unexpected error. Please try refreshing the page.
             </p>
 
-            {import.meta.env.DEV && this.state.error && (
+            {this.state.error?.message && (
               <div className={`mb-6 p-3 rounded-lg text-left text-xs font-mono overflow-auto max-h-32 ${isDarkMode ? 'bg-slate-800 text-red-400' : 'bg-slate-100 text-red-600'}`}>
                 {this.state.error.message}
               </div>

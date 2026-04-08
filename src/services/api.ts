@@ -5,17 +5,11 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 // Auth token — fallback for browsers that block cross-origin cookies (Safari ITP, etc).
 // The httpOnly cookie remains the primary auth mechanism; this supplements it and
 // is persisted to localStorage so it survives page refresh when cookies are blocked.
-const AUTH_TOKEN_STORAGE_KEY = 'filmroom_auth_token';
+// Hydration happens inside AuthContext's mount effect via hydrateAuthTokenFromStorage()
+// — NOT at module init — so a bad storage state can't crash the whole bundle on load.
+export const AUTH_TOKEN_STORAGE_KEY = 'filmroom_auth_token';
 
-let authToken: string | null = (() => {
-  try {
-    return typeof localStorage !== 'undefined'
-      ? localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
-      : null;
-  } catch {
-    return null;
-  }
-})();
+let authToken: string | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
@@ -28,6 +22,16 @@ export function setAuthToken(token: string | null) {
     }
   } catch {
     // localStorage may be unavailable (private mode, disabled, etc) — fall back to in-memory only
+  }
+}
+
+export function hydrateAuthTokenFromStorage(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const stored = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+    if (stored) authToken = stored;
+  } catch {
+    // localStorage unavailable — leave authToken as-is
   }
 }
 

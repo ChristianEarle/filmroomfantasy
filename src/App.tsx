@@ -236,8 +236,13 @@ function AppContent() {
   const [articleSlug, setArticleSlug] = useState<string | null>(() => getArticleSlugFromURL());
   // Local dark mode state for unauthenticated users (initialized from localStorage)
   const [localDarkMode, setLocalDarkMode] = useState<boolean>(() => {
-    const stored = localStorage.getItem('darkMode');
-    return stored !== null ? stored === 'true' : true;
+    try {
+      const stored = localStorage.getItem('darkMode');
+      return stored !== null ? stored === 'true' : true;
+    } catch {
+      // localStorage unavailable (Safari private mode, disabled storage, etc.)
+      return true;
+    }
   });
   const isDarkMode = isAuthenticated ? (user?.darkMode ?? true) : localDarkMode;
 
@@ -322,7 +327,11 @@ function AppContent() {
     } else {
       const newValue = !isDarkMode;
       setLocalDarkMode(newValue);
-      localStorage.setItem('darkMode', String(newValue));
+      try {
+        localStorage.setItem('darkMode', String(newValue));
+      } catch {
+        // localStorage unavailable — keep the in-memory state
+      }
     }
   }, [isAuthenticated, isDarkMode, updateProfile]);
 
