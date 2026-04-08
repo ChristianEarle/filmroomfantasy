@@ -16,6 +16,7 @@ import { eq, and, gte, inArray, desc } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { reconstructRosterAt } from './tradeIngest';
+import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -202,11 +203,16 @@ export interface RecordImpact {
  * This is a simplification — it doesn't rebuild actual starting lineups —
  * but it's directionally correct and dirt cheap. AI grading is a separate
  * (Pro/Elite) endpoint.
+ *
+ * @param seasonYearOverride If provided, computes impact for this season
+ *   instead of the league's current season. Lets dynasty leagues fetch
+ *   per-season history.
  */
 export async function computeRecordImpact(
   db: DB,
   leagueId: string,
-  teamId: string
+  teamId: string,
+  seasonYearOverride?: number
 ): Promise<RecordImpact | null> {
   const team = await db.query.teams.findFirst({
     where: and(
@@ -221,7 +227,7 @@ export async function computeRecordImpact(
   });
   if (!league) return null;
 
-  const seasonYear = league.seasonYear;
+  const seasonYear = seasonYearOverride ?? league.seasonYear;
 
   // 1. User's completed matchups this season
   const matchups = await db.query.matchups.findMany({
@@ -235,22 +241,52 @@ export async function computeRecordImpact(
     (m) => m.homeTeamId === teamId || m.awayTeamId === teamId
   );
 
-  // 2. User's trades in this league
+  // 2. User's executed trades in this league for the target season.
+  //    When seasonYear matches the league's stored seasonYear, we also
+  //    include trades that predate the seasonYear column (null) for
+  //    backwards compatibility with pre-migration data.
   const trades = await db.query.trades.findMany({
     where: and(
       eq(schema.trades.leagueId, leagueId),
       eq(schema.trades.status, 'executed')
     ),
   });
+  const tradesForSeason = trades.filter(
+    (t) =>
+      t.seasonYear === seasonYear ||
+      (t.seasonYear == null && seasonYear === league.seasonYear)
+  );
 
-  // Filter trades the user was involved in
-  const tradeItems = await db.query.tradeItems.findMany({
-    where: inArray(
-      schema.tradeItems.tradeId,
-      trades.map((t) => t.id)
-    ),
-  });
-  const userTrades = trades.filter((t) =>
+  if (tradesForSeason.length === 0) {
+    // No trades → the two records are identical, no flips, zero diff.
+    return {
+      leagueId,
+      teamId,
+      seasonYear,
+      actualRecord: { wins: team.wins, losses: team.losses, ties: team.ties },
+      hypotheticalRecord: {
+        wins: team.wins,
+        losses: team.losses,
+        ties: team.ties,
+      },
+      flippedWeeks: [],
+      totalPointDifferential: 0,
+    };
+  }
+
+  // Chunked lookup of trade items — one league can have hundreds of
+  // trades in a long-running dynasty, well past D1's parameter limit.
+  const tradeIds = tradesForSeason.map((t) => t.id);
+  const tradeItems = await chunkedInArrayFetch(
+    tradeIds,
+    DEFAULT_ID_CHUNK,
+    (chunk) =>
+      db.query.tradeItems.findMany({
+        where: inArray(schema.tradeItems.tradeId, chunk),
+      })
+  );
+
+  const userTrades = tradesForSeason.filter((t) =>
     tradeItems.some(
       (i) => i.tradeId === t.id && (i.fromTeamId === teamId || i.toTeamId === teamId)
     )
@@ -258,19 +294,20 @@ export async function computeRecordImpact(
 
   // For each user trade, collect weeklyPoints of players received / sent
   // from the week AFTER the trade onward.
-  const playerIdsToFetch = new Set<string>();
-  for (const i of tradeItems) {
-    if (i.playerId) playerIdsToFetch.add(i.playerId);
-  }
-  const weeklyStats =
-    playerIdsToFetch.size > 0
-      ? await db.query.playerWeeklyStats.findMany({
-          where: and(
-            inArray(schema.playerWeeklyStats.playerId, Array.from(playerIdsToFetch)),
-            eq(schema.playerWeeklyStats.seasonYear, seasonYear)
-          ),
-        })
-      : [];
+  const playerIdsToFetch = Array.from(
+    new Set(tradeItems.map((i) => i.playerId).filter((id): id is string => !!id))
+  );
+  const weeklyStats = await chunkedInArrayFetch(
+    playerIdsToFetch,
+    DEFAULT_ID_CHUNK,
+    (chunk) =>
+      db.query.playerWeeklyStats.findMany({
+        where: and(
+          inArray(schema.playerWeeklyStats.playerId, chunk),
+          eq(schema.playerWeeklyStats.seasonYear, seasonYear)
+        ),
+      })
+  );
 
   const pointsByPlayerWeek = new Map<string, number>();
   for (const s of weeklyStats) {

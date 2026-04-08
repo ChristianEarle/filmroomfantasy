@@ -18,6 +18,7 @@
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
+import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -197,30 +198,7 @@ function computeImpliedTotal(
 
 // ── Main entry point ────────────────────────────────────────────────
 
-/**
- * Run an inArray query in chunks to stay within D1's parameter limit.
- * D1 caps bound parameters per query (the existing leagues.ts sync code
- * chunks at 50 for the same reason). Without this, Trade Finder /
- * recommendations fails because it passes every rostered player in
- * the league (~180 ids for a 12-team league) in a single IN clause.
- */
-async function chunkedInArrayFetch<TRow>(
-  ids: string[],
-  chunkSize: number,
-  fetchChunk: (chunk: string[]) => Promise<TRow[]>
-): Promise<TRow[]> {
-  if (ids.length === 0) return [];
-  if (ids.length <= chunkSize) return fetchChunk(ids);
-  const out: TRow[] = [];
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    const chunk = ids.slice(i, i + chunkSize);
-    const rows = await fetchChunk(chunk);
-    for (const r of rows) out.push(r);
-  }
-  return out;
-}
-
-const ID_CHUNK = 50;
+const ID_CHUNK = DEFAULT_ID_CHUNK;
 
 export interface BuildTradeContextArgs {
   db: DB;
