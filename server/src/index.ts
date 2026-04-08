@@ -22,6 +22,7 @@ import { adminStatsRoutes } from './routes/admin-stats';
 import { tradesRoutes } from './routes/trades';
 import { rostersRoutes } from './routes/rosters';
 import { tradeHistoryRoutes } from './routes/tradeHistory';
+import { tradeFinderRoutes } from './routes/tradeFinder';
 import { analyticsRoutes } from './routes/analytics';
 import { articleRoutes } from './routes/articles';
 
@@ -182,6 +183,7 @@ app.route('/api/yahoo', yahooRoutes);
 app.route('/api/billing', billingRoutes);
 app.route('/api/trades', tradesRoutes);
 app.route('/api/trade-history', tradeHistoryRoutes);
+app.route('/api/trade-finder', tradeFinderRoutes);
 app.route('/api/rosters', rostersRoutes);
 app.route('/api/admin', adminStatsRoutes);
 app.route('/api/analytics', analyticsRoutes);

@@ -1083,6 +1083,47 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     fetchUsage();
   }, [fetchUsage]);
 
+  // Pick up a recommendation sent from the Trade Finder tab on mount
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('filmroom.tradeAnalyzer.incoming');
+      if (!raw) return;
+      sessionStorage.removeItem('filmroom.tradeAnalyzer.incoming');
+      const rec = JSON.parse(raw) as {
+        targetTeamName: string;
+        userSends: Array<{ playerId: string; name: string; position: string }>;
+        userReceives: Array<{ playerId: string; name: string; position: string }>;
+      };
+      if (!rec || !rec.userSends || !rec.userReceives) return;
+      setTeamCount(2);
+      setTeams([
+        {
+          id: 0,
+          label: 'Me',
+          sends: rec.userSends.map((p) => ({
+            id: `rec-send-${p.playerId}`,
+            type: 'player' as const,
+            name: p.name,
+            position: p.position,
+          })),
+        },
+        {
+          id: 1,
+          label: rec.targetTeamName,
+          sends: rec.userReceives.map((p) => ({
+            id: `rec-recv-${p.playerId}`,
+            type: 'player' as const,
+            name: p.name,
+            position: p.position,
+          })),
+        },
+      ]);
+      setResult(null);
+    } catch {
+      // ignore malformed payload
+    }
+  }, []);
+
   const isUnlimited = usage?.limit === -1;
   const hasUsesLeft = !usage || isUnlimited || usage.remaining > 0;
 
