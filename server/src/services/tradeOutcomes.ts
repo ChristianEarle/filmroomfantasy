@@ -207,12 +207,17 @@ export interface RecordImpact {
  * @param seasonYearOverride If provided, computes impact for this season
  *   instead of the league's current season. Lets dynasty leagues fetch
  *   per-season history.
+ * @param extraTeamIds Additional team ids in this league that also
+ *   represent the caller (for legacy duplicate-team-row scenarios).
+ *   Trades attributed to any of these team ids count toward the
+ *   user's record impact.
  */
 export async function computeRecordImpact(
   db: DB,
   leagueId: string,
   teamId: string,
-  seasonYearOverride?: number
+  seasonYearOverride?: number,
+  extraTeamIds: string[] = []
 ): Promise<RecordImpact | null> {
   const team = await db.query.teams.findFirst({
     where: and(
@@ -227,9 +232,15 @@ export async function computeRecordImpact(
   });
   if (!league) return null;
 
+  // The full set of team ids that represent this user in this league.
+  // Always includes the primary team; may include duplicates.
+  const callerTeamIdSet = new Set<string>([teamId, ...extraTeamIds]);
+
   const seasonYear = seasonYearOverride ?? league.seasonYear;
 
-  // 1. User's completed matchups this season
+  // 1. User's completed matchups this season. Match against the FULL
+  //    set of caller team ids — duplicate team rows in the same league
+  //    might have matchups attributed to either id.
   const matchups = await db.query.matchups.findMany({
     where: and(
       eq(schema.matchups.leagueId, leagueId),
@@ -238,7 +249,8 @@ export async function computeRecordImpact(
     orderBy: [desc(schema.matchups.week)],
   });
   const userMatchups = matchups.filter(
-    (m) => m.homeTeamId === teamId || m.awayTeamId === teamId
+    (m) =>
+      callerTeamIdSet.has(m.homeTeamId) || callerTeamIdSet.has(m.awayTeamId)
   );
 
   // 2. User's executed trades in this league for the target season.
@@ -288,7 +300,10 @@ export async function computeRecordImpact(
 
   const userTrades = tradesForSeason.filter((t) =>
     tradeItems.some(
-      (i) => i.tradeId === t.id && (i.fromTeamId === teamId || i.toTeamId === teamId)
+      (i) =>
+        i.tradeId === t.id &&
+        (callerTeamIdSet.has(i.fromTeamId) ||
+          callerTeamIdSet.has(i.toTeamId))
     )
   );
 
@@ -330,7 +345,7 @@ export async function computeRecordImpact(
   let totalPointDifferential = 0;
 
   for (const m of userMatchups) {
-    const isHome = m.homeTeamId === teamId;
+    const isHome = callerTeamIdSet.has(m.homeTeamId);
     const myScore = (isHome ? m.homeScore : m.awayScore) ?? 0;
     const oppScore = (isHome ? m.awayScore : m.homeScore) ?? 0;
 
@@ -342,10 +357,10 @@ export async function computeRecordImpact(
       for (const item of items) {
         if (!item.playerId) continue;
         const pts = pointsByPlayerWeek.get(`${item.playerId}_${m.week}`) || 0;
-        if (item.toTeamId === teamId) {
+        if (callerTeamIdSet.has(item.toTeamId)) {
           // Received this player -> hypothetical lineup doesn't have them
           adjustment -= pts;
-        } else if (item.fromTeamId === teamId) {
+        } else if (callerTeamIdSet.has(item.fromTeamId)) {
           // Sent this player -> hypothetical lineup still has them
           adjustment += pts;
         }
