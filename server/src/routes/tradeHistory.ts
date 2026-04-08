@@ -12,9 +12,21 @@ import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
  * Resolution result for the caller's team in a league. Includes the
  * matched team plus a label describing which strategy hit, so the
  * frontend can warn the user when we fell back to a guess.
+ *
+ * Also includes `teamIds` — the set of ALL team rows that look like
+ * the caller in this league. In a clean league this is just
+ * [team.id], but if a previous sync ever created duplicate team
+ * rows for the same Sleeper owner (e.g. from a rename or a
+ * reconnect), the items might be attributed to a DIFFERENT team_id
+ * than the one our primary resolver picks. The filter uses this
+ * set so the user sees their trades regardless of which duplicate
+ * the ingest map happened to choose.
  */
 export interface CallerTeamResolution {
   team: typeof schema.teams.$inferSelect | null;
+  /** All team ids in the league that match the caller's identifiers.
+   *  Always contains team.id when team is set; may contain more. */
+  teamIds: Set<string>;
   strategy:
     | 'externalOwnerId'
     | 'ownerDisplayName'
@@ -30,14 +42,15 @@ export interface CallerTeamResolution {
 /**
  * Find the calling user's team in a league. Tries multiple strategies
  * in priority order — strict matches first, then increasingly loose
- * fallbacks. The wildcard fallback is INTENTIONAL: previously every
- * team in a synced Sleeper league has ownerId=user.id, so a strict
- * "exactly one owned team" check would always return null in those
- * leagues. We'd rather pick a (possibly wrong) team and warn than
- * return zero trades.
+ * fallbacks. The wildcard fallback is INTENTIONAL: every team in a
+ * synced Sleeper league has ownerId=user.id, so a strict "exactly
+ * one owned team" check would always return null in those leagues.
+ * We'd rather pick a (possibly wrong) team and warn than return
+ * zero trades.
  *
- * The strategy used is returned alongside the team so the route can
- * surface a warning to the UI when we fell back.
+ * Returns BOTH a primary team AND the set of all team ids that
+ * could be the caller, so the filter can be defensive against
+ * duplicate team rows in the same league.
  */
 function resolveCallerTeam(
   leagueTeams: Array<typeof schema.teams.$inferSelect>,
@@ -48,25 +61,60 @@ function resolveCallerTeam(
     const lower = membership.externalUsername.toLowerCase();
 
     // 1. Best case: externalUsername is a Sleeper user_id matching
-    //    a team's externalOwnerId exactly.
-    const direct = leagueTeams.find(
+    //    a team's externalOwnerId exactly. Collect ALL matches in
+    //    case there are duplicates.
+    const directMatches = leagueTeams.filter(
       (t) => t.externalOwnerId === membership.externalUsername
     );
-    if (direct) return { team: direct, strategy: 'externalOwnerId' };
+    if (directMatches.length > 0) {
+      return {
+        team: directMatches[0],
+        teamIds: new Set(directMatches.map((t) => t.id)),
+        strategy: 'externalOwnerId',
+        warning:
+          directMatches.length > 1
+            ? `Found ${directMatches.length} duplicate team rows for your ` +
+              `Sleeper account in this league. Showing trades from all of them.`
+            : undefined,
+      };
+    }
 
     // 2. externalUsername stores the Sleeper USERNAME or display_name
     //    instead of the user_id. Sync writes ownerDisplayName from
     //    Sleeper's display_name / username, so try that.
-    const byDisplay = leagueTeams.find(
+    const displayMatches = leagueTeams.filter(
       (t) => (t.ownerDisplayName ?? '').toLowerCase() === lower
     );
-    if (byDisplay) return { team: byDisplay, strategy: 'ownerDisplayName' };
+    if (displayMatches.length > 0) {
+      return {
+        team: displayMatches[0],
+        teamIds: new Set(displayMatches.map((t) => t.id)),
+        strategy: 'ownerDisplayName',
+        warning:
+          displayMatches.length > 1
+            ? `Found ${displayMatches.length} duplicate team rows in this league. ` +
+              `Showing trades from all of them.`
+            : undefined,
+      };
+    }
 
-    // 3. Some users name their fantasy team after their Sleeper username.
-    const byName = leagueTeams.find(
+    // 3. Some users name their fantasy team after their Sleeper
+    //    username. Same dedupe logic.
+    const nameMatches = leagueTeams.filter(
       (t) => t.name.toLowerCase() === lower
     );
-    if (byName) return { team: byName, strategy: 'teamName' };
+    if (nameMatches.length > 0) {
+      return {
+        team: nameMatches[0],
+        teamIds: new Set(nameMatches.map((t) => t.id)),
+        strategy: 'teamName',
+        warning:
+          nameMatches.length > 1
+            ? `Found ${nameMatches.length} duplicate team rows with this name. ` +
+              `Showing trades from all of them.`
+            : undefined,
+      };
+    }
   }
 
   // 4. App-user ownership. In a synced Sleeper league this matches
@@ -74,7 +122,11 @@ function resolveCallerTeam(
   //    so it's only reliable when there's a single owned team.
   const ownedTeams = leagueTeams.filter((t) => t.ownerId === userId);
   if (ownedTeams.length === 1) {
-    return { team: ownedTeams[0], strategy: 'sole_owned_team' };
+    return {
+      team: ownedTeams[0],
+      teamIds: new Set([ownedTeams[0].id]),
+      strategy: 'sole_owned_team',
+    };
   }
 
   // 5. Last resort: pick the first team we have. This is a guess and
@@ -82,6 +134,7 @@ function resolveCallerTeam(
   if (ownedTeams.length > 0) {
     return {
       team: ownedTeams[0],
+      teamIds: new Set([ownedTeams[0].id]),
       strategy: 'wildcard_first_match',
       warning:
         "We couldn't identify your team in this league with confidence. " +
@@ -90,7 +143,7 @@ function resolveCallerTeam(
     };
   }
 
-  return { team: null, strategy: 'no_match' };
+  return { team: null, teamIds: new Set(), strategy: 'no_match' };
 }
 import {
   buildTradeContext,
@@ -206,12 +259,15 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
 
   // Filter trades to ones the caller was part of. This is the main
   // user-visible change: users only see their own trades on the
-  // History page instead of every trade in the league.
+  // History page instead of every trade in the league. Use the FULL
+  // teamIds set from the resolver, not just the primary team.id, so
+  // duplicate team rows for the same Sleeper owner all count.
+  const callerTeamIds = resolution.teamIds;
   const callerTrades = allTrades.filter((t) => {
     const items = itemsByTradeId.get(t.id) || [];
     return items.some(
       (i) =>
-        i.fromTeamId === callerTeam!.id || i.toTeamId === callerTeam!.id
+        callerTeamIds.has(i.fromTeamId) || callerTeamIds.has(i.toTeamId)
     );
   });
 
@@ -514,14 +570,25 @@ tradeHistoryRoutes.get('/record-impact/:leagueId', authMiddleware, async (c) => 
   const allTeams = await db.query.teams.findMany({
     where: eq(schema.teams.leagueId, leagueId),
   });
-  const userTeam = resolveCallerTeam(allTeams, membership, user.id).team;
+  const userResolution = resolveCallerTeam(allTeams, membership, user.id);
+  const userTeam = userResolution.team;
   if (!userTeam) {
     return c.json({ error: 'No team found for user' }, 404);
   }
+  // Extra team ids in case of duplicate team rows for the same Sleeper owner
+  const extraTeamIds = Array.from(userResolution.teamIds).filter(
+    (id) => id !== userTeam.id
+  );
 
   if (seasonFilter != null) {
     // Single-season mode: client requested a specific year
-    const impact = await computeRecordImpact(db, leagueId, userTeam.id, seasonFilter);
+    const impact = await computeRecordImpact(
+      db,
+      leagueId,
+      userTeam.id,
+      seasonFilter,
+      extraTeamIds
+    );
     return c.json({ impact, impacts: impact ? [impact] : [] });
   }
 
@@ -571,7 +638,13 @@ tradeHistoryRoutes.get('/record-impact/:leagueId', authMiddleware, async (c) => 
 
   const impacts = await Promise.all(
     sortedSeasons.map((season) =>
-      computeRecordImpact(db, leagueId, userTeam!.id, season)
+      computeRecordImpact(
+        db,
+        leagueId,
+        userTeam!.id,
+        season,
+        extraTeamIds
+      )
     )
   );
 
@@ -629,6 +702,7 @@ tradeHistoryRoutes.get('/debug/:leagueId', authMiddleware, async (c) => {
       callerTeam: callerTeam
         ? { id: callerTeam.id, name: callerTeam.name }
         : null,
+      callerTeamIds: Array.from(resolution.teamIds),
       callerResolution,
       tradeCount: 0,
       trades: [],
@@ -636,6 +710,7 @@ tradeHistoryRoutes.get('/debug/:leagueId', authMiddleware, async (c) => {
         id: t.id,
         name: t.name,
         externalOwnerId: t.externalOwnerId,
+        ownerDisplayName: t.ownerDisplayName,
       })),
     });
   }
@@ -660,10 +735,11 @@ tradeHistoryRoutes.get('/debug/:leagueId', authMiddleware, async (c) => {
     const fromIds = Array.from(new Set(items.map((i) => i.fromTeamId)));
     const toIds = Array.from(new Set(items.map((i) => i.toTeamId)));
     const callerIsInvolved =
-      callerTeam != null &&
+      resolution.teamIds.size > 0 &&
       items.some(
         (i) =>
-          i.fromTeamId === callerTeam!.id || i.toTeamId === callerTeam!.id
+          resolution.teamIds.has(i.fromTeamId) ||
+          resolution.teamIds.has(i.toTeamId)
       );
     return {
       id: t.id,
@@ -691,6 +767,7 @@ tradeHistoryRoutes.get('/debug/:leagueId', authMiddleware, async (c) => {
     callerTeam: callerTeam
       ? { id: callerTeam.id, name: callerTeam.name }
       : null,
+    callerTeamIds: Array.from(resolution.teamIds),
     callerResolution,
     tradeCount: allTrades.length,
     visibleToCaller: debugTrades.filter((t) => !t.hiddenReason).length,
@@ -699,6 +776,7 @@ tradeHistoryRoutes.get('/debug/:leagueId', authMiddleware, async (c) => {
       id: t.id,
       name: t.name,
       externalOwnerId: t.externalOwnerId,
+      ownerDisplayName: t.ownerDisplayName,
     })),
     trades: debugTrades,
   });
@@ -892,23 +970,31 @@ tradeHistoryRoutes.post('/grade/:tradeId', authMiddleware, async (c) => {
     const fullLeagueTeams = await db.query.teams.findMany({
       where: eq(schema.teams.leagueId, trade.leagueId),
     });
-    const callerTeam = resolveCallerTeam(
+    const insightResolution = resolveCallerTeam(
       fullLeagueTeams,
       membership,
       user.id
-    ).team;
+    );
+    const callerTeam = insightResolution.team;
     // Only pull record impact if the caller was actually in this trade
     if (
       callerTeam &&
       items.some(
-        (i) => i.fromTeamId === callerTeam!.id || i.toTeamId === callerTeam!.id
+        (i) =>
+          insightResolution.teamIds.has(i.fromTeamId) ||
+          insightResolution.teamIds.has(i.toTeamId)
       )
     ) {
       callerTeamName = callerTeam.name;
+      const insightExtraIds = Array.from(insightResolution.teamIds).filter(
+        (id) => id !== callerTeam!.id
+      );
       recordImpact = await computeRecordImpact(
         db,
         trade.leagueId,
-        callerTeam.id
+        callerTeam.id,
+        undefined,
+        insightExtraIds
       );
     }
   } catch (err) {
