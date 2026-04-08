@@ -9,46 +9,88 @@ import { ingestSleeperTrades } from '../services/tradeIngest';
 import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
 
 /**
+ * Resolution result for the caller's team in a league. Includes the
+ * matched team plus a label describing which strategy hit, so the
+ * frontend can warn the user when we fell back to a guess.
+ */
+export interface CallerTeamResolution {
+  team: typeof schema.teams.$inferSelect | null;
+  strategy:
+    | 'externalOwnerId'
+    | 'ownerDisplayName'
+    | 'teamName'
+    | 'sole_owned_team'
+    | 'wildcard_first_match'
+    | 'no_match';
+  /** Set when the strategy is ambiguous and the user should know
+   *  the result might be wrong (e.g. wildcard fallback). */
+  warning?: string;
+}
+
+/**
  * Find the calling user's team in a league. Tries multiple strategies
- * because Sleeper's connect flow can store either a user_id or a
- * username in `externalUsername`, and the wildcard ownerId fallback
- * (every team in a synced Sleeper league has ownerId = the syncing
- * user's id) was returning the wrong team via Array.find when the
- * primary lookup missed.
+ * in priority order — strict matches first, then increasingly loose
+ * fallbacks. The wildcard fallback is INTENTIONAL: previously every
+ * team in a synced Sleeper league has ownerId=user.id, so a strict
+ * "exactly one owned team" check would always return null in those
+ * leagues. We'd rather pick a (possibly wrong) team and warn than
+ * return zero trades.
+ *
+ * The strategy used is returned alongside the team so the route can
+ * surface a warning to the UI when we fell back.
  */
 function resolveCallerTeam(
   leagueTeams: Array<typeof schema.teams.$inferSelect>,
   membership: { externalUsername: string | null },
   userId: string
-): typeof schema.teams.$inferSelect | null {
-  // 1. Best case: externalUsername is a Sleeper user_id and matches
-  //    a team's externalOwnerId exactly.
+): CallerTeamResolution {
   if (membership.externalUsername) {
+    const lower = membership.externalUsername.toLowerCase();
+
+    // 1. Best case: externalUsername is a Sleeper user_id matching
+    //    a team's externalOwnerId exactly.
     const direct = leagueTeams.find(
       (t) => t.externalOwnerId === membership.externalUsername
     );
-    if (direct) return direct;
+    if (direct) return { team: direct, strategy: 'externalOwnerId' };
 
-    // 2. Sometimes externalUsername stores the Sleeper USERNAME (string)
-    //    instead of the user_id (numeric string). Match against
-    //    ownerDisplayName which sync populates from Sleeper's
-    //    display_name / username.
-    const lower = membership.externalUsername.toLowerCase();
-    const byDisplayName = leagueTeams.find(
+    // 2. externalUsername stores the Sleeper USERNAME or display_name
+    //    instead of the user_id. Sync writes ownerDisplayName from
+    //    Sleeper's display_name / username, so try that.
+    const byDisplay = leagueTeams.find(
       (t) => (t.ownerDisplayName ?? '').toLowerCase() === lower
     );
-    if (byDisplayName) return byDisplayName;
+    if (byDisplay) return { team: byDisplay, strategy: 'ownerDisplayName' };
+
+    // 3. Some users name their fantasy team after their Sleeper username.
+    const byName = leagueTeams.find(
+      (t) => t.name.toLowerCase() === lower
+    );
+    if (byName) return { team: byName, strategy: 'teamName' };
   }
 
-  // 3. Last resort: look for a team owned by this app user. In a synced
-  //    Sleeper league this matches MULTIPLE teams (the syncing user is
-  //    set as ownerId for every opponent team), so we can't trust the
-  //    first match. Only fall through if there is EXACTLY one — that's
-  //    a custom league or a single-team scenario.
+  // 4. App-user ownership. In a synced Sleeper league this matches
+  //    EVERY team (the syncing user is set as ownerId for all teams),
+  //    so it's only reliable when there's a single owned team.
   const ownedTeams = leagueTeams.filter((t) => t.ownerId === userId);
-  if (ownedTeams.length === 1) return ownedTeams[0];
+  if (ownedTeams.length === 1) {
+    return { team: ownedTeams[0], strategy: 'sole_owned_team' };
+  }
 
-  return null;
+  // 5. Last resort: pick the first team we have. This is a guess and
+  //    we explicitly warn the caller. Better than returning nothing.
+  if (ownedTeams.length > 0) {
+    return {
+      team: ownedTeams[0],
+      strategy: 'wildcard_first_match',
+      warning:
+        "We couldn't identify your team in this league with confidence. " +
+        'The trade history below might be wrong. Try resyncing the league ' +
+        'from Settings, or contact support if it stays wrong.',
+    };
+  }
+
+  return { team: null, strategy: 'no_match' };
 }
 import {
   buildTradeContext,
@@ -109,7 +151,8 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
   const leagueTeams = await db.query.teams.findMany({
     where: eq(schema.teams.leagueId, leagueId),
   });
-  const callerTeam = resolveCallerTeam(leagueTeams, membership, user.id);
+  const resolution = resolveCallerTeam(leagueTeams, membership, user.id);
+  const callerTeam = resolution.team;
   if (!callerTeam) {
     return c.json({ error: 'No team found for user in this league' }, 404);
   }
@@ -136,6 +179,8 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
       seasons: [],
       callerTeamId: callerTeam.id,
       callerTeamName: callerTeam.name,
+      callerResolutionStrategy: resolution.strategy,
+      callerResolutionWarning: resolution.warning ?? null,
     });
   }
 
@@ -204,6 +249,8 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
       seasons,
       callerTeamId: callerTeam.id,
       callerTeamName: callerTeam.name,
+      callerResolutionStrategy: resolution.strategy,
+      callerResolutionWarning: resolution.warning ?? null,
     });
   }
 
@@ -308,6 +355,8 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
     seasons,
     callerTeamId: callerTeam.id,
     callerTeamName: callerTeam.name,
+    callerResolutionStrategy: resolution.strategy,
+    callerResolutionWarning: resolution.warning ?? null,
   });
 });
 
@@ -465,7 +514,7 @@ tradeHistoryRoutes.get('/record-impact/:leagueId', authMiddleware, async (c) => 
   const allTeams = await db.query.teams.findMany({
     where: eq(schema.teams.leagueId, leagueId),
   });
-  const userTeam = resolveCallerTeam(allTeams, membership, user.id);
+  const userTeam = resolveCallerTeam(allTeams, membership, user.id).team;
   if (!userTeam) {
     return c.json({ error: 'No team found for user' }, 404);
   }
@@ -559,28 +608,15 @@ tradeHistoryRoutes.get('/debug/:leagueId', authMiddleware, async (c) => {
   }
 
   // Resolve the caller's team — same logic as /history so we can see
-  // exactly what /history is using. Also annotate which strategy hit.
+  // exactly what /history is using.
   const leagueTeams = await db.query.teams.findMany({
     where: eq(schema.teams.leagueId, leagueId),
   });
-  const callerTeam = resolveCallerTeam(leagueTeams, membership, user.id);
-  let callerResolution: string;
-  if (!membership.externalUsername) {
-    callerResolution = 'no externalUsername on membership';
-  } else if (callerTeam?.externalOwnerId === membership.externalUsername) {
-    callerResolution = `externalOwnerId match (${membership.externalUsername})`;
-  } else if (
-    callerTeam &&
-    (callerTeam.ownerDisplayName ?? '').toLowerCase() ===
-      membership.externalUsername.toLowerCase()
-  ) {
-    callerResolution = `ownerDisplayName match (${membership.externalUsername})`;
-  } else if (callerTeam) {
-    callerResolution = 'sole-owned-team fallback';
-  } else {
-    callerResolution =
-      'no team matched (externalUsername set but no externalOwnerId/displayName matches and >1 owned teams)';
-  }
+  const resolution = resolveCallerTeam(leagueTeams, membership, user.id);
+  const callerTeam = resolution.team;
+  const callerResolution = `${resolution.strategy}${
+    resolution.warning ? ` — ${resolution.warning}` : ''
+  }`;
 
   // Pull every trade row regardless of status
   const allTrades = await db.query.trades.findMany({
@@ -860,7 +896,7 @@ tradeHistoryRoutes.post('/grade/:tradeId', authMiddleware, async (c) => {
       fullLeagueTeams,
       membership,
       user.id
-    );
+    ).team;
     // Only pull record impact if the caller was actually in this trade
     if (
       callerTeam &&
