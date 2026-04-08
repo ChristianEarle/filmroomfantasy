@@ -571,31 +571,34 @@ export async function findTradeRecommendations(
     )
   );
 
-  // 9. Post-process: ZERO-TOLERANCE asymmetric fairness filter.
+  // 9. Post-process: REALISTIC-ACCEPTANCE fairness filter.
   //
-  // The Trade Finder exists to help the user WIN trades, not lose
-  // them. After two rounds of feedback about user-hurting trades
-  // slipping through, the filter is now:
+  // After the user complained about the finder surfacing
+  // "Jaxson Dart for Lamar Jackson" — a trade that would
+  // never be accepted because it's too good for the user —
+  // the filter is now symmetric AND tight in BOTH directions:
   //
-  //   A) The trusted analyzer must NOT say the partner is favored.
-  //      Zero tolerance — not "a little favored is OK". If the
-  //      analyzer's `favored` field equals the partner team name,
-  //      the trade is dropped regardless of diff size.
+  //   A) The trusted analyzer must NOT say the partner is
+  //      favored. Zero tolerance. (unchanged)
   //
-  //   B) The user's own letter grade in the trade must be B- or
-  //      better. The analyzer can say "neither team wins" with a
-  //      50/50 fairness score but still grade the user a C if the
-  //      trade is structurally boring (e.g. pure sidegrade). Those
-  //      don't help the user, so they don't ship.
+  //   B) The user's letter grade must be B- or better.
+  //      Catches sidegrades and structurally weak trades
+  //      that happen to fairness-score 50/50. (unchanged)
   //
-  //   C) User-favored trades still capped at diff <= 30 — anything
-  //      beyond that is a robbery the partner won't accept in real
-  //      life, which wastes the user's time.
+  //   C) If the USER is favored, diff must be <= 15 — the
+  //      manual analyzer's "Slightly Favored" threshold.
+  //      Anything beyond 15 is in "Favored" or "Heavily
+  //      Favored" territory and the partner's GM would
+  //      reject it in real life. Previously this was 30
+  //      (way too lenient) which is how Dart-for-Lamar
+  //      got through.
   //
-  // Both filters fire before the sort. The resulting list is then
-  // sorted by diff ascending so the most balanced "user-wins" trades
-  // appear first.
-  const MAX_USER_FAVORED_DIFF = 30;
+  // The constructor is now explicitly told to pad the
+  // user's side with additional players when needed to
+  // reach this threshold, so trades near the 15 cap should
+  // come with the extra-pad construction instead of raw
+  // single-player robberies.
+  const MAX_USER_FAVORED_DIFF = 15;
   const ACCEPTABLE_USER_GRADES = new Set([
     'A+', 'A', 'A-',
     'B+', 'B', 'B-',
@@ -627,10 +630,11 @@ export async function findTradeRecommendations(
         return false;
       }
 
-      // (C) User-favored trades capped at diff <= 30
+      // (C) User-favored trades capped at diff <= 15
+      //     (partner wouldn't accept anything beyond that)
       if (diff > MAX_USER_FAVORED_DIFF) {
         console.log(
-          `[tradeFinder] dropped too-lopsided user-favored trade: diff=${diff}`
+          `[tradeFinder] dropped unrealistic user-favored trade: diff=${diff} (partner would reject)`
         );
         return false;
       }
@@ -714,8 +718,14 @@ function validateConstructedTrade(
       return 'requiredUserPlayerIds set but trade uses none of them';
     }
   }
-  // 6. Value sanity (loose: AI gets benefit of doubt, but not robbery)
-  const MAX_VALUE_DELTA = 0.3;
+  // 6. Value sanity (STRICT: 15% max). Previously 30% — too loose.
+  //    A trade where the user sends Jaxson Dart for Lamar Jackson is
+  //    a ~80% value delta. Even with a crude valuation model, 15%
+  //    is the point where the delta is real enough to matter but
+  //    still forgives normal formula noise. The constructor is
+  //    explicitly told to pad the user side to match value, so any
+  //    trade blowing past this is the constructor being lazy.
+  const MAX_VALUE_DELTA = 0.15;
   const delta = Math.abs(
     valueImbalancePct(trade.sentPlayerIds, trade.receivedPlayerIds, valuations)
   );
