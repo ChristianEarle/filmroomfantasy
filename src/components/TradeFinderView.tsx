@@ -7,8 +7,6 @@ import {
   ChevronDown,
   ChevronRight,
   Sparkles,
-  TrendingUp,
-  TrendingDown,
   ArrowRight,
   Plus,
   X,
@@ -16,6 +14,7 @@ import {
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useLeaguesContext } from '../context/LeaguesContext';
+import { FairnessMeter } from './shared/FairnessMeter';
 
 interface TradeFinderViewProps {
   isDarkMode: boolean;
@@ -802,9 +801,6 @@ export function TradeFinderView({
           </p>
           {recommendations.map((rec, idx) => {
             const fairness = rec.analysis.fairnessScore;
-            // "Good for me" = favors me (not the target) and not a coin flip
-            const isGood =
-              fairness.favored !== rec.targetTeamName && fairness.diff > 2;
             return (
               <div
                 key={idx}
@@ -814,30 +810,25 @@ export function TradeFinderView({
               >
                 <div className="flex items-center gap-3 flex-wrap mb-3">
                   <span
-                    className={`text-xs font-bold uppercase px-2 py-0.5 rounded ${
-                      isGood
-                        ? isDarkMode
-                          ? 'bg-emerald-500/20 text-emerald-300'
-                          : 'bg-emerald-50 text-emerald-700'
-                        : isDarkMode
-                        ? 'bg-amber-500/20 text-amber-300'
-                        : 'bg-amber-50 text-amber-700'
-                    }`}
-                  >
-                    {isGood ? (
-                      <TrendingUp className="inline w-3 h-3 mr-0.5" />
-                    ) : (
-                      <TrendingDown className="inline w-3 h-3 mr-0.5" />
-                    )}
-                    Fairness {fairness.score}/100
-                  </span>
-                  <span
                     className={`text-sm font-semibold ${
                       isDarkMode ? 'text-white' : 'text-slate-900'
                     }`}
                   >
                     vs. {rec.targetTeamName}
                   </span>
+                </div>
+
+                {/* Fairness meter — same visual language as the
+                    manual Trade Analyzer so users see the same
+                    bands ("Slightly Favored", "Favored", etc.)
+                    and the same color coding. */}
+                <div className="mb-3">
+                  <FairnessMeter
+                    score={fairness.score}
+                    favored={fairness.favored}
+                    isDarkMode={isDarkMode}
+                    compact
+                  />
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-3 mb-3 text-sm">

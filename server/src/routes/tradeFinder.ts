@@ -285,6 +285,7 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
         teamCount: true,
         hasSuperflex: true,
         hasTePremium: true,
+        leagueType: true,
       },
     });
     if (!league) return c.json({ error: 'League not found' }, 404);
@@ -292,6 +293,12 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
     // Cache key: per (league, user team, filters, week, day). Include
     // the asset filter in the key so different "must-include" sets don't
     // collide with each other.
+    //
+    // `cacheVersion` is bumped whenever the pipeline changes in a way
+    // that would make previously cached results invalid (e.g. tighter
+    // filters, new analyzer inputs). Bump it here when we ship fixes
+    // that would make a user say "the old trade is still showing up".
+    const CACHE_VERSION = 'v3';
     const todayKey = new Date().toISOString().slice(0, 10);
     const sortedPlayerIds = [...(body.userPlayerIds ?? [])].sort();
     const sortedPicks = [...(body.userPicks ?? [])]
@@ -303,7 +310,7 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
         : `p[${sortedPlayerIds.join(',')}]|pk[${sortedPicks.join(',')}]`;
     const filterKey = `${body.targetPosition || 'any'}-${body.targetTeamId || 'any'}-${assetKey}`;
     const cacheKey = new Request(
-      `https://cache.local/trade-finder/recs/${league.id}/${userTeam.id}/${league.currentWeek}/${filterKey}/${todayKey}`
+      `https://cache.local/trade-finder/recs/${CACHE_VERSION}/${league.id}/${userTeam.id}/${league.currentWeek}/${filterKey}/${todayKey}`
     );
     const cache = getSafeCache();
 
@@ -336,6 +343,12 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
       leagueSettings: mergedLeagueSettings,
       seasonYear: league.seasonYear,
       currentWeek: league.currentWeek,
+      // Critical for dynasty users: the trusted analyzer calibrates
+      // differently based on league type (age reasoning, pick value,
+      // future-value vs present-value trade-offs). Previously this
+      // was hardcoded to 'redraft' inside the finder which caused
+      // dynasty trades to grade as fair when they weren't.
+      leagueType: (league.leagueType as 'redraft' | 'dynasty' | 'keeper') ?? 'redraft',
       targetPosition: body.targetPosition ?? null,
       targetTeamId: body.targetTeamId ?? null,
       maxRecommendations: 8,
