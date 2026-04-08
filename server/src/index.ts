@@ -242,10 +242,12 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     const deleted = await cleanupExpiredRateLimits(env.DB);
     if (deleted > 0) console.log(`[cron] Cleaned up ${deleted} expired rate limit entries`);
 
-    // Clean up expired sessions
+    // Clean up expired sessions. expires_at is stored as Unix seconds (Drizzle's
+    // { mode: 'timestamp' }), so compare against seconds — NOT Date.now() which
+    // returns milliseconds and would match every row, wiping all active sessions.
     const sessionResult = await env.DB.prepare(
       'DELETE FROM sessions WHERE expires_at <= ?1'
-    ).bind(Date.now()).run();
+    ).bind(Math.floor(Date.now() / 1000)).run();
     const sessionsDeleted = sessionResult.meta.changes ?? 0;
     if (sessionsDeleted > 0) console.log(`[cron] Cleaned up ${sessionsDeleted} expired sessions`);
   } catch (err) {

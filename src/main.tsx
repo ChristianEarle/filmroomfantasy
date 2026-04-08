@@ -4,7 +4,7 @@ import App from "./App.tsx";
 import "./index.css";
 import "./styles/globals.css";
 
-// One-time migration: clear legacy localStorage token (auth now uses httpOnly cookies)
+// Clear legacy key from the pre-cookie era (now stored under filmroom_auth_token)
 localStorage.removeItem('filmroom_token');
 
 createRoot(document.getElementById("root")!).render(

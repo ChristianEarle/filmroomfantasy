@@ -2,12 +2,33 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
-// In-memory auth token — fallback for browsers that block cross-origin cookies.
-// The httpOnly cookie remains the primary auth mechanism; this supplements it.
-let authToken: string | null = null;
+// Auth token — fallback for browsers that block cross-origin cookies (Safari ITP, etc).
+// The httpOnly cookie remains the primary auth mechanism; this supplements it and
+// is persisted to localStorage so it survives page refresh when cookies are blocked.
+const AUTH_TOKEN_STORAGE_KEY = 'filmroom_auth_token';
+
+let authToken: string | null = (() => {
+  try {
+    return typeof localStorage !== 'undefined'
+      ? localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+      : null;
+  } catch {
+    return null;
+  }
+})();
 
 export function setAuthToken(token: string | null) {
   authToken = token;
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // localStorage may be unavailable (private mode, disabled, etc) — fall back to in-memory only
+  }
 }
 
 export function getAuthToken(): string | null {
