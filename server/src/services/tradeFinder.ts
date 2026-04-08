@@ -28,6 +28,9 @@ import {
 import {
   generateCandidates,
   topCandidates,
+  pickDiverseTop,
+  sortByProxy,
+  scoreCandidate,
   type ScoredCandidate,
 } from './candidateFilter';
 
@@ -285,10 +288,20 @@ export async function findTradeRecommendations(
         .map((p) => ({ year: Math.trunc(p.year), round: Math.trunc(p.round) }))
     : [];
 
-  // 4. For each potential partner team, generate candidates and pre-filter
+  // 4. For each potential partner team, generate candidates and pre-filter.
+  //
+  // Two things matter here:
+  //  1. Sort both sides' asset ids by roughProxy DESC before generation,
+  //     so when the per-size caps in generateCandidates fire, the
+  //     strongest combos are preserved (we iterate best-first).
+  //  2. Use per-size caps — NOT a single total cap — so 2-for-1 and
+  //     1-for-2 variants actually get generated instead of being
+  //     starved by the 225-combo 1-for-1 matrix.
   const partnerTeamIds = targetTeamId
     ? [targetTeamId]
     : allTeams.filter((t) => t.id !== userTeamId).map((t) => t.id);
+
+  const sortedUserAssetIds = sortByProxy(userAssetIds, factsById);
 
   const allScored: Array<ScoredCandidate & { targetTeamId: string }> = [];
 
@@ -304,16 +317,42 @@ export async function findTradeRecommendations(
 
     if (partnerAssetIds.length === 0) continue;
 
-    const candidates = generateCandidates(userAssetIds, partnerAssetIds, 100);
-    const scored = topCandidates(candidates, factsById, 5);
-    for (const s of scored) {
+    const sortedPartnerAssetIds = sortByProxy(partnerAssetIds, factsById);
+
+    const candidates = generateCandidates(
+      sortedUserAssetIds,
+      sortedPartnerAssetIds,
+      { max1v1: 40, max2v1: 25, max1v2: 25 }
+    );
+
+    // Score every candidate and keep the top 12 per partner (up from 5)
+    // so we have enough variety for the global diversity pass.
+    const scored = candidates.map((c) => scoreCandidate(c, factsById));
+    scored.sort((a, b) => a.preFilterScore - b.preFilterScore);
+    for (const s of scored.slice(0, 12)) {
       allScored.push({ ...s, targetTeamId: partnerId });
     }
   }
 
-  // 5. Global top-N across partners by pre-filter score
+  // Avoid unused-import warning for topCandidates — kept exported for
+  // callers that want the simple non-diverse selection.
+  void topCandidates;
+
+  // 5. Global top-N across partners with DIVERSITY:
+  //    - No single user player (or target player) may dominate more
+  //      than 2 of the returned candidates, so you don't see
+  //      "Bijan for X, Bijan for Y, Bijan for Z".
+  //    - We over-fetch (3x the final count) so there's room for the
+  //      diversity pass to discard dominant candidates without
+  //      starving the result list.
+  const overFetch = Math.max(maxRecommendations * 3, 16);
   allScored.sort((a, b) => a.preFilterScore - b.preFilterScore);
-  const topGlobal = allScored.slice(0, maxRecommendations);
+  const diversePool = pickDiverseTop(
+    allScored.slice(0, overFetch),
+    maxRecommendations,
+    2
+  ) as Array<ScoredCandidate & { targetTeamId: string }>;
+  const topGlobal = diversePool;
 
   if (topGlobal.length === 0) return [];
 

@@ -85,47 +85,94 @@ export function scoreCandidate(
 }
 
 /**
+ * Compute rough proxy values for a list of player ids. Exported so
+ * callers can pre-sort their asset arrays before generating candidates
+ * (keeps per-size caps preserving the strongest combos when they fire).
+ */
+export function proxyMap(
+  ids: string[],
+  playerFacts: Map<string, PlayerFacts>
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const id of ids) {
+    const p = playerFacts.get(id);
+    out.set(id, p ? roughProxy(p) : 0);
+  }
+  return out;
+}
+
+/**
+ * Sort a list of player ids by roughProxy desc. Returns a new array;
+ * does NOT mutate the input.
+ */
+export function sortByProxy(
+  ids: string[],
+  playerFacts: Map<string, PlayerFacts>
+): string[] {
+  const proxies = proxyMap(ids, playerFacts);
+  return [...ids].sort(
+    (a, b) => (proxies.get(b) ?? 0) - (proxies.get(a) ?? 0)
+  );
+}
+
+/**
  * Generate candidate packages from a set of assets the user holds and a
- * set of assets a target team holds. Produces 1-for-1, 2-for-1, 1-for-2,
- * and 2-for-2 combinations, bounded by maxCombos to prevent explosion.
+ * set of assets a target team holds. Produces 1-for-1, 2-for-1, and
+ * 1-for-2 combinations, each with its OWN cap — so a cheap 1-for-1
+ * explosion can't starve the multi-player variants.
+ *
+ * Callers should pass asset lists already sorted by roughProxy desc
+ * (see sortByProxy) so that when a per-size cap fires, the strongest
+ * combos are still preserved.
  */
 export function generateCandidates(
   userAssetIds: string[],
   targetAssetIds: string[],
-  maxCombos = 50
+  options: {
+    max1v1?: number;
+    max2v1?: number;
+    max1v2?: number;
+  } = {}
 ): CandidatePackage[] {
+  const { max1v1 = 40, max2v1 = 25, max1v2 = 25 } = options;
   const out: CandidatePackage[] = [];
 
   // 1-for-1
-  for (const u of userAssetIds) {
+  let count1v1 = 0;
+  outer1: for (const u of userAssetIds) {
     for (const t of targetAssetIds) {
+      if (count1v1 >= max1v1) break outer1;
       out.push({ sendPlayerIds: [u], receivePlayerIds: [t] });
-      if (out.length >= maxCombos) return out;
+      count1v1++;
     }
   }
 
-  // 2-for-1 (user sends 2)
-  for (let i = 0; i < userAssetIds.length; i++) {
+  // 2-for-1 (user sends 2) — favor pairing top user players first
+  let count2v1 = 0;
+  outer2: for (let i = 0; i < userAssetIds.length; i++) {
     for (let j = i + 1; j < userAssetIds.length; j++) {
       for (const t of targetAssetIds) {
+        if (count2v1 >= max2v1) break outer2;
         out.push({
           sendPlayerIds: [userAssetIds[i], userAssetIds[j]],
           receivePlayerIds: [t],
         });
-        if (out.length >= maxCombos) return out;
+        count2v1++;
       }
     }
   }
 
   // 1-for-2 (target sends 2)
-  for (const u of userAssetIds) {
+  let count1v2 = 0;
+  outer3: for (const u of userAssetIds) {
     for (let i = 0; i < targetAssetIds.length; i++) {
       for (let j = i + 1; j < targetAssetIds.length; j++) {
+        if (count1v2 >= max1v2) break outer3;
         out.push({
           sendPlayerIds: [u],
           receivePlayerIds: [targetAssetIds[i], targetAssetIds[j]],
         });
-        if (out.length >= maxCombos) return out;
+        count1v2++;
       }
     }
   }
@@ -145,4 +192,45 @@ export function topCandidates(
   const scored = candidates.map((c) => scoreCandidate(c, playerFacts));
   scored.sort((a, b) => a.preFilterScore - b.preFilterScore);
   return scored.slice(0, topN);
+}
+
+/**
+ * Pick the top N candidates while enforcing diversity: each user player
+ * and each target player may only appear in up to `maxPerPlayer` of the
+ * selected candidates. Without this, the single best user player will
+ * dominate every slot (e.g. "My RB1 for player A, My RB1 for player B,
+ * My RB1 for player C…") which is boring output.
+ *
+ * Candidates are considered in score order (best first). When the
+ * per-player cap is hit the candidate is skipped and we continue down
+ * the list. Returns exactly up to topN survivors.
+ */
+export function pickDiverseTop(
+  scored: ScoredCandidate[],
+  topN: number,
+  maxPerPlayer = 2
+): ScoredCandidate[] {
+  const sorted = [...scored].sort(
+    (a, b) => a.preFilterScore - b.preFilterScore
+  );
+  const playerUseCount = new Map<string, number>();
+  const out: ScoredCandidate[] = [];
+  for (const c of sorted) {
+    if (out.length >= topN) break;
+
+    const involved = [
+      ...c.candidate.sendPlayerIds,
+      ...c.candidate.receivePlayerIds,
+    ];
+    const hitCap = involved.some(
+      (pid) => (playerUseCount.get(pid) ?? 0) >= maxPerPlayer
+    );
+    if (hitCap) continue;
+
+    out.push(c);
+    for (const pid of involved) {
+      playerUseCount.set(pid, (playerUseCount.get(pid) ?? 0) + 1);
+    }
+  }
+  return out;
 }
