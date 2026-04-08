@@ -21,6 +21,7 @@ import { billingRoutes } from './routes/billing';
 import { adminStatsRoutes } from './routes/admin-stats';
 import { tradesRoutes } from './routes/trades';
 import { rostersRoutes } from './routes/rosters';
+import { tradeHistoryRoutes } from './routes/tradeHistory';
 import { analyticsRoutes } from './routes/analytics';
 import { articleRoutes } from './routes/articles';
 
@@ -180,6 +181,7 @@ app.route('/api/feedback', feedbackRoutes);
 app.route('/api/yahoo', yahooRoutes);
 app.route('/api/billing', billingRoutes);
 app.route('/api/trades', tradesRoutes);
+app.route('/api/trade-history', tradeHistoryRoutes);
 app.route('/api/rosters', rostersRoutes);
 app.route('/api/admin', adminStatsRoutes);
 app.route('/api/analytics', analyticsRoutes);
