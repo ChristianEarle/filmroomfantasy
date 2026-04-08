@@ -332,7 +332,28 @@ export async function findTradeRecommendations(
     )
   );
 
-  return results.filter((r): r is TradeRecommendation => r != null);
+  // 7. Post-process: drop wildly unfair trades and sort by fairness.
+  //
+  // The fairnessScore is 0-100 with 50 = perfectly fair, and `diff`
+  // is |score - 50|. We cut off at diff > MAX_FAIRNESS_DIFF because
+  // anything beyond that is in "Heavily Favored" territory — the
+  // target team would never accept it in real life and showing it
+  // is just noise. Trade Finder's job is to surface REALISTIC trades.
+  //
+  // We filter in both directions: a trade that unfairly favors the
+  // USER is also dropped, because the partner team would reject it.
+  const MAX_FAIRNESS_DIFF = 25;
+
+  const valid = results.filter(
+    (r): r is TradeRecommendation => r != null
+  );
+
+  return valid
+    .filter((rec) => rec.analysis.fairnessScore.diff <= MAX_FAIRNESS_DIFF)
+    .sort(
+      (a, b) =>
+        a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff
+    );
 }
 
 interface AnalyzeArgs {

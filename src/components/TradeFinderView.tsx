@@ -108,6 +108,7 @@ export function TradeFinderView({
 
   const [needs, setNeeds] = useState<TeamNeeds | null>(null);
   const [recommendations, setRecommendations] = useState<TradeRecommendation[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [isLoadingNeeds, setIsLoadingNeeds] = useState(false);
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -201,6 +202,7 @@ export function TradeFinderView({
     if (!selectedLeagueId || !tierAllowed) return;
     setIsLoadingRecs(true);
     setError(null);
+    setHasSearched(true);
     try {
       const data = await api.post<{ recommendations: TradeRecommendation[] }>(
         '/trade-finder/recommendations',
@@ -219,6 +221,13 @@ export function TradeFinderView({
       setIsLoadingRecs(false);
     }
   };
+
+  // Reset "has searched" state whenever filters change so the empty
+  // state goes away until the user re-runs the search
+  useEffect(() => {
+    setHasSearched(false);
+    setRecommendations([]);
+  }, [selectedLeagueId, filterPosition, assetPlayerIds, assetPicks]);
 
   if (!tierAllowed) {
     return (
@@ -743,13 +752,50 @@ export function TradeFinderView({
         </div>
       )}
 
-      {/* Recommendations */}
+      {/* Empty state when a search returned zero balanced trades */}
+      {hasSearched && !isLoadingRecs && recommendations.length === 0 && (
+        <div
+          className={`rounded-xl border p-6 text-center ${
+            isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
+          }`}
+        >
+          <p
+            className={`text-sm font-semibold mb-1 ${
+              isDarkMode ? 'text-white' : 'text-slate-900'
+            }`}
+          >
+            No balanced trades found
+          </p>
+          <p
+            className={`text-xs ${
+              isDarkMode ? 'text-slate-400' : 'text-slate-500'
+            }`}
+          >
+            Trade Finder filters out heavily lopsided trades that the
+            target team would never accept. Try widening your asset or
+            position filter, or syncing the league again to refresh
+            roster data.
+          </p>
+        </div>
+      )}
+
+      {/* Recommendations — already sorted by fairness on the server */}
       {recommendations.length > 0 && (
         <div className="space-y-3">
+          <p
+            className={`text-xs ${
+              isDarkMode ? 'text-slate-400' : 'text-slate-500'
+            }`}
+          >
+            Showing {recommendations.length} trade
+            {recommendations.length === 1 ? '' : 's'}, ranked most fair
+            to least fair. Heavily lopsided trades are filtered out.
+          </p>
           {recommendations.map((rec, idx) => {
             const fairness = rec.analysis.fairnessScore;
+            // "Good for me" = favors me (not the target) and not a coin flip
             const isGood =
-              fairness.favored !== rec.targetTeamName && fairness.diff < 25;
+              fairness.favored !== rec.targetTeamName && fairness.diff > 2;
             return (
               <div
                 key={idx}
