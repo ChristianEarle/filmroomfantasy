@@ -442,7 +442,14 @@ export async function ingestSleeperTrades(
       const existingTrade = existingByExtId.get(tx.transaction_id);
 
       if (existingTrade) {
-        // Update lightweight fields only (don't nuke AI grade)
+        // Update the trade row + REBUILD the items.
+        //
+        // We used to leave items alone on update, which meant any trade
+        // that was first ingested before a roster-mapping fix kept its
+        // stale fromTeamId/toTeamId attributions forever. Re-running
+        // ingest with corrected mappings would update the trade row
+        // but never repair the items, so /history would still hide the
+        // trade behind the caller-team filter.
         await db
           .update(schema.trades)
           .set({
@@ -452,6 +459,23 @@ export async function ingestSleeperTrades(
             status: 'executed',
           })
           .where(eq(schema.trades.id, existingTrade.id));
+        // Wipe and re-create items so the latest mapping wins. Safe
+        // because items have no AI grading state; that lives on the
+        // trade row.
+        await db
+          .delete(schema.tradeItems)
+          .where(eq(schema.tradeItems.tradeId, existingTrade.id));
+        for (const item of items) {
+          await db.insert(schema.tradeItems).values({
+            id: crypto.randomUUID(),
+            tradeId: existingTrade.id,
+            fromTeamId: item.fromTeamId,
+            toTeamId: item.toTeamId,
+            playerId: item.playerId,
+            draftPickYear: item.draftPickYear,
+            draftPickRound: item.draftPickRound,
+          });
+        }
         stats.updated++;
       } else {
         const tradeId = crypto.randomUUID();
