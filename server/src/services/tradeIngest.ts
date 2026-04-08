@@ -51,6 +51,13 @@ export interface IngestStats {
   /** Count of every status seen on type=trade transactions. Lets the
    *  user see exactly what Sleeper returned and which got rejected. */
   tradeStatusCounts: Record<string, number>;
+  /** Number of trades returned by Sleeper per week (1..18). Only
+   *  weeks with >0 trades are listed. If a trade the user expected is
+   *  missing, this tells us whether Sleeper returned it from any week. */
+  weeklyTradeBreakdown: Record<number, number>;
+  /** Total transactions of ANY type returned by Sleeper across all
+   *  weeks. Sanity check: if this is 0 the API call is broken. */
+  totalRawTransactions: number;
 }
 
 function recordSkip(stats: IngestStats, reason: string) {
@@ -96,6 +103,8 @@ export async function ingestSleeperTrades(
     skipReasons: {},
     unmappedRosterIds: [],
     tradeStatusCounts: {},
+    weeklyTradeBreakdown: {},
+    totalRawTransactions: 0,
   };
 
   // 1. Load league, teams, and existing ingested trades
@@ -266,6 +275,7 @@ export async function ingestSleeperTrades(
   }
 
   stats.fetched = allTx.length;
+  stats.totalRawTransactions = allTx.length;
 
   // 3. Filter to completed trades.
   //
@@ -290,6 +300,25 @@ export async function ingestSleeperTrades(
   }
   stats.tradeStatusCounts = statusCounts;
   stats.trades = tradeTxs.length;
+
+  // Per-week breakdown of accepted trades. Note: we use the prefer
+  // tx.leg (Sleeper's own week field on the transaction) when present,
+  // falling back to the week we fetched it from. This handles the
+  // case where Sleeper returns a trade from week N's endpoint but
+  // its actual leg is N-1 or N+1.
+  const weeklyBreakdown: Record<number, number> = {};
+  for (const { tx, week } of tradeTxs) {
+    const w = tx.leg ?? week;
+    weeklyBreakdown[w] = (weeklyBreakdown[w] ?? 0) + 1;
+  }
+  stats.weeklyTradeBreakdown = weeklyBreakdown;
+
+  console.log(
+    `[tradeIngest] league ${leagueId}: ${allTx.length} raw txs, ` +
+      `${tradeTypeTxs.length} type=trade, ${tradeTxs.length} accepted. ` +
+      `Statuses: ${JSON.stringify(statusCounts)}. ` +
+      `Per-week: ${JSON.stringify(weeklyBreakdown)}`
+  );
 
   if (tradeTxs.length === 0) return stats;
 
@@ -405,6 +434,11 @@ export async function ingestSleeperTrades(
       const receivingTeamId = teamPairs[1] || teamPairs[0];
 
       const executedAtDate = new Date(tx.created);
+      // Prefer the trade's own leg field over the week we fetched it
+      // from. Sleeper sometimes returns a trade from week N's endpoint
+      // but the trade's actual leg is N-1 or N+1; trusting `tx.leg`
+      // gives the user the correct week.
+      const effectiveWeek = tx.leg ?? week;
       const existingTrade = existingByExtId.get(tx.transaction_id);
 
       if (existingTrade) {
@@ -413,7 +447,7 @@ export async function ingestSleeperTrades(
           .update(schema.trades)
           .set({
             executedAt: executedAtDate,
-            weekExecuted: week,
+            weekExecuted: effectiveWeek,
             seasonYear: league.seasonYear,
             status: 'executed',
           })
@@ -431,7 +465,7 @@ export async function ingestSleeperTrades(
           externalId: tx.transaction_id,
           executedAt: executedAtDate,
           seasonYear: league.seasonYear,
-          weekExecuted: week,
+          weekExecuted: effectiveWeek,
         });
 
         // Insert items in a batch
@@ -446,10 +480,30 @@ export async function ingestSleeperTrades(
             draftPickRound: item.draftPickRound,
           });
         }
+        // Cache the new row in the lookup map so a duplicate
+        // transaction_id later in the same ingest pass is treated as
+        // an UPDATE rather than retried (which would fail the unique
+        // index and bump stats.errors).
+        existingByExtId.set(tx.transaction_id, {
+          id: tradeId,
+          leagueId,
+          proposingTeamId,
+          receivingTeamId,
+          status: 'executed',
+          source: 'sleeper',
+          externalId: tx.transaction_id,
+          executedAt: executedAtDate,
+          seasonYear: league.seasonYear,
+          weekExecuted: effectiveWeek,
+        } as typeof existing[number]);
         stats.inserted++;
       }
     } catch (err) {
-      console.error('[tradeIngest] Failed to upsert trade:', err);
+      console.error(
+        `[tradeIngest] Failed to upsert trade ${tx.transaction_id} ` +
+          `(week ${week}, leg ${tx.leg}):`,
+        err
+      );
       stats.errors++;
     }
   }
