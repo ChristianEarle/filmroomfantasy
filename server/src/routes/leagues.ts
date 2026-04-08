@@ -606,8 +606,11 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
   // Handle Sleeper sync
   if (league.platform === 'sleeper' && league.externalId) {
     try {
-      // Fetch rosters, users, and players from Sleeper in parallel
-      const [rostersResponse, usersResponse, playersResult] = await Promise.all([
+      // Fetch rosters, users, players, and league metadata from Sleeper in parallel.
+      // We need the league metadata up-front (specifically `roster_positions`) so we
+      // can map each starter's array index to its real slot label (QB/RB1/WR3/FLEX/…)
+      // instead of using a hardcoded template that breaks for non-standard leagues.
+      const [rostersResponse, usersResponse, playersResult, sleeperLeagueResult] = await Promise.all([
         fetch(`https://api.sleeper.app/v1/league/${league.externalId}/rosters`),
         fetch(`https://api.sleeper.app/v1/league/${league.externalId}/users`),
         (async () => {
@@ -625,6 +628,17 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
             console.error('Failed to fetch Sleeper players (sync continues with basic player names):', e);
           }
           return {};
+        })(),
+        (async () => {
+          try {
+            const res = await fetch(`https://api.sleeper.app/v1/league/${league.externalId}`);
+            if (res.ok) {
+              return await res.json() as any;
+            }
+          } catch (e) {
+            console.error('Failed to fetch Sleeper league metadata (sync continues with fallback slot template):', e);
+          }
+          return null;
         })(),
       ]);
 
@@ -644,6 +658,39 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       const sleeperUsers = validateSleeperArray(sleeperUsersRaw, isValidSleeperUser, 'users');
 
       const sleeperPlayers = playersResult;
+
+      // Build the real starter slot template from the league's `roster_positions`.
+      // Sleeper's `roster.starters` array is ordered the same way as the non-bench
+      // entries in `roster_positions`, so mapping index → slot is only correct if
+      // we use the league's actual starting lineup shape. When the same position
+      // appears multiple times (e.g. RB, RB, WR, WR, WR) we append a 1-based index
+      // (RB1, RB2, WR1, WR2, WR3) so downstream sorting can order them correctly.
+      const buildStarterSlotTemplate = (rosterPositions: string[]): string[] => {
+        const BENCH_SLOTS = new Set(['BN', 'IR', 'TAXI']);
+        const startingPositions = rosterPositions.filter(
+          (p) => typeof p === 'string' && !BENCH_SLOTS.has(p.toUpperCase())
+        );
+        const totalCounts: Record<string, number> = {};
+        for (const pos of startingPositions) {
+          totalCounts[pos] = (totalCounts[pos] || 0) + 1;
+        }
+        const runningCounts: Record<string, number> = {};
+        return startingPositions.map((pos) => {
+          runningCounts[pos] = (runningCounts[pos] || 0) + 1;
+          // Only number the slot when the same position appears more than once.
+          return totalCounts[pos] > 1 ? `${pos}${runningCounts[pos]}` : pos;
+        });
+      };
+
+      const leagueRosterPositions: string[] = Array.isArray(sleeperLeagueResult?.roster_positions)
+        ? sleeperLeagueResult.roster_positions
+        : [];
+      // If we couldn't read roster_positions from the Sleeper league metadata, fall
+      // back to the standard starting lineup shape. This preserves the old behavior
+      // for leagues whose metadata fetch failed rather than blocking the whole sync.
+      const starterSlots = leagueRosterPositions.length > 0
+        ? buildStarterSlotTemplate(leagueRosterPositions)
+        : ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'TE', 'FLEX', 'K', 'DEF'];
 
       // Create a map of owner_id to user info
       const userMap = new Map<string, any>();
@@ -793,21 +840,21 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
           await db.delete(schema.rosterSpots)
             .where(eq(schema.rosterSpots.teamId, team.id));
 
-          // Get starters array from roster
+          // Get starters array from roster. Sleeper orders this array to match the
+          // non-bench entries of the league's `roster_positions`, and uses the
+          // sentinel "0" / "Invalid" for empty starter slots — so `starters[i]`
+          // corresponds to `starterSlots[i]` position-for-position.
           const starters = roster.starters || [];
-
-          // Define starting slots based on typical fantasy lineup
-          const starterSlots = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'TE', 'FLEX', 'K', 'DEF'];
 
           for (let i = 0; i < roster.players.length; i++) {
             const playerId = roster.players[i];
             if (!playerId || INVALID_PLAYER_IDS.has(String(playerId).toLowerCase())) continue;
-            const isStarter = starters.includes(playerId);
             const starterIndex = starters.indexOf(playerId);
+            const isStarter = starterIndex >= 0 && starterIndex < starterSlots.length;
 
             // Determine slot
             let slot: string;
-            if (isStarter && starterIndex >= 0 && starterIndex < starterSlots.length) {
+            if (isStarter) {
               slot = starterSlots[starterIndex];
             } else {
               // Bench slot
@@ -885,21 +932,18 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         }
       }
 
-      // ── Fetch Sleeper league metadata to get accurate week & settings ──
+      // ── Apply Sleeper league metadata (fetched earlier) for week & settings ──
       let matchupsImported = 0;
       let regularSeasonWeeks = 14; // fallback
       let playoffWeeksCount = league.playoffWeeks || 3; // fallback
       let effectiveCurrentWeek = league.currentWeek || 1;
 
       try {
-        const sleeperLeagueRes = await fetch(`https://api.sleeper.app/v1/league/${league.externalId}`);
-        if (sleeperLeagueRes.ok) {
-          const sleeperLeague = await sleeperLeagueRes.json() as any;
+        if (sleeperLeagueResult) {
+          const sleeperLeague = sleeperLeagueResult;
           const settings = sleeperLeague?.settings || {};
           const scoringSettings = sleeperLeague?.scoring_settings || {};
-          const rosterPositions: string[] = Array.isArray(sleeperLeague?.roster_positions)
-            ? sleeperLeague.roster_positions
-            : [];
+          const rosterPositions: string[] = leagueRosterPositions;
           const playoffWeekStart = settings.playoff_week_start || 15;
           regularSeasonWeeks = playoffWeekStart - 1; // e.g., 14
           const sleeperLeg = settings.leg || 1;
