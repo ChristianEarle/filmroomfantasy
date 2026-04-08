@@ -197,6 +197,31 @@ function computeImpliedTotal(
 
 // ── Main entry point ────────────────────────────────────────────────
 
+/**
+ * Run an inArray query in chunks to stay within D1's parameter limit.
+ * D1 caps bound parameters per query (the existing leagues.ts sync code
+ * chunks at 50 for the same reason). Without this, Trade Finder /
+ * recommendations fails because it passes every rostered player in
+ * the league (~180 ids for a 12-team league) in a single IN clause.
+ */
+async function chunkedInArrayFetch<TRow>(
+  ids: string[],
+  chunkSize: number,
+  fetchChunk: (chunk: string[]) => Promise<TRow[]>
+): Promise<TRow[]> {
+  if (ids.length === 0) return [];
+  if (ids.length <= chunkSize) return fetchChunk(ids);
+  const out: TRow[] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const rows = await fetchChunk(chunk);
+    for (const r of rows) out.push(r);
+  }
+  return out;
+}
+
+const ID_CHUNK = 50;
+
 export interface BuildTradeContextArgs {
   db: DB;
   playerIds: string[];
@@ -216,23 +241,23 @@ export async function buildTradeContext({
   userTeamId,
   leagueId,
 }: BuildTradeContextArgs): Promise<TradeContext> {
-  // 1. Fetch all players
-  const players = playerIds.length
-    ? await db.query.nflPlayers.findMany({
-        where: inArray(schema.nflPlayers.id, playerIds),
-      })
-    : [];
+  // 1. Fetch all players (chunked — D1 parameter limit)
+  const players = await chunkedInArrayFetch(playerIds, ID_CHUNK, (chunk) =>
+    db.query.nflPlayers.findMany({
+      where: inArray(schema.nflPlayers.id, chunk),
+    })
+  );
 
-  // 2. Fetch recent weekly stats for these players (current season)
-  const weeklyStats = players.length
-    ? await db.query.playerWeeklyStats.findMany({
-        where: and(
-          inArray(schema.playerWeeklyStats.playerId, playerIds),
-          eq(schema.playerWeeklyStats.seasonYear, seasonYear)
-        ),
-        orderBy: [desc(schema.playerWeeklyStats.week)],
-      })
-    : [];
+  // 2. Fetch recent weekly stats for these players (current season, chunked)
+  const weeklyStats = await chunkedInArrayFetch(playerIds, ID_CHUNK, (chunk) =>
+    db.query.playerWeeklyStats.findMany({
+      where: and(
+        inArray(schema.playerWeeklyStats.playerId, chunk),
+        eq(schema.playerWeeklyStats.seasonYear, seasonYear)
+      ),
+      orderBy: [desc(schema.playerWeeklyStats.week)],
+    })
+  );
 
   const statsByPlayer = new Map<string, typeof weeklyStats>();
   for (const s of weeklyStats) {
@@ -241,19 +266,19 @@ export async function buildTradeContext({
     statsByPlayer.set(s.playerId, arr);
   }
 
-  // 3. Fetch next-week projection per player (matching scoring format)
+  // 3. Fetch next-week projection per player (matching scoring format, chunked)
   const scoringKey: 'ppr' | 'half-ppr' | 'standard' =
     leagueSettings.scoringFormat;
-  const projections = players.length
-    ? await db.query.playerProjections.findMany({
-        where: and(
-          inArray(schema.playerProjections.playerId, playerIds),
-          eq(schema.playerProjections.seasonYear, seasonYear),
-          eq(schema.playerProjections.scoringFormat, scoringKey)
-        ),
-        orderBy: [desc(schema.playerProjections.week)],
-      })
-    : [];
+  const projections = await chunkedInArrayFetch(playerIds, ID_CHUNK, (chunk) =>
+    db.query.playerProjections.findMany({
+      where: and(
+        inArray(schema.playerProjections.playerId, chunk),
+        eq(schema.playerProjections.seasonYear, seasonYear),
+        eq(schema.playerProjections.scoringFormat, scoringKey)
+      ),
+      orderBy: [desc(schema.playerProjections.week)],
+    })
+  );
 
   // Keep the latest (highest week) projection per player
   const latestProjByPlayer = new Map<string, (typeof projections)[0]>();
@@ -307,13 +332,15 @@ export async function buildTradeContext({
   }
 
   const relevantGameIds = Array.from(gameIdsWeWantOdds);
-  const oddsRows =
-    relevantGameIds.length > 0
-      ? await db.query.gameOdds.findMany({
-          where: inArray(schema.gameOdds.gameId, relevantGameIds),
-          orderBy: [desc(schema.gameOdds.snapshotTime)],
-        })
-      : [];
+  const oddsRows = await chunkedInArrayFetch(
+    relevantGameIds,
+    ID_CHUNK,
+    (chunk) =>
+      db.query.gameOdds.findMany({
+        where: inArray(schema.gameOdds.gameId, chunk),
+        orderBy: [desc(schema.gameOdds.snapshotTime)],
+      })
+  );
 
   // Latest total + spread per gameId
   const totalsByGame = new Map<string, number>();
