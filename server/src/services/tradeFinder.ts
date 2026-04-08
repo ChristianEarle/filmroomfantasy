@@ -83,6 +83,11 @@ import {
   type AnalyzeTradeBody,
   type TradeAssetInput as TradeAnalyzerAssetInput,
 } from './tradeAnalyzer';
+import {
+  fetchPlayerData,
+  formatPlayerDataBlock,
+  type EnrichedPlayerData,
+} from './tradePlayerEnrichment';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -249,6 +254,11 @@ interface FindRecommendationsArgs {
   leagueSettings: LeagueSettings;
   seasonYear: number;
   currentWeek: number;
+  /** The league's actual type — threaded into the trusted analyzer so
+   *  dynasty users get dynasty-calibrated grades (age and future-value
+   *  reasoning) instead of redraft grades. Falls back to 'redraft' if
+   *  unset. */
+  leagueType?: 'redraft' | 'dynasty' | 'keeper';
   targetPosition?: string | null;
   targetTeamId?: string | null;
   maxRecommendations?: number;
@@ -271,6 +281,7 @@ export async function findTradeRecommendations(
     leagueSettings,
     seasonYear,
     currentWeek,
+    leagueType = 'redraft',
     targetPosition,
     targetTeamId,
     maxRecommendations = 5,
@@ -515,9 +526,32 @@ export async function findTradeRecommendations(
 
   if (topGlobal.length === 0) return [];
 
-  // 7. Run AI analysis on each survivor in parallel, passing the fit
-  //    reasons as additional context so Claude can agree/disagree with
-  //    the matcher's rationale rather than reasoning from raw rosters.
+  // 7. Pre-fetch enrichment (season stats, trend, news) for every
+  //    player that appears in any surviving candidate. This matches
+  //    the input the manual /analyze route provides to the trusted
+  //    analyzer, including the recent-news block that catches
+  //    "role reduced", "benched", "trade rumor" signals the
+  //    structural TradeContext doesn't carry. One query batch,
+  //    reused across all parallel verification calls.
+  const allCandidatePlayerIds = new Set<string>();
+  for (const surv of topGlobal) {
+    for (const id of surv.sendPlayerIds) allCandidatePlayerIds.add(id);
+    for (const id of surv.receivePlayerIds) allCandidatePlayerIds.add(id);
+  }
+  const allCandidatePlayerNames: string[] = [];
+  for (const id of allCandidatePlayerIds) {
+    const facts = factsById.get(id);
+    if (facts) allCandidatePlayerNames.push(facts.name);
+  }
+  const enrichmentByName = await fetchPlayerData(
+    db,
+    allCandidatePlayerNames
+  ).catch((err) => {
+    console.error('[tradeFinder] enrichment fetch failed:', err);
+    return new Map<string, EnrichedPlayerData>();
+  });
+
+  // 8. Run trusted analyzer verification on each survivor in parallel.
   const results = await Promise.all(
     topGlobal.map((surv) =>
       analyzeCandidateWithAI({
@@ -531,48 +565,77 @@ export async function findTradeRecommendations(
         context: megaContext,
         extraUserPicks: normalizedPicks,
         valuations,
+        leagueType,
+        enrichmentByName,
       })
     )
   );
 
-  // 8. Post-process: asymmetric fairness filter + sort.
+  // 9. Post-process: ZERO-TOLERANCE asymmetric fairness filter.
   //
   // The Trade Finder exists to help the user WIN trades, not lose
-  // them. So the guard is intentionally asymmetric:
+  // them. After two rounds of feedback about user-hurting trades
+  // slipping through, the filter is now:
   //
-  //  - If the partner is favored by ANYTHING beyond a coin flip
-  //    (diff > 5 and favored === partner), DROP the trade. The user
-  //    asked us to find trades; we will not surface ones that hurt
-  //    them.
+  //   A) The trusted analyzer must NOT say the partner is favored.
+  //      Zero tolerance — not "a little favored is OK". If the
+  //      analyzer's `favored` field equals the partner team name,
+  //      the trade is dropped regardless of diff size.
   //
-  //  - If the user is favored, allow up to MAX_FAIRNESS_DIFF_USER
-  //    (30) — trades that favor the user too heavily still get
-  //    dropped because the partner team would never accept them in
-  //    real life, which wastes the user's time.
+  //   B) The user's own letter grade in the trade must be B- or
+  //      better. The analyzer can say "neither team wins" with a
+  //      50/50 fairness score but still grade the user a C if the
+  //      trade is structurally boring (e.g. pure sidegrade). Those
+  //      don't help the user, so they don't ship.
   //
-  // The trusted analyzer's own fairness rule says anything beyond
-  // diff=10 is meaningfully unfair; we use 5 here on the partner
-  // side to be extra conservative after the user flagged unfair
-  // trades slipping through.
-  const MAX_PARTNER_FAVORED_DIFF = 5;
+  //   C) User-favored trades still capped at diff <= 30 — anything
+  //      beyond that is a robbery the partner won't accept in real
+  //      life, which wastes the user's time.
+  //
+  // Both filters fire before the sort. The resulting list is then
+  // sorted by diff ascending so the most balanced "user-wins" trades
+  // appear first.
   const MAX_USER_FAVORED_DIFF = 30;
+  const ACCEPTABLE_USER_GRADES = new Set([
+    'A+', 'A', 'A-',
+    'B+', 'B', 'B-',
+  ]);
+
   const valid = results.filter((r): r is TradeRecommendation => r != null);
 
   return valid
     .filter((rec) => {
       const { diff, favored } = rec.analysis.fairnessScore;
       const partnerFavored = favored === rec.targetTeamName;
+
+      // (A) Zero-tolerance partner-favored guard
       if (partnerFavored) {
-        if (diff > MAX_PARTNER_FAVORED_DIFF) {
-          console.log(
-            `[tradeFinder] dropped user-hurting trade: diff=${diff} favored=${favored}`
-          );
-          return false;
-        }
-        return true;
+        console.log(
+          `[tradeFinder] dropped partner-favored trade: diff=${diff} favored=${favored}`
+        );
+        return false;
       }
-      // User-favored (or perfectly even): allow up to the upper bound
-      return diff <= MAX_USER_FAVORED_DIFF;
+
+      // (B) User grade must be acceptable
+      const userGrade = rec.analysis.teamGrades.find(
+        (g) => g.team === userTeam.name
+      )?.grade;
+      if (!userGrade || !ACCEPTABLE_USER_GRADES.has(userGrade)) {
+        console.log(
+          `[tradeFinder] dropped trade with weak user grade: ${userGrade ?? 'missing'}`
+        );
+        return false;
+      }
+
+      // (C) User-favored trades capped at diff <= 30
+      if (diff > MAX_USER_FAVORED_DIFF) {
+        console.log(
+          `[tradeFinder] dropped too-lopsided user-favored trade: diff=${diff}`
+        );
+        return false;
+      }
+
+      return true;
     })
     .sort((a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff);
 }
@@ -853,6 +916,13 @@ interface AnalyzeArgs {
   /** Deterministic valuations — used only to surface debug numbers
    *  in the AI prompt for transparency; the AI is still the authority. */
   valuations?: Map<string, PlayerValuation>;
+  /** Real league type — threaded into the analyzer body so dynasty
+   *  trades get dynasty-calibrated grading. */
+  leagueType: 'redraft' | 'dynasty' | 'keeper';
+  /** Pre-fetched enrichment map (season stats, trend, news) keyed by
+   *  lowercase player name. Same data source as the manual /analyze
+   *  route so both grading paths see identical input. */
+  enrichmentByName: Map<string, EnrichedPlayerData>;
 }
 
 function formatPick(pick: DraftPickAsset): string {
@@ -894,6 +964,8 @@ async function analyzeCandidateWithAI(
     factsById,
     context,
     extraUserPicks = [],
+    leagueType,
+    enrichmentByName,
   } = args;
 
   const sendFacts = sendPlayerIds
@@ -940,10 +1012,10 @@ async function analyzeCandidateWithAI(
         ),
       },
     ],
-    // In-season trade finder is effectively redraft. Dynasty users
-    // still get the same analysis since the trusted prompt reasons
-    // about strategy from the facts, not this label alone.
-    leagueType: 'redraft',
+    // Thread the REAL league type so dynasty users get dynasty
+    // calibration (age reasoning, future-value of picks, etc.)
+    // instead of redraft-calibrated grades.
+    leagueType,
     leagueSettings: context.leagueSettings,
   };
 
@@ -954,10 +1026,26 @@ async function analyzeCandidateWithAI(
     players: relevantFacts,
   };
 
-  // Use the shared trusted analyzer to build the trade description
-  // (same formatting the manual /analyze route uses — no enrichment
-  // block, since subsetContext already carries the player facts).
-  const tradeDescription = buildTradeAnalyzerDescription(body, null);
+  // Build the enrichment block (season stats, trend, recent news)
+  // from the pre-fetched enrichment map. This matches the exact
+  // block the manual /analyze route appends — critically including
+  // recent news, which catches "role reduced" / "benched" /
+  // "trade rumor" signals the TradeContext alone doesn't surface.
+  const enrichmentBlocks: string[] = [];
+  const seenEnrichment = new Set<string>();
+  for (const facts of [...sendFacts, ...receiveFacts]) {
+    const key = facts.name.toLowerCase();
+    if (seenEnrichment.has(key)) continue;
+    seenEnrichment.add(key);
+    const enriched = enrichmentByName.get(key);
+    if (enriched) {
+      enrichmentBlocks.push(formatPlayerDataBlock(enriched));
+    }
+  }
+  const enrichmentBlock =
+    enrichmentBlocks.length > 0 ? enrichmentBlocks.join('\n\n') : null;
+
+  const tradeDescription = buildTradeAnalyzerDescription(body, enrichmentBlock);
 
   const outcome = await analyzeTrade({
     anthropicKey,
@@ -970,6 +1058,15 @@ async function analyzeCandidateWithAI(
     console.error('[tradeFinder] verification failed:', outcome.error);
     return null;
   }
+
+  // Raw-response logging so we can investigate when a trade slips
+  // through the filter. Keys included: user team, partner team,
+  // sent/received player names, score, winner, diff. One line.
+  const sendNames = sendFacts.map((p) => p.name).join('+');
+  const recvNames = receiveFacts.map((p) => p.name).join('+');
+  console.log(
+    `[tradeFinder.verify] ${userTeam.name} sends [${sendNames}] -> ${targetTeam.name} sends [${recvNames}] | winner=${outcome.result.winner} score=${outcome.result.fairnessScore.score} favored=${outcome.result.fairnessScore.favored} diff=${outcome.result.fairnessScore.diff}`
+  );
 
   // fit is carried through unchanged so the UI still renders the
   // constructor's "Why it helps you / Why they'd accept" panels.

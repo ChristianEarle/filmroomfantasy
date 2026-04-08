@@ -285,6 +285,7 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
         teamCount: true,
         hasSuperflex: true,
         hasTePremium: true,
+        leagueType: true,
       },
     });
     if (!league) return c.json({ error: 'League not found' }, 404);
@@ -336,6 +337,12 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
       leagueSettings: mergedLeagueSettings,
       seasonYear: league.seasonYear,
       currentWeek: league.currentWeek,
+      // Critical for dynasty users: the trusted analyzer calibrates
+      // differently based on league type (age reasoning, pick value,
+      // future-value vs present-value trade-offs). Previously this
+      // was hardcoded to 'redraft' inside the finder which caused
+      // dynasty trades to grade as fair when they weren't.
+      leagueType: (league.leagueType as 'redraft' | 'dynasty' | 'keeper') ?? 'redraft',
       targetPosition: body.targetPosition ?? null,
       targetTeamId: body.targetTeamId ?? null,
       maxRecommendations: 8,
