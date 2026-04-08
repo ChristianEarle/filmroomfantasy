@@ -5,10 +5,13 @@ import {
   AlertCircle,
   Crown,
   ChevronDown,
+  ChevronRight,
   Sparkles,
   TrendingUp,
   TrendingDown,
   ArrowRight,
+  Plus,
+  X,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -29,11 +32,17 @@ interface TeamNeeds {
   summary: string;
 }
 
+export interface DraftPickAsset {
+  year: number;
+  round: number;
+}
+
 export interface TradeRecommendation {
   targetTeamId: string;
   targetTeamName: string;
   userSends: Array<{ playerId: string; name: string; position: string }>;
   userReceives: Array<{ playerId: string; name: string; position: string }>;
+  userSendsPicks?: DraftPickAsset[];
   analysis: {
     winner: string;
     winnerExplanation: string;
@@ -44,7 +53,36 @@ export interface TradeRecommendation {
   };
 }
 
+interface RosterPlayerBrief {
+  playerId: string;
+  name: string;
+  position: string;
+  slot: string;
+}
+
+interface MyRosterBrief {
+  teamId: string;
+  teamName: string;
+  roster: {
+    starters: RosterPlayerBrief[];
+    bench: RosterPlayerBrief[];
+    ir: RosterPlayerBrief[];
+  };
+}
+
 const LEAGUE_SELECTION_KEY = 'filmroom.tradeAnalyzer.selectedLeagueId';
+
+function formatPickLabel(pick: DraftPickAsset): string {
+  const ord =
+    pick.round === 1
+      ? '1st'
+      : pick.round === 2
+      ? '2nd'
+      : pick.round === 3
+      ? '3rd'
+      : `${pick.round}th`;
+  return `${pick.year} ${ord} Round`;
+}
 
 export function TradeFinderView({
   isDarkMode,
@@ -76,6 +114,17 @@ export function TradeFinderView({
   const [filterPosition, setFilterPosition] = useState<string>('');
   const [filterTeam, setFilterTeam] = useState<string>('');
 
+  // "Trade Assets" filter — optional list of players + picks the user
+  // is willing to give up. Empty means "any asset on my roster".
+  const [assetPlayerIds, setAssetPlayerIds] = useState<string[]>([]);
+  const [assetPicks, setAssetPicks] = useState<DraftPickAsset[]>([]);
+  const [showAssets, setShowAssets] = useState(false);
+  const [pickYear, setPickYear] = useState(String(new Date().getFullYear()));
+  const [pickRound, setPickRound] = useState('1');
+
+  // The user's own roster — needed to populate the asset picker
+  const [myRoster, setMyRoster] = useState<MyRosterBrief | null>(null);
+
   const tierAllowed =
     !!user && (user.subscriptionTier === 'pro' || user.subscriptionTier === 'elite');
 
@@ -99,6 +148,55 @@ export function TradeFinderView({
     fetchNeeds();
   }, [fetchNeeds]);
 
+  // Load the user's own roster so the Trade Assets picker has options.
+  useEffect(() => {
+    if (!selectedLeagueId) {
+      setMyRoster(null);
+      setAssetPlayerIds([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ team: MyRosterBrief }>(`/rosters/${selectedLeagueId}/mine`)
+      .then((data) => {
+        if (!cancelled) setMyRoster(data.team);
+      })
+      .catch(() => {
+        if (!cancelled) setMyRoster(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLeagueId]);
+
+  // If the league changes, reset the asset selection so stale player IDs
+  // from a different league don't leak through.
+  useEffect(() => {
+    setAssetPlayerIds([]);
+    setAssetPicks([]);
+  }, [selectedLeagueId]);
+
+  const addAssetPlayer = (playerId: string) => {
+    setAssetPlayerIds((prev) =>
+      prev.includes(playerId) ? prev : [...prev, playerId]
+    );
+  };
+  const removeAssetPlayer = (playerId: string) => {
+    setAssetPlayerIds((prev) => prev.filter((id) => id !== playerId));
+  };
+  const addAssetPick = () => {
+    const year = parseInt(pickYear, 10);
+    const round = parseInt(pickRound, 10);
+    if (!Number.isFinite(year) || !Number.isFinite(round)) return;
+    setAssetPicks((prev) => {
+      if (prev.some((p) => p.year === year && p.round === round)) return prev;
+      return [...prev, { year, round }];
+    });
+  };
+  const removeAssetPick = (idx: number) => {
+    setAssetPicks((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const fetchRecommendations = async () => {
     if (!selectedLeagueId || !tierAllowed) return;
     setIsLoadingRecs(true);
@@ -110,6 +208,8 @@ export function TradeFinderView({
           leagueId: selectedLeagueId,
           targetPosition: filterPosition || undefined,
           targetTeamId: filterTeam || undefined,
+          userPlayerIds: assetPlayerIds.length > 0 ? assetPlayerIds : undefined,
+          userPicks: assetPicks.length > 0 ? assetPicks : undefined,
         }
       );
       setRecommendations(data.recommendations);
@@ -383,7 +483,7 @@ export function TradeFinderView({
       {/* Filters + Find button */}
       {selectedLeagueId && (
         <div
-          className={`rounded-xl border p-4 space-y-3 ${
+          className={`rounded-xl border p-4 space-y-4 ${
             isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
           }`}
         >
@@ -413,6 +513,209 @@ export function TradeFinderView({
               </select>
             </div>
           </div>
+
+          {/* Trade Assets picker (optional) */}
+          <div
+            className={`border-t pt-3 ${
+              isDarkMode ? 'border-slate-800' : 'border-slate-200'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setShowAssets((v) => !v)}
+              className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${
+                isDarkMode
+                  ? 'text-slate-400 hover:text-slate-300'
+                  : 'text-slate-500 hover:text-slate-600'
+              }`}
+            >
+              {showAssets ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+              Trade Assets (optional)
+              {assetPlayerIds.length + assetPicks.length > 0 && (
+                <span
+                  className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    isDarkMode
+                      ? 'bg-blue-500/20 text-blue-300'
+                      : 'bg-blue-50 text-blue-700'
+                  }`}
+                >
+                  {assetPlayerIds.length + assetPicks.length}
+                </span>
+              )}
+            </button>
+            {showAssets && (
+              <div className="mt-3 space-y-3">
+                <p
+                  className={`text-xs ${
+                    isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                  }`}
+                >
+                  Specify players and picks you'd give up. The finder will
+                  only return trades that use one of these on your side. Leave
+                  empty to let the finder pick from your full roster.
+                </p>
+
+                {/* Selected chips */}
+                {(assetPlayerIds.length > 0 || assetPicks.length > 0) && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {assetPlayerIds.map((pid) => {
+                      const player = [
+                        ...(myRoster?.roster.starters || []),
+                        ...(myRoster?.roster.bench || []),
+                        ...(myRoster?.roster.ir || []),
+                      ].find((p) => p.playerId === pid);
+                      if (!player) return null;
+                      return (
+                        <span
+                          key={pid}
+                          className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+                            isDarkMode
+                              ? 'bg-blue-500/20 text-blue-200'
+                              : 'bg-blue-50 text-blue-800'
+                          }`}
+                        >
+                          <span className="text-[9px] opacity-70">
+                            {player.position}
+                          </span>
+                          {player.name}
+                          <button
+                            type="button"
+                            onClick={() => removeAssetPlayer(pid)}
+                            className="hover:opacity-70"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                    {assetPicks.map((pick, i) => (
+                      <span
+                        key={`pick-${i}`}
+                        className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+                          isDarkMode
+                            ? 'bg-amber-500/20 text-amber-200'
+                            : 'bg-amber-50 text-amber-800'
+                        }`}
+                      >
+                        <span className="text-[9px] opacity-70">PICK</span>
+                        {formatPickLabel(pick)}
+                        <button
+                          type="button"
+                          onClick={() => removeAssetPick(i)}
+                          className="hover:opacity-70"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add a player from roster */}
+                <div>
+                  <label
+                    className={`block text-[10px] font-bold uppercase mb-1 ${
+                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                  >
+                    Add player from your roster
+                  </label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        addAssetPlayer(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    disabled={!myRoster}
+                    className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                      isDarkMode
+                        ? 'bg-slate-800 border-slate-600 text-white'
+                        : 'bg-white border-slate-300 text-slate-900'
+                    } outline-none disabled:opacity-50`}
+                  >
+                    <option value="">
+                      {myRoster
+                        ? 'Select a player...'
+                        : 'Loading your roster...'}
+                    </option>
+                    {myRoster &&
+                      [
+                        ...myRoster.roster.starters,
+                        ...myRoster.roster.bench,
+                      ]
+                        .filter((p) => !assetPlayerIds.includes(p.playerId))
+                        .map((p) => (
+                          <option key={p.playerId} value={p.playerId}>
+                            {p.position} • {p.name}
+                            {p.slot && p.slot !== 'BN' ? ` (${p.slot})` : ''}
+                          </option>
+                        ))}
+                  </select>
+                </div>
+
+                {/* Add a draft pick */}
+                <div>
+                  <label
+                    className={`block text-[10px] font-bold uppercase mb-1 ${
+                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                  >
+                    Add a draft pick
+                  </label>
+                  <div className="flex gap-2 items-center flex-wrap">
+                    <select
+                      value={pickYear}
+                      onChange={(e) => setPickYear(e.target.value)}
+                      className={`px-2 py-1.5 text-sm rounded-lg border ${
+                        isDarkMode
+                          ? 'bg-slate-800 border-slate-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-900'
+                      } outline-none`}
+                    >
+                      {[0, 1, 2, 3].map((offset) => {
+                        const y = new Date().getFullYear() + offset;
+                        return (
+                          <option key={y} value={y}>
+                            {y}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <select
+                      value={pickRound}
+                      onChange={(e) => setPickRound(e.target.value)}
+                      className={`px-2 py-1.5 text-sm rounded-lg border ${
+                        isDarkMode
+                          ? 'bg-slate-800 border-slate-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-900'
+                      } outline-none`}
+                    >
+                      {[1, 2, 3, 4, 5].map((r) => (
+                        <option key={r} value={r}>
+                          Round {r}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={addAssetPick}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add Pick
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={fetchRecommendations}
@@ -504,6 +807,17 @@ export function TradeFinderView({
                       >
                         <span className="text-xs opacity-70 mr-1">{p.position}</span>
                         {p.name}
+                      </p>
+                    ))}
+                    {rec.userSendsPicks?.map((pick, i) => (
+                      <p
+                        key={`pick-${i}`}
+                        className={
+                          isDarkMode ? 'text-amber-300' : 'text-amber-700'
+                        }
+                      >
+                        <span className="text-xs opacity-70 mr-1">PICK</span>
+                        {formatPickLabel(pick)}
                       </p>
                     ))}
                   </div>

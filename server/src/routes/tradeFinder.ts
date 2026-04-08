@@ -218,6 +218,12 @@ interface RecommendationsBody {
   targetPosition?: string;
   targetTeamId?: string;
   leagueSettings?: Partial<LeagueSettings>;
+  /** Optional: restrict the user's send-side candidate pool to these
+   *  player ids (must be on their roster). */
+  userPlayerIds?: string[];
+  /** Optional: draft picks the user is willing to throw in. Attached
+   *  to every surviving candidate. */
+  userPicks?: Array<{ year: number; round: number }>;
 }
 
 tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
@@ -283,9 +289,19 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
     });
     if (!league) return c.json({ error: 'League not found' }, 404);
 
-    // Cache key: per (league, user team, filters, week, day)
+    // Cache key: per (league, user team, filters, week, day). Include
+    // the asset filter in the key so different "must-include" sets don't
+    // collide with each other.
     const todayKey = new Date().toISOString().slice(0, 10);
-    const filterKey = `${body.targetPosition || 'any'}-${body.targetTeamId || 'any'}`;
+    const sortedPlayerIds = [...(body.userPlayerIds ?? [])].sort();
+    const sortedPicks = [...(body.userPicks ?? [])]
+      .map((p) => `${p.year}-${p.round}`)
+      .sort();
+    const assetKey =
+      sortedPlayerIds.length === 0 && sortedPicks.length === 0
+        ? 'any'
+        : `p[${sortedPlayerIds.join(',')}]|pk[${sortedPicks.join(',')}]`;
+    const filterKey = `${body.targetPosition || 'any'}-${body.targetTeamId || 'any'}-${assetKey}`;
     const cacheKey = new Request(
       `https://cache.local/trade-finder/recs/${league.id}/${userTeam.id}/${league.currentWeek}/${filterKey}/${todayKey}`
     );
@@ -323,6 +339,8 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
       targetPosition: body.targetPosition ?? null,
       targetTeamId: body.targetTeamId ?? null,
       maxRecommendations: 8,
+      userPlayerIds: body.userPlayerIds ?? null,
+      userPicks: body.userPicks ?? null,
     });
 
     const response = new Response(JSON.stringify({ recommendations }), {
