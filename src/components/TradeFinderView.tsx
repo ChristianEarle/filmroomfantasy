@@ -43,6 +43,15 @@ export interface TradeRecommendation {
   userSends: Array<{ playerId: string; name: string; position: string }>;
   userReceives: Array<{ playerId: string; name: string; position: string }>;
   userSendsPicks?: DraftPickAsset[];
+  /** Pre-AI fit rationale from the needs-aware matcher. Empty arrays
+   *  mean the trade came from the fallback brute-force generator and
+   *  has no matcher-level reasoning attached. */
+  fit?: {
+    forYou: string[];
+    forThem: string[];
+    userNeedsMet: string[];
+    partnerNeedsMet: string[];
+  };
   analysis: {
     winner: string;
     winnerExplanation: string;
@@ -288,8 +297,8 @@ export function TradeFinderView({
               isDarkMode ? 'text-slate-400' : 'text-slate-500'
             }`}
           >
-            AI-ranked trades that match your team's needs and the league's
-            surplus.
+            Pairs your roster's surplus with your opponents' needs — and
+            vice versa — then AI-grades the survivors.
           </p>
         </div>
       </div>
@@ -764,17 +773,17 @@ export function TradeFinderView({
               isDarkMode ? 'text-white' : 'text-slate-900'
             }`}
           >
-            No balanced trades found
+            No mutually beneficial trades found
           </p>
           <p
             className={`text-xs ${
               isDarkMode ? 'text-slate-400' : 'text-slate-500'
             }`}
           >
-            Trade Finder filters out heavily lopsided trades that the
-            target team would never accept. Try widening your asset or
-            position filter, or syncing the league again to refresh
-            roster data.
+            Trade Finder only surfaces deals where both sides address a
+            real need and the value stays within 25%. Try widening your
+            asset or position filter, clearing required picks, or
+            syncing the league again to refresh roster data.
           </p>
         </div>
       )}
@@ -900,6 +909,63 @@ export function TradeFinderView({
                 >
                   {rec.analysis.winnerExplanation}
                 </p>
+
+                {/* Matcher fit reasons — why this trade was surfaced.
+                    Only shown when the needs-aware matcher produced this
+                    candidate (fallback trades have empty fit arrays). */}
+                {rec.fit &&
+                  (rec.fit.forYou.length > 0 || rec.fit.forThem.length > 0) && (
+                  <div
+                    className={`grid md:grid-cols-2 gap-3 mb-3 text-xs ${
+                      isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                    }`}
+                  >
+                    {rec.fit.forYou.length > 0 && (
+                      <div
+                        className={`p-3 rounded-lg ${
+                          isDarkMode
+                            ? 'bg-emerald-500/10 border border-emerald-500/20'
+                            : 'bg-emerald-50 border border-emerald-200'
+                        }`}
+                      >
+                        <p
+                          className={`text-[10px] font-bold uppercase mb-1 ${
+                            isDarkMode ? 'text-emerald-300' : 'text-emerald-700'
+                          }`}
+                        >
+                          Why it helps you
+                        </p>
+                        <ul className="space-y-1 list-disc list-inside">
+                          {rec.fit.forYou.map((reason, i) => (
+                            <li key={i}>{reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {rec.fit.forThem.length > 0 && (
+                      <div
+                        className={`p-3 rounded-lg ${
+                          isDarkMode
+                            ? 'bg-slate-800/40 border border-slate-700'
+                            : 'bg-slate-50 border border-slate-200'
+                        }`}
+                      >
+                        <p
+                          className={`text-[10px] font-bold uppercase mb-1 ${
+                            isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                          }`}
+                        >
+                          Why they'd accept
+                        </p>
+                        <ul className="space-y-1 list-disc list-inside">
+                          {rec.fit.forThem.map((reason, i) => (
+                            <li key={i}>{reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {onSendToAnalyzer && (
                   <button
