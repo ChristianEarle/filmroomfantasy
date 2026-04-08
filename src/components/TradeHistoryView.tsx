@@ -60,62 +60,6 @@ interface TradeOutcome {
   sides: TradeOutcomeSide[];
 }
 
-interface DeterministicGradeSide {
-  teamId: string;
-  teamName: string;
-  grade: string; // 'A+' .. 'F' or 'PENDING'
-  fairnessScore: number;
-  differential: number;
-  sentTotal: number;
-  receivedTotal: number;
-}
-
-interface DeterministicGrade {
-  status: 'graded' | 'pending';
-  pendingReason?: string;
-  sides: DeterministicGradeSide[];
-  hasDraftPicks: boolean;
-  pickAssets: Array<{
-    fromTeamId: string;
-    toTeamId: string;
-    year: number;
-    round: number;
-  }>;
-  weeksEvaluated: number;
-}
-
-interface LineupImpact {
-  status: 'graded' | 'pending';
-  pendingReason?: string;
-  teamId: string;
-  teamName: string;
-  weeksEvaluated: number;
-  withTradePoints: number;
-  withoutTradePoints: number;
-  delta: number;
-  deltaPerWeek: number;
-  grade: string;
-  fairnessScore: number;
-  weeklyBreakdown: Array<{
-    week: number;
-    withPoints: number;
-    withoutPoints: number;
-    delta: number;
-  }>;
-  hasDraftPicks: boolean;
-}
-
-interface AiInsight {
-  headline: string;
-  luckVsSkill: string;
-  whatWorked: string[];
-  whatDidntWork: string[];
-  hindsightCall: string;
-  nextTimeLesson: string;
-  pending?: boolean;
-  reason?: string;
-}
-
 interface HistoricalTrade {
   id: string;
   source: string;
@@ -123,10 +67,17 @@ interface HistoricalTrade {
   executedAt: string | null;
   seasonYear: number | null;
   weekExecuted: number | null;
-  deterministicGrade: DeterministicGrade | null;
-  lineupImpact: LineupImpact | null;
-  aiInsight: AiInsight | null;
-  aiInsightAt: string | null;
+  aiGrade: string | null;
+  aiFairnessScore: number | null;
+  aiGradedAt: string | null;
+  aiAnalysis: {
+    winner: string;
+    winnerExplanation: string;
+    teamGrades: Array<{ team: string; grade: string; summary: string }>;
+    fairnessScore?: { score: number; diff: number; favored: string };
+    improvements?: string[];
+    keyFactors?: string[];
+  } | null;
   sides: TradeSide[];
   outcome: TradeOutcome | null;
 }
@@ -230,14 +181,14 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
     }
   };
 
-  const handleInsight = async (tradeId: string) => {
+  const handleGrade = async (tradeId: string) => {
     if (!gradingAllowed) return;
     setGradingId(tradeId);
     try {
-      await api.post(`/trade-history/insight/${tradeId}`);
+      await api.post(`/trade-history/grade/${tradeId}`);
       await fetchAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Post-mortem failed.');
+      setError(err instanceof Error ? err.message : 'Grading failed.');
     } finally {
       setGradingId(null);
     }
@@ -569,43 +520,17 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                         {dateStr}
                         {t.weekExecuted ? ` • Week ${t.weekExecuted}` : ''}
                       </span>
-                      {t.lineupImpact?.status === 'graded' ? (
+                      {t.aiGrade && (
                         <span
                           className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
                             isDarkMode
                               ? 'bg-blue-500/20 text-blue-300'
                               : 'bg-blue-50 text-blue-700'
                           }`}
-                          title={`Lineup impact: ${t.lineupImpact.delta >= 0 ? '+' : ''}${t.lineupImpact.delta} pts over ${t.lineupImpact.weeksEvaluated} weeks`}
                         >
-                          Grade: {t.lineupImpact.grade}
+                          AI: {t.aiGrade}
                         </span>
-                      ) : t.deterministicGrade?.status === 'graded' ? (
-                        <span
-                          className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                            isDarkMode
-                              ? 'bg-blue-500/20 text-blue-300'
-                              : 'bg-blue-50 text-blue-700'
-                          }`}
-                          title="Deterministic grade from actual post-trade points"
-                        >
-                          Grade:{' '}
-                          {t.deterministicGrade.sides
-                            .map((s) => `${s.teamName.slice(0, 3)} ${s.grade}`)
-                            .join(' / ')}
-                        </span>
-                      ) : t.deterministicGrade?.status === 'pending' ? (
-                        <span
-                          className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                            isDarkMode
-                              ? 'bg-amber-500/20 text-amber-300'
-                              : 'bg-amber-50 text-amber-700'
-                          }`}
-                          title={t.deterministicGrade.pendingReason}
-                        >
-                          Pending
-                        </span>
-                      ) : null}
+                      )}
                     </div>
                     <div
                       className={`text-sm mt-1 ${
@@ -724,110 +649,8 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                       </div>
                     )}
 
-                    {/* Lineup impact block — the rich deterministic grade */}
-                    {t.lineupImpact?.status === 'graded' && (
-                      <div
-                        className={`p-3 rounded-lg text-sm ${
-                          isDarkMode
-                            ? 'bg-slate-800/50 border border-slate-700'
-                            : 'bg-slate-50 border border-slate-200'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-                          <p
-                            className={`font-semibold ${
-                              isDarkMode ? 'text-white' : 'text-slate-900'
-                            }`}
-                          >
-                            Best-lineup comparison for {t.lineupImpact.teamName}
-                          </p>
-                          <span
-                            className={`text-xs font-bold px-2 py-0.5 rounded ${
-                              t.lineupImpact.delta >= 0
-                                ? isDarkMode
-                                  ? 'bg-emerald-500/20 text-emerald-300'
-                                  : 'bg-emerald-50 text-emerald-700'
-                                : isDarkMode
-                                ? 'bg-red-500/20 text-red-300'
-                                : 'bg-red-50 text-red-700'
-                            }`}
-                          >
-                            {t.lineupImpact.grade} •{' '}
-                            {t.lineupImpact.delta >= 0 ? '+' : ''}
-                            {t.lineupImpact.delta} pts
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                          <div>
-                            <p
-                              className={
-                                isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                              }
-                            >
-                              Optimal with trade
-                            </p>
-                            <p
-                              className={`text-lg font-semibold ${
-                                isDarkMode ? 'text-white' : 'text-slate-900'
-                              }`}
-                            >
-                              {t.lineupImpact.withTradePoints}
-                            </p>
-                          </div>
-                          <div>
-                            <p
-                              className={
-                                isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                              }
-                            >
-                              Optimal without trade
-                            </p>
-                            <p
-                              className={`text-lg font-semibold ${
-                                isDarkMode ? 'text-white' : 'text-slate-900'
-                              }`}
-                            >
-                              {t.lineupImpact.withoutTradePoints}
-                            </p>
-                          </div>
-                        </div>
-                        <p
-                          className={`text-[10px] mt-2 ${
-                            isDarkMode ? 'text-slate-500' : 'text-slate-400'
-                          }`}
-                        >
-                          {t.lineupImpact.weeksEvaluated} week
-                          {t.lineupImpact.weeksEvaluated === 1 ? '' : 's'}{' '}
-                          evaluated •{' '}
-                          {t.lineupImpact.deltaPerWeek >= 0 ? '+' : ''}
-                          {t.lineupImpact.deltaPerWeek} pts/wk
-                          {t.lineupImpact.hasDraftPicks &&
-                            ' • draft picks not scored'}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Pending state */}
-                    {(t.deterministicGrade?.status === 'pending' ||
-                      t.lineupImpact?.status === 'pending') &&
-                      !t.lineupImpact?.weeksEvaluated && (
-                        <div
-                          className={`p-3 rounded-lg text-sm ${
-                            isDarkMode
-                              ? 'bg-amber-500/10 border border-amber-500/20 text-amber-300'
-                              : 'bg-amber-50 border border-amber-200 text-amber-800'
-                          }`}
-                        >
-                          <p className="font-semibold mb-1">Not gradable yet</p>
-                          <p className="text-xs">
-                            {t.lineupImpact?.pendingReason ||
-                              t.deterministicGrade?.pendingReason}
-                          </p>
-                        </div>
-                      )}
-
-                    {/* AI post-mortem (if cached) */}
-                    {t.aiInsight && !t.aiInsight.pending && (
+                    {/* AI analysis (if graded) */}
+                    {t.aiAnalysis ? (
                       <div
                         className={`p-3 rounded-lg text-sm ${
                           isDarkMode
@@ -835,132 +658,56 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                             : 'bg-blue-50 border border-blue-200'
                         }`}
                       >
-                        <div className="flex items-center gap-1 mb-2">
-                          <Sparkles
-                            className={`w-3 h-3 ${
-                              isDarkMode ? 'text-blue-400' : 'text-blue-600'
-                            }`}
-                          />
-                          <p
-                            className={`text-[10px] font-bold uppercase tracking-wide ${
-                              isDarkMode ? 'text-blue-300' : 'text-blue-700'
-                            }`}
-                          >
-                            AI Post-mortem
-                          </p>
-                        </div>
                         <p
-                          className={`font-semibold mb-2 ${
-                            isDarkMode ? 'text-blue-100' : 'text-blue-900'
+                          className={`font-semibold mb-1 ${
+                            isDarkMode ? 'text-blue-200' : 'text-blue-900'
                           }`}
                         >
-                          {t.aiInsight.headline}
+                          AI Winner: {t.aiAnalysis.winner}
                         </p>
                         <p
-                          className={`text-xs mb-2 ${
+                          className={`text-xs ${
                             isDarkMode ? 'text-slate-300' : 'text-slate-700'
                           }`}
                         >
-                          <span className="font-semibold">Luck vs skill: </span>
-                          {t.aiInsight.luckVsSkill}
-                        </p>
-                        {t.aiInsight.whatWorked.length > 0 && (
-                          <div className="mb-1">
-                            <p
-                              className={`text-[10px] font-bold uppercase ${
-                                isDarkMode ? 'text-emerald-400' : 'text-emerald-700'
-                              }`}
-                            >
-                              What worked
-                            </p>
-                            <ul
-                              className={`text-xs list-disc list-inside ${
-                                isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                              }`}
-                            >
-                              {t.aiInsight.whatWorked.map((w, i) => (
-                                <li key={i}>{w}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {t.aiInsight.whatDidntWork.length > 0 && (
-                          <div className="mb-1">
-                            <p
-                              className={`text-[10px] font-bold uppercase ${
-                                isDarkMode ? 'text-red-400' : 'text-red-700'
-                              }`}
-                            >
-                              What didn't
-                            </p>
-                            <ul
-                              className={`text-xs list-disc list-inside ${
-                                isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                              }`}
-                            >
-                              {t.aiInsight.whatDidntWork.map((w, i) => (
-                                <li key={i}>{w}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        <p
-                          className={`text-xs mt-2 ${
-                            isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                          }`}
-                        >
-                          <span className="font-semibold">In hindsight: </span>
-                          {t.aiInsight.hindsightCall}
-                        </p>
-                        <p
-                          className={`text-xs mt-1 italic ${
-                            isDarkMode ? 'text-slate-400' : 'text-slate-600'
-                          }`}
-                        >
-                          {t.aiInsight.nextTimeLesson}
+                          {t.aiAnalysis.winnerExplanation}
                         </p>
                       </div>
-                    )}
-
-                    {/* Get AI post-mortem button (Pro/Elite, only if graded) */}
-                    {!t.aiInsight &&
-                      (t.lineupImpact?.status === 'graded' ||
-                        t.deterministicGrade?.status === 'graded') && (
-                        <div>
-                          <button
-                            type="button"
-                            onClick={() => handleInsight(t.id)}
-                            disabled={!gradingAllowed || gradingId === t.id}
-                            className={`inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
-                              !gradingAllowed
-                                ? isDarkMode
-                                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                : 'bg-blue-600 text-white hover:bg-blue-700'
-                            } ${gradingId === t.id ? 'opacity-50' : ''}`}
-                          >
-                            {gradingId === t.id ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Sparkles className="w-3 h-3" />
-                            )}
-                            Get AI post-mortem
-                            {!gradingAllowed && (
-                              <Crown className="w-3 h-3 text-amber-400" />
-                            )}
-                          </button>
-                          {!gradingAllowed && (
-                            <p
-                              className={`text-[10px] mt-1 ${
-                                isDarkMode ? 'text-slate-500' : 'text-slate-400'
-                              }`}
-                            >
-                              The letter grade above is free. The AI post-mortem
-                              (luck-vs-skill analysis) is Pro/Elite.
-                            </p>
+                    ) : (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => handleGrade(t.id)}
+                          disabled={!gradingAllowed || gradingId === t.id}
+                          className={`inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+                            !gradingAllowed
+                              ? isDarkMode
+                                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          } ${gradingId === t.id ? 'opacity-50' : ''}`}
+                        >
+                          {gradingId === t.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3 h-3" />
                           )}
-                        </div>
-                      )}
+                          Grade this trade with AI
+                          {!gradingAllowed && (
+                            <Crown className="w-3 h-3 text-amber-400" />
+                          )}
+                        </button>
+                        {!gradingAllowed && (
+                          <p
+                            className={`text-[10px] mt-1 ${
+                              isDarkMode ? 'text-slate-500' : 'text-slate-400'
+                            }`}
+                          >
+                            Retroactive grading is a Pro/Elite feature.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
