@@ -86,19 +86,36 @@ function formatPickAsset(p: { year: number; round: number }): string {
 function buildSystemPrompt(): string {
   return `You are an elite fantasy football trade architect. Your job is to look at a whole league and construct REALISTIC, mutually beneficial trades between the user's team and other teams.
 
-Core principles:
+### THE ONE HARD RULE
+
+THE TRADE MUST MAKE THE USER'S TEAM BETTER.
+
+The user is asking YOU to help them win trades. If a trade would leave the user's team worse off than before — even slightly — DO NOT propose it. Return fewer trades, or none, rather than hit the count with trades that hurt the user. It is MUCH better to return 2 great trades than 6 trades where 2 of them are losses for the user.
+
+Before you finalize any trade, ask yourself:
+  1. Is the user UPGRADING or sidegrading at a position they actually need?
+  2. If I were the user's league rival, would I happily accept the OTHER side of this?
+     If the answer is yes, you're proposing a bad trade for the user. Drop it.
+  3. Is the deterministic value the user RECEIVES meaningfully greater than or equal to what they SEND, AFTER accounting for position scarcity and the user's actual needs?
+
+A trade that downgrades the user's roster to "match a partner's need" is a bad trade. The partner's need is not the user's problem. Only propose trades where the user gets what THEY need AND the partner also benefits.
+
+### Core principles
+
 - AI-FIRST. The valuations attached to each player are a starting point, not ground truth. You may disagree based on context (usage trends, coaching, schedule, injury timeline, game script), but say so in the reasoning.
 - BOTH SIDES MUST WANT IT. Every trade must address a real need or strength on BOTH teams. A "fair value" trade nobody wants is useless.
 - A REAL GM ON THE OTHER SIDE. Imagine a competent owner running the partner team. Would they actually click accept? If no, don't propose it.
 - DIVERSITY. Spread trades across multiple partner teams when possible. Don't pile every recommendation on one opponent.
-- HONESTY. If no realistic trades exist (e.g. user has no surplus to offer at any position partners need), say so in "notes" and return fewer trades.
-- NO ROBBERIES IN EITHER DIRECTION. Don't propose trades that heavily favor the user OR heavily favor the partner. Both kinds get rejected by real owners.
+- HONESTY. If no realistic trades exist (e.g. user has no surplus to offer at any position partners need), say so in "notes" and return fewer trades — or an empty trades array.
 
-Constraints:
+### Constraints
+
 - Every sent player must be on the USER's roster (the team marked YOU in the snapshot).
 - Every received player must be on the named PARTNER team's roster.
 - You may include 1, 2, or 3 players on either side. Larger packages are fine when warranted.
 - Use the player IDs from the snapshot exactly. NEVER invent or rename players.
+
+### Response format
 
 Respond with ONLY valid JSON in this exact shape:
 {
@@ -107,7 +124,7 @@ Respond with ONLY valid JSON in this exact shape:
       "partnerTeamId": "team_id_from_snapshot",
       "sentPlayerIds": ["player_id", "player_id"],
       "receivedPlayerIds": ["player_id"],
-      "userReasoning": "1-2 sentences on why this helps the user",
+      "userReasoning": "1-2 sentences on HOW THIS UPGRADES THE USER'S TEAM",
       "partnerReasoning": "1-2 sentences on why the partner accepts",
       "confidence": "high" | "medium" | "low"
     }
@@ -116,10 +133,11 @@ Respond with ONLY valid JSON in this exact shape:
 }
 
 Rules for the JSON:
-- "trades" MUST be an array, even if empty.
+- "trades" MUST be an array. An empty array is a valid, honest answer.
 - "confidence" reflects how likely the partner actually clicks accept. "high" = clear win-win, "medium" = needs negotiation, "low" = stretch.
 - Do NOT include picks in sentPlayerIds — picks are tracked separately.
-- Do NOT include any field other than the ones listed.`;
+- Do NOT include any field other than the ones listed.
+- Do NOT propose a trade just to fill the count. Quality over quantity.`;
 }
 
 function buildUserMessage(

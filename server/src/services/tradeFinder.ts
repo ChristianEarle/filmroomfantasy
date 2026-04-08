@@ -77,6 +77,12 @@ import {
 import {
   type LeagueContextSnapshot,
 } from './leagueContextFormatter';
+import {
+  analyzeTrade,
+  buildTradeDescription as buildTradeAnalyzerDescription,
+  type AnalyzeTradeBody,
+  type TradeAssetInput as TradeAnalyzerAssetInput,
+} from './tradeAnalyzer';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -529,18 +535,45 @@ export async function findTradeRecommendations(
     )
   );
 
-  // 8. Post-process: drop wildly unfair trades and sort by fairness.
+  // 8. Post-process: asymmetric fairness filter + sort.
   //
-  // Because the matcher already enforces a 25% value tolerance AND
-  // needs-mutual-benefit, the AI almost never returns a "robbery"
-  // now. We keep a looser MAX_FAIRNESS_DIFF (30) as a belt-and-braces
-  // filter — anything beyond that is truly one-sided and would be
-  // rejected in real life.
-  const MAX_FAIRNESS_DIFF = 30;
+  // The Trade Finder exists to help the user WIN trades, not lose
+  // them. So the guard is intentionally asymmetric:
+  //
+  //  - If the partner is favored by ANYTHING beyond a coin flip
+  //    (diff > 5 and favored === partner), DROP the trade. The user
+  //    asked us to find trades; we will not surface ones that hurt
+  //    them.
+  //
+  //  - If the user is favored, allow up to MAX_FAIRNESS_DIFF_USER
+  //    (30) — trades that favor the user too heavily still get
+  //    dropped because the partner team would never accept them in
+  //    real life, which wastes the user's time.
+  //
+  // The trusted analyzer's own fairness rule says anything beyond
+  // diff=10 is meaningfully unfair; we use 5 here on the partner
+  // side to be extra conservative after the user flagged unfair
+  // trades slipping through.
+  const MAX_PARTNER_FAVORED_DIFF = 5;
+  const MAX_USER_FAVORED_DIFF = 30;
   const valid = results.filter((r): r is TradeRecommendation => r != null);
 
   return valid
-    .filter((rec) => rec.analysis.fairnessScore.diff <= MAX_FAIRNESS_DIFF)
+    .filter((rec) => {
+      const { diff, favored } = rec.analysis.fairnessScore;
+      const partnerFavored = favored === rec.targetTeamName;
+      if (partnerFavored) {
+        if (diff > MAX_PARTNER_FAVORED_DIFF) {
+          console.log(
+            `[tradeFinder] dropped user-hurting trade: diff=${diff} favored=${favored}`
+          );
+          return false;
+        }
+        return true;
+      }
+      // User-favored (or perfectly even): allow up to the upper bound
+      return diff <= MAX_USER_FAVORED_DIFF;
+    })
     .sort((a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff);
 }
 
@@ -834,6 +867,20 @@ function formatPick(pick: DraftPickAsset): string {
   return `${pick.year} ${ord} Round Pick`;
 }
 
+/**
+ * Verify a candidate trade by running it through the TRUSTED analyzer
+ * — the exact same AI prompt and validation logic as the manual
+ * /analyze route. The trusted analyzer knows nothing about the
+ * upstream constructor, matcher, or fit reasons — it grades the trade
+ * on its own merits and will tell us when a proposed trade hurts
+ * the user even if the constructor thought it was fair.
+ *
+ * The `fit` argument is preserved on the returned TradeRecommendation
+ * (so the UI still shows the constructor's reasoning) but is NEVER
+ * passed to the trusted analyzer itself. This avoids the defense
+ * bias we were seeing where the verification pass would agree with
+ * the upstream reasoning instead of evaluating skeptically.
+ */
 async function analyzeCandidateWithAI(
   args: AnalyzeArgs
 ): Promise<TradeRecommendation | null> {
@@ -856,17 +903,49 @@ async function analyzeCandidateWithAI(
     .map((id) => factsById.get(id))
     .filter((p): p is PlayerFacts => p != null);
 
-  const sendPlayerLabels = sendFacts.map(
-    (p) => `${p.name} (${p.position}, ${p.nflTeam})`
-  );
-  const sendPickLabels = extraUserPicks.map(formatPick);
-  const sendLabels = [...sendPlayerLabels, ...sendPickLabels];
-
-  const tradeDescription =
-    `${userTeam.name} sends: ${sendLabels.join(', ') || '(nothing)'}\n` +
-    `${targetTeam.name} sends: ${receiveFacts
-      .map((p) => `${p.name} (${p.position}, ${p.nflTeam})`)
-      .join(', ')}`;
+  // Build the AnalyzeTradeBody shape the trusted analyzer expects.
+  // Team labels use the actual team names from the league — the
+  // analyzer validates that its response references these exact
+  // labels, which catches any team-name hallucinations.
+  const body: AnalyzeTradeBody = {
+    teams: [
+      {
+        label: userTeam.name,
+        sends: [
+          ...sendFacts.map(
+            (p): TradeAnalyzerAssetInput => ({
+              type: 'player',
+              name: p.name,
+              position: p.position,
+              team: p.nflTeam,
+            })
+          ),
+          ...extraUserPicks.map(
+            (pick): TradeAnalyzerAssetInput => ({
+              type: 'pick',
+              name: formatPick(pick),
+            })
+          ),
+        ],
+      },
+      {
+        label: targetTeam.name,
+        sends: receiveFacts.map(
+          (p): TradeAnalyzerAssetInput => ({
+            type: 'player',
+            name: p.name,
+            position: p.position,
+            team: p.nflTeam,
+          })
+        ),
+      },
+    ],
+    // In-season trade finder is effectively redraft. Dynasty users
+    // still get the same analysis since the trusted prompt reasons
+    // about strategy from the facts, not this label alone.
+    leagueType: 'redraft',
+    leagueSettings: context.leagueSettings,
+  };
 
   // Build a subset TradeContext containing only the players in this trade
   const relevantFacts = [...sendFacts, ...receiveFacts];
@@ -875,117 +954,40 @@ async function analyzeCandidateWithAI(
     players: relevantFacts,
   };
 
-  // If the matcher produced fit reasons, format them into a block the
-  // AI can reference. The AI is free to agree or disagree — these are
-  // hints, not facts.
-  const hasFitReasons =
-    fit.forYou.length > 0 || fit.forThem.length > 0 ||
-    fit.userNeedsMet.length > 0 || fit.partnerNeedsMet.length > 0;
-  const fitBlock = hasFitReasons
-    ? `\n--- MATCHER RATIONALE (why this trade was surfaced) ---\n` +
-      (fit.forYou.length > 0
-        ? `Reasons for ${userTeam.name}:\n${fit.forYou.map((r) => `  - ${r}`).join('\n')}\n`
-        : '') +
-      (fit.forThem.length > 0
-        ? `Reasons for ${targetTeam.name}:\n${fit.forThem.map((r) => `  - ${r}`).join('\n')}\n`
-        : '') +
-      (fit.userNeedsMet.length > 0
-        ? `Positions addressed for ${userTeam.name}: ${fit.userNeedsMet.join(', ')}\n`
-        : '') +
-      (fit.partnerNeedsMet.length > 0
-        ? `Positions addressed for ${targetTeam.name}: ${fit.partnerNeedsMet.join(', ')}\n`
-        : '') +
-      `Note: the matcher uses a deterministic surplus/need model. You are the final judge — agree or disagree with the rationale based on the player facts.\n`
-    : '';
+  // Use the shared trusted analyzer to build the trade description
+  // (same formatting the manual /analyze route uses — no enrichment
+  // block, since subsetContext already carries the player facts).
+  const tradeDescription = buildTradeAnalyzerDescription(body, null);
 
-  const systemPrompt = `You are an expert fantasy football trade analyst running the VERIFICATION PASS on a trade that was constructed by an upstream architect. Your job is to grade fairness independently and honestly — not to validate the architect's reasoning.
+  const outcome = await analyzeTrade({
+    anthropicKey,
+    body,
+    tradeDescription,
+    tradeContext: subsetContext,
+  });
 
-Apply the same AI-first principles you always use: no rigid rules, reason about context, use the TRADE CONTEXT facts as ground truth.
-
-The "MATCHER RATIONALE" block (when present) shows what the upstream architect or matcher said about the trade. Treat it as a HINT — you may confirm, refine, or reject it. Your fairness score and winner judgment are what the user sees, not the architect's. If the upstream reasoning is wrong, say so in your winnerExplanation.
-
-Respond with ONLY valid JSON:
-{
-  "winner": "Team name (must match an input team name exactly)",
-  "winnerExplanation": "2 sentences",
-  "teamGrades": [{ "team": "...", "grade": "A+..F", "summary": "..." }],
-  "fairnessScore": { "score": 0-100, "diff": 0, "favored": "..." },
-  "improvements": ["..."],
-  "keyFactors": ["factor 1", "factor 2"]
-}
-
-Teams in this trade: ${userTeam.name}, ${targetTeam.name}.`;
-
-  const userMessage = `Analyze this trade the Trade Finder surfaced:
-
-${tradeDescription}
-${fitBlock}
-${formatTradeContextForPrompt(subsetContext)}`;
-
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-        temperature: 0.3,
-      }),
-      signal: AbortSignal.timeout(45000),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      content?: { type: string; text?: string }[];
-    };
-    const textBlock = data.content?.find((b) => b.type === 'text');
-    const rawText = textBlock?.text?.trim();
-    if (!rawText) return null;
-    const jsonStr = rawText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-    const parsed = JSON.parse(jsonStr) as TradeRecommendation['analysis'];
-
-    // Clamp + validate
-    parsed.fairnessScore = parsed.fairnessScore || {
-      score: 50,
-      diff: 0,
-      favored: parsed.winner,
-    };
-    parsed.fairnessScore.score = Math.max(
-      0,
-      Math.min(100, Math.round(parsed.fairnessScore.score))
-    );
-    parsed.fairnessScore.diff = Math.abs(parsed.fairnessScore.score - 50);
-    parsed.improvements = Array.isArray(parsed.improvements)
-      ? parsed.improvements.slice(0, 4)
-      : [];
-    parsed.keyFactors = Array.isArray(parsed.keyFactors)
-      ? parsed.keyFactors.slice(0, 6)
-      : [];
-
-    return {
-      targetTeamId: targetTeam.id,
-      targetTeamName: targetTeam.name,
-      userSends: sendFacts.map((p) => ({
-        playerId: p.id,
-        name: p.name,
-        position: p.position,
-      })),
-      userReceives: receiveFacts.map((p) => ({
-        playerId: p.id,
-        name: p.name,
-        position: p.position,
-      })),
-      userSendsPicks: extraUserPicks,
-      fit,
-      analysis: parsed,
-    };
-  } catch (err) {
-    console.error('[tradeFinder] candidate analysis failed:', err);
+  if (!outcome.ok) {
+    console.error('[tradeFinder] verification failed:', outcome.error);
     return null;
   }
+
+  // fit is carried through unchanged so the UI still renders the
+  // constructor's "Why it helps you / Why they'd accept" panels.
+  return {
+    targetTeamId: targetTeam.id,
+    targetTeamName: targetTeam.name,
+    userSends: sendFacts.map((p) => ({
+      playerId: p.id,
+      name: p.name,
+      position: p.position,
+    })),
+    userReceives: receiveFacts.map((p) => ({
+      playerId: p.id,
+      name: p.name,
+      position: p.position,
+    })),
+    userSendsPicks: extraUserPicks,
+    fit,
+    analysis: outcome.result,
+  };
 }
