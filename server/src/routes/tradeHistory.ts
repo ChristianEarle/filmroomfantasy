@@ -79,14 +79,21 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
     return c.json({ error: 'No team found for user in this league' }, 404);
   }
 
-  // Fetch all executed trades for the league, most recent first
-  const allTrades = await db.query.trades.findMany({
-    where: and(
-      eq(schema.trades.leagueId, leagueId),
-      eq(schema.trades.status, 'executed')
-    ),
-    orderBy: [desc(schema.trades.executedAt)],
-  });
+  // Fetch all executed trades for the league, most recent first.
+  // (Also pull the league row for the seasonYear fallback below.)
+  const [allTrades, leagueRow] = await Promise.all([
+    db.query.trades.findMany({
+      where: and(
+        eq(schema.trades.leagueId, leagueId),
+        eq(schema.trades.status, 'executed')
+      ),
+      orderBy: [desc(schema.trades.executedAt)],
+    }),
+    db.query.leagues.findFirst({
+      where: eq(schema.leagues.id, leagueId),
+      columns: { seasonYear: true },
+    }),
+  ]);
 
   if (allTrades.length === 0) {
     return c.json({
@@ -128,17 +135,32 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
     );
   });
 
-  // Distinct seasons across the caller's trades (descending, most recent first)
-  const seasons = Array.from(
-    new Set(callerTrades.map((t) => t.seasonYear).filter((s): s is number => s != null))
-  ).sort((a, b) => b - a);
+  // Distinct seasons across the caller's trades (descending, most
+  // recent first). If any trades have a null seasonYear, also include
+  // the league's current seasonYear so the user has a tab to find them.
+  const seasonSet = new Set<number>();
+  for (const t of callerTrades) {
+    if (t.seasonYear != null) seasonSet.add(t.seasonYear);
+  }
+  if (
+    leagueRow?.seasonYear != null &&
+    callerTrades.some((t) => t.seasonYear == null)
+  ) {
+    seasonSet.add(leagueRow.seasonYear);
+  }
+  const seasons = Array.from(seasonSet).sort((a, b) => b - a);
 
-  // Apply optional season filter after computing the seasons list so
-  // the client can still show season tabs for all seasons the user
-  // has trades in.
+  // Apply optional season filter. Trades with a null seasonYear are
+  // attributed to the league's current season as a backwards-compat
+  // fallback — older ingest runs left the column null, and the user
+  // shouldn't see them disappear when they pick a season tab.
   const trades =
     seasonFilter != null
-      ? callerTrades.filter((t) => t.seasonYear === seasonFilter)
+      ? callerTrades.filter(
+          (t) =>
+            t.seasonYear === seasonFilter ||
+            (t.seasonYear == null && seasonFilter === leagueRow?.seasonYear)
+        )
       : callerTrades;
 
   if (trades.length === 0) {
