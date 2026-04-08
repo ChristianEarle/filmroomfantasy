@@ -128,6 +128,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
+  const [ingestNotice, setIngestNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [gradingId, setGradingId] = useState<string | null>(null);
 
@@ -188,9 +189,41 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
   const handleIngest = async () => {
     if (!selectedLeagueId) return;
     setIsIngesting(true);
+    setIngestNotice(null);
     try {
-      await api.post(`/trade-history/ingest/${selectedLeagueId}`);
+      const res = await api.post<{
+        stats: {
+          fetched: number;
+          trades: number;
+          inserted: number;
+          updated: number;
+          skipped: number;
+          errors: number;
+          skipReasons: Record<string, number>;
+          unmappedRosterIds: number[];
+        };
+      }>(`/trade-history/ingest/${selectedLeagueId}`);
       await fetchAll();
+      // Build a compact notice so the user can see exactly what happened
+      const s = res.stats;
+      const parts: string[] = [];
+      parts.push(
+        `Synced ${s.trades} trade${s.trades === 1 ? '' : 's'} (${s.inserted} new, ${s.updated} updated)`
+      );
+      if (s.skipped > 0) {
+        const reasonStr = Object.entries(s.skipReasons || {})
+          .map(([reason, n]) => `${reason}: ${n}`)
+          .join(', ');
+        parts.push(
+          `${s.skipped} skipped${reasonStr ? ` (${reasonStr})` : ''}`
+        );
+      }
+      if (s.unmappedRosterIds && s.unmappedRosterIds.length > 0) {
+        parts.push(
+          `Roster ids without team mapping: ${s.unmappedRosterIds.join(', ')}. Re-sync the league from Settings to backfill team owners.`
+        );
+      }
+      setIngestNotice(parts.join(' • '));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Ingest failed.'
@@ -352,6 +385,19 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         >
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <p className="text-sm">{error}</p>
+        </div>
+      )}
+
+      {ingestNotice && !error && (
+        <div
+          className={`flex items-start gap-3 p-3 rounded-xl border ${
+            isDarkMode
+              ? 'bg-blue-500/10 border-blue-500/20 text-blue-200'
+              : 'bg-blue-50 border-blue-200 text-blue-800'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <p className="text-xs">{ingestNotice}</p>
         </div>
       )}
 
