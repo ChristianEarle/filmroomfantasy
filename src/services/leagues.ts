@@ -15,6 +15,10 @@ export interface League {
   playoffTeams: number;
   waiverType: string;
   waiverBudget?: number;
+  // Extended settings populated from the connected platform on sync
+  leagueType?: 'redraft' | 'dynasty' | 'keeper';
+  hasSuperflex?: boolean;
+  hasTePremium?: boolean;
   role?: string;
   teams?: Team[];
   updatedAt?: string;

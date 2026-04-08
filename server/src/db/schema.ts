@@ -63,6 +63,10 @@ export const leagues = sqliteTable('leagues', {
   playoffTeams: integer('playoff_teams').notNull().default(6),
   waiverType: text('waiver_type').notNull().default('faab'), // 'faab' | 'rolling' | 'reverse'
   waiverBudget: integer('waiver_budget').default(100),
+  // Extended settings populated from Sleeper/ESPN/Yahoo on sync
+  leagueType: text('league_type').notNull().default('redraft'), // 'redraft' | 'dynasty' | 'keeper'
+  hasSuperflex: integer('has_superflex', { mode: 'boolean' }).notNull().default(false),
+  hasTePremium: integer('has_te_premium', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
