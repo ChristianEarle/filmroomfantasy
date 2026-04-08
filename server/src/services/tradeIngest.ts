@@ -42,6 +42,17 @@ export interface IngestStats {
   updated: number;
   skipped: number;
   errors: number;
+  /** Detailed reason breakdown so missing trades can be diagnosed */
+  skipReasons: Record<string, number>;
+  /** Distinct Sleeper roster_ids that we couldn't map to a local team —
+   *  if this is non-empty after a sync, some trades are being silently
+   *  dropped because a roster has no corresponding team row. */
+  unmappedRosterIds: number[];
+}
+
+function recordSkip(stats: IngestStats, reason: string) {
+  stats.skipped++;
+  stats.skipReasons[reason] = (stats.skipReasons[reason] ?? 0) + 1;
 }
 
 /**
@@ -79,6 +90,8 @@ export async function ingestSleeperTrades(
     updated: 0,
     skipped: 0,
     errors: 0,
+    skipReasons: {},
+    unmappedRosterIds: [],
   };
 
   // 1. Load league, teams, and existing ingested trades
@@ -93,32 +106,121 @@ export async function ingestSleeperTrades(
     where: eq(schema.teams.leagueId, leagueId),
   });
 
-  // Map Sleeper roster_id (1..N) -> our team.id
-  // Sleeper transactions reference roster_ids not user_ids.
-  // We need to fetch the rosters endpoint to get the mapping.
-  let rosterIdToTeamId = new Map<number, string>();
+  // Map Sleeper roster_id (1..N) -> our team.id. Sleeper transactions
+  // reference roster_ids, not user_ids. Historically this has been the
+  // #1 source of silently-dropped trades: if a team has null
+  // externalOwnerId, or belongs to a co-managed/orphaned roster, or
+  // was renamed after ingest, the mapping misses and we skip the
+  // trade entirely.
+  //
+  // Robust strategy: build the mapping via MULTIPLE fallbacks and only
+  // give up on a roster id if none of them hit.
+  const rosterIdToTeamId = new Map<number, string>();
+  const seenRosterIds: number[] = [];
+  let sleeperRosters: Array<{
+    roster_id: number;
+    owner_id?: string | null;
+    co_owners?: string[] | null;
+    settings?: { team_name?: string } | null;
+  }> = [];
+
   try {
     const rosterRes = await fetch(
       `${SLEEPER_BASE}/league/${league.externalId}/rosters`
     );
     if (rosterRes.ok) {
-      const rostersRaw = (await rosterRes.json()) as Array<{
-        roster_id: number;
-        owner_id?: string;
-      }>;
-      for (const r of rostersRaw) {
-        if (!r.owner_id) continue;
-        const team = teams.find((t) => t.externalOwnerId === r.owner_id);
-        if (team) rosterIdToTeamId.set(r.roster_id, team.id);
-      }
+      sleeperRosters = (await rosterRes.json()) as typeof sleeperRosters;
     }
   } catch (err) {
     console.error('[tradeIngest] Failed to fetch rosters for mapping:', err);
   }
 
+  // Also pull the users endpoint so we can fall back to team-name matches
+  // for cases where the owner_id mapping is off (co-managers, orphan
+  // teams adopted by a new Sleeper user, etc.).
+  let sleeperUsers: Array<{
+    user_id: string;
+    display_name?: string;
+    metadata?: { team_name?: string };
+  }> = [];
+  try {
+    const usersRes = await fetch(
+      `${SLEEPER_BASE}/league/${league.externalId}/users`
+    );
+    if (usersRes.ok) {
+      sleeperUsers = (await usersRes.json()) as typeof sleeperUsers;
+    }
+  } catch (err) {
+    console.error('[tradeIngest] Failed to fetch users for mapping:', err);
+  }
+  const userById = new Map(sleeperUsers.map((u) => [u.user_id, u]));
+
+  const normalizeName = (name: string | null | undefined): string =>
+    (name || '').trim().toLowerCase();
+  const teamsByExternalOwnerId = new Map(
+    teams
+      .filter((t) => t.externalOwnerId)
+      .map((t) => [t.externalOwnerId as string, t])
+  );
+  const teamsByName = new Map<string, typeof teams[number]>();
+  for (const t of teams) {
+    teamsByName.set(normalizeName(t.name), t);
+  }
+
+  for (const r of sleeperRosters) {
+    seenRosterIds.push(r.roster_id);
+    // 1. Primary: owner_id -> externalOwnerId match
+    if (r.owner_id) {
+      const team = teamsByExternalOwnerId.get(r.owner_id);
+      if (team) {
+        rosterIdToTeamId.set(r.roster_id, team.id);
+        continue;
+      }
+    }
+    // 2. Fallback: co-owners
+    if (r.co_owners && r.co_owners.length > 0) {
+      let matched = false;
+      for (const coId of r.co_owners) {
+        const team = teamsByExternalOwnerId.get(coId);
+        if (team) {
+          rosterIdToTeamId.set(r.roster_id, team.id);
+          matched = true;
+          break;
+        }
+      }
+      if (matched) continue;
+    }
+    // 3. Fallback: match by Sleeper team name or display name
+    const sleeperTeamName =
+      r.settings?.team_name ||
+      (r.owner_id ? userById.get(r.owner_id)?.metadata?.team_name : undefined) ||
+      (r.owner_id ? userById.get(r.owner_id)?.display_name : undefined);
+    if (sleeperTeamName) {
+      const byName = teamsByName.get(normalizeName(sleeperTeamName));
+      if (byName) {
+        rosterIdToTeamId.set(r.roster_id, byName.id);
+        continue;
+      }
+    }
+    // 4. Give up for this roster — record it so the caller can see
+    //    which specific roster was unmapped.
+    stats.unmappedRosterIds.push(r.roster_id);
+  }
+
   if (rosterIdToTeamId.size === 0) {
-    // Without the mapping we can't attribute trades. Bail cleanly.
+    console.warn(
+      `[tradeIngest] No rosters could be mapped for league ${leagueId} — ` +
+        `all trades will be skipped. seenRosterIds=${seenRosterIds.join(',')}`
+    );
     return stats;
+  }
+
+  if (stats.unmappedRosterIds.length > 0) {
+    console.warn(
+      `[tradeIngest] ${stats.unmappedRosterIds.length} roster(s) could not be ` +
+        `mapped for league ${leagueId}: ${stats.unmappedRosterIds.join(',')}. ` +
+        `Trades involving these rosters will be skipped.`
+    );
   }
 
   // Pre-fetch existing trades for this league+source to enable updates
@@ -134,12 +236,15 @@ export async function ingestSleeperTrades(
       .map((t) => [t.externalId as string, t])
   );
 
-  // 2. Fetch all weeks (Sleeper only returns transactions from weeks >= 1)
-  // We fetch up to the league's playoff end: playoff_week_start + playoffWeeks
-  const maxWeek = Math.min(
-    18,
-    (league.currentWeek || 1) + 1 // fetch slightly ahead
-  );
+  // 2. Fetch all weeks 1-18 unconditionally.
+  //
+  // We used to cap at (currentWeek + 1) which meant that a mid-season
+  // sync would never see trades from weeks after the current one (rare
+  // but possible if a bulk ingest ran late) AND — more importantly —
+  // a sync against an ARCHIVED past season (where currentWeek is stale
+  // or reset to 1) would silently skip half the year. Sleeper's
+  // /transactions/:week endpoint is cheap; just fetch everything.
+  const maxWeek = 18;
 
   // Fetch in parallel but throttled
   const weeksToFetch = Array.from({ length: maxWeek }, (_, i) => i + 1);
@@ -203,6 +308,11 @@ export async function ingestSleeperTrades(
         draftPickRound: number | null;
       }> = [];
 
+      // Track whether we encountered mapping misses inside THIS trade
+      // so the skip reason is accurate ("some items failed to map"
+      // vs "trade had no items to begin with").
+      let sawMappingMiss = false;
+
       if (tx.adds) {
         for (const [sleeperPlayerId, toRosterId] of Object.entries(tx.adds)) {
           // Find the corresponding drop (who sent them)
@@ -210,7 +320,10 @@ export async function ingestSleeperTrades(
           if (fromRosterId == null) continue;
           const fromTeamId = rosterIdToTeamId.get(fromRosterId);
           const toTeamId = rosterIdToTeamId.get(toRosterId);
-          if (!fromTeamId || !toTeamId) continue;
+          if (!fromTeamId || !toTeamId) {
+            sawMappingMiss = true;
+            continue;
+          }
           fromRosterIds.add(fromRosterId);
           toRosterIds.add(toRosterId);
           items.push({
@@ -227,7 +340,10 @@ export async function ingestSleeperTrades(
         for (const pick of tx.draft_picks) {
           const fromTeamId = rosterIdToTeamId.get(pick.previous_owner_id);
           const toTeamId = rosterIdToTeamId.get(pick.owner_id);
-          if (!fromTeamId || !toTeamId) continue;
+          if (!fromTeamId || !toTeamId) {
+            sawMappingMiss = true;
+            continue;
+          }
           items.push({
             playerId: null,
             fromTeamId,
@@ -239,7 +355,20 @@ export async function ingestSleeperTrades(
       }
 
       if (items.length === 0) {
-        stats.skipped++;
+        if (sawMappingMiss) {
+          recordSkip(stats, 'unmapped_roster_ids');
+          console.warn(
+            `[tradeIngest] Skipping trade ${tx.transaction_id} (week ${week}): ` +
+              `all items reference roster_ids with no team mapping.`
+          );
+        } else if (
+          (!tx.adds || Object.keys(tx.adds).length === 0) &&
+          (!tx.draft_picks || tx.draft_picks.length === 0)
+        ) {
+          recordSkip(stats, 'empty_trade_payload');
+        } else {
+          recordSkip(stats, 'items_empty_unknown');
+        }
         continue;
       }
 
