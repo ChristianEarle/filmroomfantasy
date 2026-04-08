@@ -379,7 +379,7 @@ export function TradeFinderView({
                   isDarkMode ? 'text-slate-400' : 'text-slate-500'
                 }`}
               >
-                Claude is scouting your roster...
+                Scouting your roster...
               </span>
             </div>
           ) : needs ? (
