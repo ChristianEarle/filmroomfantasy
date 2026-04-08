@@ -124,6 +124,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
   const [impacts, setImpacts] = useState<RecordImpact[]>([]);
   const [seasons, setSeasons] = useState<number[]>([]);
   const [callerTeamName, setCallerTeamName] = useState<string | null>(null);
+  const [callerWarning, setCallerWarning] = useState<string | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +143,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
       setImpacts([]);
       setSeasons([]);
       setCallerTeamName(null);
+      setCallerWarning(null);
       return;
     }
     setIsLoading(true);
@@ -155,6 +157,8 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
           seasons: number[];
           callerTeamId: string;
           callerTeamName: string;
+          callerResolutionStrategy?: string;
+          callerResolutionWarning?: string | null;
         }>(
           `/trade-history/history?leagueId=${selectedLeagueId}${seasonQuery}`
         ),
@@ -165,6 +169,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
           .catch(() => ({ impact: null, impacts: [] })),
       ]);
       setTrades(historyRes.trades);
+      setCallerWarning(historyRes.callerResolutionWarning ?? null);
       setSeasons(historyRes.seasons);
       setCallerTeamName(historyRes.callerTeamName);
       setImpacts(impactRes.impacts);
@@ -423,6 +428,19 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         >
           <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <p className="text-xs">{ingestNotice}</p>
+        </div>
+      )}
+
+      {callerWarning && !error && (
+        <div
+          className={`flex items-start gap-3 p-3 rounded-xl border ${
+            isDarkMode
+              ? 'bg-amber-500/10 border-amber-500/20 text-amber-200'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          }`}
+        >
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <p className="text-xs">{callerWarning}</p>
         </div>
       )}
 
