@@ -1100,19 +1100,29 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         targetTeamName: string;
         userSends: Array<{ playerId: string; name: string; position: string }>;
         userReceives: Array<{ playerId: string; name: string; position: string }>;
+        userSendsPicks?: Array<{ year: number; round: number }>;
       };
       if (!rec || !rec.userSends || !rec.userReceives) return;
+      const pickOrdinal = (round: number) =>
+        round === 1 ? '1st' : round === 2 ? '2nd' : round === 3 ? '3rd' : `${round}th`;
       setTeamCount(2);
       setTeams([
         {
           id: 0,
           label: 'Me',
-          sends: rec.userSends.map((p) => ({
-            id: `rec-send-${p.playerId}`,
-            type: 'player' as const,
-            name: p.name,
-            position: p.position,
-          })),
+          sends: [
+            ...rec.userSends.map((p) => ({
+              id: `rec-send-${p.playerId}`,
+              type: 'player' as const,
+              name: p.name,
+              position: p.position,
+            })),
+            ...(rec.userSendsPicks ?? []).map((pick, i) => ({
+              id: `rec-pick-${i}`,
+              type: 'pick' as const,
+              name: `${pick.year} ${pickOrdinal(pick.round)} Round Pick`,
+            })),
+          ],
         },
         {
           id: 1,

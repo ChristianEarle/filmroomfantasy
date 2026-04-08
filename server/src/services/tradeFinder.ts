@@ -45,6 +45,11 @@ export interface TeamNeeds {
   summary: string;
 }
 
+export interface DraftPickAsset {
+  year: number;
+  round: number;
+}
+
 export interface TradeRecommendation {
   targetTeamId: string;
   targetTeamName: string;
@@ -58,6 +63,10 @@ export interface TradeRecommendation {
     name: string;
     position: string;
   }>;
+  /** Draft picks the user is throwing into every candidate (from the
+   *  "required assets" input). Not valued by the candidate pre-filter
+   *  — the AI reasons about them in the analysis step. */
+  userSendsPicks: DraftPickAsset[];
   analysis: {
     winner: string;
     winnerExplanation: string;
@@ -177,6 +186,12 @@ interface FindRecommendationsArgs {
   targetPosition?: string | null;
   targetTeamId?: string | null;
   maxRecommendations?: number;
+  /** Optional: if set, the user's candidate pool is restricted to
+   *  these player IDs (all must be on their roster). Picks are not
+   *  scored in the pre-filter but are threaded through to every
+   *  surviving candidate as mandatory "user sends" assets. */
+  userPlayerIds?: string[] | null;
+  userPicks?: DraftPickAsset[] | null;
 }
 
 export async function findTradeRecommendations(
@@ -193,6 +208,8 @@ export async function findTradeRecommendations(
     targetPosition,
     targetTeamId,
     maxRecommendations = 5,
+    userPlayerIds,
+    userPicks,
   } = args;
 
   // 1. Load ALL teams in the league + their rosters
@@ -240,12 +257,33 @@ export async function findTradeRecommendations(
   const factsById = new Map<string, PlayerFacts>();
   for (const p of megaContext.players) factsById.set(p.id, p);
 
-  // 3. Pick user's "tradeable" assets. Filter out K/DEF and anyone with <10
-  // projection. No judgment about who's "untouchable" — that's on the AI.
+  // 3. Pick user's "tradeable" assets.
+  //    - By default: every rostered player minus K/DEF. The AI decides
+  //      who is untouchable.
+  //    - If userPlayerIds is provided: restrict to those IDs (but still
+  //      drop anything not actually on the user's roster, defensively).
   const userRoster = rosterByTeam.get(userTeamId) || [];
-  const userAssetIds = userRoster
+  const userRosterPlayerIds = new Set(userRoster.map((r) => r.playerId));
+  const fullUserAssetIds = userRoster
     .filter((r) => r.player && !['K', 'DEF'].includes(r.player.position))
     .map((r) => r.playerId);
+
+  const requestedIds = (userPlayerIds || []).filter((id) =>
+    userRosterPlayerIds.has(id)
+  );
+  const userAssetIds =
+    requestedIds.length > 0 ? requestedIds : fullUserAssetIds;
+
+  // Normalize the pick list (only numeric year + round, dedup by year+round)
+  const normalizedPicks: DraftPickAsset[] = Array.isArray(userPicks)
+    ? userPicks
+        .filter(
+          (p) =>
+            p && Number.isFinite(p.year) && Number.isFinite(p.round) &&
+            p.round >= 1 && p.round <= 10 && p.year >= 2020 && p.year <= 2040
+        )
+        .map((p) => ({ year: Math.trunc(p.year), round: Math.trunc(p.round) }))
+    : [];
 
   // 4. For each potential partner team, generate candidates and pre-filter
   const partnerTeamIds = targetTeamId
@@ -289,6 +327,7 @@ export async function findTradeRecommendations(
         candidate: scored,
         factsById,
         context: megaContext,
+        extraUserPicks: normalizedPicks,
       })
     )
   );
@@ -303,13 +342,36 @@ interface AnalyzeArgs {
   candidate: ScoredCandidate & { targetTeamId: string };
   factsById: Map<string, PlayerFacts>;
   context: TradeContext;
+  /** Picks appended to the user's send side for every candidate
+   *  (from the "required assets" input). Passed to the AI as context
+   *  and echoed back on the TradeRecommendation. */
+  extraUserPicks?: DraftPickAsset[];
+}
+
+function formatPick(pick: DraftPickAsset): string {
+  const ord =
+    pick.round === 1
+      ? '1st'
+      : pick.round === 2
+      ? '2nd'
+      : pick.round === 3
+      ? '3rd'
+      : `${pick.round}th`;
+  return `${pick.year} ${ord} Round Pick`;
 }
 
 async function analyzeCandidateWithAI(
   args: AnalyzeArgs
 ): Promise<TradeRecommendation | null> {
-  const { anthropicKey, userTeam, targetTeam, candidate, factsById, context } =
-    args;
+  const {
+    anthropicKey,
+    userTeam,
+    targetTeam,
+    candidate,
+    factsById,
+    context,
+    extraUserPicks = [],
+  } = args;
 
   const sendFacts = candidate.candidate.sendPlayerIds
     .map((id) => factsById.get(id))
@@ -318,10 +380,14 @@ async function analyzeCandidateWithAI(
     .map((id) => factsById.get(id))
     .filter((p): p is PlayerFacts => p != null);
 
+  const sendPlayerLabels = sendFacts.map(
+    (p) => `${p.name} (${p.position}, ${p.nflTeam})`
+  );
+  const sendPickLabels = extraUserPicks.map(formatPick);
+  const sendLabels = [...sendPlayerLabels, ...sendPickLabels];
+
   const tradeDescription =
-    `${userTeam.name} sends: ${sendFacts
-      .map((p) => `${p.name} (${p.position}, ${p.nflTeam})`)
-      .join(', ')}\n` +
+    `${userTeam.name} sends: ${sendLabels.join(', ') || '(nothing)'}\n` +
     `${targetTeam.name} sends: ${receiveFacts
       .map((p) => `${p.name} (${p.position}, ${p.nflTeam})`)
       .join(', ')}`;
@@ -411,6 +477,7 @@ ${formatTradeContextForPrompt(subsetContext)}`;
         name: p.name,
         position: p.position,
       })),
+      userSendsPicks: extraUserPicks,
       analysis: parsed,
     };
   } catch (err) {
