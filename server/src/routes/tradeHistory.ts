@@ -6,6 +6,7 @@ import { rateLimit } from '../middleware/rateLimit';
 import type { Env, Variables } from '../index';
 import { computeOutcome, computeRecordImpact } from '../services/tradeOutcomes';
 import { ingestSleeperTrades } from '../services/tradeIngest';
+import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
 import {
   buildTradeContext,
   formatTradeContextForPrompt,
@@ -29,8 +30,9 @@ function getTodayKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// ── GET /history?leagueId=... ────────────────────────────────────────
-// Returns all ingested trades for a league with computed outcomes.
+// ── GET /history?leagueId=...&season=... ─────────────────────────────
+// Returns trades the caller was in for a league (optionally filtered
+// to a specific season year). Outcomes are computed per-trade.
 // Free tier.
 
 tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
@@ -43,6 +45,11 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
     return c.json({ error: 'leagueId query param required' }, 400);
   }
 
+  // Optional: filter by season year (for dynasty leagues spanning
+  // multiple seasons, or redraft leagues with past-season archives).
+  const seasonParam = c.req.query('season');
+  const seasonFilter = seasonParam ? parseInt(seasonParam, 10) : null;
+
   // Verify membership
   const membership = await db.query.leagueMembers.findFirst({
     where: and(
@@ -54,8 +61,26 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
     return c.json({ error: 'Not a member of this league' }, 403);
   }
 
-  // Fetch all trades for this league, most recent first
-  const trades = await db.query.trades.findMany({
+  // Resolve the caller's team in this league — we use it both to filter
+  // trades they were in AND to attribute per-team outcomes on the row.
+  const leagueTeams = await db.query.teams.findMany({
+    where: eq(schema.teams.leagueId, leagueId),
+  });
+  let callerTeam = null;
+  if (membership.externalUsername) {
+    callerTeam = leagueTeams.find(
+      (t) => t.externalOwnerId === membership.externalUsername
+    );
+  }
+  if (!callerTeam) {
+    callerTeam = leagueTeams.find((t) => t.ownerId === user.id) ?? null;
+  }
+  if (!callerTeam) {
+    return c.json({ error: 'No team found for user in this league' }, 404);
+  }
+
+  // Fetch all executed trades for the league, most recent first
+  const allTrades = await db.query.trades.findMany({
     where: and(
       eq(schema.trades.leagueId, leagueId),
       eq(schema.trades.status, 'executed')
@@ -63,50 +88,112 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
     orderBy: [desc(schema.trades.executedAt)],
   });
 
-  if (trades.length === 0) {
-    return c.json({ trades: [] });
+  if (allTrades.length === 0) {
+    return c.json({
+      trades: [],
+      seasons: [],
+      callerTeamId: callerTeam.id,
+      callerTeamName: callerTeam.name,
+    });
   }
 
-  // Batch-fetch items, teams, and players
-  const allItems = await db.query.tradeItems.findMany({
-    where: inArray(
-      schema.tradeItems.tradeId,
-      trades.map((t) => t.id)
-    ),
+  // Fetch all items for the league's trades (chunked — dynasty leagues
+  // can have hundreds of trades, well over D1's parameter limit).
+  const allTradeIds = allTrades.map((t) => t.id);
+  const allItems = await chunkedInArrayFetch(
+    allTradeIds,
+    DEFAULT_ID_CHUNK,
+    (chunk) =>
+      db.query.tradeItems.findMany({
+        where: inArray(schema.tradeItems.tradeId, chunk),
+      })
+  );
+
+  // Index items by trade id for fast lookup
+  const itemsByTradeId = new Map<string, typeof allItems>();
+  for (const item of allItems) {
+    const list = itemsByTradeId.get(item.tradeId) || [];
+    list.push(item);
+    itemsByTradeId.set(item.tradeId, list);
+  }
+
+  // Filter trades to ones the caller was part of. This is the main
+  // user-visible change: users only see their own trades on the
+  // History page instead of every trade in the league.
+  const callerTrades = allTrades.filter((t) => {
+    const items = itemsByTradeId.get(t.id) || [];
+    return items.some(
+      (i) =>
+        i.fromTeamId === callerTeam!.id || i.toTeamId === callerTeam!.id
+    );
   });
 
-  const teamIds = new Set<string>();
-  const playerIds = new Set<string>();
-  for (const i of allItems) {
-    teamIds.add(i.fromTeamId);
-    teamIds.add(i.toTeamId);
-    if (i.playerId) playerIds.add(i.playerId);
+  // Distinct seasons across the caller's trades (descending, most recent first)
+  const seasons = Array.from(
+    new Set(callerTrades.map((t) => t.seasonYear).filter((s): s is number => s != null))
+  ).sort((a, b) => b - a);
+
+  // Apply optional season filter after computing the seasons list so
+  // the client can still show season tabs for all seasons the user
+  // has trades in.
+  const trades =
+    seasonFilter != null
+      ? callerTrades.filter((t) => t.seasonYear === seasonFilter)
+      : callerTrades;
+
+  if (trades.length === 0) {
+    return c.json({
+      trades: [],
+      seasons,
+      callerTeamId: callerTeam.id,
+      callerTeamName: callerTeam.name,
+    });
   }
 
-  const [teams, players] = await Promise.all([
-    teamIds.size > 0
-      ? db.query.teams.findMany({
-          where: inArray(schema.teams.id, Array.from(teamIds)),
+  // Collect all the teams and players involved in the filtered trades
+  const teamIds = new Set<string>();
+  const playerIds = new Set<string>();
+  for (const t of trades) {
+    const items = itemsByTradeId.get(t.id) || [];
+    for (const i of items) {
+      teamIds.add(i.fromTeamId);
+      teamIds.add(i.toTeamId);
+      if (i.playerId) playerIds.add(i.playerId);
+    }
+  }
+
+  // Chunked team + player lookups
+  const [teamRows, playerRows] = await Promise.all([
+    chunkedInArrayFetch(
+      Array.from(teamIds),
+      DEFAULT_ID_CHUNK,
+      (chunk) =>
+        db.query.teams.findMany({
+          where: inArray(schema.teams.id, chunk),
         })
-      : Promise.resolve([]),
-    playerIds.size > 0
-      ? db.query.nflPlayers.findMany({
-          where: inArray(schema.nflPlayers.id, Array.from(playerIds)),
+    ),
+    chunkedInArrayFetch(
+      Array.from(playerIds),
+      DEFAULT_ID_CHUNK,
+      (chunk) =>
+        db.query.nflPlayers.findMany({
+          where: inArray(schema.nflPlayers.id, chunk),
           columns: { id: true, name: true, position: true, team: true },
         })
-      : Promise.resolve([]),
+    ),
   ]);
 
-  const teamById = new Map(teams.map((t) => [t.id, t]));
-  const playerById = new Map(players.map((p) => [p.id, p]));
+  const teamById = new Map(teamRows.map((t) => [t.id, t]));
+  const playerById = new Map(playerRows.map((p) => [p.id, p]));
 
-  // Compute lightweight outcome (points diff) for each trade in parallel
+  // Compute lightweight outcome (points diff) for each trade in parallel.
+  // computeOutcome is bounded per-trade and internally safe.
   const outcomes = await Promise.all(
     trades.map((t) => computeOutcome(db, t.id))
   );
 
   const enriched = trades.map((t, idx) => {
-    const items = allItems.filter((i) => i.tradeId === t.id);
+    const items = itemsByTradeId.get(t.id) || [];
     const sides = new Map<
       string,
       {
@@ -159,7 +246,12 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
     };
   });
 
-  return c.json({ trades: enriched });
+  return c.json({
+    trades: enriched,
+    seasons,
+    callerTeamId: callerTeam.id,
+    callerTeamName: callerTeam.name,
+  });
 });
 
 function safeJsonParse(s: string | null): unknown {
@@ -286,7 +378,11 @@ function formatRecordImpactForPrompt(
   return lines.join('\n');
 }
 
-// ── GET /record-impact/:leagueId ─────────────────────────────────────
+// ── GET /record-impact/:leagueId?season=... ──────────────────────────
+//
+// Returns the caller's record impact for the specified season. If no
+// season param is given, returns all seasons they have trades in so
+// dynasty users can see each year's breakdown.
 
 tradeHistoryRoutes.get('/record-impact/:leagueId', authMiddleware, async (c) => {
   const user = c.get('user');
@@ -294,6 +390,8 @@ tradeHistoryRoutes.get('/record-impact/:leagueId', authMiddleware, async (c) => 
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const leagueId = c.req.param('leagueId');
+  const seasonParam = c.req.query('season');
+  const seasonFilter = seasonParam ? parseInt(seasonParam, 10) : null;
 
   const membership = await db.query.leagueMembers.findFirst({
     where: and(
@@ -320,8 +418,69 @@ tradeHistoryRoutes.get('/record-impact/:leagueId', authMiddleware, async (c) => 
     return c.json({ error: 'No team found for user' }, 404);
   }
 
-  const impact = await computeRecordImpact(db, leagueId, userTeam.id);
-  return c.json({ impact });
+  if (seasonFilter != null) {
+    // Single-season mode: client requested a specific year
+    const impact = await computeRecordImpact(db, leagueId, userTeam.id, seasonFilter);
+    return c.json({ impact, impacts: impact ? [impact] : [] });
+  }
+
+  // Multi-season mode: list distinct seasons from this team's executed
+  // trades and compute impact for each.
+  const seasonYears = new Set<number>();
+  const userTradeItems = await db.query.tradeItems.findMany({
+    where: eq(schema.tradeItems.fromTeamId, userTeam.id),
+  });
+  const receivedItems = await db.query.tradeItems.findMany({
+    where: eq(schema.tradeItems.toTeamId, userTeam.id),
+  });
+  const allTradeIdSet = new Set<string>([
+    ...userTradeItems.map((i) => i.tradeId),
+    ...receivedItems.map((i) => i.tradeId),
+  ]);
+
+  if (allTradeIdSet.size > 0) {
+    const userTradeRows = await chunkedInArrayFetch(
+      Array.from(allTradeIdSet),
+      DEFAULT_ID_CHUNK,
+      (chunk) =>
+        db.query.trades.findMany({
+          where: and(
+            inArray(schema.trades.id, chunk),
+            eq(schema.trades.status, 'executed')
+          ),
+          columns: { seasonYear: true },
+        })
+    );
+    for (const t of userTradeRows) {
+      if (t.seasonYear != null) seasonYears.add(t.seasonYear);
+    }
+  }
+
+  // Always include the league's current season even if the user has
+  // no trades yet (so the UI always renders a 0-0 baseline card).
+  const currentLeagueRow = await db.query.leagues.findFirst({
+    where: eq(schema.leagues.id, leagueId),
+    columns: { seasonYear: true },
+  });
+  if (currentLeagueRow?.seasonYear != null) {
+    seasonYears.add(currentLeagueRow.seasonYear);
+  }
+
+  const sortedSeasons = Array.from(seasonYears).sort((a, b) => b - a);
+
+  const impacts = await Promise.all(
+    sortedSeasons.map((season) =>
+      computeRecordImpact(db, leagueId, userTeam!.id, season)
+    )
+  );
+
+  const filteredImpacts = impacts.filter(
+    (i): i is NonNullable<typeof i> => i != null
+  );
+
+  // Backwards-compatible: `impact` is the current (or most recent) season.
+  const primary = filteredImpacts[0] ?? null;
+  return c.json({ impact: primary, impacts: filteredImpacts });
 });
 
 // ── POST /ingest/:leagueId — manually trigger ingest ─────────────────

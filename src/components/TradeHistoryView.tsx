@@ -121,7 +121,10 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
   }, [selectedLeagueId]);
 
   const [trades, setTrades] = useState<HistoricalTrade[]>([]);
-  const [impact, setImpact] = useState<RecordImpact | null>(null);
+  const [impacts, setImpacts] = useState<RecordImpact[]>([]);
+  const [seasons, setSeasons] = useState<number[]>([]);
+  const [callerTeamName, setCallerTeamName] = useState<string | null>(null);
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
@@ -135,24 +138,35 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
   const fetchAll = useCallback(async () => {
     if (!selectedLeagueId) {
       setTrades([]);
-      setImpact(null);
+      setImpacts([]);
+      setSeasons([]);
+      setCallerTeamName(null);
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
+      const seasonQuery =
+        selectedSeason != null ? `&season=${selectedSeason}` : '';
       const [historyRes, impactRes] = await Promise.all([
-        api.get<{ trades: HistoricalTrade[] }>(
-          `/trade-history/history?leagueId=${selectedLeagueId}`
+        api.get<{
+          trades: HistoricalTrade[];
+          seasons: number[];
+          callerTeamId: string;
+          callerTeamName: string;
+        }>(
+          `/trade-history/history?leagueId=${selectedLeagueId}${seasonQuery}`
         ),
         api
-          .get<{ impact: RecordImpact }>(
+          .get<{ impact: RecordImpact | null; impacts: RecordImpact[] }>(
             `/trade-history/record-impact/${selectedLeagueId}`
           )
-          .catch(() => ({ impact: null })),
+          .catch(() => ({ impact: null, impacts: [] })),
       ]);
       setTrades(historyRes.trades);
-      setImpact(impactRes.impact);
+      setSeasons(historyRes.seasons);
+      setCallerTeamName(historyRes.callerTeamName);
+      setImpacts(impactRes.impacts);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to load trade history.'
@@ -160,11 +174,16 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedLeagueId]);
+  }, [selectedLeagueId, selectedSeason]);
 
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  // Reset season filter when switching leagues
+  useEffect(() => {
+    setSelectedSeason(null);
+  }, [selectedLeagueId]);
 
   const handleIngest = async () => {
     if (!selectedLeagueId) return;
@@ -203,23 +222,29 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
     });
   };
 
-  // Compute season summary headline
-  const headline = useMemo(() => {
-    if (!impact) return null;
-    const a = impact.actualRecord;
-    const h = impact.hypotheticalRecord;
+  // Per-season headline for each impact card
+  const headlineFor = (im: RecordImpact): string => {
+    const a = im.actualRecord;
+    const h = im.hypotheticalRecord;
     const winDelta = a.wins - h.wins;
     if (winDelta > 0) {
       return `Your trades flipped ${winDelta} ${
         winDelta === 1 ? 'loss' : 'losses'
-      } into wins this season.`;
+      } into wins.`;
     } else if (winDelta < 0) {
       return `Your trades cost you ${Math.abs(winDelta)} ${
         Math.abs(winDelta) === 1 ? 'win' : 'wins'
-      } this season.`;
+      }.`;
     }
-    return 'Your trades had no net impact on your record so far.';
-  }, [impact]);
+    return 'Your trades had no net impact on your record.';
+  };
+
+  // When a specific season tab is selected, only show that season's
+  // impact card. Otherwise show every season the user has trades in.
+  const visibleImpacts = useMemo(() => {
+    if (selectedSeason == null) return impacts;
+    return impacts.filter((im) => im.seasonYear === selectedSeason);
+  }, [impacts, selectedSeason]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -242,14 +267,17 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
               isDarkMode ? 'text-white' : 'text-slate-900'
             }`}
           >
-            Trade History
+            Your Trade History
           </h1>
           <p
             className={`text-sm ${
               isDarkMode ? 'text-slate-400' : 'text-slate-500'
             }`}
           >
-            Every trade ever made in your league, with how it actually worked out.
+            Every trade {callerTeamName ? `${callerTeamName} made` : 'you made'} in this
+            league, with the actual outcome and optional AI post-mortem.
+            Points alone don't tell the whole story — use the AI grade for
+            context.
           </p>
         </div>
       </div>
@@ -327,134 +355,182 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         </div>
       )}
 
-      {/* Season summary */}
-      {impact && headline && (
+      {/* Season tabs (show only if user has trades in 2+ seasons) */}
+      {seasons.length > 1 && (
         <div
-          className={`rounded-xl border p-6 ${
+          className={`rounded-xl border p-2 flex items-center gap-1 overflow-x-auto ${
             isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
           }`}
         >
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles
-              className={`w-4 h-4 ${
-                isDarkMode ? 'text-blue-400' : 'text-blue-600'
-              }`}
-            />
-            <p
-              className={`text-sm font-semibold ${
-                isDarkMode ? 'text-slate-300' : 'text-slate-700'
-              }`}
-            >
-              Season Impact ({impact.seasonYear})
-            </p>
-          </div>
-          <p
-            className={`text-lg font-bold mb-4 ${
-              isDarkMode ? 'text-white' : 'text-slate-900'
+          <button
+            type="button"
+            onClick={() => setSelectedSeason(null)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
+              selectedSeason == null
+                ? 'bg-blue-600 text-white'
+                : isDarkMode
+                ? 'text-slate-300 hover:bg-slate-800'
+                : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
-            {headline}
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <div
-              className={`p-3 rounded-lg ${
-                isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
+            All Seasons
+          </button>
+          {seasons.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSelectedSeason(s)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
+                selectedSeason === s
+                  ? 'bg-blue-600 text-white'
+                  : isDarkMode
+                  ? 'text-slate-300 hover:bg-slate-800'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
             >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Per-season impact cards (one per season the user has trades in) */}
+      {visibleImpacts.length > 0 && (
+        <div className="space-y-3">
+          {visibleImpacts.map((im) => (
+            <div
+              key={im.seasonYear}
+              className={`rounded-xl border p-6 ${
+                isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles
+                  className={`w-4 h-4 ${
+                    isDarkMode ? 'text-blue-400' : 'text-blue-600'
+                  }`}
+                />
+                <p
+                  className={`text-sm font-semibold ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                  }`}
+                >
+                  Season Impact ({im.seasonYear})
+                </p>
+              </div>
               <p
-                className={`text-[10px] font-bold uppercase mb-1 ${
-                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                }`}
-              >
-                Actual Record
-              </p>
-              <p
-                className={`text-2xl font-bold ${
+                className={`text-lg font-bold mb-4 ${
                   isDarkMode ? 'text-white' : 'text-slate-900'
                 }`}
               >
-                {impact.actualRecord.wins}-{impact.actualRecord.losses}
-                {impact.actualRecord.ties > 0 ? `-${impact.actualRecord.ties}` : ''}
+                {headlineFor(im)}
               </p>
-            </div>
-            <div
-              className={`p-3 rounded-lg ${
-                isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
-              }`}
-            >
-              <p
-                className={`text-[10px] font-bold uppercase mb-1 ${
-                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                }`}
-              >
-                If you never traded
-              </p>
-              <p
-                className={`text-2xl font-bold ${
-                  isDarkMode ? 'text-white' : 'text-slate-900'
-                }`}
-              >
-                {impact.hypotheticalRecord.wins}-
-                {impact.hypotheticalRecord.losses}
-                {impact.hypotheticalRecord.ties > 0
-                  ? `-${impact.hypotheticalRecord.ties}`
-                  : ''}
-              </p>
-            </div>
-          </div>
-          <div
-            className={`mt-3 text-xs ${
-              isDarkMode ? 'text-slate-400' : 'text-slate-500'
-            }`}
-          >
-            Net points:{' '}
-            <span
-              className={
-                impact.totalPointDifferential >= 0
-                  ? 'text-emerald-500 font-semibold'
-                  : 'text-red-500 font-semibold'
-              }
-            >
-              {impact.totalPointDifferential >= 0 ? '+' : ''}
-              {impact.totalPointDifferential}
-            </span>
-          </div>
-          {impact.flippedWeeks.length > 0 && (
-            <div className="mt-4">
-              <p
-                className={`text-[10px] font-bold uppercase mb-2 ${
-                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                }`}
-              >
-                Flipped Weeks
-              </p>
-              <div className="space-y-1">
-                {impact.flippedWeeks.map((fw) => (
-                  <div
-                    key={fw.week}
-                    className={`text-xs flex items-center gap-2 ${
-                      isDarkMode ? 'text-slate-300' : 'text-slate-600'
+              <div className="grid grid-cols-2 gap-4">
+                <div
+                  className={`p-3 rounded-lg ${
+                    isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
+                  }`}
+                >
+                  <p
+                    className={`text-[10px] font-bold uppercase mb-1 ${
+                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
                     }`}
                   >
-                    <span className="font-semibold">Week {fw.week}</span>
-                    <span
-                      className={
-                        fw.hypotheticalResult === 'W'
-                          ? 'text-emerald-500'
-                          : 'text-red-500'
-                      }
-                    >
-                      {fw.actualResult} → {fw.hypotheticalResult}
-                    </span>
-                    <span className="opacity-70">
-                      ({fw.actualScore} vs {fw.opponentScore} → hypothetical{' '}
-                      {fw.hypotheticalScore})
-                    </span>
-                  </div>
-                ))}
+                    Actual Record
+                  </p>
+                  <p
+                    className={`text-2xl font-bold ${
+                      isDarkMode ? 'text-white' : 'text-slate-900'
+                    }`}
+                  >
+                    {im.actualRecord.wins}-{im.actualRecord.losses}
+                    {im.actualRecord.ties > 0 ? `-${im.actualRecord.ties}` : ''}
+                  </p>
+                </div>
+                <div
+                  className={`p-3 rounded-lg ${
+                    isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
+                  }`}
+                >
+                  <p
+                    className={`text-[10px] font-bold uppercase mb-1 ${
+                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                  >
+                    If you never traded
+                  </p>
+                  <p
+                    className={`text-2xl font-bold ${
+                      isDarkMode ? 'text-white' : 'text-slate-900'
+                    }`}
+                  >
+                    {im.hypotheticalRecord.wins}-
+                    {im.hypotheticalRecord.losses}
+                    {im.hypotheticalRecord.ties > 0
+                      ? `-${im.hypotheticalRecord.ties}`
+                      : ''}
+                  </p>
+                </div>
               </div>
+              <div
+                className={`mt-3 text-xs ${
+                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              >
+                Net points:{' '}
+                <span
+                  className={
+                    im.totalPointDifferential >= 0
+                      ? 'text-emerald-500 font-semibold'
+                      : 'text-red-500 font-semibold'
+                  }
+                >
+                  {im.totalPointDifferential >= 0 ? '+' : ''}
+                  {im.totalPointDifferential}
+                </span>
+                <span className="ml-2 opacity-70">
+                  — points alone don't tell the whole story. Open a trade
+                  below for the full AI post-mortem.
+                </span>
+              </div>
+              {im.flippedWeeks.length > 0 && (
+                <div className="mt-4">
+                  <p
+                    className={`text-[10px] font-bold uppercase mb-2 ${
+                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                  >
+                    Flipped Weeks
+                  </p>
+                  <div className="space-y-1">
+                    {im.flippedWeeks.map((fw) => (
+                      <div
+                        key={fw.week}
+                        className={`text-xs flex items-center gap-2 ${
+                          isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                        }`}
+                      >
+                        <span className="font-semibold">Week {fw.week}</span>
+                        <span
+                          className={
+                            fw.hypotheticalResult === 'W'
+                              ? 'text-emerald-500'
+                              : 'text-red-500'
+                          }
+                        >
+                          {fw.actualResult} → {fw.hypotheticalResult}
+                        </span>
+                        <span className="opacity-70">
+                          ({fw.actualScore} vs {fw.opponentScore} → hypothetical{' '}
+                          {fw.hypotheticalScore})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       )}
 
