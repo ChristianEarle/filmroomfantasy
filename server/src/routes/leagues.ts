@@ -896,6 +896,10 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         if (sleeperLeagueRes.ok) {
           const sleeperLeague = await sleeperLeagueRes.json() as any;
           const settings = sleeperLeague?.settings || {};
+          const scoringSettings = sleeperLeague?.scoring_settings || {};
+          const rosterPositions: string[] = Array.isArray(sleeperLeague?.roster_positions)
+            ? sleeperLeague.roster_positions
+            : [];
           const playoffWeekStart = settings.playoff_week_start || 15;
           regularSeasonWeeks = playoffWeekStart - 1; // e.g., 14
           const sleeperLeg = settings.leg || 1;
@@ -910,6 +914,30 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
             effectiveCurrentWeek = sleeperLeg;
           }
 
+          // Derive extended settings so the Trade Analyzer can auto-populate
+          // format + advanced toggles instead of asking the user.
+          //
+          // Scoring format — Sleeper stores a `rec` value in scoring_settings:
+          //   1.0 = full PPR, 0.5 = half, 0 = standard
+          const recVal = Number(scoringSettings.rec ?? 0);
+          const derivedScoringFormat: 'ppr' | 'half-ppr' | 'standard' =
+            recVal >= 0.9 ? 'ppr' : recVal >= 0.4 ? 'half-ppr' : 'standard';
+
+          // TE premium — TE-specific reception bonus beyond base PPR
+          const recTeVal = Number(scoringSettings.rec_te ?? 0);
+          const bonusRecTeVal = Number(scoringSettings.bonus_rec_te ?? 0);
+          const derivedTePremium = recTeVal + bonusRecTeVal > 0;
+
+          // Superflex — a SUPER_FLEX slot (or 2+ QB slots) in the roster
+          const qbSlotCount = rosterPositions.filter((p) => p === 'QB').length;
+          const derivedSuperflex =
+            rosterPositions.includes('SUPER_FLEX') || qbSlotCount >= 2;
+
+          // League type — Sleeper `settings.type`: 0 redraft, 1 keeper, 2 dynasty
+          const sleeperType = Number(settings.type ?? 0);
+          const derivedLeagueType: 'redraft' | 'dynasty' | 'keeper' =
+            sleeperType === 2 ? 'dynasty' : sleeperType === 1 ? 'keeper' : 'redraft';
+
           // Persist accurate league settings from Sleeper
           await db.update(schema.leagues)
             .set({
@@ -917,6 +945,10 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
               playoffTeams: sleeperPlayoffTeams,
               teamCount: sleeperTeamCount,
               playoffWeeks: (playoffWeeksCount = settings.playoff_round_type === 2 ? 2 : 3),
+              scoringFormat: derivedScoringFormat,
+              leagueType: derivedLeagueType,
+              hasSuperflex: derivedSuperflex,
+              hasTePremium: derivedTePremium,
               updatedAt: new Date(),
             })
             .where(eq(schema.leagues.id, league.id));

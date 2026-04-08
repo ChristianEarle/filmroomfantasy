@@ -1030,20 +1030,27 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     setChatTurns([]);
   }, [result]);
 
-  // Auto-sync advanced settings from the chosen league's scoringFormat
+  // Auto-sync advanced settings + league format from the chosen league.
+  // The user can still override any of these after selecting — we only
+  // re-run this effect when the selected league actually changes.
   const selectedLeague = useMemo(
     () => leagues.find((l) => l.id === selectedLeagueId) || null,
     [leagues, selectedLeagueId]
   );
   useEffect(() => {
-    if (selectedLeague) {
-      setAdvanced((prev) => ({
-        ...prev,
-        scoringFormat:
-          (selectedLeague.scoringFormat as ScoringFormat) || prev.scoringFormat,
-        teamCount: selectedLeague.teamCount || prev.teamCount,
-      }));
+    if (!selectedLeague) return;
+    setAdvanced((prev) => ({
+      ...prev,
+      scoringFormat:
+        (selectedLeague.scoringFormat as ScoringFormat) || prev.scoringFormat,
+      teamCount: selectedLeague.teamCount || prev.teamCount,
+      superflex: selectedLeague.hasSuperflex ?? prev.superflex,
+      tePremium: selectedLeague.hasTePremium ?? prev.tePremium,
+    }));
+    if (selectedLeague.leagueType) {
+      setLeagueType(selectedLeague.leagueType);
     }
+    setResult(null);
   }, [selectedLeague]);
 
   // Fetch my roster whenever selectedLeagueId changes
