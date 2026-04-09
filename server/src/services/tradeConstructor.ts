@@ -186,8 +186,10 @@ ${PICK_VALUE_REFERENCE}
 - Every received player must be on the named PARTNER team's roster.
 - Packages can include 1-5 players on either side. Use as many as
   needed to balance value. DO NOT default to 1-for-1.
-- Use the player IDs from the snapshot exactly. NEVER invent or
-  rename players.
+- Each player line in the snapshot includes an id=... tag (e.g.
+  "Patrick Mahomes [180/elite/starter] id=4046"). Use ONLY the raw
+  ID value (e.g. "4046") in sentPlayerIds and receivedPlayerIds.
+  NEVER invent IDs or use player names as IDs.
 
 ### Response format
 
@@ -384,6 +386,18 @@ function coerceConfidence(x: unknown): 'high' | 'medium' | 'low' {
   return 'medium';
 }
 
+// Sanitize a player/team ID returned by the model. Common issues:
+//  - Model echoes "id=4046" instead of "4046"
+//  - Model wraps the ID in quotes or adds whitespace
+function sanitizeId(raw: string): string {
+  let s = raw.trim();
+  if (s.startsWith('id=')) s = s.slice(3);
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  return s.trim();
+}
+
 /**
  * Coerce a raw AI response into a clean ConstructorResult. Drops any
  * trades that fail basic shape validation. Does NOT validate against
@@ -404,9 +418,9 @@ function coerceResponse(raw: RawTradeResponse): ConstructorResult {
     if (item.sentPlayerIds.length === 0 || item.receivedPlayerIds.length === 0) continue;
 
     out.trades.push({
-      partnerTeamId: item.partnerTeamId,
-      sentPlayerIds: item.sentPlayerIds,
-      receivedPlayerIds: item.receivedPlayerIds,
+      partnerTeamId: sanitizeId(item.partnerTeamId),
+      sentPlayerIds: item.sentPlayerIds.map(sanitizeId),
+      receivedPlayerIds: item.receivedPlayerIds.map(sanitizeId),
       userReasoning:
         typeof item.userReasoning === 'string' ? item.userReasoning : '',
       partnerReasoning:
