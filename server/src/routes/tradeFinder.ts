@@ -298,7 +298,7 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
     // that would make previously cached results invalid (e.g. tighter
     // filters, new analyzer inputs). Bump it here when we ship fixes
     // that would make a user say "the old trade is still showing up".
-    const CACHE_VERSION = 'v3';
+    const CACHE_VERSION = 'v4';
     const todayKey = new Date().toISOString().slice(0, 10);
     const sortedPlayerIds = [...(body.userPlayerIds ?? [])].sort();
     const sortedPicks = [...(body.userPicks ?? [])]

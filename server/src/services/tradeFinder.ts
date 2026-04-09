@@ -413,24 +413,15 @@ export async function findTradeRecommendations(
   };
 
   // 6. Stage 2 — call the constructor mega-call. ONE AI request that
-  //    sees the whole league and returns 5-6 candidate trades.
-  const constructorResult = await constructTrades({
-    anthropicKey,
-    snapshot,
-    filters: {
-      targetPosition: targetPosition ?? null,
-      requiredUserPlayerIds: restrictUserAssets,
-      userPicks: normalizedPicks.length > 0 ? normalizedPicks : null,
-      desiredCount: Math.max(maxRecommendations + 1, 6),
-    },
-  });
-
-  // 7. Validate constructor output. We drop any trade that:
-  //    - names a partner team not in the league
-  //    - names a player not on the claimed team's roster (hallucination)
-  //    - violates the targetPosition filter
-  //    - violates the requiredUserPlayerIds filter
-  //    - exceeds 30% deterministic value imbalance (robbery guard)
+  //    sees the whole league and returns candidate trades.
+  //
+  //    If the standard pass returns too few valid candidates (which
+  //    happens most often when the user specified a draft pick, or
+  //    when roster shape is unusual), we fire a CREATIVE retry that
+  //    runs hotter and is explicitly prompted to explore less-obvious
+  //    angles — positional arbitrage, bench-for-starter swaps,
+  //    pick-centric deals, weaker partners, etc. Results are merged,
+  //    deduped, and flow into the same validation pipeline.
   type ValidatedTrade = {
     targetTeamId: string;
     sendPlayerIds: string[];
@@ -438,14 +429,36 @@ export async function findTradeRecommendations(
     fit: TradeRecommendation['fit'];
   };
 
-  const validatedFromConstructor: ValidatedTrade[] = [];
-  if (constructorResult && constructorResult.trades.length > 0) {
-    const allowedPartnerIds = new Set(partnerTeamIds);
-    const requiredAssetSet = restrictUserAssets
-      ? new Set(restrictUserAssets)
-      : null;
+  const allowedPartnerIds = new Set(partnerTeamIds);
+  const requiredAssetSet = restrictUserAssets
+    ? new Set(restrictUserAssets)
+    : null;
+  const hasUserPicks = normalizedPicks.length > 0;
 
-    for (const trade of constructorResult.trades) {
+  const runAndValidate = async (
+    mode: 'standard' | 'creative',
+    desiredCount: number
+  ): Promise<ValidatedTrade[]> => {
+    const result = await constructTrades({
+      anthropicKey,
+      snapshot,
+      filters: {
+        targetPosition: targetPosition ?? null,
+        requiredUserPlayerIds: restrictUserAssets,
+        userPicks: hasUserPicks ? normalizedPicks : null,
+        desiredCount,
+        mode,
+      },
+    });
+    const validated: ValidatedTrade[] = [];
+    if (!result || result.trades.length === 0) {
+      console.log(
+        `[tradeFinder] constructor ${mode} returned 0 trades` +
+          (result?.notes ? ` — notes: ${result.notes.slice(0, 120)}` : '')
+      );
+      return validated;
+    }
+    for (const trade of result.trades) {
       const reason = validateConstructedTrade(
         trade,
         userTeamId,
@@ -455,19 +468,19 @@ export async function findTradeRecommendations(
         targetPosition ?? null,
         requiredAssetSet,
         valuations,
-        factsById
+        factsById,
+        hasUserPicks
       );
       if (reason !== null) {
         console.log(
-          `[tradeFinder] dropped constructed trade: ${reason}`,
+          `[tradeFinder] dropped ${mode} constructed trade: ${reason}`,
           trade.sentPlayerIds,
           '→',
           trade.receivedPlayerIds
         );
         continue;
       }
-
-      validatedFromConstructor.push({
+      validated.push({
         targetTeamId: trade.partnerTeamId,
         sendPlayerIds: trade.sentPlayerIds,
         receivePlayerIds: trade.receivedPlayerIds,
@@ -478,6 +491,50 @@ export async function findTradeRecommendations(
           partnerNeedsMet: [],
         },
       });
+    }
+    return validated;
+  };
+
+  // Standard pass first. Always runs.
+  let validatedFromConstructor = await runAndValidate(
+    'standard',
+    Math.max(maxRecommendations + 2, 8)
+  );
+  console.log(
+    `[tradeFinder] standard pass produced ${validatedFromConstructor.length} valid candidates`
+  );
+
+  // Creative retry if the standard pass is thin. Threshold: fewer than
+  // half of what the user asked for. The retry almost always fires
+  // when picks are involved because the standard pass is more
+  // conservative about pick-for-player packaging.
+  const MIN_CANDIDATES_BEFORE_RETRY = Math.max(
+    Math.ceil(maxRecommendations / 2),
+    2
+  );
+  if (validatedFromConstructor.length < MIN_CANDIDATES_BEFORE_RETRY) {
+    console.log(
+      `[tradeFinder] only ${validatedFromConstructor.length} < ${MIN_CANDIDATES_BEFORE_RETRY} candidates — running creative retry`
+    );
+    const creativeResults = await runAndValidate(
+      'creative',
+      Math.max(maxRecommendations + 2, 8)
+    );
+    console.log(
+      `[tradeFinder] creative pass added ${creativeResults.length} candidates`
+    );
+
+    // Dedupe by (send set, receive set, partner)
+    const seenKeys = new Set<string>();
+    const makeKey = (v: ValidatedTrade) =>
+      `${v.targetTeamId}|${[...v.sendPlayerIds].sort().join(',')}|${[...v.receivePlayerIds].sort().join(',')}`;
+    for (const v of validatedFromConstructor) seenKeys.add(makeKey(v));
+    for (const v of creativeResults) {
+      const k = makeKey(v);
+      if (!seenKeys.has(k)) {
+        seenKeys.add(k);
+        validatedFromConstructor.push(v);
+      }
     }
   }
 
@@ -660,9 +717,14 @@ export async function findTradeRecommendations(
  *     player at that position.
  *  5. If requiredAssets is set, the trade must use at least one of them
  *     on the sent side.
- *  6. Deterministic value imbalance must be ≤ MAX_VALUE_DELTA. The AI
- *     gets a wide tolerance (the formula is crude) but anything beyond
- *     30% is in robbery territory.
+ *  6. Deterministic value imbalance must be ≤ MAX_VALUE_DELTA_PLAYERS
+ *     when NO picks are threaded, or ≤ MAX_VALUE_DELTA_WITH_PICKS when
+ *     picks are being added to the user's side. The relaxed cap for
+ *     pick trades exists because the valuation model doesn't know what
+ *     picks are worth — a fair trade like "Player X + 2026 1st for
+ *     Player Y" looks wildly imbalanced if we only count Player X vs
+ *     Player Y. When picks are involved we rely on the trusted
+ *     analyzer (which CAN reason about pick value) as the real guard.
  */
 function validateConstructedTrade(
   trade: ConstructedTrade,
@@ -676,7 +738,8 @@ function validateConstructedTrade(
   targetPosition: string | null,
   requiredAssets: Set<string> | null,
   valuations: Map<string, PlayerValuation>,
-  factsById: Map<string, PlayerFacts>
+  factsById: Map<string, PlayerFacts>,
+  hasUserPicks: boolean
 ): string | null {
   // 0. Defensive: trade must not target the user themselves
   if (trade.partnerTeamId === userTeamId) {
@@ -718,19 +781,36 @@ function validateConstructedTrade(
       return 'requiredUserPlayerIds set but trade uses none of them';
     }
   }
-  // 6. Value sanity (STRICT: 15% max). Previously 30% — too loose.
-  //    A trade where the user sends Jaxson Dart for Lamar Jackson is
-  //    a ~80% value delta. Even with a crude valuation model, 15%
-  //    is the point where the delta is real enough to matter but
-  //    still forgives normal formula noise. The constructor is
-  //    explicitly told to pad the user side to match value, so any
-  //    trade blowing past this is the constructor being lazy.
-  const MAX_VALUE_DELTA = 0.15;
-  const delta = Math.abs(
-    valueImbalancePct(trade.sentPlayerIds, trade.receivedPlayerIds, valuations)
+  // 6. Value sanity — asymmetric tolerance depending on whether picks
+  //    are threaded into this trade. Without picks, 15% is strict. With
+  //    picks the cap is effectively skipped because the player-only
+  //    delta can look huge while the full package (player + pick) is
+  //    balanced; we let the trusted analyzer handle the call instead.
+  const MAX_VALUE_DELTA_PLAYERS = 0.15;
+  const MAX_VALUE_DELTA_WITH_PICKS = 0.9; // effectively off; analyzer is the guard
+  const cap = hasUserPicks ? MAX_VALUE_DELTA_WITH_PICKS : MAX_VALUE_DELTA_PLAYERS;
+  const rawDelta = valueImbalancePct(
+    trade.sentPlayerIds,
+    trade.receivedPlayerIds,
+    valuations
   );
-  if (delta > MAX_VALUE_DELTA) {
-    return `value delta ${(delta * 100).toFixed(0)}% exceeds ${MAX_VALUE_DELTA * 100}% guard`;
+  // When picks are on the user side, the user "sending less" is
+  // EXPECTED (because the pick fills the gap). Only a trade where the
+  // user is sending MORE than they receive is suspicious — the user
+  // would be overpaying with players AND throwing in a pick. We
+  // compute a directional delta instead of absolute, so the guard
+  // only fires on "user overpaying" when picks are involved.
+  let delta: number;
+  if (hasUserPicks) {
+    // rawDelta = (received - sent) / max. Negative = user sent more.
+    // We only flag trades where user sent >> received by enough to
+    // be suspicious EVEN WITH a pick filling the gap.
+    delta = rawDelta < 0 ? Math.abs(rawDelta) : 0;
+  } else {
+    delta = Math.abs(rawDelta);
+  }
+  if (delta > cap) {
+    return `value delta ${(delta * 100).toFixed(0)}% exceeds ${cap * 100}% guard${hasUserPicks ? ' (with picks)' : ''}`;
   }
 
   return null;
