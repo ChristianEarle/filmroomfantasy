@@ -522,43 +522,50 @@ export interface ConstructTargetArgs {
 function buildTargetSystemPrompt(): string {
   return `You are an elite fantasy football trade architect. Your job is to construct the SINGLE BEST realistic trade package the user could offer to acquire one specific target player from one specific partner team.
 
+### YOUR MISSION: FIND A PACKAGE THAT WORKS
+
+You have been given a specific target player on a specific partner team. Your job is to build a realistic package from the user's roster that could acquire this target. Try HARD. Explore multi-player packages, depth-for-starter swaps, positional arbitrage. Use 2-5 players on the user's side if needed to match value.
+
+Return null ONLY if you have genuinely exhausted every reasonable combination from the user's roster and nothing comes within 25% of the target's value. That should be rare — most rosters have enough depth pieces to assemble something.
+
 ### TWO HARD RULES
 
 RULE 1: THE TRADE MUST MAKE THE USER'S TEAM BETTER.
 RULE 2: THE PARTNER'S GM MUST ACTUALLY ACCEPT IT IN REAL LIFE.
 
-Both rules bind at the same time. If you cannot satisfy both, return null — no trade. A null answer is the correct answer when the user simply can't afford the target, or when the partner would never trade this player.
+Both rules bind at the same time.
 
 ### The packaging rule — avoid robberies
 
-When the target is an elite player, a SINGLE player on the user's side almost never matches value. You MUST pad the user's side with additional players or picks until the values on both sides are within ~15% of each other. Packages can be 1-5 players per side — use as many as the math requires.
+When the target is a high-value player, a SINGLE user player almost never matches. You MUST pad the user's side with additional players or picks until values are roughly balanced. Use the [val] tags as anchors.
 
-Example of a BAD package to never propose:
-  user sends: Jaxson Dart (rookie QB, [45/depth/bench])
-  user receives: Lamar Jackson (elite QB, [180/elite/starter])
-  → This is a ~75% value delta. No real GM accepts it. Either PAD or return null.
+Good example:
+  user sends: Player A [80] + Player B [40] + Player C [25]
+  user receives: Target [130]
+  → Values roughly match. Partner gets three usable pieces. Realistic.
+
+Bad example:
+  user sends: Player A [45]
+  user receives: Target [130]
+  → ~65% gap. No GM accepts this. Either pad with more players or this target is out of range.
 
 ${PICK_VALUE_REFERENCE}
 
-### Before finalizing, answer these four questions
+### Before finalizing, verify
 
-  A. Is the user clearly upgrading at a position they need, or
-     sidegrading? (If sidegrading, return null.)
-  B. If I were the partner's GM, would I be disgusted to accept
-     this? (If yes, pad the user's side until it feels fair.)
-  C. Is the deterministic value the user SENDS within 15% of what
-     they RECEIVE, using the [val] tags plus pick value?
-  D. Does the partner have a reason to say yes — addressing one of
-     their own needs, clearing a logjam, or getting clear value?
+  A. Is the user upgrading at a position of need, not sidegrading?
+  B. Would the partner's GM plausibly accept — do they get fair value
+     AND address at least one of their needs or clear a logjam?
+  C. Are the [val] totals on both sides within ~25% of each other
+     (accounting for pick value if the user has bonus picks)?
 
 ### Core principles
 
 - AI-FIRST. The [val] tags are starting points. You may disagree
-  based on trends, coaching, or injury timeline — explain why in
-  the reasoning.
+  based on trends, coaching, or injury timeline — explain why.
 - BOTH SIDES MUST WANT IT.
-- HONESTY. If no realistic package exists from this user roster,
-  return null. That's a valid, expected answer.
+- TRY HARD. Use 2-5 players from the user's roster if that's what
+  it takes to match value. Don't give up at the first obstacle.
 
 ### Constraints
 
@@ -566,8 +573,9 @@ ${PICK_VALUE_REFERENCE}
 - Every received player must be on the PARTNER team's roster,
   AND the target player MUST be included in receivedPlayerIds.
 - Packages can include 1-5 players per side.
-- Use the player IDs exactly as shown (id=... on each roster line).
-  NEVER invent or rename player IDs.
+- Use the player IDs exactly as shown (the value after id= on each
+  roster line). In sentPlayerIds and receivedPlayerIds, put ONLY
+  the raw ID string (e.g. "4046"), not "id=4046".
 - Do NOT include picks in sentPlayerIds — picks are threaded
   separately by the caller.
 
@@ -585,7 +593,7 @@ Shape A — a valid trade:
   "confidence": "high" | "medium" | "low"
 }
 
-Shape B — no realistic package exists:
+Shape B — genuinely impossible (use sparingly):
 null
 
 Return the JSON ONLY, no prose.`;
@@ -718,10 +726,25 @@ function buildTargetUserMessage(args: ConstructTargetArgs): string {
   );
   lines.push('');
   lines.push(
-    `Now produce JSON: either one balanced trade package that acquires the TARGET, or null if no realistic package exists from this user roster. JSON ONLY.`
+    `Now produce JSON. Try hard to build a multi-player package that acquires the TARGET — use 2-5 user-side players if needed. Only return null if you've genuinely exhausted every reasonable combination. JSON ONLY.`
   );
 
   return lines.join('\n');
+}
+
+// Sanitize a player ID returned by the model. Common issues:
+//  - Model echoes "id=4046" instead of "4046"
+//  - Model wraps the ID in quotes like '"4046"'
+//  - Leading/trailing whitespace
+function sanitizePlayerId(raw: string): string {
+  let s = raw.trim();
+  // Strip "id=" prefix the model might copy from the roster format
+  if (s.startsWith('id=')) s = s.slice(3);
+  // Strip surrounding quotes if any
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  return s.trim();
 }
 
 // Parse the single-trade response. Unlike constructTrades, this call
@@ -737,9 +760,9 @@ function coerceSingleTradeResponse(raw: unknown): ConstructedTrade | null {
     return null;
   }
   return {
-    partnerTeamId: item.partnerTeamId,
-    sentPlayerIds: item.sentPlayerIds,
-    receivedPlayerIds: item.receivedPlayerIds,
+    partnerTeamId: sanitizePlayerId(item.partnerTeamId),
+    sentPlayerIds: item.sentPlayerIds.map(sanitizePlayerId),
+    receivedPlayerIds: item.receivedPlayerIds.map(sanitizePlayerId),
     userReasoning:
       typeof item.userReasoning === 'string' ? item.userReasoning : '',
     partnerReasoning:

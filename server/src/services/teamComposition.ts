@@ -336,9 +336,9 @@ export interface SelectAcquisitionTargetsArgs {
   /** If the user has draft picks in their offer, pick-centric targets
    *  become relevant. When false, the 'pick' category is skipped. */
   hasUserPicks: boolean;
-  /** Max targets per partner team after category ranking. Default 3. */
+  /** Max targets per partner team after category ranking. Default 4. */
   perPartnerLimit?: number;
-  /** Global cap across all partners after ranking. Default 30. */
+  /** Global cap across all partners after ranking. Default 40. */
   totalLimit?: number;
 }
 
@@ -359,8 +359,8 @@ export function selectAcquisitionTargets(
     partnerTeamIds,
     targetPosition,
     hasUserPicks,
-    perPartnerLimit = 3,
-    totalLimit = 30,
+    perPartnerLimit = 4,
+    totalLimit = 40,
   } = args;
 
   const wantPos = targetPosition ? targetPosition.toUpperCase() : null;

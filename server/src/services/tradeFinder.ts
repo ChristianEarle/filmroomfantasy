@@ -519,6 +519,7 @@ export async function findTradeRecommendations(
       const idx = nextIdx++;
       if (idx >= targets.length) return;
       const target = targets[idx];
+      const targetName = factsById.get(target.targetPlayerId)?.name ?? target.targetPlayerId;
       const trade = await constructTradeForTarget({
         anthropicKey,
         snapshot,
@@ -529,7 +530,16 @@ export async function findTradeRecommendations(
         requiredUserPlayerIds: restrictUserAssets,
         userPicks: hasUserPicks ? normalizedPicks : null,
       });
-      if (trade) constructed.push({ ...trade, target });
+      if (trade) {
+        console.log(
+          `[tradeFinder] fan-out: target ${targetName} → got package: send [${trade.sentPlayerIds.join(',')}] recv [${trade.receivedPlayerIds.join(',')}]`
+        );
+        constructed.push({ ...trade, target });
+      } else {
+        console.log(
+          `[tradeFinder] fan-out: target ${targetName} (${target.category}) → null`
+        );
+      }
     }
   };
   await Promise.all(
@@ -814,7 +824,7 @@ function validateConstructedTrade(
   //    picks the cap is effectively skipped because the player-only
   //    delta can look huge while the full package (player + pick) is
   //    balanced; we let the trusted analyzer handle the call instead.
-  const MAX_VALUE_DELTA_PLAYERS = 0.15;
+  const MAX_VALUE_DELTA_PLAYERS = 0.25;
   const MAX_VALUE_DELTA_WITH_PICKS = 0.9; // effectively off; analyzer is the guard
   const cap = hasUserPicks ? MAX_VALUE_DELTA_WITH_PICKS : MAX_VALUE_DELTA_PLAYERS;
   const rawDelta = valueImbalancePct(
