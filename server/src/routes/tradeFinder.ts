@@ -217,12 +217,6 @@ interface RecommendationsBody {
   leagueId: string;
   targetPosition?: string;
   targetTeamId?: string;
-  /** Optional: target a specific player on any opponent team. When
-   *  set, the finder skips broad target selection and runs a single
-   *  focused construction call for that exact player. Must be a
-   *  player that exists on a team in the league other than the
-   *  user's own roster. */
-  targetPlayerId?: string;
   leagueSettings?: Partial<LeagueSettings>;
   /** Optional: restrict the user's send-side candidate pool to these
    *  player ids (must be on their roster). */
@@ -304,10 +298,7 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
     // that would make previously cached results invalid (e.g. tighter
     // filters, new analyzer inputs). Bump it here when we ship fixes
     // that would make a user say "the old trade is still showing up".
-    // v5: switched from single mega-call construction to parallel
-    //     per-target fan-out. Prior cached results used the mega-call
-    //     pipeline and would otherwise persist for the rest of the day.
-    const CACHE_VERSION = 'v5';
+    const CACHE_VERSION = 'v4';
     const todayKey = new Date().toISOString().slice(0, 10);
     const sortedPlayerIds = [...(body.userPlayerIds ?? [])].sort();
     const sortedPicks = [...(body.userPicks ?? [])]
@@ -317,7 +308,7 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
       sortedPlayerIds.length === 0 && sortedPicks.length === 0
         ? 'any'
         : `p[${sortedPlayerIds.join(',')}]|pk[${sortedPicks.join(',')}]`;
-    const filterKey = `${body.targetPosition || 'any'}-${body.targetTeamId || 'any'}-${body.targetPlayerId || 'any'}-${assetKey}`;
+    const filterKey = `${body.targetPosition || 'any'}-${body.targetTeamId || 'any'}-${assetKey}`;
     const cacheKey = new Request(
       `https://cache.local/trade-finder/recs/${CACHE_VERSION}/${league.id}/${userTeam.id}/${league.currentWeek}/${filterKey}/${todayKey}`
     );
@@ -360,7 +351,6 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
       leagueType: (league.leagueType as 'redraft' | 'dynasty' | 'keeper') ?? 'redraft',
       targetPosition: body.targetPosition ?? null,
       targetTeamId: body.targetTeamId ?? null,
-      targetPlayerId: body.targetPlayerId ?? null,
       maxRecommendations: 8,
       userPlayerIds: body.userPlayerIds ?? null,
       userPicks: body.userPicks ?? null,
