@@ -131,9 +131,12 @@ export function formatLeagueContextForConstructor(
         const status = facts?.identity.status;
         const statusTag =
           status && status !== 'active' ? ` [${status.toUpperCase()}]` : '';
-        // Compact tag: [val/tier/role]
+        // Compact tag: [val/tier/role] with player ID so the AI can
+        // echo it back exactly in sentPlayerIds / receivedPlayerIds.
+        // Without this, the AI has no way to know the DB player ID
+        // (a numeric Sleeper string like "4046") from the name alone.
         const tag = `[${Math.round(slot.finalValue)}/${slot.tier}/${slot.role}]`;
-        return `${name} ${tag}${statusTag}`;
+        return `${name} ${tag} id=${slot.playerId}${statusTag}`;
       });
       lines.push(`${pos}: ${playerLines.join(', ')}`);
     }

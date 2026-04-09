@@ -1,8 +1,7 @@
 /**
  * Trade Finder (Feature 2).
  *
- * Pipeline: deterministic target selection → parallel per-target AI
- * construction → validation → trusted-analyzer verification → filter.
+ * Three-stage pipeline:
  *
  *  Stage 1 — deterministic scoping (no AI, ~50ms):
  *   1. Load rosters for every team in the league.
@@ -12,32 +11,27 @@
  *      depth, who is surplus, and which positions are a real need.
  *   5. Format the whole league as a compact snapshot for the AI prompt.
  *
- *  Stage 2 — parallel per-target construction (fan-out):
- *   6. selectAcquisitionTargets picks ~20-30 concrete acquisition
- *      targets across the league (need-driven + surplus-arbitrage +
- *      pick-driven) using deterministic logic from teamComposition.
- *      If targetPlayerId is set, Stage 1 emits exactly one target.
- *   7. Fan out one constructTradeForTarget call per target in
- *      parallel with a concurrency cap. Each call gets a focused
- *      prompt (user roster + one partner roster) and returns a
- *      single trade or null.
- *   8. Dedupe survivors and run them through validateConstructedTrade
- *      — roster ownership, value sanity, filter respects.
+ *  Stage 2 — single AI mega-call (constructTrades):
+ *   6. Hand the whole league snapshot to Claude in ONE call. Claude
+ *      compares every team holistically and constructs 5-6 mutually
+ *      beneficial trades, with reasoning for both sides.
+ *   7. Validate the AI output:
+ *        a) ownership — every sent player on user roster, every
+ *           received player on the named partner team
+ *        b) value sanity — deterministic valuation delta within 30%
+ *        c) drop hallucinations and robberies
  *
  *  Stage 3 — verification pass (parallel AI grading):
- *   9. Run each surviving constructed trade through analyzeCandidateWithAI
+ *   8. Run each surviving constructed trade through analyzeCandidateWithAI
  *      — the trusted analyzer prompt — to get an independent fairness
  *      score, winner, and team grades.
- *  10. Filter trades whose fairness diff exceeds MAX_FAIRNESS_DIFF and
+ *   9. Filter trades whose fairness diff exceeds MAX_FAIRNESS_DIFF and
  *      return the survivors sorted most-fair-first.
  *
- * Empty-state policy: if the fan-out returns zero valid candidates,
- * we return an empty recommendations array. We do NOT silently fall
- * back to the old mega-call, the matcher, or brute-force generation
- * from this path — fan-out already tries 20-30 targeted constructions,
- * and a zero here is a genuine signal that no realistic deal exists.
- * The legacy matcher + brute-force modules remain in the file but are
- * no longer invoked from the finder's primary code path.
+ * Fallback chain: if the constructor call fails or returns zero valid
+ * trades, fall back to the deterministic needs-aware matcher; if that
+ * also returns nothing, fall back to the legacy brute-force generator.
+ * The user always sees something rather than an empty state.
  *
  * Team Needs Dashboard is a separate AI-generated narrative — see
  * buildTeamNeeds below. It uses the same Claude client but a different
@@ -69,9 +63,7 @@ import {
 } from './playerValuation';
 import {
   buildTeamComposition,
-  selectAcquisitionTargets,
   type TeamComposition,
-  type AcquisitionTarget,
 } from './teamComposition';
 import {
   matchTrades,
@@ -80,7 +72,6 @@ import {
 } from './tradeMatcher';
 import {
   constructTrades,
-  constructTradeForTarget,
   type ConstructedTrade,
 } from './tradeConstructor';
 import {
@@ -270,10 +261,6 @@ interface FindRecommendationsArgs {
   leagueType?: 'redraft' | 'dynasty' | 'keeper';
   targetPosition?: string | null;
   targetTeamId?: string | null;
-  /** If set, the finder skips target-selection and goes straight to
-   *  a single focused construction call for this exact player. The
-   *  player must exist on a team other than the user's. */
-  targetPlayerId?: string | null;
   maxRecommendations?: number;
   /** Optional: if set, the user's candidate pool is restricted to
    *  these player IDs (all must be on their roster). Picks are not
@@ -297,7 +284,6 @@ export async function findTradeRecommendations(
     leagueType = 'redraft',
     targetPosition,
     targetTeamId,
-    targetPlayerId,
     maxRecommendations = 5,
     userPlayerIds,
     userPicks,
@@ -426,22 +412,16 @@ export async function findTradeRecommendations(
     settings: leagueSettings,
   };
 
-  // 6. Stage 2 — parallel per-target fan-out.
+  // 6. Stage 2 — call the constructor mega-call. ONE AI request that
+  //    sees the whole league and returns candidate trades.
   //
-  //    Instead of one mega-call that sees the whole league and has
-  //    to pick 8 trades, we:
-  //      (a) deterministically select ~20-30 concrete acquisition
-  //          targets using teamComposition (needs + surplus + picks),
-  //      (b) fan out one focused constructTradeForTarget call per
-  //          target in parallel (concurrency-capped),
-  //      (c) dedupe survivors and feed them into the existing
-  //          validation + verification + filter pipeline.
-  //
-  //    Targeted construction gives each decision its own attention
-  //    budget, so the AI stops going lazy and converging on a single
-  //    "safe" idea. If the user specified targetPlayerId (new UI
-  //    input), Stage 1 is skipped and we fan out a single call for
-  //    that exact target.
+  //    If the standard pass returns too few valid candidates (which
+  //    happens most often when the user specified a draft pick, or
+  //    when roster shape is unusual), we fire a CREATIVE retry that
+  //    runs hotter and is explicitly prompted to explore less-obvious
+  //    angles — positional arbitrage, bench-for-starter swaps,
+  //    pick-centric deals, weaker partners, etc. Results are merged,
+  //    deduped, and flow into the same validation pipeline.
   type ValidatedTrade = {
     targetTeamId: string;
     sendPlayerIds: string[];
@@ -455,161 +435,153 @@ export async function findTradeRecommendations(
     : null;
   const hasUserPicks = normalizedPicks.length > 0;
 
-  // 6a. Build the target list.
-  let targets: AcquisitionTarget[];
-  if (targetPlayerId) {
-    // User asked for one specific player — find them on whichever
-    // partner team owns them and emit exactly one target. Defensive
-    // checks here so a bad client payload can't crash the call.
-    let targetOwnerId: string | null = null;
-    for (const partnerId of partnerTeamIds) {
-      const roster = rosterByTeam.get(partnerId);
-      if (roster && roster.some((r) => r.playerId === targetPlayerId)) {
-        targetOwnerId = partnerId;
-        break;
-      }
-    }
-    if (!targetOwnerId) {
-      console.log(
-        `[tradeFinder] targetPlayerId=${targetPlayerId} not on any allowed partner team — returning empty`
-      );
-      return [];
-    }
-    const facts = factsById.get(targetPlayerId);
-    const pos = (facts?.position ?? '').toUpperCase();
-    targets = [
-      {
-        partnerTeamId: targetOwnerId,
-        targetPlayerId,
-        targetPosition: pos,
-        rationale: 'User-specified target player',
-        category: 'need',
-        rankScore: 1,
-      },
-    ];
-    console.log(
-      `[tradeFinder] fan-out: single user-specified target ${facts?.name ?? targetPlayerId} on team ${targetOwnerId}`
-    );
-  } else {
-    targets = selectAcquisitionTargets({
-      userComp,
-      compositionsByTeam,
-      partnerTeamIds,
-      targetPosition: targetPosition ?? null,
-      hasUserPicks,
-    });
-    console.log(
-      `[tradeFinder] fan-out: ${targets.length} targets selected across ${new Set(targets.map((t) => t.partnerTeamId)).size} partners`
-    );
-    if (targets.length === 0) {
-      return [];
-    }
-  }
-
-  // 6b. Fan out focused construction calls with a concurrency cap so
-  //     we don't hammer the Anthropic API with 30 simultaneous requests.
-  const FAN_OUT_CONCURRENCY = 8;
-  const constructed: Array<ConstructedTrade & { target: AcquisitionTarget }> = [];
-
-  // Simple worker-pool: each worker pulls the next index until the
-  // queue is empty. Preserves parallelism while capping concurrency.
-  let nextIdx = 0;
-  const worker = async () => {
-    while (true) {
-      const idx = nextIdx++;
-      if (idx >= targets.length) return;
-      const target = targets[idx];
-      const trade = await constructTradeForTarget({
-        anthropicKey,
-        snapshot,
-        userTeamId,
-        partnerTeamId: target.partnerTeamId,
-        targetPlayerId: target.targetPlayerId,
-        rationale: target.rationale,
+  const runAndValidate = async (
+    mode: 'standard' | 'creative',
+    desiredCount: number
+  ): Promise<ValidatedTrade[]> => {
+    const result = await constructTrades({
+      anthropicKey,
+      snapshot,
+      filters: {
+        targetPosition: targetPosition ?? null,
         requiredUserPlayerIds: restrictUserAssets,
         userPicks: hasUserPicks ? normalizedPicks : null,
-      });
-      if (trade) constructed.push({ ...trade, target });
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(FAN_OUT_CONCURRENCY, targets.length) }, () =>
-      worker()
-    )
-  );
-  console.log(
-    `[tradeFinder] fan-out: ${constructed.length}/${targets.length} targets returned a candidate`
-  );
-
-  // 6c. Dedupe by (partner, sortedSendIds, sortedReceiveIds). Targets
-  //     often converge on the same package (e.g. two targets on the
-  //     same team where only one is realistically obtainable).
-  const seenKeys = new Set<string>();
-  const dedupedConstructed: typeof constructed = [];
-  for (const c of constructed) {
-    const key = `${c.partnerTeamId}|${[...c.sentPlayerIds].sort().join(',')}|${[...c.receivedPlayerIds].sort().join(',')}`;
-    if (seenKeys.has(key)) continue;
-    seenKeys.add(key);
-    dedupedConstructed.push(c);
-  }
-
-  // 6d. Run survivors through the existing validation gauntlet —
-  //     ownership, filter respects, and value sanity.
-  const validated: ValidatedTrade[] = [];
-  for (const trade of dedupedConstructed) {
-    const reason = validateConstructedTrade(
-      trade,
-      userTeamId,
-      userRosterPlayerIds,
-      rosterByTeam,
-      allowedPartnerIds,
-      // When the user picked a specific target, targetPosition is
-      // implicit (the target's position); skip the position filter
-      // so we don't double-enforce and drop the single-target trade.
-      targetPlayerId ? null : (targetPosition ?? null),
-      requiredAssetSet,
-      valuations,
-      factsById,
-      hasUserPicks
-    );
-    if (reason !== null) {
-      console.log(
-        `[tradeFinder] dropped fan-out trade: ${reason}`,
-        trade.sentPlayerIds,
-        '→',
-        trade.receivedPlayerIds
-      );
-      continue;
-    }
-    validated.push({
-      targetTeamId: trade.partnerTeamId,
-      sendPlayerIds: trade.sentPlayerIds,
-      receivePlayerIds: trade.receivedPlayerIds,
-      fit: {
-        forYou: trade.userReasoning ? [trade.userReasoning] : [],
-        forThem: trade.partnerReasoning ? [trade.partnerReasoning] : [],
-        userNeedsMet: [],
-        partnerNeedsMet: [],
+        desiredCount,
+        mode,
       },
     });
-  }
+    const validated: ValidatedTrade[] = [];
+    if (!result || result.trades.length === 0) {
+      console.log(
+        `[tradeFinder] constructor ${mode} returned 0 trades` +
+          (result?.notes ? ` — notes: ${result.notes.slice(0, 120)}` : '')
+      );
+      return validated;
+    }
+    for (const trade of result.trades) {
+      const reason = validateConstructedTrade(
+        trade,
+        userTeamId,
+        userRosterPlayerIds,
+        rosterByTeam,
+        allowedPartnerIds,
+        targetPosition ?? null,
+        requiredAssetSet,
+        valuations,
+        factsById,
+        hasUserPicks
+      );
+      if (reason !== null) {
+        console.log(
+          `[tradeFinder] dropped ${mode} constructed trade: ${reason}`,
+          trade.sentPlayerIds,
+          '→',
+          trade.receivedPlayerIds
+        );
+        continue;
+      }
+      validated.push({
+        targetTeamId: trade.partnerTeamId,
+        sendPlayerIds: trade.sentPlayerIds,
+        receivePlayerIds: trade.receivedPlayerIds,
+        fit: {
+          forYou: trade.userReasoning ? [trade.userReasoning] : [],
+          forThem: trade.partnerReasoning ? [trade.partnerReasoning] : [],
+          userNeedsMet: [],
+          partnerNeedsMet: [],
+        },
+      });
+    }
+    return validated;
+  };
+
+  // Standard pass first. Always runs.
+  let validatedFromConstructor = await runAndValidate(
+    'standard',
+    Math.max(maxRecommendations + 2, 8)
+  );
   console.log(
-    `[tradeFinder] fan-out: ${validated.length} candidates passed validation`
+    `[tradeFinder] standard pass produced ${validatedFromConstructor.length} valid candidates`
   );
 
-  // Honest empty state: if fan-out + validation found nothing, return
-  // empty. No silent fallback to the matcher or brute-force — if 20+
-  // targeted constructions couldn't find a realistic deal, a blind
-  // generator won't either, and a "fallback" result would confuse the
-  // user by hiding a real signal ("there's genuinely nothing here").
-  if (validated.length === 0) {
-    return [];
+  // Creative retry if the standard pass is thin. Threshold: fewer than
+  // half of what the user asked for. The retry almost always fires
+  // when picks are involved because the standard pass is more
+  // conservative about pick-for-player packaging.
+  const MIN_CANDIDATES_BEFORE_RETRY = Math.max(
+    Math.ceil(maxRecommendations / 2),
+    2
+  );
+  if (validatedFromConstructor.length < MIN_CANDIDATES_BEFORE_RETRY) {
+    console.log(
+      `[tradeFinder] only ${validatedFromConstructor.length} < ${MIN_CANDIDATES_BEFORE_RETRY} candidates — running creative retry`
+    );
+    const creativeResults = await runAndValidate(
+      'creative',
+      Math.max(maxRecommendations + 2, 8)
+    );
+    console.log(
+      `[tradeFinder] creative pass added ${creativeResults.length} candidates`
+    );
+
+    // Dedupe by (send set, receive set, partner)
+    const seenKeys = new Set<string>();
+    const makeKey = (v: ValidatedTrade) =>
+      `${v.targetTeamId}|${[...v.sendPlayerIds].sort().join(',')}|${[...v.receivePlayerIds].sort().join(',')}`;
+    for (const v of validatedFromConstructor) seenKeys.add(makeKey(v));
+    for (const v of creativeResults) {
+      const k = makeKey(v);
+      if (!seenKeys.has(k)) {
+        seenKeys.add(k);
+        validatedFromConstructor.push(v);
+      }
+    }
   }
 
-  const topGlobal: ValidatedTrade[] = validated.slice(
-    0,
-    Math.max(maxRecommendations, 5)
-  );
+  // 8. Decide which set of survivors moves to the verification pass.
+  //    Primary: validated constructor output.
+  //    Fallback 1: deterministic needs-aware matcher.
+  //    Fallback 2: legacy brute-force generator.
+  let topGlobal: ValidatedTrade[];
+
+  if (validatedFromConstructor.length > 0) {
+    topGlobal = validatedFromConstructor.slice(
+      0,
+      Math.max(maxRecommendations, 5)
+    );
+  } else {
+    console.log(
+      '[tradeFinder] constructor returned 0 valid trades, falling back to matcher'
+    );
+    topGlobal = runMatcherFallback({
+      partnerTeamIds,
+      compositionsByTeam,
+      userComp,
+      valuations,
+      factsById,
+      leagueSettings,
+      targetPosition: targetPosition ?? null,
+      restrictUserAssets,
+      maxRecommendations,
+    });
+
+    if (topGlobal.length === 0) {
+      console.log(
+        '[tradeFinder] matcher fallback empty, using brute-force generator'
+      );
+      topGlobal = runBruteForceFallback({
+        partnerTeamIds,
+        rosterByTeam,
+        userRoster,
+        restrictUserAssets,
+        targetPosition: targetPosition ?? null,
+        factsById,
+        maxRecommendations,
+      });
+    }
+  }
+
+  if (topGlobal.length === 0) return [];
 
   // 7. Pre-fetch enrichment (season stats, trend, news) for every
   //    player that appears in any surviving candidate. This matches

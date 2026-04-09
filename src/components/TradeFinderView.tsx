@@ -10,7 +10,6 @@ import {
   ArrowRight,
   Plus,
   X,
-  Target,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -135,15 +134,6 @@ export function TradeFinderView({
   // The user's own roster — needed to populate the asset picker
   const [myRoster, setMyRoster] = useState<MyRosterBrief | null>(null);
 
-  // Every other team's roster in the league — powers the
-  // "Target a specific player" picker. Excludes the user's own roster.
-  const [otherRosters, setOtherRosters] = useState<MyRosterBrief[]>([]);
-  // Selected target player id (optional). When set, the finder runs
-  // a single focused construction call for this exact player instead
-  // of scanning the whole league.
-  const [targetPlayerId, setTargetPlayerId] = useState<string>('');
-  const [showTargetPicker, setShowTargetPicker] = useState(false);
-
   const tierAllowed =
     !!user && (user.subscriptionTier === 'pro' || user.subscriptionTier === 'elite');
 
@@ -193,32 +183,7 @@ export function TradeFinderView({
   useEffect(() => {
     setAssetPlayerIds([]);
     setAssetPicks([]);
-    setTargetPlayerId('');
   }, [selectedLeagueId]);
-
-  // Load every team's roster in the league so the "Target a specific
-  // player" picker has something to show. Excludes the user's own team.
-  useEffect(() => {
-    if (!selectedLeagueId || !myRoster) {
-      setOtherRosters([]);
-      return;
-    }
-    let cancelled = false;
-    api
-      .get<{ teams: MyRosterBrief[] }>(`/rosters/${selectedLeagueId}/all`)
-      .then((data) => {
-        if (cancelled) return;
-        setOtherRosters(
-          (data.teams ?? []).filter((t) => t.teamId !== myRoster.teamId)
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setOtherRosters([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedLeagueId, myRoster]);
 
   const addAssetPlayer = (playerId: string) => {
     setAssetPlayerIds((prev) =>
@@ -253,7 +218,6 @@ export function TradeFinderView({
           leagueId: selectedLeagueId,
           targetPosition: filterPosition || undefined,
           targetTeamId: filterTeam || undefined,
-          targetPlayerId: targetPlayerId || undefined,
           userPlayerIds: assetPlayerIds.length > 0 ? assetPlayerIds : undefined,
           userPicks: assetPicks.length > 0 ? assetPicks : undefined,
         }
@@ -271,7 +235,7 @@ export function TradeFinderView({
   useEffect(() => {
     setHasSearched(false);
     setRecommendations([]);
-  }, [selectedLeagueId, filterPosition, assetPlayerIds, assetPicks, targetPlayerId]);
+  }, [selectedLeagueId, filterPosition, assetPlayerIds, assetPicks]);
 
   if (!tierAllowed) {
     return (
@@ -764,142 +728,6 @@ export function TradeFinderView({
                       Add Pick
                     </button>
                   </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Target a specific player (optional) — when set, the
-              finder runs a single focused construction call for this
-              exact player instead of scanning the whole league. */}
-          <div
-            className={`border-t pt-3 ${
-              isDarkMode ? 'border-slate-800' : 'border-slate-200'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => setShowTargetPicker((v) => !v)}
-              className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${
-                isDarkMode
-                  ? 'text-slate-400 hover:text-slate-300'
-                  : 'text-slate-500 hover:text-slate-600'
-              }`}
-            >
-              {showTargetPicker ? (
-                <ChevronDown className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5" />
-              )}
-              Target a specific player (optional)
-              {targetPlayerId && (
-                <span
-                  className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                    isDarkMode
-                      ? 'bg-purple-500/20 text-purple-300'
-                      : 'bg-purple-50 text-purple-700'
-                  }`}
-                >
-                  1
-                </span>
-              )}
-            </button>
-            {showTargetPicker && (
-              <div className="mt-3 space-y-3">
-                <p
-                  className={`text-xs ${
-                    isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                  }`}
-                >
-                  Pick any player in the league. The finder will try to
-                  build one realistic package to acquire them instead of
-                  scanning for general fits. Leave empty to let the finder
-                  search across the whole league.
-                </p>
-
-                {/* Current selection pill */}
-                {targetPlayerId && (() => {
-                  const found = otherRosters
-                    .flatMap((t) =>
-                      [
-                        ...(t.roster.starters || []),
-                        ...(t.roster.bench || []),
-                        ...(t.roster.ir || []),
-                      ].map((p) => ({ team: t.teamName, ...p }))
-                    )
-                    .find((p) => p.playerId === targetPlayerId);
-                  if (!found) return null;
-                  return (
-                    <div className="flex flex-wrap gap-1.5">
-                      <span
-                        className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
-                          isDarkMode
-                            ? 'bg-purple-500/20 text-purple-200'
-                            : 'bg-purple-50 text-purple-800'
-                        }`}
-                      >
-                        <Target className="w-3 h-3" />
-                        <span className="text-[9px] opacity-70">
-                          {found.position}
-                        </span>
-                        {found.name}
-                        <span className="text-[9px] opacity-70">
-                          ({found.team})
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setTargetPlayerId('')}
-                          className="hover:opacity-70"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    </div>
-                  );
-                })()}
-
-                <div>
-                  <label
-                    className={`block text-[10px] font-bold uppercase mb-1 ${
-                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                    }`}
-                  >
-                    Pick a player from any opponent
-                  </label>
-                  <select
-                    value={targetPlayerId}
-                    onChange={(e) => setTargetPlayerId(e.target.value)}
-                    disabled={otherRosters.length === 0}
-                    className={`w-full px-3 py-2 text-sm rounded-lg border ${
-                      isDarkMode
-                        ? 'bg-slate-800 border-slate-600 text-white'
-                        : 'bg-white border-slate-300 text-slate-900'
-                    } outline-none disabled:opacity-50`}
-                  >
-                    <option value="">
-                      {otherRosters.length === 0
-                        ? 'Loading league rosters...'
-                        : 'Any player — let the finder decide'}
-                    </option>
-                    {otherRosters.map((team) => {
-                      const players = [
-                        ...(team.roster.starters || []),
-                        ...(team.roster.bench || []),
-                      ].filter(
-                        (p) => p.position !== 'K' && p.position !== 'DEF'
-                      );
-                      if (players.length === 0) return null;
-                      return (
-                        <optgroup key={team.teamId} label={team.teamName}>
-                          {players.map((p) => (
-                            <option key={p.playerId} value={p.playerId}>
-                              {p.position} • {p.name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
                 </div>
               </div>
             )}
