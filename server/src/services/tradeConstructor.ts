@@ -490,3 +490,327 @@ export async function constructTrades(
     return null;
   }
 }
+
+// ── Per-target focused construction (fan-out primitive) ─────────────
+//
+// constructTradeForTarget makes ONE focused call to construct the
+// single best realistic package for acquiring a specific player.
+// This is the primitive the trade finder fans out in parallel across
+// ~20-30 deterministic targets, replacing the old whole-league
+// mega-call. Much smaller prompt (one user roster + one partner roster
+// instead of ~12 team rosters), so each call finishes faster and
+// gives the model a much smaller attention budget per decision.
+
+export interface ConstructTargetArgs {
+  anthropicKey: string;
+  snapshot: LeagueContextSnapshot;
+  userTeamId: string;
+  partnerTeamId: string;
+  targetPlayerId: string;
+  /** Optional rationale from the target-selection step. Threaded into
+   *  the prompt so the model understands WHY we're targeting this
+   *  player (e.g. "Addresses user RB starter need"). */
+  rationale?: string | null;
+  /** Optional required user-side asset ids. When set, every valid
+   *  package must include at least one of these on the sent side. */
+  requiredUserPlayerIds?: string[] | null;
+  /** Optional user picks — the model is told they'll be threaded into
+   *  the trade separately and factors their value into the package. */
+  userPicks?: Array<{ year: number; round: number }> | null;
+}
+
+function buildTargetSystemPrompt(): string {
+  return `You are an elite fantasy football trade architect. Your job is to construct the SINGLE BEST realistic trade package the user could offer to acquire one specific target player from one specific partner team.
+
+### TWO HARD RULES
+
+RULE 1: THE TRADE MUST MAKE THE USER'S TEAM BETTER.
+RULE 2: THE PARTNER'S GM MUST ACTUALLY ACCEPT IT IN REAL LIFE.
+
+Both rules bind at the same time. If you cannot satisfy both, return null — no trade. A null answer is the correct answer when the user simply can't afford the target, or when the partner would never trade this player.
+
+### The packaging rule — avoid robberies
+
+When the target is an elite player, a SINGLE player on the user's side almost never matches value. You MUST pad the user's side with additional players or picks until the values on both sides are within ~15% of each other. Packages can be 1-5 players per side — use as many as the math requires.
+
+Example of a BAD package to never propose:
+  user sends: Jaxson Dart (rookie QB, [45/depth/bench])
+  user receives: Lamar Jackson (elite QB, [180/elite/starter])
+  → This is a ~75% value delta. No real GM accepts it. Either PAD or return null.
+
+${PICK_VALUE_REFERENCE}
+
+### Before finalizing, answer these four questions
+
+  A. Is the user clearly upgrading at a position they need, or
+     sidegrading? (If sidegrading, return null.)
+  B. If I were the partner's GM, would I be disgusted to accept
+     this? (If yes, pad the user's side until it feels fair.)
+  C. Is the deterministic value the user SENDS within 15% of what
+     they RECEIVE, using the [val] tags plus pick value?
+  D. Does the partner have a reason to say yes — addressing one of
+     their own needs, clearing a logjam, or getting clear value?
+
+### Core principles
+
+- AI-FIRST. The [val] tags are starting points. You may disagree
+  based on trends, coaching, or injury timeline — explain why in
+  the reasoning.
+- BOTH SIDES MUST WANT IT.
+- HONESTY. If no realistic package exists from this user roster,
+  return null. That's a valid, expected answer.
+
+### Constraints
+
+- Every sent player must be on the USER's roster (marked YOU).
+- Every received player must be on the PARTNER team's roster,
+  AND the target player MUST be included in receivedPlayerIds.
+- Packages can include 1-5 players per side.
+- Use the player IDs exactly as shown (id=... on each roster line).
+  NEVER invent or rename player IDs.
+- Do NOT include picks in sentPlayerIds — picks are threaded
+  separately by the caller.
+
+### Response format
+
+Respond with ONLY valid JSON in one of these two shapes:
+
+Shape A — a valid trade:
+{
+  "partnerTeamId": "team_id",
+  "sentPlayerIds": ["player_id", "player_id"],
+  "receivedPlayerIds": ["player_id"],
+  "userReasoning": "1-2 sentences on HOW THIS UPGRADES THE USER",
+  "partnerReasoning": "1-2 sentences on WHY THE PARTNER ACCEPTS",
+  "confidence": "high" | "medium" | "low"
+}
+
+Shape B — no realistic package exists:
+null
+
+Return the JSON ONLY, no prose.`;
+}
+
+// Compact per-team format for the focused prompt. Like
+// formatLeagueContextForConstructor but rendered for exactly one team,
+// with player IDs inline (id=...) so the model can echo them back
+// exactly in sentPlayerIds / receivedPlayerIds, and with the target
+// marked visually.
+function formatTeamForFocusedPrompt(
+  snap: LeagueContextSnapshot,
+  teamId: string,
+  opts: { label: 'YOU' | 'PARTNER'; markPlayerId?: string | null }
+): string {
+  const team = snap.teams.find((t) => t.id === teamId);
+  if (!team) return `(team ${teamId} not found)`;
+
+  const lines: string[] = [];
+  const labelSuffix = opts.label === 'YOU' ? ' (YOU)' : ' (PARTNER)';
+  const meta: string[] = [];
+  if (team.record) meta.push(team.record);
+  if (team.rank != null) meta.push(`#${team.rank}`);
+  lines.push(
+    `=== ${team.name}${labelSuffix}${meta.length ? ` [${meta.join(', ')}]` : ''} ===`
+  );
+
+  const needs = team.composition.needs.length > 0
+    ? team.composition.needs.map((n) => `${n.position}(${n.level})`).join(', ')
+    : '(none)';
+  lines.push(`Needs: ${needs}`);
+
+  for (const pos of ['QB', 'RB', 'WR', 'TE']) {
+    const summary = team.composition.byPosition.get(pos);
+    if (!summary || summary.players.length === 0) continue;
+    lines.push(`${pos}:`);
+    for (const slot of summary.players) {
+      const facts = snap.factsById.get(slot.playerId);
+      const name = facts?.name ?? slot.playerId;
+      const status = facts?.identity.status;
+      const statusTag =
+        status && status !== 'active' ? ` [${status.toUpperCase()}]` : '';
+      const tag = `[${Math.round(slot.finalValue)}/${slot.tier}/${slot.role}]`;
+      const marker =
+        opts.markPlayerId && slot.playerId === opts.markPlayerId
+          ? ' <<< TARGET'
+          : '';
+      lines.push(`  - ${name} ${tag} id=${slot.playerId}${statusTag}${marker}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function buildTargetUserMessage(args: ConstructTargetArgs): string {
+  const {
+    snapshot,
+    userTeamId,
+    partnerTeamId,
+    targetPlayerId,
+    rationale,
+    requiredUserPlayerIds,
+    userPicks,
+  } = args;
+
+  const targetFacts = snapshot.factsById.get(targetPlayerId);
+  const targetValuation = snapshot.valuations.get(targetPlayerId);
+  const partnerTeam = snapshot.teams.find((t) => t.id === partnerTeamId);
+
+  const lines: string[] = [];
+  lines.push(
+    `Construct the single best realistic trade package the user could offer to acquire this target player. Return JSON (trade or null) ONLY.`
+  );
+  lines.push('');
+  lines.push('=== TARGET ===');
+  if (targetFacts) {
+    const tag = targetValuation
+      ? ` [${Math.round(targetValuation.finalValue)}/${targetValuation.tier}]`
+      : '';
+    lines.push(
+      `${targetFacts.name} (${targetFacts.position}, ${targetFacts.nflTeam})${tag}`
+    );
+    lines.push(`id=${targetPlayerId}`);
+  } else {
+    lines.push(`Player id=${targetPlayerId} (facts unavailable)`);
+  }
+  lines.push(`On team: ${partnerTeam?.name ?? partnerTeamId}`);
+  if (rationale) {
+    lines.push(`Why we're targeting: ${rationale}`);
+  }
+  lines.push('');
+
+  // Filter block
+  const filterLines: string[] = [];
+  if (requiredUserPlayerIds && requiredUserPlayerIds.length > 0) {
+    filterLines.push(
+      `- REQUIRED USER ASSETS: every trade you construct MUST include at least one of these player ids in sentPlayerIds: ${requiredUserPlayerIds.join(', ')}`
+    );
+  }
+  if (userPicks && userPicks.length > 0) {
+    const picksStr = userPicks.map(formatPickAsset).join(', ');
+    filterLines.push(
+      `- BONUS USER ASSETS: the user is offering these draft picks as part of this trade: ${picksStr}.`
+    );
+    filterLines.push(
+      `  * Do NOT include picks in sentPlayerIds — the caller threads them separately.`
+    );
+    filterLines.push(
+      `  * DO factor the pick value into packaging. Because a pick is already on the user's side, the user-side PLAYER total can be LOWER than the partner-side player total — the pick fills the gap.`
+    );
+  }
+  if (filterLines.length > 0) {
+    lines.push('USER FILTERS:');
+    lines.push(...filterLines);
+    lines.push('');
+  }
+
+  lines.push(
+    'NOTE: use the player IDs shown as id=... on each roster line. Echo them exactly in sentPlayerIds / receivedPlayerIds.'
+  );
+  lines.push('');
+  lines.push(
+    formatTeamForFocusedPrompt(snapshot, userTeamId, { label: 'YOU' })
+  );
+  lines.push('');
+  lines.push(
+    formatTeamForFocusedPrompt(snapshot, partnerTeamId, {
+      label: 'PARTNER',
+      markPlayerId: targetPlayerId,
+    })
+  );
+  lines.push('');
+  lines.push(
+    `Now produce JSON: either one balanced trade package that acquires the TARGET, or null if no realistic package exists from this user roster. JSON ONLY.`
+  );
+
+  return lines.join('\n');
+}
+
+// Parse the single-trade response. Unlike constructTrades, this call
+// returns ONE trade or null — not a trades array.
+function coerceSingleTradeResponse(raw: unknown): ConstructedTrade | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object') return null;
+  const item = raw as RawTrade;
+  if (typeof item.partnerTeamId !== 'string') return null;
+  if (!isStringArray(item.sentPlayerIds)) return null;
+  if (!isStringArray(item.receivedPlayerIds)) return null;
+  if (item.sentPlayerIds.length === 0 || item.receivedPlayerIds.length === 0) {
+    return null;
+  }
+  return {
+    partnerTeamId: item.partnerTeamId,
+    sentPlayerIds: item.sentPlayerIds,
+    receivedPlayerIds: item.receivedPlayerIds,
+    userReasoning:
+      typeof item.userReasoning === 'string' ? item.userReasoning : '',
+    partnerReasoning:
+      typeof item.partnerReasoning === 'string' ? item.partnerReasoning : '',
+    confidence: coerceConfidence(item.confidence),
+  };
+}
+
+export async function constructTradeForTarget(
+  args: ConstructTargetArgs
+): Promise<ConstructedTrade | null> {
+  const { anthropicKey } = args;
+
+  const systemPrompt = buildTargetSystemPrompt();
+  const userMessage = buildTargetUserMessage(args);
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        // Single trade + reasoning fits comfortably in 800 tokens.
+        max_tokens: 900,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+        temperature: 0.5,
+      }),
+      // Per-target calls are small; 30s is plenty.
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) {
+      console.error(
+        '[tradeConstructor.target] AI call failed:',
+        res.status,
+        await res.text().catch(() => '')
+      );
+      return null;
+    }
+
+    const data = (await res.json()) as {
+      content?: { type: string; text?: string }[];
+    };
+    const textBlock = data.content?.find((b) => b.type === 'text');
+    const rawText = textBlock?.text?.trim();
+    if (!rawText) return null;
+
+    // Strip code fences and any "null" literal the model might emit.
+    const jsonStr = rawText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+    if (jsonStr === 'null' || jsonStr === '') return null;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      console.error(
+        '[tradeConstructor.target] JSON parse failed:',
+        parseErr,
+        jsonStr.slice(0, 200)
+      );
+      return null;
+    }
+
+    return coerceSingleTradeResponse(parsed);
+  } catch (err) {
+    console.error('[tradeConstructor.target] construct failed:', err);
+    return null;
+  }
+}
