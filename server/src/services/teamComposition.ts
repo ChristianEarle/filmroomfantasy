@@ -298,3 +298,186 @@ export function playersAtPosition(
   if (!summary) return [];
   return summary.players.map((p) => p.playerId);
 }
+
+// ── Acquisition target selection (for trade finder fan-out) ─────────
+//
+// Given the user's composition and every partner's composition, produce
+// a deterministic list of concrete acquisition targets. This feeds the
+// trade finder's per-target fan-out: each target becomes one focused
+// construction call. The goal is to surface ~20-30 high-signal targets
+// across the league before burning any AI budget.
+
+export interface AcquisitionTarget {
+  partnerTeamId: string;
+  targetPlayerId: string;
+  /** Position of the target player (already uppercased). */
+  targetPosition: string;
+  /** Short human-readable label for why this target was picked. Used
+   *  in debug logs and threaded into the per-target prompt. */
+  rationale: string;
+  /** Which heuristic surfaced this target. 'need' = partner's top
+   *  player at a user need position; 'surplus' = partner's surplus
+   *  at a user need position (easiest to pry); 'pick' = mid-tier
+   *  starter that a user-owned pick could help acquire. */
+  category: 'need' | 'surplus' | 'pick';
+  /** Deterministic rank score — higher is better. Used to truncate
+   *  the global pool down to the per-call fan-out budget. */
+  rankScore: number;
+}
+
+export interface SelectAcquisitionTargetsArgs {
+  userComp: TeamComposition;
+  compositionsByTeam: Map<string, TeamComposition>;
+  /** Partner team IDs to consider (already filtered by the caller so
+   *  the user's own team and any out-of-scope partners are excluded). */
+  partnerTeamIds: string[];
+  /** If set, restrict all categories to this position only. */
+  targetPosition: string | null;
+  /** If the user has draft picks in their offer, pick-centric targets
+   *  become relevant. When false, the 'pick' category is skipped. */
+  hasUserPicks: boolean;
+  /** Max targets per partner team after category ranking. Default 3. */
+  perPartnerLimit?: number;
+  /** Global cap across all partners after ranking. Default 30. */
+  totalLimit?: number;
+}
+
+// Weight by need urgency when ranking targets globally.
+const NEED_WEIGHT: Record<NeedLevel, number> = {
+  premium: 3,
+  starter: 2,
+  depth: 1,
+  none: 0.5,
+};
+
+export function selectAcquisitionTargets(
+  args: SelectAcquisitionTargetsArgs
+): AcquisitionTarget[] {
+  const {
+    userComp,
+    compositionsByTeam,
+    partnerTeamIds,
+    targetPosition,
+    hasUserPicks,
+    perPartnerLimit = 3,
+    totalLimit = 30,
+  } = args;
+
+  const wantPos = targetPosition ? targetPosition.toUpperCase() : null;
+
+  // Which positions should drive target selection for this call:
+  //  - If the user set a target-position filter, that's the only one.
+  //  - Otherwise, the user's explicit needs.
+  //  - Fallback: if the user has no explicit needs (a balanced roster),
+  //    treat every skill position as a 'depth' need so we still
+  //    generate targets across the league.
+  const needLevelByPos = new Map<string, NeedLevel>();
+  if (wantPos) {
+    const existing = userComp.needs.find((n) => n.position === wantPos);
+    needLevelByPos.set(wantPos, existing?.level ?? 'starter');
+  } else if (userComp.needs.length > 0) {
+    for (const n of userComp.needs) needLevelByPos.set(n.position, n.level);
+  } else {
+    for (const p of ['QB', 'RB', 'WR', 'TE']) {
+      needLevelByPos.set(p, 'depth');
+    }
+  }
+
+  const allTargets: AcquisitionTarget[] = [];
+
+  for (const partnerId of partnerTeamIds) {
+    const partnerComp = compositionsByTeam.get(partnerId);
+    if (!partnerComp) continue;
+
+    const perPartner: AcquisitionTarget[] = [];
+    const takenIds = new Set<string>();
+
+    // Category 1: need-driven. Partner's top 2 non-stash players at
+    // each user-need position. We deliberately DON'T skip the partner's
+    // #1 player here — the per-target prompt includes a "partner must
+    // plausibly accept" rule, so the construction pass will drop any
+    // target that's too attached to be pried loose. Our job is just
+    // to surface plausible candidates.
+    for (const [pos, level] of needLevelByPos) {
+      const summary = partnerComp.byPosition.get(pos);
+      if (!summary) continue;
+      let picked = 0;
+      for (const slot of summary.players) {
+        if (picked >= 2) break;
+        if (takenIds.has(slot.playerId)) continue;
+        if (slot.tier === 'stash') continue;
+        takenIds.add(slot.playerId);
+        perPartner.push({
+          partnerTeamId: partnerId,
+          targetPlayerId: slot.playerId,
+          targetPosition: pos,
+          rationale: `Addresses user ${pos} ${level} need`,
+          category: 'need',
+          rankScore: NEED_WEIGHT[level] * slot.finalValue,
+        });
+        picked++;
+      }
+    }
+
+    // Category 2: surplus-arbitrage. Positions where the partner has
+    // surplus players AND the user has a need. Surplus players are
+    // the easiest to pry because the owner doesn't depend on them —
+    // we bump their rank score by 20% accordingly.
+    for (const [pos, summary] of partnerComp.byPosition) {
+      if (summary.surplusCount === 0) continue;
+      if (!needLevelByPos.has(pos)) continue;
+      // Best non-stash, non-taken player at this surplus position.
+      for (const slot of summary.players) {
+        if (takenIds.has(slot.playerId)) continue;
+        if (slot.tier === 'stash') continue;
+        takenIds.add(slot.playerId);
+        const level = needLevelByPos.get(pos) ?? 'depth';
+        perPartner.push({
+          partnerTeamId: partnerId,
+          targetPlayerId: slot.playerId,
+          targetPosition: pos,
+          rationale: `Partner has ${pos} surplus; easiest to acquire`,
+          category: 'surplus',
+          rankScore: NEED_WEIGHT[level] * slot.finalValue * 1.2,
+        });
+        break; // at most one surplus target per position per partner
+      }
+    }
+
+    // Category 3: pick-driven. Only relevant when the user is actually
+    // offering picks. Target mid/high-tier STARTERS — these are the
+    // players most likely to move for a pick + throw-in because the
+    // owner values future assets over a present-day mid-tier piece.
+    if (hasUserPicks) {
+      for (const [pos, summary] of partnerComp.byPosition) {
+        if (wantPos && pos !== wantPos) continue;
+        for (const slot of summary.players) {
+          if (takenIds.has(slot.playerId)) continue;
+          if (slot.tier !== 'mid' && slot.tier !== 'high') continue;
+          if (slot.role !== 'starter' && slot.role !== 'flex') continue;
+          takenIds.add(slot.playerId);
+          const level = needLevelByPos.get(pos) ?? 'depth';
+          perPartner.push({
+            partnerTeamId: partnerId,
+            targetPlayerId: slot.playerId,
+            targetPosition: pos,
+            rationale: `Pick-centric: mid-tier starter, a pick + throw-in could close the gap`,
+            category: 'pick',
+            rankScore: NEED_WEIGHT[level] * slot.finalValue * 0.9,
+          });
+          break; // at most one pick target per position per partner
+        }
+      }
+    }
+
+    // Rank this partner's contributions internally and keep the top
+    // `perPartnerLimit`. This prevents any single partner (e.g. a
+    // team with surplus at every position) from dominating the pool.
+    perPartner.sort((a, b) => b.rankScore - a.rankScore);
+    allTargets.push(...perPartner.slice(0, perPartnerLimit));
+  }
+
+  // Global sort + hard cap. Bounds fan-out concurrency and cost.
+  allTargets.sort((a, b) => b.rankScore - a.rankScore);
+  return allTargets.slice(0, totalLimit);
+}
