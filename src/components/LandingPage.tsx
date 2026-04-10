@@ -265,10 +265,10 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           <div>
             <div className="hero-tag"><span className="hero-tag-dot" /> AI-Powered Trade Analysis</div>
             <h1>Know who wins the trade <em>before you accept.</em></h1>
-            <p className="hero-sub">FilmRoom&#39;s AI Trade Analyzer grades every deal using film-based player valuations, strength of schedule, and your league&#39;s exact settings. Redraft, dynasty, and keeper.</p>
+            <p className="hero-sub">FilmRoom&#39;s AI Trade Analyzer grades every deal using player valuations, strength of schedule, and your league&#39;s exact settings. Redraft, dynasty, and keeper.</p>
             <div className="cta-row">
               <button className="btn btn-blue" style={{ padding: '11px 22px', fontSize: 14 }} onClick={nav('TradeAnalyzer')}>Analyze a Trade Free</button>
-              <button className="btn btn-outline" style={{ padding: '11px 22px', fontSize: 14 }} onClick={nav('TradeAnalyzer')}>Watch Demo</button>
+
             </div>
             <div className="stats-row">
               <div className="stat"><b>150k+</b> trades analyzed</div>
