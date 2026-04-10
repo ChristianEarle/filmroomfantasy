@@ -539,7 +539,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <ul className="check-list">
                 <li>1 trade analysis per day</li>
                 <li>2-team trades only</li>
-                <li>Redraft format only</li>
+                <li>All league formats</li>
                 <li>AI verdict &amp; letter grade</li>
                 <li>Player rankings &amp; Game Slate</li>
               </ul>
