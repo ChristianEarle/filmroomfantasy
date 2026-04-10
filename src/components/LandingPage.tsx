@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 interface LandingPageProps {
   onNavigate: (view: string) => void;
@@ -71,6 +71,8 @@ const LANDING_CSS = `
 .lp .pill{padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;color:var(--muted2);background:var(--bg);border:1px solid var(--border);cursor:pointer;transition:all .12s;font-family:inherit}
 .lp .pill.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .lp .trade-grid{display:grid;grid-template-columns:1fr 28px 1fr;gap:6px;align-items:start;margin-top:10px}
+.lp .trade-grid.teams-3{grid-template-columns:1fr 20px 1fr 20px 1fr}
+.lp .trade-grid.teams-4{grid-template-columns:1fr 20px 1fr 20px 1fr 20px 1fr}
 .lp .team-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px}
 .lp .team-head{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.07em;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .lp .team-head svg{width:13px;height:13px;fill:var(--muted)}
@@ -143,12 +145,31 @@ const LANDING_CSS = `
 .lp .bottom-cta h2{font-size:28px;margin:0 0 8px;font-weight:800;color:var(--text-bright);letter-spacing:-.02em}
 .lp .bottom-cta p{color:var(--muted);margin:0 0 20px;font-size:14px}
 .lp footer{border-top:1px solid var(--border);padding:24px 0;color:var(--muted);font-size:12px;text-align:center}
+.lp .finder-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
+.lp .finder-row:hover{border-color:var(--blue-border)}
+.lp .finder-players{display:flex;align-items:center;gap:6px;flex:1}
+.lp .finder-arrow{color:var(--muted);font-size:14px;margin:0 10px;flex-shrink:0}
+.lp .finder-grade{font-weight:800;font-size:14px;flex-shrink:0;width:28px;text-align:center}
+.lp .finder-tag{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600}
+.lp .finder-tag.buy{background:rgba(34,197,94,.12);color:var(--green)}
+.lp .finder-tag.sell{background:rgba(239,68,68,.12);color:var(--red)}
+.lp .finder-search{width:100%;padding:9px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:13px;font-family:inherit;outline:none;margin-bottom:12px}
+.lp .finder-search::placeholder{color:var(--muted)}
+.lp .finder-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
+.lp .history-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
+.lp .history-row:hover{border-color:var(--blue-border)}
+.lp .history-details{flex:1}
+.lp .history-teams{font-weight:600;color:var(--text-bright);margin-bottom:2px}
+.lp .history-meta{font-size:10px;color:var(--muted)}
+.lp .history-result{text-align:right;flex-shrink:0}
+.lp .history-grade{font-weight:800;font-size:14px}
+.lp .history-status{font-size:10px;font-weight:600;margin-top:1px}
 @media(max-width:860px){
   .lp .hero-grid,.lp .feat-grid,.lp .steps,.lp .pricing-row{grid-template-columns:1fr}
   .lp .feat.primary{grid-column:span 1;grid-template-columns:1fr}
   .lp h1{font-size:30px}
   .lp .nav-links{display:none}
-  .lp .trade-grid{grid-template-columns:1fr}
+  .lp .trade-grid,.lp .trade-grid.teams-3,.lp .trade-grid.teams-4{grid-template-columns:1fr}
   .lp .swap-col{padding:8px 0;transform:rotate(90deg)}
 }
 `;
@@ -159,35 +180,36 @@ interface ChipData {
   val: number;
 }
 
-const TEAM1_PLAYERS: ChipData[] = [
-  { pos: 'WR', name: 'CeeDee Lamb', val: 24.1 },
-  { pos: 'RB', name: 'Javonte Williams', val: 11.3 },
+const ALL_TEAMS: ChipData[][] = [
+  [ { pos: 'WR', name: 'CeeDee Lamb', val: 24.1 }, { pos: 'RB', name: 'Javonte Williams', val: 11.3 } ],
+  [ { pos: 'RB', name: 'Bijan Robinson', val: 22.8 }, { pos: 'WR', name: 'DK Metcalf', val: 18.2 } ],
+  [ { pos: 'QB', name: 'Jalen Hurts', val: 26.4 }, { pos: 'TE', name: 'Sam LaPorta', val: 14.3 } ],
+  [ { pos: 'WR', name: 'Amon-Ra St. Brown', val: 19.2 }, { pos: 'RB', name: 'Saquon Barkley', val: 21.9 } ],
 ];
 
-const TEAM2_PLAYERS: ChipData[] = [
-  { pos: 'RB', name: 'Bijan Robinson', val: 22.8 },
-  { pos: 'WR', name: 'DK Metcalf', val: 18.2 },
-];
-
-function computeVerdict(t1: number, t2: number) {
-  const d = t2 - t1;
-  const pct = Math.max(5, Math.min(95, 50 + d * 3.5));
-  let grade = 'C', summary = 'Fair Trade', color = 'var(--muted2)';
-  if (d > 8) { grade = 'A+'; summary = 'Team 2 Wins Big'; color = 'var(--green)'; }
-  else if (d > 4) { grade = 'A\u2212'; summary = 'Team 2 Wins'; color = 'var(--green)'; }
-  else if (d > 1) { grade = 'B'; summary = 'Slight Edge Team 2'; color = 'var(--blue)'; }
-  else if (d > -1) { grade = 'C'; summary = 'Fair Trade'; color = 'var(--muted2)'; }
-  else if (d > -4) { grade = 'C\u2212'; summary = 'Slight Edge Team 1'; color = 'var(--gold)'; }
-  else { grade = 'D'; summary = 'Team 1 Wins'; color = 'var(--red)'; }
-  return { grade, summary, color, pct, delta: d };
+function computeMultiVerdict(totals: number[]) {
+  const max = Math.max(...totals);
+  const min = Math.min(...totals);
+  const winnerIdx = totals.indexOf(max);
+  const d = max - min;
+  const pct = Math.max(5, Math.min(95, 50 + d * 2));
+  let grade = 'C', color = 'var(--muted2)';
+  if (d > 12) { grade = 'A+'; color = 'var(--green)'; }
+  else if (d > 8) { grade = 'A\u2212'; color = 'var(--green)'; }
+  else if (d > 4) { grade = 'B'; color = 'var(--blue)'; }
+  else if (d > 1) { grade = 'C+'; color = 'var(--muted2)'; }
+  else { grade = 'C'; color = 'var(--muted2)'; }
+  const summary = d <= 1 ? 'Fair Trade' : `Team ${winnerIdx + 1} Wins`;
+  return { grade, summary, color, pct, delta: d, winnerIdx };
 }
 
 export function LandingPage({ onNavigate }: LandingPageProps) {
   const [activeTab, setActiveTab] = useState('Analyzer');
   const [tradeType, setTradeType] = useState('2-Team Trade');
   const [leagueFormat, setLeagueFormat] = useState('Redraft');
-  const [team1Active, setTeam1Active] = useState<boolean[]>(TEAM1_PLAYERS.map(() => true));
-  const [team2Active, setTeam2Active] = useState<boolean[]>(TEAM2_PLAYERS.map(() => true));
+  const [chipActive, setChipActive] = useState<boolean[][]>(ALL_TEAMS.map(t => t.map(() => true)));
+
+  const teamCount = tradeType === '4-Team' ? 4 : tradeType === '3-Team' ? 3 : 2;
 
   useEffect(() => {
     const style = document.createElement('style');
@@ -196,16 +218,18 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
     return () => { style.remove(); };
   }, []);
 
-  const toggleChip = useCallback((team: 1 | 2, idx: number) => {
-    if (team === 1) setTeam1Active(prev => prev.map((v, i) => i === idx ? !v : v));
-    else setTeam2Active(prev => prev.map((v, i) => i === idx ? !v : v));
+  const toggleChip = useCallback((teamIdx: number, playerIdx: number) => {
+    setChipActive(prev => prev.map((team, ti) =>
+      ti === teamIdx ? team.map((v, pi) => pi === playerIdx ? !v : v) : team
+    ));
   }, []);
 
   const verdict = useMemo(() => {
-    const t1 = TEAM1_PLAYERS.reduce((s, p, i) => s + (team1Active[i] ? p.val : 0), 0);
-    const t2 = TEAM2_PLAYERS.reduce((s, p, i) => s + (team2Active[i] ? p.val : 0), 0);
-    return computeVerdict(t1, t2);
-  }, [team1Active, team2Active]);
+    const totals = ALL_TEAMS.slice(0, teamCount).map((team, ti) =>
+      team.reduce((s, p, pi) => s + (chipActive[ti]?.[pi] ? p.val : 0), 0)
+    );
+    return computeMultiVerdict(totals);
+  }, [chipActive, teamCount]);
 
   const nav = (view: string) => (e: React.MouseEvent) => { e.preventDefault(); onNavigate(view); };
 
@@ -216,7 +240,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="container topbar-inner">
           <button className="logo" onClick={nav('Landing')}>
             <div className="logo-icon">
-              <svg viewBox="0 0 24 24" fill="#e5e5e5"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+              <img src="/logo.png" alt="FilmRoom logo" style={{ width: 28, height: 28 }} />
             </div>
             FilmRoom <span className="beta">BETA</span>
           </button>
@@ -267,67 +291,161 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               </div>
             </div>
             <div className="widget-body">
-              <div className="controls">
-                <div className="ctrl-group">
-                  <label>Trade Type</label>
-                  <div className="pills">
-                    {['2-Team Trade', '3-Team', '4-Team'].map(t => (
-                      <button key={t} className={`pill${tradeType === t ? ' on' : ''}`} onClick={() => setTradeType(t)}>{t}</button>
+              {activeTab === 'Analyzer' && (
+                <>
+                  <div className="controls">
+                    <div className="ctrl-group">
+                      <label>Trade Type</label>
+                      <div className="pills">
+                        {['2-Team Trade', '3-Team', '4-Team'].map(t => (
+                          <button key={t} className={`pill${tradeType === t ? ' on' : ''}`} onClick={() => setTradeType(t)}>{t}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="ctrl-group">
+                      <label>League Format</label>
+                      <div className="pills">
+                        {['Redraft', 'Dynasty', 'Keeper'].map(f => (
+                          <button key={f} className={`pill${leagueFormat === f ? ' on' : ''}`} onClick={() => setLeagueFormat(f)}>{f}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`trade-grid${teamCount === 3 ? ' teams-3' : teamCount === 4 ? ' teams-4' : ''}`}>
+                    {ALL_TEAMS.slice(0, teamCount).map((team, ti) => (
+                      <React.Fragment key={ti}>
+                        {ti > 0 && <div className="swap-col">⇄</div>}
+                        <div className="team-box">
+                          <div className="team-head">
+                            <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                            Team {ti + 1} &middot; Sends away
+                          </div>
+                          {team.map((p, pi) => (
+                            <div key={p.name} className={`chip${!chipActive[ti]?.[pi] ? ' dimmed' : ''}`} onClick={() => toggleChip(ti, pi)}>
+                              <span className="chip-left"><span className={`pos ${p.pos}`}>{p.pos}</span>{p.name}</span>
+                              <span className="chip-val">{p.val}</span>
+                            </div>
+                          ))}
+                          <input className="search-box" placeholder="Search player to add..." readOnly />
+                          <div className="add-pick">+ Add Draft Pick</div>
+                        </div>
+                      </React.Fragment>
                     ))}
                   </div>
-                </div>
-                <div className="ctrl-group">
-                  <label>League Format</label>
-                  <div className="pills">
-                    {['Redraft', 'Dynasty', 'Keeper'].map(f => (
-                      <button key={f} className={`pill${leagueFormat === f ? ' on' : ''}`} onClick={() => setLeagueFormat(f)}>{f}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
 
-              <div className="trade-grid">
-                <div className="team-box">
-                  <div className="team-head">
-                    <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                    Team 1 &middot; Sends away
-                  </div>
-                  {TEAM1_PLAYERS.map((p, i) => (
-                    <div key={p.name} className={`chip${!team1Active[i] ? ' dimmed' : ''}`} onClick={() => toggleChip(1, i)}>
-                      <span className="chip-left"><span className={`pos ${p.pos}`}>{p.pos}</span>{p.name}</span>
-                      <span className="chip-val">{p.val}</span>
+                  <div className="verdict">
+                    <div className="verdict-top">
+                      <div className="verdict-lbl">AI Verdict &mdash; {verdict.summary}</div>
+                      <div className="verdict-grade" style={{ color: verdict.color }}>{verdict.grade}</div>
                     </div>
-                  ))}
-                  <input className="search-box" placeholder="Search player to add..." readOnly />
-                  <div className="add-pick">+ Add Draft Pick</div>
-                </div>
-                <div className="swap-col">&lrarr;</div>
-                <div className="team-box">
-                  <div className="team-head">
-                    <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                    Team 2 &middot; Sends away
-                  </div>
-                  {TEAM2_PLAYERS.map((p, i) => (
-                    <div key={p.name} className={`chip${!team2Active[i] ? ' dimmed' : ''}`} onClick={() => toggleChip(2, i)}>
-                      <span className="chip-left"><span className={`pos ${p.pos}`}>{p.pos}</span>{p.name}</span>
-                      <span className="chip-val">{p.val}</span>
+                    <div className="verdict-bar"><div className="verdict-fill" style={{ width: `${verdict.pct}%` }} /></div>
+                    <div className="verdict-desc">
+                      {verdict.delta <= 1
+                        ? 'Even trade across all teams.'
+                        : <>+{verdict.delta.toFixed(1)} value edge for <b>Team {verdict.winnerIdx + 1}</b>.</>
+                      }{' '}Click players to simulate different trade packages.
                     </div>
-                  ))}
-                  <input className="search-box" placeholder="Search player to add..." readOnly />
-                  <div className="add-pick">+ Add Draft Pick</div>
-                </div>
-              </div>
+                  </div>
+                </>
+              )}
 
-              <div className="verdict">
-                <div className="verdict-top">
-                  <div className="verdict-lbl">AI Verdict &mdash; {verdict.summary}</div>
-                  <div className="verdict-grade" style={{ color: verdict.color }}>{verdict.grade}</div>
-                </div>
-                <div className="verdict-bar"><div className="verdict-fill" style={{ width: `${verdict.pct}%` }} /></div>
-                <div className="verdict-desc">
-                  {verdict.delta >= 0 ? '+' : ''}{verdict.delta.toFixed(1)} value points. Click players to simulate different trade packages.
-                </div>
-              </div>
+              {activeTab === 'Trade Finder' && (
+                <>
+                  <input className="finder-search" placeholder="Search your roster — e.g. CeeDee Lamb" readOnly />
+                  <div className="finder-row">
+                    <div className="finder-players">
+                      <span className={`pos WR`}>WR</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
+                      <span className="finder-arrow">→</span>
+                      <span className={`pos RB`}>RB</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Bijan Robinson</span>
+                    </div>
+                    <span className="finder-tag buy">Buy Low</span>
+                    <span className="finder-grade" style={{ color: 'var(--green)' }}>A</span>
+                  </div>
+                  <div className="finder-row">
+                    <div className="finder-players">
+                      <span className={`pos RB`}>RB</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Javonte Williams</span>
+                      <span className="finder-arrow">→</span>
+                      <span className={`pos WR`}>WR</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>DK Metcalf</span>
+                    </div>
+                    <span className="finder-tag buy">Buy Low</span>
+                    <span className="finder-grade" style={{ color: 'var(--green)' }}>B+</span>
+                  </div>
+                  <div className="finder-row">
+                    <div className="finder-players">
+                      <span className={`pos QB`}>QB</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Jalen Hurts</span>
+                      <span className="finder-arrow">→</span>
+                      <span className={`pos QB`}>QB</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Lamar Jackson</span>
+                    </div>
+                    <span className="finder-tag sell">Sell High</span>
+                    <span className="finder-grade" style={{ color: 'var(--blue)' }}>B</span>
+                  </div>
+                  <div className="finder-row">
+                    <div className="finder-players">
+                      <span className={`pos TE`}>TE</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Sam LaPorta</span>
+                      <span className="finder-arrow">→</span>
+                      <span className={`pos WR`}>WR</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Amon-Ra St. Brown</span>
+                    </div>
+                    <span className="finder-tag buy">Buy Low</span>
+                    <span className="finder-grade" style={{ color: 'var(--green)' }}>A&minus;</span>
+                  </div>
+                  <div className="finder-hint">AI-suggested trades based on your roster &amp; league trends</div>
+                </>
+              )}
+
+              {activeTab === 'History' && (
+                <>
+                  <div className="history-row">
+                    <div className="history-details">
+                      <div className="history-teams">CeeDee Lamb, Javonte Williams ⇄ Bijan Robinson</div>
+                      <div className="history-meta">Redraft &middot; 2-Team &middot; Apr 8, 2026</div>
+                    </div>
+                    <div className="history-result">
+                      <div className="history-grade" style={{ color: 'var(--green)' }}>A&minus;</div>
+                      <div className="history-status" style={{ color: 'var(--green)' }}>Accepted</div>
+                    </div>
+                  </div>
+                  <div className="history-row">
+                    <div className="history-details">
+                      <div className="history-teams">Jalen Hurts ⇄ Lamar Jackson, 2026 2nd</div>
+                      <div className="history-meta">Dynasty &middot; 2-Team &middot; Apr 5, 2026</div>
+                    </div>
+                    <div className="history-result">
+                      <div className="history-grade" style={{ color: 'var(--blue)' }}>B+</div>
+                      <div className="history-status" style={{ color: 'var(--green)' }}>Accepted</div>
+                    </div>
+                  </div>
+                  <div className="history-row">
+                    <div className="history-details">
+                      <div className="history-teams">DK Metcalf, Sam LaPorta ⇄ Amon-Ra St. Brown</div>
+                      <div className="history-meta">Redraft &middot; 2-Team &middot; Apr 2, 2026</div>
+                    </div>
+                    <div className="history-result">
+                      <div className="history-grade" style={{ color: 'var(--muted2)' }}>C+</div>
+                      <div className="history-status" style={{ color: 'var(--red)' }}>Declined</div>
+                    </div>
+                  </div>
+                  <div className="history-row">
+                    <div className="history-details">
+                      <div className="history-teams">Saquon Barkley ⇄ CeeDee Lamb, 2026 3rd</div>
+                      <div className="history-meta">Keeper &middot; 3-Team &middot; Mar 28, 2026</div>
+                    </div>
+                    <div className="history-result">
+                      <div className="history-grade" style={{ color: 'var(--green)' }}>A</div>
+                      <div className="history-status" style={{ color: 'var(--muted)' }}>Pending</div>
+                    </div>
+                  </div>
+                  <div className="finder-hint">All trades you&apos;ve analyzed this season</div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -343,7 +461,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           <div className="feat-grid">
             <div className="feat primary">
               <div>
-                <div className="feat-ic">&lrarr;</div>
+                <div className="feat-ic">⇄</div>
                 <h3>AI Trade Analyzer</h3>
                 <p>Drop in any trade and get an instant A-F grade tuned to your league&#39;s scoring, roster composition, and playoff schedule. Includes ROS projections, playoff-week matchup breakdowns, and AI-generated counter-offer suggestions. Supports 2, 3, and 4-team trades.</p>
               </div>
