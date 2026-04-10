@@ -71,8 +71,7 @@ const LANDING_CSS = `
 .lp .pill{padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;color:var(--muted2);background:var(--bg);border:1px solid var(--border);cursor:pointer;transition:all .12s;font-family:inherit}
 .lp .pill.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .lp .trade-grid{display:grid;grid-template-columns:1fr 28px 1fr;gap:6px;align-items:start;margin-top:10px}
-.lp .trade-grid.teams-3{grid-template-columns:1fr 20px 1fr 20px 1fr}
-.lp .trade-grid.teams-4{grid-template-columns:1fr 20px 1fr 20px 1fr 20px 1fr}
+.lp .trade-grid.teams-3,.lp .trade-grid.teams-4{grid-template-columns:1fr 1fr;gap:8px}
 .lp .team-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px}
 .lp .team-head{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.07em;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .lp .team-head svg{width:13px;height:13px;fill:var(--muted)}
@@ -87,6 +86,7 @@ const LANDING_CSS = `
 .lp .pos.TE{background:rgba(245,158,11,.15);color:#fbbf24}
 .lp .chip-val{font-size:10px;color:var(--muted);font-weight:600}
 .lp .swap-col{display:flex;align-items:center;justify-content:center;padding-top:42px;color:var(--border2);font-size:18px;font-weight:700}
+.lp .trade-grid.teams-3 .swap-col,.lp .trade-grid.teams-4 .swap-col{display:none}
 .lp .search-box{width:100%;padding:7px 9px;border-radius:7px;background:var(--card);border:1px solid var(--border);color:var(--muted);font-size:11px;font-family:inherit;outline:none;margin-top:3px}
 .lp .search-box::placeholder{color:var(--muted)}
 .lp .search-box:focus{border-color:var(--blue)}
@@ -170,7 +170,7 @@ const LANDING_CSS = `
   .lp h1{font-size:30px}
   .lp .nav-links{display:none}
   .lp .trade-grid,.lp .trade-grid.teams-3,.lp .trade-grid.teams-4{grid-template-columns:1fr}
-  .lp .swap-col{padding:8px 0;transform:rotate(90deg)}
+  .lp .swap-col{display:none!important}
 }
 `;
 
