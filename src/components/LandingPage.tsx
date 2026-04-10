@@ -186,12 +186,6 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
     };
   }, []);
 
-  const viewPath: Record<string, string> = {
-    Board: '/player-rankings', TradeAnalyzer: '/trade-analyzer', GameSlate: '/game-slate',
-    Pricing: '/pricing', Articles: '/articles', Login: '/login', Privacy: '/privacy', Terms: '/terms',
-    Home: '/home',
-  };
-
   const nav = (view: string) => (e: React.MouseEvent) => {
     e.preventDefault();
     onNavigate(view);
@@ -206,17 +200,17 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <a href="#rankings">Rankings</a>
             <a href="#features">Why FilmRoom</a>
             <a href="#pricing">Pricing</a>
-            <a href="/login" onClick={nav('Login')} className="nav-cta">Sign Up Free</a>
+            <a href="/register" onClick={nav('Register')} className="nav-cta">Sign Up Free</a>
           </div>
         </div>
       </nav>
 
       <section className="hero">
         <div className="hero-label"><span className="dot" /> 2026 NFL Season — Data Updated Every 4 Hours</div>
-        <h1>Your league.<br />Your edge.</h1>
-        <p>Sync your fantasy league, break down every projection, and let AI evaluate your trades — all in one place. Built for managers who want real analysis, not recycled rankings.</p>
+        <h1>Your edge starts<br />before the snap.</h1>
+        <p>Every projection starts with Vegas lines — spreads, totals, implied points — because the sharpest money in sports already did the homework. No expert rankings. No consensus lists. Just the market.</p>
         <div className="hero-actions">
-          <button className="btn-primary" onClick={nav('Login')}>Start free &rarr;</button>
+          <button className="btn-primary" onClick={nav('Register')}>Start free &rarr;</button>
           <a href="#rankings" className="btn-secondary">See the rankings</a>
         </div>
       </section>
@@ -266,7 +260,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               ))}
               <tr className="unlock-row">
                 <td colSpan={7}>
-                  <div className="unlock-text">350+ players ranked every week — full projection breakdowns, not just a number</div>
+                  <div className="unlock-text">350+ players ranked every week — projections powered by Vegas, not experts</div>
                   <button className="btn-primary" onClick={nav('Board')}>See full rankings &rarr;</button>
                 </td>
               </tr>
@@ -279,12 +273,12 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="section-header" style={{ marginBottom: 24 }}><h2>Why FilmRoom</h2></div>
         <div className="diff-grid">
           {[
-            { num: '\u{1F4CA}', title: 'Projection breakdowns', desc: 'See exactly why a player is ranked where they are. Vegas lines, stat projections, matchup grades, and scoring breakdowns \u2014 not a black box.' },
-            { num: '\u{1F916}', title: 'AI trade analysis', desc: 'Drop in a trade and get an instant AI-powered evaluation. Fair value, positional impact, league context \u2014 so you stop second-guessing.' },
-            { num: '\u{1F3C8}', title: 'Your league, your way', desc: 'Sync your Sleeper, Yahoo, ESPN, or MyFantasyLeague league and see everything through the lens of your roster, your matchups, your scoring settings.' },
-            { num: '\u{1F527}', title: 'Fully customizable', desc: 'Filter by scoring format, position, week, and more. PPR, Half PPR, Standard \u2014 see projections the way your league actually scores.' },
-            { num: '\u{1F3C6}', title: 'Dynamic playoff predictor', desc: 'Input scenarios \u2014 wins, losses, tiebreakers \u2014 and see your updated playoff odds in real time. Know exactly what you need to clinch.' },
-            { num: '$0', title: 'Free to use', desc: 'Core rankings and projections are free forever. No paywall, no email gate. Just open the page and see the data.' },
+            { num: '5+', title: 'Vegas lines at the core', desc: 'Spreads, totals, and implied team scores drive every projection. No talking heads, no gut feelings \u2014 the market does the work.' },
+            { num: '4hr', title: 'Data refresh cycle', desc: 'Stats, projections, and line movements updated every 4 hours. Never making decisions on stale numbers.' },
+            { num: '3', title: 'Platforms, one dashboard', desc: 'Sync Sleeper, Yahoo, and ESPN leagues instantly. See all your teams, matchups, and waivers in one place.' },
+            { num: '18', title: 'Weeks of projections', desc: 'Full-season projections across PPR, Half PPR, and Standard. Plan your season, not just your week.' },
+            { num: '0', title: 'Paywalled rankings', desc: 'Core rankings are free forever. No email gate, no "sign up to see #6." Just open the page and see the data.' },
+            { num: '<1s', title: 'Time to sync your league', desc: 'Paste your Sleeper username or connect Yahoo/ESPN with OAuth. Your roster, matchups, and waivers load instantly.' },
           ].map((d) => (
             <div key={d.title} className="diff-card">
               <div className="num">{d.num}</div>
@@ -299,9 +293,9 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <h2>Three steps. That&apos;s it.</h2>
         <div className="how-steps">
           {[
-            { n: '1', title: 'Sync your league', desc: 'Paste your Sleeper username or connect Yahoo, ESPN, or MyFantasyLeague. Your rosters, matchups, scoring settings, and schedule load instantly.' },
-            { n: '2', title: 'Break down every projection', desc: "See exactly how each player's projection is built — Vegas lines, stat models, matchup data. Filter by position, format, and week to fit your league." },
-            { n: '3', title: 'Win with confidence', desc: 'Run trades through AI analysis, spot waiver pickups early, and make start/sit decisions with real breakdowns behind every number.' },
+            { n: '1', title: 'Connect your league', desc: 'Enter your Sleeper username or link your Yahoo/ESPN account. Your league data, rosters, and schedule sync in under a second.' },
+            { n: '2', title: 'Check the numbers', desc: "Player rankings built off Vegas lines, scoring trends, and real stat breakdowns \u2014 not some expert\u2019s top-10 list. Filter by position, scoring format, and week." },
+            { n: '3', title: 'Make better decisions', desc: 'Start/sit calls backed by data. Waiver pickups before your leaguemates notice. Trade offers you can actually evaluate.' },
           ].map((s) => (
             <div key={s.n} className="how-step">
               <div className="step-num">{s.n}</div>
@@ -327,7 +321,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <li>1 league sync</li>
               <li>1 trade analysis per day</li>
             </ul>
-            <a href="/login" className="price-btn outline" onClick={nav('Login')}>Start free</a>
+            <a href="/register" className="price-btn outline" onClick={nav('Register')}>Start free</a>
           </div>
           <div className="price-card featured">
             <div className="tier pop">Pro &mdash; Most Popular</div>
@@ -357,38 +351,18 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         </div>
       </section>
 
-      <section className="diff-section fade-in">
-        <div className="section-header" style={{ marginBottom: 24 }}><h2>Explore Our Tools</h2></div>
-        <div className="diff-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-          {[
-            { title: 'Projection Breakdowns', desc: 'See the full breakdown behind every player projection — Vegas lines, stat models, and matchup context.', view: 'Board' },
-            { title: 'AI Trade Analyzer', desc: 'Drop in any trade and get instant AI analysis — fair value, roster impact, and whether you should smash accept.', view: 'TradeAnalyzer' },
-            { title: 'My League Hub', desc: 'Sync your league from Sleeper, Yahoo, ESPN, or MyFantasyLeague. Your roster, matchups, waivers, and standings — all in one place.', view: 'Home' },
-            { title: 'NFL Game Slate', desc: 'Live scores, spreads, and fantasy-relevant game stats updated throughout the week.', view: 'GameSlate' },
-          ].map((t) => (
-            <a key={t.title} href={viewPath[t.view] || '/'} onClick={nav(t.view)} className="diff-card" style={{ cursor: 'pointer', textDecoration: 'none' }}>
-              <h3>{t.title}</h3>
-              <p>{t.desc}</p>
-              <span style={{ color: 'var(--accent)', fontSize: '13px', fontWeight: 600, marginTop: '12px', display: 'inline-block' }}>Explore &rarr;</span>
-            </a>
-          ))}
-        </div>
-      </section>
-
       <section className="final-cta fade-in">
-        <h2>Your league deserves better tools.</h2>
-        <p>Sync your league, break down projections, and analyze trades with AI. Free to start.</p>
-        <button className="btn-primary" onClick={nav('Login')}>Get started free &rarr;</button>
+        <h2>Stop guessing. Start winning.</h2>
+        <p>Free rankings built on Vegas lines. No credit card required.</p>
+        <button className="btn-primary" onClick={nav('Register')}>Get started free &rarr;</button>
       </section>
 
       <footer>
         <div className="left">&copy; 2026 FilmRoom Fantasy</div>
         <div className="right">
-          <a href="/player-rankings" onClick={nav('Board')}>Player Rankings</a>
-          <a href="/trade-analyzer" onClick={nav('TradeAnalyzer')}>Trade Analyzer</a>
-          <a href="/game-slate" onClick={nav('GameSlate')}>NFL Games</a>
-          <a href="/pricing" onClick={nav('Pricing')}>Pricing</a>
-          <a href="/articles" onClick={nav('Articles')}>Articles</a>
+          <a href="#rankings">Rankings</a>
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
           <a href="/privacy" onClick={nav('Privacy')}>Privacy Policy</a>
           <a href="/terms" onClick={nav('Terms')}>Terms of Service</a>
           <a href="/login" onClick={nav('Login')}>Login</a>
