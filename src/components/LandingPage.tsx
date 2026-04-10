@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 interface LandingPageProps {
   onNavigate: (view: string) => void;
@@ -71,6 +71,8 @@ const LANDING_CSS = `
 .lp .pill{padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;color:var(--muted2);background:var(--bg);border:1px solid var(--border);cursor:pointer;transition:all .12s;font-family:inherit}
 .lp .pill.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .lp .trade-grid{display:grid;grid-template-columns:1fr 28px 1fr;gap:6px;align-items:start;margin-top:10px}
+.lp .trade-grid.teams-3{grid-template-columns:1fr 20px 1fr 20px 1fr}
+.lp .trade-grid.teams-4{grid-template-columns:1fr 20px 1fr 20px 1fr 20px 1fr}
 .lp .team-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px}
 .lp .team-head{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.07em;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .lp .team-head svg{width:13px;height:13px;fill:var(--muted)}
@@ -148,7 +150,7 @@ const LANDING_CSS = `
   .lp .feat.primary{grid-column:span 1;grid-template-columns:1fr}
   .lp h1{font-size:30px}
   .lp .nav-links{display:none}
-  .lp .trade-grid{grid-template-columns:1fr}
+  .lp .trade-grid,.lp .trade-grid.teams-3,.lp .trade-grid.teams-4{grid-template-columns:1fr}
   .lp .swap-col{padding:8px 0;transform:rotate(90deg)}
 }
 `;
@@ -159,35 +161,36 @@ interface ChipData {
   val: number;
 }
 
-const TEAM1_PLAYERS: ChipData[] = [
-  { pos: 'WR', name: 'CeeDee Lamb', val: 24.1 },
-  { pos: 'RB', name: 'Javonte Williams', val: 11.3 },
+const ALL_TEAMS: ChipData[][] = [
+  [ { pos: 'WR', name: 'CeeDee Lamb', val: 24.1 }, { pos: 'RB', name: 'Javonte Williams', val: 11.3 } ],
+  [ { pos: 'RB', name: 'Bijan Robinson', val: 22.8 }, { pos: 'WR', name: 'DK Metcalf', val: 18.2 } ],
+  [ { pos: 'QB', name: 'Jalen Hurts', val: 26.4 }, { pos: 'TE', name: 'Sam LaPorta', val: 14.3 } ],
+  [ { pos: 'WR', name: 'Amon-Ra St. Brown', val: 19.2 }, { pos: 'RB', name: 'Saquon Barkley', val: 21.9 } ],
 ];
 
-const TEAM2_PLAYERS: ChipData[] = [
-  { pos: 'RB', name: 'Bijan Robinson', val: 22.8 },
-  { pos: 'WR', name: 'DK Metcalf', val: 18.2 },
-];
-
-function computeVerdict(t1: number, t2: number) {
-  const d = t2 - t1;
-  const pct = Math.max(5, Math.min(95, 50 + d * 3.5));
-  let grade = 'C', summary = 'Fair Trade', color = 'var(--muted2)';
-  if (d > 8) { grade = 'A+'; summary = 'Team 2 Wins Big'; color = 'var(--green)'; }
-  else if (d > 4) { grade = 'A\u2212'; summary = 'Team 2 Wins'; color = 'var(--green)'; }
-  else if (d > 1) { grade = 'B'; summary = 'Slight Edge Team 2'; color = 'var(--blue)'; }
-  else if (d > -1) { grade = 'C'; summary = 'Fair Trade'; color = 'var(--muted2)'; }
-  else if (d > -4) { grade = 'C\u2212'; summary = 'Slight Edge Team 1'; color = 'var(--gold)'; }
-  else { grade = 'D'; summary = 'Team 1 Wins'; color = 'var(--red)'; }
-  return { grade, summary, color, pct, delta: d };
+function computeMultiVerdict(totals: number[]) {
+  const max = Math.max(...totals);
+  const min = Math.min(...totals);
+  const winnerIdx = totals.indexOf(max);
+  const d = max - min;
+  const pct = Math.max(5, Math.min(95, 50 + d * 2));
+  let grade = 'C', color = 'var(--muted2)';
+  if (d > 12) { grade = 'A+'; color = 'var(--green)'; }
+  else if (d > 8) { grade = 'A\u2212'; color = 'var(--green)'; }
+  else if (d > 4) { grade = 'B'; color = 'var(--blue)'; }
+  else if (d > 1) { grade = 'C+'; color = 'var(--muted2)'; }
+  else { grade = 'C'; color = 'var(--muted2)'; }
+  const summary = d <= 1 ? 'Fair Trade' : `Team ${winnerIdx + 1} Wins`;
+  return { grade, summary, color, pct, delta: d, winnerIdx };
 }
 
 export function LandingPage({ onNavigate }: LandingPageProps) {
   const [activeTab, setActiveTab] = useState('Analyzer');
   const [tradeType, setTradeType] = useState('2-Team Trade');
   const [leagueFormat, setLeagueFormat] = useState('Redraft');
-  const [team1Active, setTeam1Active] = useState<boolean[]>(TEAM1_PLAYERS.map(() => true));
-  const [team2Active, setTeam2Active] = useState<boolean[]>(TEAM2_PLAYERS.map(() => true));
+  const [chipActive, setChipActive] = useState<boolean[][]>(ALL_TEAMS.map(t => t.map(() => true)));
+
+  const teamCount = tradeType === '4-Team' ? 4 : tradeType === '3-Team' ? 3 : 2;
 
   useEffect(() => {
     const style = document.createElement('style');
@@ -196,16 +199,18 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
     return () => { style.remove(); };
   }, []);
 
-  const toggleChip = useCallback((team: 1 | 2, idx: number) => {
-    if (team === 1) setTeam1Active(prev => prev.map((v, i) => i === idx ? !v : v));
-    else setTeam2Active(prev => prev.map((v, i) => i === idx ? !v : v));
+  const toggleChip = useCallback((teamIdx: number, playerIdx: number) => {
+    setChipActive(prev => prev.map((team, ti) =>
+      ti === teamIdx ? team.map((v, pi) => pi === playerIdx ? !v : v) : team
+    ));
   }, []);
 
   const verdict = useMemo(() => {
-    const t1 = TEAM1_PLAYERS.reduce((s, p, i) => s + (team1Active[i] ? p.val : 0), 0);
-    const t2 = TEAM2_PLAYERS.reduce((s, p, i) => s + (team2Active[i] ? p.val : 0), 0);
-    return computeVerdict(t1, t2);
-  }, [team1Active, team2Active]);
+    const totals = ALL_TEAMS.slice(0, teamCount).map((team, ti) =>
+      team.reduce((s, p, pi) => s + (chipActive[ti]?.[pi] ? p.val : 0), 0)
+    );
+    return computeMultiVerdict(totals);
+  }, [chipActive, teamCount]);
 
   const nav = (view: string) => (e: React.MouseEvent) => { e.preventDefault(); onNavigate(view); };
 
@@ -286,36 +291,26 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                 </div>
               </div>
 
-              <div className="trade-grid">
-                <div className="team-box">
-                  <div className="team-head">
-                    <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                    Team 1 &middot; Sends away
-                  </div>
-                  {TEAM1_PLAYERS.map((p, i) => (
-                    <div key={p.name} className={`chip${!team1Active[i] ? ' dimmed' : ''}`} onClick={() => toggleChip(1, i)}>
-                      <span className="chip-left"><span className={`pos ${p.pos}`}>{p.pos}</span>{p.name}</span>
-                      <span className="chip-val">{p.val}</span>
+              <div className={`trade-grid${teamCount === 3 ? ' teams-3' : teamCount === 4 ? ' teams-4' : ''}`}>
+                {ALL_TEAMS.slice(0, teamCount).map((team, ti) => (
+                  <React.Fragment key={ti}>
+                    {ti > 0 && <div className="swap-col">⇄</div>}
+                    <div className="team-box">
+                      <div className="team-head">
+                        <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                        Team {ti + 1} &middot; Sends away
+                      </div>
+                      {team.map((p, pi) => (
+                        <div key={p.name} className={`chip${!chipActive[ti]?.[pi] ? ' dimmed' : ''}`} onClick={() => toggleChip(ti, pi)}>
+                          <span className="chip-left"><span className={`pos ${p.pos}`}>{p.pos}</span>{p.name}</span>
+                          <span className="chip-val">{p.val}</span>
+                        </div>
+                      ))}
+                      <input className="search-box" placeholder="Search player to add..." readOnly />
+                      <div className="add-pick">+ Add Draft Pick</div>
                     </div>
-                  ))}
-                  <input className="search-box" placeholder="Search player to add..." readOnly />
-                  <div className="add-pick">+ Add Draft Pick</div>
-                </div>
-                <div className="swap-col">⇄</div>
-                <div className="team-box">
-                  <div className="team-head">
-                    <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                    Team 2 &middot; Sends away
-                  </div>
-                  {TEAM2_PLAYERS.map((p, i) => (
-                    <div key={p.name} className={`chip${!team2Active[i] ? ' dimmed' : ''}`} onClick={() => toggleChip(2, i)}>
-                      <span className="chip-left"><span className={`pos ${p.pos}`}>{p.pos}</span>{p.name}</span>
-                      <span className="chip-val">{p.val}</span>
-                    </div>
-                  ))}
-                  <input className="search-box" placeholder="Search player to add..." readOnly />
-                  <div className="add-pick">+ Add Draft Pick</div>
-                </div>
+                  </React.Fragment>
+                ))}
               </div>
 
               <div className="verdict">
@@ -325,7 +320,10 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                 </div>
                 <div className="verdict-bar"><div className="verdict-fill" style={{ width: `${verdict.pct}%` }} /></div>
                 <div className="verdict-desc">
-                  {verdict.delta >= 0 ? '+' : ''}{verdict.delta.toFixed(1)} value points. Click players to simulate different trade packages.
+                  {verdict.delta <= 1
+                    ? 'Even trade across all teams.'
+                    : <>+{verdict.delta.toFixed(1)} value edge for <b>Team {verdict.winnerIdx + 1}</b>.</>
+                  }{' '}Click players to simulate different trade packages.
                 </div>
               </div>
             </div>
