@@ -216,7 +216,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="container topbar-inner">
           <button className="logo" onClick={nav('Landing')}>
             <div className="logo-icon">
-              <svg viewBox="0 0 24 24" fill="#e5e5e5"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+              <img src="/logo.png" alt="FilmRoom logo" style={{ width: 28, height: 28 }} />
             </div>
             FilmRoom <span className="beta">BETA</span>
           </button>
@@ -301,7 +301,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                   <input className="search-box" placeholder="Search player to add..." readOnly />
                   <div className="add-pick">+ Add Draft Pick</div>
                 </div>
-                <div className="swap-col">&lrarr;</div>
+                <div className="swap-col">⇄</div>
                 <div className="team-box">
                   <div className="team-head">
                     <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
@@ -343,7 +343,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           <div className="feat-grid">
             <div className="feat primary">
               <div>
-                <div className="feat-ic">&lrarr;</div>
+                <div className="feat-ic">⇄</div>
                 <h3>AI Trade Analyzer</h3>
                 <p>Drop in any trade and get an instant A-F grade tuned to your league&#39;s scoring, roster composition, and playoff schedule. Includes ROS projections, playoff-week matchup breakdowns, and AI-generated counter-offer suggestions. Supports 2, 3, and 4-team trades.</p>
               </div>
