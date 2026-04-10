@@ -535,12 +535,13 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <h4>Free</h4>
               <div className="amount">$0</div>
               <div className="period">Forever</div>
-              <div className="desc">Free to start. Upgrade when you want more.</div>
+              <div className="desc">Try the Trade Analyzer with basic access.</div>
               <ul className="check-list">
-                <li>Player rankings &mdash; all positions, all formats</li>
-                <li>NFL Game Slate with live scores</li>
-                <li>News &amp; injury updates</li>
                 <li>1 trade analysis per day</li>
+                <li>2-team trades only</li>
+                <li>Redraft format only</li>
+                <li>AI verdict &amp; letter grade</li>
+                <li>Player rankings &amp; Game Slate</li>
               </ul>
               <button className="price-btn secondary" onClick={nav('Login')}>Get Started</button>
             </div>
@@ -549,12 +550,14 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <h4>Pro</h4>
               <div className="amount">$4.99</div>
               <div className="period">per month</div>
-              <div className="desc">Everything you need to dominate your league.</div>
+              <div className="desc">Unlock the full Trade Analyzer for your league.</div>
               <ul className="check-list">
-                <li>Everything in Free</li>
-                <li>Unlimited league syncs</li>
-                <li>Trending players &amp; add/drop data</li>
                 <li>5 trade analyses per day</li>
+                <li>2, 3, and 4-team trades</li>
+                <li>Redraft, Dynasty, and Keeper</li>
+                <li>AI counter-offer suggestions</li>
+                <li>Playoff schedule comparisons</li>
+                <li>Trade Finder &amp; Trade History</li>
                 <li>3-day free trial</li>
               </ul>
               <button className="price-btn primary" onClick={nav('Pricing')}>Start Free Trial</button>
@@ -563,11 +566,12 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <h4>Elite</h4>
               <div className="amount">$9.99</div>
               <div className="period">per month</div>
-              <div className="desc">Advanced tools for serious competitors.</div>
+              <div className="desc">No limits. Every trade tool, unlimited.</div>
               <ul className="check-list">
-                <li>Everything in Pro</li>
                 <li>Unlimited trade analyses</li>
-                <li>Deeper player research</li>
+                <li>Everything in Pro</li>
+                <li>Deeper player research for trades</li>
+                <li>ROS projections &amp; value charts</li>
                 <li>Custom scoring models <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Coming Soon</span></li>
                 <li>Early access to new features</li>
               </ul>
