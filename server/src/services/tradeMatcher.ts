@@ -1,31 +1,32 @@
 /**
  * tradeMatcher — needs-aware candidate generator.
  *
- * Replaces the brute-force cartesian-product generator in candidateFilter.ts
- * for the recommendation pipeline. Given:
- *   - USER's team composition (needs + surplus)
- *   - PARTNER's team composition
- *   - A map of PlayerValuations
+ * Enumerates concrete trade candidates between the user and a partner
+ * team using deterministic logic (no AI). Produces a small scored
+ * pool that the ranking constructor picks from.
  *
- * produces a small list of MatchedCandidates where EVERY trade:
- *   1) Contains at least one player that addresses a real need on the
- *      receiving side, on BOTH sides.
- *   2) Stays within a value-imbalance tolerance (default: 25%).
- *   3) Comes with human-readable fit reasons explaining why it makes
- *      sense for each team — which the AI analyzer uses as context and
- *      the UI surfaces to the user.
+ * Shape support: 1v1, 2v1, 1v2, 2v2, 3v1.
  *
- * Philosophy: "surplus for need" is how real-world trades happen. The
- * old generator ignored need entirely and leaned on raw projection balance,
- * which is why it would surface obvious value-matched trades that neither
- * side would actually consider. This matcher changes the question from
- * "can these players have similar value?" to "does swapping them make
- * both teams better?".
+ * Pick-awareness: when the user is offering draft picks as part of
+ * every trade, their estimated value is added to the user's send
+ * side BEFORE the balance check. This means the matcher looks for
+ * UPGRADES (partner players worth more than user players by the
+ * pick value) instead of sidegrades — which is what the user
+ * actually wants when they offer "Player X + 1st for an upgrade."
+ *
+ * Required-asset seeding: when restrictUserAssets is set, every
+ * candidate starts with one of those assets on the sent side. This
+ * guarantees the filter is satisfied structurally rather than via
+ * post-filtering that can empty out the pool.
+ *
+ * Philosophy: "surplus for need" is how real-world trades happen.
+ * The matcher changes the question from "can these players have
+ * similar value?" to "does swapping them make both teams better?".
  */
 
 import type { PlayerFacts, LeagueSettings } from './tradeContext';
 import type { PlayerValuation } from './playerValuation';
-import { sumValue, valueImbalancePct } from './playerValuation';
+import { sumValue } from './playerValuation';
 import type {
   TeamComposition,
   NeedLevel,
@@ -38,7 +39,10 @@ export interface MatchedCandidate {
   sendPlayerIds: string[];
   receivePlayerIds: string[];
 
-  /** Per-side value totals from the deterministic model */
+  /** Per-side value totals from the deterministic model.
+   *  userValue INCLUDES the estimated pick value when the caller
+   *  passed pickValueSum — this matches what the partner actually
+   *  receives when the pick gets stapled on at verification time. */
   userValue: number;
   partnerValue: number;
   /** (partner - user) / max(sent, received). Negative = user sends more */
@@ -65,8 +69,17 @@ export interface MatchOptions {
   imbalanceTolerance?: number;
   /** If set, only match against a specific position on the partner side */
   targetPosition?: string | null;
-  /** If set, restrict user's send-side pool to these player ids */
+  /** If set, restrict user's send-side pool to these player ids.
+   *  Every generated candidate will include at least one of these
+   *  ids on the sent side (seeded, not post-filtered). */
   restrictUserAssets?: string[] | null;
+  /** Estimated total value of picks the user is offering on every
+   *  trade (added to user's send side before balance checks so the
+   *  matcher finds upgrades instead of sidegrades). Default 0. */
+  pickValueSum?: number;
+  /** Max players per side. Default 3. Caps combinatorial explosion
+   *  on 2v2 / 3v1 shapes. */
+  maxPlayersPerSide?: number;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -221,78 +234,136 @@ function buildFitReasons(
 
 // ── Candidate builders ──────────────────────────────────────────────
 //
-// For each (userNeed, partnerSurplusAtUserNeed) we try to find a
-// matching (userSurplus, partnerNeed) pair and pair them up into
-// 1v1, 2v1, 1v2 packages that balance within tolerance.
+// For each (userNeed, partnerPlayerAtThatPosition) we try to find
+// matching user-side packages at a balanced value (including pick
+// value when the user has picks on offer). Supported shapes:
+//   1v1, 2v1, 1v2, 2v2, 3v1
+//
+// Seed support: an optional seededUserPlayerId forces that id to be
+// on the sent side for every pair emitted. Used to honor
+// restrictUserAssets structurally.
 
 interface Pair {
   send: string[];
   receive: string[];
 }
 
-function tryBuildPair(
-  partnerPlayerAddressingUserNeed: string,
-  partnerComp: TeamComposition,
-  userComp: TeamComposition,
-  valuations: Map<string, PlayerValuation>,
-  tolerance: number
-): Pair[] {
+interface BuildPairArgs {
+  partnerPlayerAddressingUserNeed: string;
+  partnerComp: TeamComposition;
+  userComp: TeamComposition;
+  valuations: Map<string, PlayerValuation>;
+  tolerance: number;
+  /** Extra virtual value on the user's side from draft picks. */
+  pickValueSum: number;
+  /** If set, every pair must include this player id on the sent side. */
+  seededUserPlayerId: string | null;
+  /** Max players per side across all shapes. */
+  maxPlayersPerSide: number;
+}
+
+function balanced(sendTotal: number, receiveTotal: number, tolerance: number): boolean {
+  const max = Math.max(sendTotal, receiveTotal, 1);
+  return Math.abs(sendTotal - receiveTotal) / max <= tolerance;
+}
+
+function tryBuildPair(args: BuildPairArgs): Pair[] {
+  const {
+    partnerPlayerAddressingUserNeed,
+    partnerComp,
+    userComp,
+    valuations,
+    tolerance,
+    pickValueSum,
+    seededUserPlayerId,
+    maxPlayersPerSide,
+  } = args;
+
   const partnerV = valuations.get(partnerPlayerAddressingUserNeed);
   if (!partnerV) return [];
   const targetValue = partnerV.finalValue;
 
   const pairs: Pair[] = [];
 
-  // Candidate user "surplus" pool: players the user would send.
-  // Sorted by finalValue desc so we consider biggest trades first.
+  // Candidate user pool: non-starters. We allow starters at positions
+  // where the user has 2+ starters (e.g. RB1/RB2 when both are
+  // startable) because real rosters trade those in 2v2 shapes.
   const userPool: PlayerValuation[] = [];
   for (const [, summary] of userComp.byPosition) {
+    const starterCount = summary.players.filter((p) => p.role === 'starter').length;
     for (const slot of summary.players) {
-      if (slot.role === 'starter') continue;
+      if (slot.role === 'starter' && starterCount < 2) continue;
       const v = valuations.get(slot.playerId);
       if (v) userPool.push(v);
     }
   }
   userPool.sort((a, b) => b.finalValue - a.finalValue);
 
-  // Prefer users sending at positions that address a partner need
-  const partnerNeedPositions = new Set(partnerComp.needs.map((n) => n.position));
+  // Seed: if a required asset is forced, pre-compute its valuation
+  // and filter the rest of the pool to exclude it (we'll add it
+  // back as the forced first element of every package).
+  const seededV = seededUserPlayerId ? valuations.get(seededUserPlayerId) : null;
+  if (seededUserPlayerId && !seededV) return []; // unknown seed id — bail
+  const userPoolNonSeed = seededV
+    ? userPool.filter((p) => p.playerId !== seededV.playerId)
+    : userPool;
 
-  // ── 1-for-1 ──
-  for (const userV of userPool) {
-    if (Math.abs(userV.finalValue - targetValue) / Math.max(userV.finalValue, targetValue, 1) <= tolerance) {
-      pairs.push({
-        send: [userV.playerId],
-        receive: [partnerPlayerAddressingUserNeed],
-      });
-    }
+  // Convenience: add pick value to a player-value total.
+  const withPicks = (playerTotal: number): number => playerTotal + pickValueSum;
+
+  const pushIfNew = (pair: Pair) => {
+    // Defensive dedup check handled by caller via seenKeys; we just
+    // cap package size here.
+    if (pair.send.length > maxPlayersPerSide) return;
+    if (pair.receive.length > maxPlayersPerSide) return;
+    pairs.push(pair);
+  };
+
+  // ── Shape: send only the seed (1 user player + picks) for target ──
+  // When a seed is set and the seed + picks balance the target, emit
+  // the single-seed trade. This is the "Tank Dell + 1st for CandidateWR"
+  // canonical shape.
+  if (seededV && balanced(withPicks(seededV.finalValue), targetValue, tolerance)) {
+    pushIfNew({
+      send: [seededV.playerId],
+      receive: [partnerPlayerAddressingUserNeed],
+    });
   }
 
-  // ── 2-for-1 (user sends 2 smaller players for partner's 1 bigger player) ──
-  // Only makes sense if partnerV is clearly stronger than any single user option
-  const topUserValue = userPool[0]?.finalValue ?? 0;
-  if (targetValue > topUserValue * 1.05) {
-    for (let i = 0; i < Math.min(userPool.length, 8); i++) {
-      for (let j = i + 1; j < Math.min(userPool.length, 8); j++) {
-        const total = userPool[i].finalValue + userPool[j].finalValue;
-        if (Math.abs(total - targetValue) / Math.max(total, targetValue, 1) <= tolerance) {
-          pairs.push({
-            send: [userPool[i].playerId, userPool[j].playerId],
-            receive: [partnerPlayerAddressingUserNeed],
-          });
-        }
+  // ── 1-for-1 ── (no seed) or (seed is the only sent player)
+  if (!seededV) {
+    for (const userV of userPool) {
+      if (balanced(withPicks(userV.finalValue), targetValue, tolerance)) {
+        pushIfNew({ send: [userV.playerId], receive: [partnerPlayerAddressingUserNeed] });
       }
     }
   }
 
-  // ── 1-for-2 (partner throws in a second piece addressing a partner need we help with) ──
-  // Only emit this when the user is giving up a top-tier player
-  const userTopTier: PlayerValuation[] = userPool
-    .filter((v) => v.tier === 'elite' || v.tier === 'high')
-    .slice(0, 3);
+  // ── 2-for-1 (two user players for one partner player) ──
+  // Top 10 from pool keeps O(100) per partner — manageable.
+  const topPool = userPoolNonSeed.slice(0, 10);
+  for (let i = 0; i < topPool.length; i++) {
+    for (let j = i + 1; j < topPool.length; j++) {
+      const sendIds = seededV
+        ? [seededV.playerId, topPool[i].playerId, topPool[j].playerId]
+        : [topPool[i].playerId, topPool[j].playerId];
+      const sendTotal = withPicks(
+        (seededV?.finalValue ?? 0) + topPool[i].finalValue + topPool[j].finalValue
+      );
+      if (balanced(sendTotal, targetValue, tolerance)) {
+        pushIfNew({ send: sendIds, receive: [partnerPlayerAddressingUserNeed] });
+      }
+    }
+  }
 
-  if (userTopTier.length > 0) {
-    // Look for partner "throw-in" players at any position
+  // ── 1-for-2 (user sends one, partner sends target + one extra) ──
+  // Only emit when user is giving up a top-tier player OR when the
+  // seeded player is strong enough.
+  const eligibleUserAnchors: PlayerValuation[] = seededV
+    ? [seededV]
+    : userPool.filter((v) => v.tier === 'elite' || v.tier === 'high').slice(0, 3);
+
+  if (eligibleUserAnchors.length > 0) {
     const partnerExtras: PlayerValuation[] = [];
     for (const [, summary] of partnerComp.byPosition) {
       for (const slot of summary.players) {
@@ -304,11 +375,12 @@ function tryBuildPair(
     }
     partnerExtras.sort((a, b) => b.finalValue - a.finalValue);
 
-    for (const userV of userTopTier) {
+    for (const userV of eligibleUserAnchors) {
       for (const extra of partnerExtras.slice(0, 6)) {
-        const total = targetValue + extra.finalValue;
-        if (Math.abs(userV.finalValue - total) / Math.max(userV.finalValue, total, 1) <= tolerance) {
-          pairs.push({
+        const sendTotal = withPicks(userV.finalValue);
+        const receiveTotal = targetValue + extra.finalValue;
+        if (balanced(sendTotal, receiveTotal, tolerance)) {
+          pushIfNew({
             send: [userV.playerId],
             receive: [partnerPlayerAddressingUserNeed, extra.playerId],
           });
@@ -317,7 +389,83 @@ function tryBuildPair(
     }
   }
 
-  // Prefer candidates whose sent player(s) are at a partner need position
+  // ── 2-for-2 (user sends two for partner target + partner extra) ──
+  // Useful when both teams have logjams at different positions and
+  // want to swap depth + starter on both sides.
+  if (maxPlayersPerSide >= 2) {
+    const partnerExtras: PlayerValuation[] = [];
+    for (const [, summary] of partnerComp.byPosition) {
+      for (const slot of summary.players) {
+        if (slot.playerId === partnerPlayerAddressingUserNeed) continue;
+        if (slot.role === 'starter') continue;
+        const v = valuations.get(slot.playerId);
+        if (v) partnerExtras.push(v);
+      }
+    }
+    partnerExtras.sort((a, b) => b.finalValue - a.finalValue);
+    const topPartnerExtras = partnerExtras.slice(0, 5);
+
+    // Pre-pick user "second piece" candidates
+    const userSeconds = seededV ? userPoolNonSeed.slice(0, 8) : userPool.slice(0, 8);
+
+    for (const extra of topPartnerExtras) {
+      const receiveTotal = targetValue + extra.finalValue;
+      for (const userV of userSeconds) {
+        const anchor = seededV ?? userV;
+        const otherUserV = seededV ? userV : null;
+        if (anchor === otherUserV) continue;
+        const userAnchorValue = anchor.finalValue;
+        const userOtherValue = otherUserV?.finalValue ?? 0;
+        const sendIds = otherUserV
+          ? [anchor.playerId, otherUserV.playerId]
+          : [anchor.playerId];
+        const sendTotal = withPicks(userAnchorValue + userOtherValue);
+        if (balanced(sendTotal, receiveTotal, tolerance)) {
+          pushIfNew({
+            send: sendIds,
+            receive: [partnerPlayerAddressingUserNeed, extra.playerId],
+          });
+        }
+      }
+    }
+  }
+
+  // ── 3-for-1 (user sends three for one partner star) ──
+  // For big upgrades where 2v1 doesn't reach. Only valid when the
+  // target is clearly bigger than any 1v1 balance.
+  if (maxPlayersPerSide >= 3) {
+    const bigTarget = targetValue > (userPool[0]?.finalValue ?? 0) * 1.3;
+    if (bigTarget) {
+      const basePool = seededV ? userPoolNonSeed.slice(0, 8) : userPool.slice(0, 8);
+      for (let i = 0; i < basePool.length; i++) {
+        for (let j = i + 1; j < basePool.length; j++) {
+          for (let k = j + 1; k < basePool.length; k++) {
+            const sendIds = seededV
+              ? [seededV.playerId, basePool[i].playerId, basePool[j].playerId, basePool[k].playerId]
+              : [basePool[i].playerId, basePool[j].playerId, basePool[k].playerId];
+            // 3v1 already consumes 3 slots on the sent side; if seeded,
+            // that becomes 4 which exceeds maxPlayersPerSide. Skip in
+            // that case and let 2v1/2v2 shapes cover it.
+            if (sendIds.length > maxPlayersPerSide) continue;
+            const sendTotal = withPicks(
+              (seededV?.finalValue ?? 0) +
+                basePool[i].finalValue +
+                basePool[j].finalValue +
+                basePool[k].finalValue
+            );
+            if (balanced(sendTotal, targetValue, tolerance)) {
+              pushIfNew({ send: sendIds, receive: [partnerPlayerAddressingUserNeed] });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Prefer candidates whose sent player(s) include a position that
+  // addresses a real partner need (same "mutual benefit" bias the
+  // original matcher had).
+  const partnerNeedPositions = new Set(partnerComp.needs.map((n) => n.position));
   pairs.sort((a, b) => {
     const aAtNeed = a.send.some((id) => {
       const v = valuations.get(id);
@@ -366,123 +514,132 @@ export function matchTrades(args: MatchTradesArgs): MatchedCandidate[] {
     imbalanceTolerance = 0.25,
     targetPosition = null,
     restrictUserAssets = null,
+    pickValueSum = 0,
+    maxPlayersPerSide = 3,
   } = options;
 
-  // Helper to check if an id is in the user's allowed asset set
-  const userAssetAllowed = (id: string): boolean => {
-    if (!restrictUserAssets || restrictUserAssets.length === 0) return true;
-    return restrictUserAssets.includes(id);
-  };
+  // If restrictUserAssets is set, we run one seed pass per asset so
+  // every generated candidate structurally includes that asset. If
+  // not, we run a single pass with no seed.
+  const seeds: (string | null)[] =
+    restrictUserAssets && restrictUserAssets.length > 0
+      ? restrictUserAssets
+      : [null];
 
-  // 1) Identify the partner's "offerable" players that could address a
-  //    user need. We iterate the user's needs (worst-first) and for each
-  //    we look at the partner's roster at that position.
   const candidates: MatchedCandidate[] = [];
-
   const seenKeys = new Set<string>(); // dedupe identical packages
 
-  const userNeedPositions = new Set(userComp.needs.map((n) => n.position));
-  const userNeedsList = userComp.needs.length > 0 ? userComp.needs : [
-    // If user has zero needs, still try to upgrade starters via tier jumps
-    ...Array.from(userComp.byPosition.values())
-      .filter((s): s is PositionSummary => !!s)
-      .map((s) => ({ position: s.position, level: 'depth' as NeedLevel })),
-  ];
+  const userNeedsList =
+    userComp.needs.length > 0
+      ? userComp.needs
+      : [
+          // No explicit needs → still try to upgrade via tier jumps at
+          // any skill position. Treated as 'depth' needs so the matcher
+          // will still generate candidates.
+          ...Array.from(userComp.byPosition.values())
+            .filter((s): s is PositionSummary => !!s)
+            .map((s) => ({ position: s.position, level: 'depth' as NeedLevel })),
+        ];
 
-  for (const need of userNeedsList) {
-    // If the user filtered by targetPosition, only consider that position
-    if (targetPosition && need.position !== targetPosition.toUpperCase()) continue;
+  for (const seed of seeds) {
+    for (const need of userNeedsList) {
+      // If the user filtered by targetPosition, only consider that position
+      if (targetPosition && need.position !== targetPosition.toUpperCase()) continue;
 
-    const partnerSummary = partnerComp.byPosition.get(need.position);
-    if (!partnerSummary) continue;
+      const partnerSummary = partnerComp.byPosition.get(need.position);
+      if (!partnerSummary) continue;
 
-    // Partner must have someone at this position we could plausibly acquire.
-    // We skip their single best player at this position (they won't move
-    // their RB1 for our RB3) UNLESS the user's top surplus tier is
-    // comparable — we let tryBuildPair's tolerance gate that.
-    const partnerCandidates = partnerSummary.players.filter(
-      (p) => p.role !== 'starter' || partnerSummary.surplusCount > 0 || partnerSummary.players.length > partnerSummary.starterCount
-    );
-
-    // Also allow the partner's starter if they have 2+ starters at the
-    // position (e.g. RB1/RB2) — one of them is movable for the right price.
-    const startersAtPos = partnerSummary.players.filter((p) => p.role === 'starter');
-    if (startersAtPos.length >= 2) {
-      // include the WORST starter as a candidate — they have stable depth
-      partnerCandidates.push(startersAtPos[startersAtPos.length - 1]);
-    }
-
-    for (const partnerPlayer of partnerCandidates) {
-      const pairs = tryBuildPair(
-        partnerPlayer.playerId,
-        partnerComp,
-        userComp,
-        valuations,
-        imbalanceTolerance
+      // Partner candidates at this position:
+      //  - any non-starter (depth/bench/surplus are movable)
+      //  - the partner's #2 starter when they have 2+ starters
+      //    (stable depth, worth moving for the right price)
+      const partnerCandidates = partnerSummary.players.filter(
+        (p) =>
+          p.role !== 'starter' ||
+          partnerSummary.surplusCount > 0 ||
+          partnerSummary.players.length > partnerSummary.starterCount
       );
+      const startersAtPos = partnerSummary.players.filter(
+        (p) => p.role === 'starter'
+      );
+      if (startersAtPos.length >= 2) {
+        partnerCandidates.push(startersAtPos[startersAtPos.length - 1]);
+      }
 
-      for (const pair of pairs) {
-        // Respect userPlayerIds restriction (all sent player ids must be allowed)
-        if (!pair.send.every(userAssetAllowed)) continue;
-
-        const key = `${[...pair.send].sort().join(',')}→${[...pair.receive].sort().join(',')}`;
-        if (seenKeys.has(key)) continue;
-        seenKeys.add(key);
-
-        const userNeedsMet = needsMetBy(userComp, pair.receive, valuations);
-        const partnerNeedsMet = needsMetBy(partnerComp, pair.send, valuations);
-
-        // Mutual benefit guard — both sides must address at least one
-        // need. Without this, trades would regress into "value matched
-        // but nobody wants it". Exception: partner has zero needs (a
-        // juggernaut team) — we allow one-sided "they have surplus,
-        // you have need" deals since the partner might move depth for
-        // a marginal upgrade.
-        if (userNeedsMet.length === 0) continue;
-        if (partnerComp.needs.length > 0 && partnerNeedsMet.length === 0) continue;
-
-        const userValue = sumValue(pair.send, valuations);
-        const partnerValue = sumValue(pair.receive, valuations);
-        const imbalance = valueImbalancePct(pair.send, pair.receive, valuations);
-
-        const reasons = buildFitReasons(
-          { sendPlayerIds: pair.send, receivePlayerIds: pair.receive },
-          userComp,
+      for (const partnerPlayer of partnerCandidates) {
+        const pairs = tryBuildPair({
+          partnerPlayerAddressingUserNeed: partnerPlayer.playerId,
           partnerComp,
+          userComp,
           valuations,
-          factsById,
-          userNeedsMet,
-          partnerNeedsMet
-        );
-
-        // Score: lower = better.
-        // - absolute imbalance matters (close to 0 is best)
-        // - mutual fit matters MORE (|userNeedsMet| + |partnerNeedsMet|)
-        // - slight preference for non-trivial total value
-        const totalValue = userValue + partnerValue;
-        const fitBonus = (userNeedsMet.length + partnerNeedsMet.length) * 30;
-        const imbalancePenalty = Math.abs(imbalance) * 100;
-        const magnitudeBonus = Math.log(1 + totalValue) * 2;
-        const score = imbalancePenalty - fitBonus - magnitudeBonus;
-
-        candidates.push({
-          sendPlayerIds: pair.send,
-          receivePlayerIds: pair.receive,
-          userValue: Math.round(userValue * 10) / 10,
-          partnerValue: Math.round(partnerValue * 10) / 10,
-          valueImbalancePct: Math.round(imbalance * 1000) / 1000,
-          userNeedsMet,
-          partnerNeedsMet,
-          fitReasons: reasons,
-          score: Math.round(score * 10) / 10,
+          tolerance: imbalanceTolerance,
+          pickValueSum,
+          seededUserPlayerId: seed,
+          maxPlayersPerSide,
         });
+
+        for (const pair of pairs) {
+          const key = `${[...pair.send].sort().join(',')}→${[...pair.receive].sort().join(',')}`;
+          if (seenKeys.has(key)) continue;
+          seenKeys.add(key);
+
+          const userNeedsMet = needsMetBy(userComp, pair.receive, valuations);
+          const partnerNeedsMet = needsMetBy(partnerComp, pair.send, valuations);
+
+          // Mutual benefit guard — both sides must address at least one
+          // need. Exception: partner has zero needs (juggernaut team) —
+          // one-sided deals allowed because the partner might move depth
+          // for a marginal upgrade + user-offered picks.
+          if (userNeedsMet.length === 0) continue;
+          if (partnerComp.needs.length > 0 && partnerNeedsMet.length === 0) continue;
+
+          // Pick-aware value totals: pickValueSum is added to the user
+          // side because that's what the partner actually receives
+          // (picks get stapled on at verification time).
+          const rawUserValue = sumValue(pair.send, valuations);
+          const partnerValue = sumValue(pair.receive, valuations);
+          const userValue = rawUserValue + pickValueSum;
+          const maxSide = Math.max(userValue, partnerValue, 1);
+          const imbalance = (partnerValue - userValue) / maxSide;
+
+          const reasons = buildFitReasons(
+            { sendPlayerIds: pair.send, receivePlayerIds: pair.receive },
+            userComp,
+            partnerComp,
+            valuations,
+            factsById,
+            userNeedsMet,
+            partnerNeedsMet
+          );
+
+          // Score: lower = better.
+          // - absolute pick-aware imbalance matters (0 is best)
+          // - mutual fit matters MORE (sum of needs met on both sides)
+          // - slight magnitude bonus so we don't prefer tiny balanced deals
+          const totalValue = userValue + partnerValue;
+          const fitBonus = (userNeedsMet.length + partnerNeedsMet.length) * 30;
+          const imbalancePenalty = Math.abs(imbalance) * 100;
+          const magnitudeBonus = Math.log(1 + totalValue) * 2;
+          const score = imbalancePenalty - fitBonus - magnitudeBonus;
+
+          candidates.push({
+            sendPlayerIds: pair.send,
+            receivePlayerIds: pair.receive,
+            userValue: Math.round(userValue * 10) / 10,
+            partnerValue: Math.round(partnerValue * 10) / 10,
+            valueImbalancePct: Math.round(imbalance * 1000) / 1000,
+            userNeedsMet,
+            partnerNeedsMet,
+            fitReasons: reasons,
+            score: Math.round(score * 10) / 10,
+          });
+        }
       }
     }
   }
 
   // Sort by score ascending and return top N
   candidates.sort((a, b) => a.score - b.score);
-  void userNeedPositions; // reserved for future use
   return candidates.slice(0, maxCandidates);
 }
 

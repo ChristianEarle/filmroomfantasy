@@ -379,9 +379,12 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
     // that would make previously cached results invalid (e.g. tighter
     // filters, new analyzer inputs). Bump it here when we ship fixes
     // that would make a user say "the old trade is still showing up".
-    // v5: added player IDs to the constructor prompt — constructor
-    //     trades can now pass validation for the first time.
-    const CACHE_VERSION = 'v5';
+    // v6: switched the finder from generate → verify to enumerate →
+    //     rank → verify. Matcher is now pick-aware and required-asset
+    //     seeded; Claude ranks a deterministic pool instead of
+    //     freely constructing trades. Cached v5 results were built
+    //     against the old pipeline and should be invalidated.
+    const CACHE_VERSION = 'v6';
     const todayKey = new Date().toISOString().slice(0, 10);
     const sortedPlayerIds = [...(body.userPlayerIds ?? [])].sort();
     const sortedPicks = [...(body.userPicks ?? [])]

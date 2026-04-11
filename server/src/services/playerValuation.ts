@@ -257,3 +257,71 @@ export function valueImbalancePct(
   if (max === 0) return 0;
   return (received - sent) / max;
 }
+
+// ── Draft pick valuation ────────────────────────────────────────────
+//
+// Rough numeric estimate of a draft pick's ROS-equivalent value in
+// the same units as PlayerValuation.finalValue. This is the
+// numeric form of the PICK_VALUE_REFERENCE anchors in the
+// tradeConstructor prompt, so the matcher can include picks in its
+// value-balance checks. Without this, the matcher would find
+// "Tank Dell for a sidegrade player" when the user is offering
+// "Tank Dell + 1st for an upgrade" — the pick wouldn't be counted
+// on the user's side.
+
+export interface DraftPickRef {
+  year: number;
+  round: number;
+}
+
+/**
+ * Estimate one pick's value in finalValue units.
+ *
+ *  - Round 1 anchors around RB10-RB15 / WR8-WR15 equivalent in dynasty
+ *    (≈ 115) and half that in redraft (≈ 60).
+ *  - Later rounds drop off roughly exponentially.
+ *  - Picks for future years get a -20%/year discount (2027 > 2028 > ...).
+ *
+ * Deliberately conservative so the matcher doesn't over-promise upgrades
+ * the trusted analyzer wouldn't agree with. The analyzer is still the
+ * final authority on package fairness.
+ */
+export function estimatePickValue(
+  pick: DraftPickRef,
+  leagueType: 'redraft' | 'dynasty' | 'keeper',
+  currentSeasonYear: number
+): number {
+  // Base value by round (dynasty 1st = full season for next year's top pick)
+  const baseByRound: Record<number, number> = {
+    1: 115,
+    2: 55,
+    3: 25,
+    4: 12,
+    5: 6,
+  };
+  const base = baseByRound[pick.round] ?? 3;
+
+  // Format multiplier. Redraft picks only cover one season, so they're
+  // worth ~half of dynasty. Keeper is somewhere in between but we treat
+  // it like dynasty for simplicity — users tell us elsewhere if they
+  // want tighter redraft-style grading.
+  const formatMultiplier = leagueType === 'redraft' ? 0.5 : 1.0;
+
+  // Future-year discount: -20% per year beyond the current season.
+  const yearsOut = Math.max(0, pick.year - currentSeasonYear);
+  const yearDiscount = Math.pow(0.8, yearsOut);
+
+  return Math.round(base * formatMultiplier * yearDiscount);
+}
+
+/** Sum of estimated pick values. Convenience helper for the matcher. */
+export function sumPickValues(
+  picks: DraftPickRef[] | null | undefined,
+  leagueType: 'redraft' | 'dynasty' | 'keeper',
+  currentSeasonYear: number
+): number {
+  if (!picks || picks.length === 0) return 0;
+  let total = 0;
+  for (const p of picks) total += estimatePickValue(p, leagueType, currentSeasonYear);
+  return total;
+}
