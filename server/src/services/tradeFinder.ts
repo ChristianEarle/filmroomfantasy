@@ -401,6 +401,55 @@ export async function findTradeRecommendations(
     leagueType,
     seasonYear
   );
+
+  // ── Diagnostic: dump the request shape so we can correlate logs
+  //    with what the UI actually sent. ──
+  console.log(
+    `[tradeFinder] REQUEST userTeam=${userTeamId} hasPicks=${hasUserPicks} pickValueSum=${pickValueSum} restrictAssets=${
+      restrictUserAssets ? JSON.stringify(restrictUserAssets) : 'null'
+    } targetPosition=${targetPosition ?? 'null'} targetTeam=${targetTeamId ?? 'null'} leagueType=${leagueType}`
+  );
+
+  // If the user specified required assets, verify each one resolves
+  // to a real valuation and log its computed value. A missing or
+  // $0-valued asset is the #1 explanation for empty results — e.g.
+  // an injured player with injuryFactor ≈ 0.25 whose finalValue is
+  // tiny, so the matcher can't balance anything.
+  if (restrictUserAssets && restrictUserAssets.length > 0) {
+    for (const id of restrictUserAssets) {
+      const v = valuations.get(id);
+      const facts = factsById.get(id);
+      if (!v) {
+        console.log(
+          `[tradeFinder] REQUIRED ASSET MISSING VALUATION: id=${id} name=${facts?.name ?? '?'}`
+        );
+      } else {
+        console.log(
+          `[tradeFinder] required asset ${facts?.name ?? id}: pos=${v.position} finalValue=${Math.round(v.finalValue)} tier=${v.tier} injuryFactor=${v.injuryFactor} status=${facts?.identity.status ?? '?'}`
+        );
+      }
+    }
+  }
+
+  // User composition snapshot for diagnostic context.
+  const userCompNeeds = userComp.needs
+    .map((n) => `${n.position}(${n.level})`)
+    .join(', ');
+  console.log(
+    `[tradeFinder] user team composition: needs=[${userCompNeeds || 'none'}]`
+  );
+  for (const pos of ['QB', 'RB', 'WR', 'TE']) {
+    const summary = userComp.byPosition.get(pos);
+    if (!summary || summary.players.length === 0) continue;
+    const roles = summary.players
+      .map((p) => {
+        const facts = factsById.get(p.playerId);
+        return `${facts?.name ?? p.playerId}[${Math.round(p.finalValue)}/${p.tier}/${p.role}]`;
+      })
+      .join(', ');
+    console.log(`[tradeFinder]   ${pos}: ${roles}`);
+  }
+
   if (hasUserPicks) {
     console.log(
       `[tradeFinder] user picks valued at ${pickValueSum} (${leagueType}, ${normalizedPicks.length} pick(s))`
@@ -430,6 +479,10 @@ export async function findTradeRecommendations(
       },
     });
 
+    console.log(
+      `[tradeFinder]   partner ${partnerTeam.name}: matcher returned ${matched.length} candidates`
+    );
+
     for (const m of matched) {
       enumeratedPool.push({
         ...m,
@@ -442,6 +495,26 @@ export async function findTradeRecommendations(
   console.log(
     `[tradeFinder] phase1 enumerated ${enumeratedPool.length} candidates across ${new Set(enumeratedPool.map((c) => c.targetTeamId)).size} partners`
   );
+
+  // Dump the top 5 Phase 1 candidates by score so we can see exactly
+  // what the deterministic layer is producing, independent of the
+  // ranker/verifier stages.
+  if (enumeratedPool.length > 0) {
+    const preview = [...enumeratedPool]
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 5);
+    for (const c of preview) {
+      const sendNames = c.sendPlayerIds
+        .map((id) => factsById.get(id)?.name ?? id)
+        .join('+');
+      const recvNames = c.receivePlayerIds
+        .map((id) => factsById.get(id)?.name ?? id)
+        .join('+');
+      console.log(
+        `[tradeFinder]   top: ${c.targetTeamName} | ${sendNames} → ${recvNames} | u=${c.userValue} p=${c.partnerValue} imb=${(c.valueImbalancePct * 100).toFixed(0)}% score=${c.score}`
+      );
+    }
+  }
 
   if (enumeratedPool.length === 0) {
     console.log('[tradeFinder] phase1 empty — no balanced trade exists; returning []');
@@ -629,18 +702,20 @@ export async function findTradeRecommendations(
   // set of thresholds.
   const userOptedIn = restrictUserAssets != null || hasUserPicks;
 
-  // Partner-favored tolerance: 0 in default mode, 12 in opt-in mode.
-  const MAX_PARTNER_FAVORED_DIFF = userOptedIn ? 12 : 0;
-  // User-favored cap: 15 in default mode, 25 in opt-in mode (picks
-  // often tip the analyzer's diff past 15 as a bonus on top of a
-  // balanced player-for-player core).
-  const MAX_USER_FAVORED_DIFF = userOptedIn ? 25 : 15;
-  // Accept grades: default drops C+/C/C-/D/F. Opt-in mode also
-  // allows C+ (and C, since a C user grade with the user-side
-  // pick premium is a realistic upgrade trade).
+  // Thresholds. Default mode is breathable enough to actually surface
+  // trades — the old "zero partner-favored tolerance, diff ≤ 15,
+  // B- minimum" combination was killing everything. The trusted
+  // analyzer regularly grades imperfect-but-acceptable trades in the
+  // partner-slightly-favored or user-favored-by-20 range, and we
+  // were dropping all of them silently.
+  const MAX_PARTNER_FAVORED_DIFF = userOptedIn ? 15 : 10;
+  const MAX_USER_FAVORED_DIFF = userOptedIn ? 30 : 25;
+  // Accept grades: C+ is "acceptable sidegrade", C is "breakeven."
+  // Both are legitimate trade outcomes — we just want to block D/F
+  // trades where the user is being openly robbed.
   const ACCEPTABLE_USER_GRADES = userOptedIn
-    ? new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C'])
-    : new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-']);
+    ? new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-'])
+    : new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C']);
 
   console.log(
     `[tradeFinder] gate4 mode=${userOptedIn ? 'opt-in' : 'default'} partnerMax=${MAX_PARTNER_FAVORED_DIFF} userMax=${MAX_USER_FAVORED_DIFF}`
@@ -693,6 +768,21 @@ export async function findTradeRecommendations(
   console.log(
     `[tradeFinder] gate4 output: ${filtered.length}/${valid.length} candidates passed`
   );
+
+  // Safety net: if gate 4 dropped everything but we DID have verified
+  // candidates, return the least-lopsided ones with a debug note. The
+  // user deserves SOMETHING to look at — they can decide whether to
+  // offer it. Empty responses here have proven uniformly confusing.
+  // We still ship the strict-mode grades so the UI's fairness meter
+  // visibly marks the imperfection.
+  if (filtered.length === 0 && valid.length > 0) {
+    console.log(
+      `[tradeFinder] gate4 SAFETY NET: returning ${Math.min(valid.length, 3)} least-lopsided candidates`
+    );
+    return [...valid]
+      .sort((a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff)
+      .slice(0, 3);
+  }
 
   return filtered.sort(
     (a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff
