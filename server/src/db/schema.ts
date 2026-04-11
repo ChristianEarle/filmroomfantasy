@@ -628,6 +628,42 @@ export type PageView = typeof pageViews.$inferSelect;
 export type NewPageView = typeof pageViews.$inferInsert;
 
 // ============================================
+// TRADE FINDER — TEAM SCOUTING REPORTS
+// ============================================
+//
+// Persisted AI-generated needs assessments. One row per team. The
+// /trade-finder/needs route compares the current roster fingerprint
+// to the stored one; matching fingerprints return the saved report
+// (no AI call), mismatches trigger a re-scout and upsert.
+
+export const teamScoutingReports = sqliteTable('team_scouting_reports', {
+  teamId: text('team_id')
+    .primaryKey()
+    .references(() => teams.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  currentWeek: integer('current_week').notNull(),
+  /** Stable hash of sorted rostered player IDs at generation time. */
+  rosterFingerprint: text('roster_fingerprint').notNull(),
+  window: text('window').notNull(),
+  /** JSON string: Record<string, string> (e.g. QB: 'B+', RB: 'A-') */
+  positionGradesJson: text('position_grades_json').notNull(),
+  /** JSON string: string[] */
+  topNeedsJson: text('top_needs_json').notNull(),
+  /** JSON string: string[] */
+  topStrengthsJson: text('top_strengths_json').notNull(),
+  summary: text('summary').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export type TeamScoutingReport = typeof teamScoutingReports.$inferSelect;
+export type NewTeamScoutingReport = typeof teamScoutingReports.$inferInsert;
+
+// ============================================
 // TYPE EXPORTS
 // ============================================
 

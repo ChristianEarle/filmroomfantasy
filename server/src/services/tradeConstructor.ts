@@ -1,456 +1,270 @@
 /**
- * tradeConstructor — single AI mega-call that builds trade candidates.
+ * tradeConstructor — ranking primitive for the Trade Finder.
  *
- * Stage 2 of the new Trade Finder pipeline. The constructor receives a
- * compact snapshot of the WHOLE league (every team's roster + needs +
- * deterministic valuations) and asks Claude to construct 5-6 mutually
- * beneficial trades for the user team in ONE call.
+ * Philosophy: generation is hard for LLMs, ranking is easy.
  *
- * Why one mega-call instead of N per-target calls:
- *  - The model sees every opponent at once and picks the BEST partners,
- *    not the partners we pre-selected with a heuristic.
- *  - One round-trip, one cache key, lower total cost.
- *  - The model can compare opportunities across the league ("the
- *    Falcons need a RB more than the Bears do, so target them first").
+ * The finder's Phase 1 (tradeMatcher) deterministically enumerates
+ * ~30 concrete, balanced, pick-aware trade candidates from the
+ * league. This module's job is Phase 2: give Claude the candidate
+ * list and a bit of user context, and ask it to pick the best 5
+ * with one-sentence reasons for each side.
  *
- * The constructor does NOT grade fairness — that's the verification
- * pass's job in Stage 3. The constructor just needs to produce
- * structurally valid candidates with reasoning for both sides.
+ * Claude never constructs trades from scratch, never echoes player
+ * IDs, never juggles multiple hard constraints in one shot. It
+ * picks candidates by a short string ID we generated and writes
+ * reasoning. That's a task LLMs nail reliably.
  *
- * Output is validated by callers against:
- *  1) ownership (sent ids on user roster, received ids on partner)
- *  2) value sanity (deterministic valuation delta within tolerance)
- *  3) downstream verification (run each survivor through the analyzer)
+ * The validateRankedPicks step guards against hallucinated IDs so
+ * if the model gets creative we fall through to top-by-score from
+ * Phase 1.
  */
 
-import {
-  formatLeagueContextForConstructor,
-  type LeagueContextSnapshot,
-} from './leagueContextFormatter';
+import type { MatchedCandidate } from './tradeMatcher';
+import type { TeamComposition } from './teamComposition';
+import type { PlayerFacts } from './tradeContext';
+import type { PlayerValuation } from './playerValuation';
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export interface ConstructedTrade {
-  /** Team id of the partner the user would trade with */
+/**
+ * A Phase 1 candidate carries everything needed to render it in the
+ * Phase 2 prompt. It's the MatchedCandidate from tradeMatcher plus
+ * partner team metadata and a stable per-request candidate id.
+ */
+export interface RankableCandidate extends MatchedCandidate {
+  /** Short string ID we generate per-request (e.g. "c01"). The model
+   *  echoes these back so we never have to parse player IDs from the
+   *  AI response. */
+  candidateId: string;
+  /** The partner team this trade is against. */
   partnerTeamId: string;
-  /** Player ids the user gives up */
-  sentPlayerIds: string[];
-  /** Player ids the user receives */
-  receivedPlayerIds: string[];
-  /** AI's explanation of why this helps the user */
+  partnerTeamName: string;
+  partnerNeeds: Array<{ position: string; level: string }>;
+  partnerRecord: string | null;
+}
+
+/**
+ * One pick the ranking call returns — a candidateId plus per-side
+ * reasoning. Caller resolves the candidateId back to the full
+ * RankableCandidate.
+ */
+export interface RankedPick {
+  candidateId: string;
   userReasoning: string;
-  /** AI's explanation of why the partner would accept */
   partnerReasoning: string;
-  /** AI's self-reported confidence the partner would actually accept */
-  confidence: 'high' | 'medium' | 'low';
 }
 
-export interface ConstructorResult {
-  trades: ConstructedTrade[];
-  /** Optional commentary from the AI explaining its overall approach
-   *  or noting limitations (e.g. "no realistic deals available") */
-  notes: string | null;
-}
-
-export interface ConstructorFilters {
-  /** Constrain construction to a specific position the user wants */
-  targetPosition?: string | null;
-  /** If set, every constructed trade MUST include at least one of
-   *  these player ids on the sent side */
-  requiredUserPlayerIds?: string[] | null;
-  /** Picks the user is willing to throw in (mentioned in the prompt
-   *  but the AI does NOT include them in sentPlayerIds — picks are
-   *  threaded through separately by the caller). */
-  userPicks?: Array<{ year: number; round: number }> | null;
-  /** How many candidates to ask for. Defaults to 8. */
-  desiredCount?: number;
-  /** 'standard' uses the default conservative prompt. 'creative' tells
-   *  the constructor to explore unconventional packages: positional
-   *  arbitrage, bench-for-starter swaps, multi-piece builds, etc.
-   *  Used for the retry pass when the standard call finds nothing. */
-  mode?: 'standard' | 'creative';
-}
-
-export interface ConstructorArgs {
+export interface RankCandidatesArgs {
   anthropicKey: string;
-  snapshot: LeagueContextSnapshot;
-  filters?: ConstructorFilters;
+  /** Up to ~30 pre-enumerated candidates. */
+  candidates: RankableCandidate[];
+  /** User team context for the prompt. */
+  userTeamName: string;
+  userTeamRecord: string | null;
+  userComp: TeamComposition;
+  factsById: Map<string, PlayerFacts>;
+  valuations: Map<string, PlayerValuation>;
+  /** How many picks to ask the model to return. Defaults to 5. */
+  desiredCount?: number;
+  /** Optional goal hint derived from request filters (e.g. "user
+   *  wants to use Tank Dell + 2026 1st to upgrade at WR"). Helps
+   *  the model prioritize the right candidates. */
+  goalHint?: string | null;
+}
+
+// Output: the ranked picks, or null if the model returned garbage.
+// The finder falls back to heuristic top-N when this is null.
+export interface RankCandidatesResult {
+  picks: RankedPick[];
+  notes: string | null;
 }
 
 // ── Prompt construction ─────────────────────────────────────────────
 
-function formatPickAsset(p: { year: number; round: number }): string {
-  const ord =
-    p.round === 1 ? '1st' :
-    p.round === 2 ? '2nd' :
-    p.round === 3 ? '3rd' :
-    `${p.round}th`;
-  return `${p.year} ${ord}`;
-}
+const SYSTEM_PROMPT = `You are an elite fantasy football trade advisor. You are given a list of pre-generated candidate trades for a specific user team and asked to pick the BEST realistic trades from the list.
 
-// ── Pick value reference ─────────────────────────────────────────────
-//
-// Rough consensus values for draft picks in standard fantasy leagues.
-// The constructor uses these as ANCHORS when it has to decide how much
-// additional player value a pick is worth. Redraft values are ~60% of
-// dynasty values because redraft picks only cover one season. These
-// are intentionally wide ranges — the AI is expected to apply judgment
-// based on league format, class strength, and user's draft slot.
-const PICK_VALUE_REFERENCE = `
-Pick value anchors (use these to decide how many players to pair with
-a pick, but feel free to adjust for context like class strength or
-dynasty vs redraft):
+### Your job
 
-  2026 1st-round pick  ≈ RB10-RB15 or WR8-WR15 equivalent in dynasty,
-                         ~half that in redraft
-  2026 2nd-round pick  ≈ RB25-RB35 or WR25-WR35 in dynasty, low bench
-                         value in redraft
-  2026 3rd-round pick  ≈ depth-tier flyer, use as a sweetener only
-  2027+ picks          ≈ discount by ~20% per year further out
+For each candidate you choose, you must verify that BOTH sides would plausibly accept:
+  - The USER is clearly upgrading at a position of need OR consolidating a surplus position. No sidegrades.
+  - The PARTNER's GM would plausibly accept — they address one of their own needs, clear a logjam, or get clearly better value.
 
-When the user side includes a pick, the partner is receiving FUTURE
-value instead of a current player, so you can pair the pick with a
-relatively low-value current player and still build a balanced offer.
-Example: "Rookie_RB [35/depth/bench] + 2026 1st" for a WR2 in the
-[110-140] range is a realistic package.
-`;
+You MAY consider context the numbers miss (injury news, usage trends, dynasty vs redraft, remaining schedule strength, tier differences) when ranking candidates.
 
-function buildStandardSystemPrompt(): string {
-  return `You are an elite fantasy football trade architect. Your job is to look at a whole league and construct REALISTIC, mutually beneficial trades between the user's team and other teams.
+You MUST NOT invent new trades. Only pick from the numbered candidate list. Echo the exact candidateId string (e.g. "c07") for each pick — never invent candidate IDs, never echo player IDs.
 
-### TWO HARD RULES
-
-RULE 1: THE TRADE MUST MAKE THE USER'S TEAM BETTER.
-RULE 2: THE PARTNER'S GM MUST ACTUALLY ACCEPT IT IN REAL LIFE.
-
-Both rules bind at the same time. If either fails, DO NOT propose the trade. It is MUCH better to return 2 great trades than 8 trades where some are one-sided in either direction.
-
-### The packaging rule — how to avoid lopsided trades
-
-When the user wants an elite player from a partner, a SINGLE player on the user's side almost never matches value. Real GMs don't accept 1-for-1 steals. You MUST pad the user's side with additional players or picks until the values on both sides are within ~15% of each other.
-
-Example of a BAD trade to never propose:
-  user sends: Jaxson Dart (rookie QB, [45/depth/bench])
-  user receives: Lamar Jackson (elite QB, [180/elite/starter])
-  → This is a ~75% value delta. No real GM accepts it. DROP or PAD.
-
-How to fix it:
-  user sends: Jaxson Dart + Breece Hall + 2026 2nd-round pick
-  user receives: Lamar Jackson
-  → Now the values are roughly matched.
-
-${PICK_VALUE_REFERENCE}
-
-### Process for every acquisition you consider
-
-  1. Identify the target player(s) from the partner's roster.
-  2. Sum the partner target's [val] number(s) from the snapshot.
-  3. Find user-side players whose [val] numbers add up to within 15%
-     of the partner's total — preferably from a position where the
-     user has SURPLUS or DEPTH (not starters).
-  4. If the user has picks available (listed under BONUS USER ASSETS
-     in the user message), factor their value in — they fill gaps
-     the player-only side can't match.
-  5. If you still can't build a balanced package, DROP the target.
-     Don't propose one-sided steals.
-
-### Before finalizing any trade, answer these four questions
-
-  A. Is the user upgrading at a position they actually need, or
-     sidegrading? (If sidegrading, drop.)
-  B. If I were the partner's GM looking at just my side of the
-     trade, would I be disgusted to accept it? (If yes, pad the
-     user's side until the partner side feels fair.)
-  C. Is the deterministic value the user SENDS within 15% of what
-     they RECEIVE, using the [val] tags (plus pick value if the
-     user is throwing a pick in)?
-  D. Does the trade feel like something two reasonable owners
-     would agree on after a text exchange?
-
-### Core principles
-
-- AI-FIRST. The [val] tags are a starting point, not ground truth.
-  You may disagree based on context (usage trends, coaching,
-  schedule, injury timeline, game script) but explain why in the
-  reasoning.
-- BOTH SIDES MUST WANT IT.
-- DIVERSITY. Spread trades across multiple partner teams when
-  possible. Don't pile every recommendation on one opponent.
-- HONESTY. If no realistic trades exist for this user, return an
-  empty trades array and say so in "notes". That's a valid answer.
-
-### Constraints
-
-- Every sent player must be on the USER's roster (the team marked
-  YOU in the snapshot).
-- Every received player must be on the named PARTNER team's roster.
-- Packages can include 1-5 players on either side. Use as many as
-  needed to balance value. DO NOT default to 1-for-1.
-- Each team header includes an id=... tag (e.g.
-  "=== Team Name [3-2, #4] id=abc_123 ==="). Use ONLY the raw
-  ID value (e.g. "abc_123") as partnerTeamId. NEVER use the
-  team name as the team ID.
-- Each player line also includes an id=... tag (e.g.
-  "Patrick Mahomes [180/elite/starter] id=4046"). Use ONLY the raw
-  ID value (e.g. "4046") in sentPlayerIds and receivedPlayerIds.
-  NEVER invent IDs or use player names as IDs.
-
-### Response format
+### Return format
 
 Respond with ONLY valid JSON in this exact shape:
+
 {
-  "trades": [
+  "picks": [
     {
-      "partnerTeamId": "team_id_from_snapshot",
-      "sentPlayerIds": ["player_id", "player_id"],
-      "receivedPlayerIds": ["player_id"],
-      "userReasoning": "1-2 sentences on HOW THIS UPGRADES THE USER'S TEAM",
-      "partnerReasoning": "1-2 sentences on WHY THE PARTNER ACCEPTS — reference specific value they receive",
-      "confidence": "high" | "medium" | "low"
+      "candidateId": "c01",
+      "userReasoning": "One sentence on why this upgrades the user's team.",
+      "partnerReasoning": "One sentence on why the partner would accept."
     }
   ],
-  "notes": "Optional short overall commentary or null"
+  "notes": "Optional short overall commentary, or null."
 }
 
-Rules for the JSON:
-- "trades" MUST be an array. An empty array is a valid, honest
-  answer when no realistic trades exist.
-- "confidence" reflects how likely the partner actually clicks
-  accept. "high" = clear win-win, "medium" = needs negotiation,
-  "low" = stretch (still realistic, not a steal).
-- Do NOT include picks in sentPlayerIds — picks are tracked
-  separately.
-- Do NOT include any field other than the ones listed.
-- Do NOT propose a trade just to fill the count. Quality over
-  quantity.`;
-}
+Rules:
+- "picks" is an array. An empty array is valid if NO candidate on the list would be accepted by both sides.
+- Pick each candidateId at most once.
+- Order picks best-first.
+- No prose outside the JSON.`;
 
-function buildCreativeSystemPrompt(): string {
-  return `You are an elite fantasy football trade architect running a CREATIVE SECOND PASS. The first pass returned too few trades, so the user needs you to explore less-obvious angles.
-
-### CRITICAL CONTEXT
-
-You're the second attempt. The standard construction pass already
-looked at the league and either returned nothing or only a couple of
-ideas. The filter downstream is strict — trades need to be balanced
-AND mutually beneficial AND something the partner GM would actually
-accept. But the user wants OPTIONS. Your job is to find creative
-angles the standard pass missed, without lowering the bar on fairness.
-
-### Creative angles to explore (use ALL of them)
-
-1. POSITIONAL ARBITRAGE. A user's "starter" at a deep position (e.g.
-   a mid-tier WR in a WR-heavy roster) can be treated as tradeable
-   surplus. Pair that WR with a user need from a partner who is deep
-   at the opposite position.
-
-2. BENCH-FOR-STARTER SWAPS. A partner with a weak starter at a
-   position of user strength might accept the user's backup/flex
-   piece + a pick for their weak starter. The partner moves on from
-   a player they're lukewarm on; the user gets a clear upgrade.
-
-3. MULTI-PIECE BUILDS. Don't default to the smallest package that
-   balances. If 3 user players + a pick lets you acquire 2 partner
-   players where one is a clear upgrade and the other is a
-   positional filler, go for it. Packages can be 1-5 players per side.
-
-4. PARTNERS YOU MIGHT SKIP. The weakest teams in the league are
-   usually willing to trade established veterans for younger assets
-   or picks. Don't skip them just because they're worse. They're
-   often the BEST trade partners for a contender user.
-
-5. PICK-CENTRIC DEALS. If the user has a pick in their BONUS ASSETS,
-   lead with it. Many partners will accept (user's cheap player +
-   user's pick) for a mid-tier starter because the pick is the
-   prize, not the player.
-
-6. BUY-LOW ON SLUMPING PLAYERS. If the snapshot shows a player with
-   a weak recent trend but strong positional value tag, they might
-   be available at a discount because their owner is frustrated.
-
-### Same hard rules as the standard pass
-
-- RULE 1: The trade must make the user's team better.
-- RULE 2: The partner's GM must actually accept it.
-- Package values must balance within ~15% (including pick value).
-- Drop the target if you can't build a balanced realistic package.
-
-Refer to the pick value anchors in the user message for how to size
-packages that include picks. Use the full 1-5 players per side range
-when the packaging calls for it.
-
-### Response format
-
-Same JSON shape as the standard pass:
-{
-  "trades": [
-    {
-      "partnerTeamId": "team_id_from_snapshot",
-      "sentPlayerIds": ["player_id", ...],
-      "receivedPlayerIds": ["player_id", ...],
-      "userReasoning": "1-2 sentences",
-      "partnerReasoning": "1-2 sentences",
-      "confidence": "high" | "medium" | "low"
-    }
-  ],
-  "notes": "Optional short overall commentary or null"
-}
-
-Return up to 8 trades. Quality still wins over quantity, but
-creativity is explicitly valued here. Return fewer only if you
-genuinely can't find realistic options.`;
-}
-
-function buildSystemPrompt(mode: 'standard' | 'creative' = 'standard'): string {
-  return mode === 'creative'
-    ? buildCreativeSystemPrompt()
-    : buildStandardSystemPrompt();
-}
-
-function buildUserMessage(
-  snapshot: LeagueContextSnapshot,
-  filters: ConstructorFilters
+function formatCandidateLine(
+  c: RankableCandidate,
+  factsById: Map<string, PlayerFacts>,
+  valuations: Map<string, PlayerValuation>
 ): string {
-  const desiredCount = filters.desiredCount ?? 8;
+  const fmtPlayer = (id: string): string => {
+    const f = factsById.get(id);
+    const v = valuations.get(id);
+    const name = f?.name ?? id;
+    const pos = f?.position ?? '?';
+    const tag = v
+      ? `[${Math.round(v.finalValue)}/${v.tier}]`
+      : '[?]';
+    return `${name} (${pos}) ${tag}`;
+  };
+
+  const sentNames = c.sendPlayerIds.map(fmtPlayer).join(' + ');
+  const recvNames = c.receivePlayerIds.map(fmtPlayer).join(' + ');
+  const fit = [
+    c.userNeedsMet.length > 0 ? `user-need: ${c.userNeedsMet.join(',')}` : null,
+    c.partnerNeedsMet.length > 0 ? `partner-need: ${c.partnerNeedsMet.join(',')}` : null,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+  const imbalance = `imbalance ${(c.valueImbalancePct * 100).toFixed(0)}%`;
+  const partnerMeta = [c.partnerRecord, ...c.partnerNeeds.map((n) => `${n.position}(${n.level})`)]
+    .filter(Boolean)
+    .join(', ');
+
+  return [
+    `[${c.candidateId}] ${c.partnerTeamName}${partnerMeta ? ` — ${partnerMeta}` : ''}`,
+    `    You send:    ${sentNames}`,
+    `    You receive: ${recvNames}`,
+    `    user ${Math.round(c.userValue)} vs partner ${Math.round(c.partnerValue)} (${imbalance})`,
+    fit ? `    ${fit}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function buildUserMessage(args: RankCandidatesArgs): string {
+  const {
+    candidates,
+    userTeamName,
+    userTeamRecord,
+    userComp,
+    factsById,
+    valuations,
+    desiredCount = 5,
+    goalHint,
+  } = args;
+
   const lines: string[] = [];
 
-  lines.push(`Construct up to ${desiredCount} mutually beneficial trades for the YOU team in the league snapshot below.`);
+  // User context block
+  const needsStr =
+    userComp.needs.length > 0
+      ? userComp.needs.map((n) => `${n.position}(${n.level})`).join(', ')
+      : '(none)';
+  const strengthsStr: string[] = [];
+  for (const [, summary] of userComp.byPosition) {
+    if (summary.surplusCount > 0) strengthsStr.push(`${summary.position}(surplus)`);
+  }
+  lines.push(`USER CONTEXT:`);
+  lines.push(`  Team: "${userTeamName}"${userTeamRecord ? ` (${userTeamRecord})` : ''}`);
+  lines.push(`  Needs: ${needsStr}`);
+  if (strengthsStr.length > 0) {
+    lines.push(`  Strengths: ${strengthsStr.join(', ')}`);
+  }
+  if (goalHint) {
+    lines.push(`  Goal: ${goalHint}`);
+  }
   lines.push('');
 
-  // Filters block
-  const filterLines: string[] = [];
-  if (filters.targetPosition) {
-    filterLines.push(
-      `- TARGET POSITION: only construct trades where the user RECEIVES at least one ${filters.targetPosition}.`
-    );
-  }
-  if (filters.requiredUserPlayerIds && filters.requiredUserPlayerIds.length > 0) {
-    const ids = filters.requiredUserPlayerIds.join(', ');
-    filterLines.push(
-      `- REQUIRED USER ASSETS: every trade you construct MUST include at least one of these player ids in sentPlayerIds: ${ids}`
-    );
-  }
-  if (filters.userPicks && filters.userPicks.length > 0) {
-    const picks = filters.userPicks.map(formatPickAsset).join(', ');
-    filterLines.push(
-      `- BONUS USER ASSETS: the user is offering these draft picks AS PART of every trade you construct: ${picks}.`
-    );
-    filterLines.push(
-      `  * Do NOT add picks to sentPlayerIds — the caller threads them separately.`
-    );
-    filterLines.push(
-      `  * DO factor the pick value into your packaging — see the pick value anchors in the system prompt. A 1st-round pick is real value.`
-    );
-    filterLines.push(
-      `  * Because a pick is already on the user's side, the user-side PLAYER total can be LOWER than the partner-side player total. The pick fills the gap.`
-    );
-    filterLines.push(
-      `  * Many trades here should lead with a pick-plus-small-player combo aimed at a partner starter the user actually wants.`
-    );
-  }
-  if (filterLines.length > 0) {
-    lines.push('USER FILTERS:');
-    lines.push(...filterLines);
+  // Candidates
+  lines.push(`CANDIDATES (${candidates.length} pre-generated, balanced, pick-aware):`);
+  lines.push('');
+  for (const c of candidates) {
+    lines.push(formatCandidateLine(c, factsById, valuations));
     lines.push('');
   }
 
-  // The actual snapshot
-  lines.push(formatLeagueContextForConstructor(snapshot));
-
-  lines.push('');
   lines.push(
-    `Now produce the JSON response. Aim for ${desiredCount} trades if realistic options exist. An empty array is a valid answer ONLY if you've genuinely exhausted the partner roster and can't build a single balanced package — don't give up early.`
+    `Pick the ${desiredCount} best. Return JSON ONLY — no prose.`
   );
 
   return lines.join('\n');
 }
 
-// ── Validation ──────────────────────────────────────────────────────
+// ── Parsing + validation ────────────────────────────────────────────
 
-interface RawTradeResponse {
-  trades?: unknown;
+interface RawPick {
+  candidateId?: unknown;
+  userReasoning?: unknown;
+  partnerReasoning?: unknown;
+}
+
+interface RawResponse {
+  picks?: unknown;
   notes?: unknown;
 }
 
-interface RawTrade {
-  partnerTeamId?: unknown;
-  sentPlayerIds?: unknown;
-  receivedPlayerIds?: unknown;
-  userReasoning?: unknown;
-  partnerReasoning?: unknown;
-  confidence?: unknown;
-}
-
-function isStringArray(x: unknown): x is string[] {
-  return Array.isArray(x) && x.every((v) => typeof v === 'string');
-}
-
-function coerceConfidence(x: unknown): 'high' | 'medium' | 'low' {
-  if (x === 'high' || x === 'medium' || x === 'low') return x;
-  return 'medium';
-}
-
-// Sanitize a player/team ID returned by the model. Common issues:
-//  - Model echoes "id=4046" instead of "4046"
-//  - Model wraps the ID in quotes or adds whitespace
-function sanitizeId(raw: string): string {
-  let s = raw.trim();
-  if (s.startsWith('id=')) s = s.slice(3);
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    s = s.slice(1, -1);
-  }
-  return s.trim();
-}
-
 /**
- * Coerce a raw AI response into a clean ConstructorResult. Drops any
- * trades that fail basic shape validation. Does NOT validate against
- * actual rosters — that's the caller's job (it has the roster data).
+ * Coerce + validate the AI response. Unknown candidateIds are dropped
+ * silently (defensive — the model should only echo what it was shown).
  */
-function coerceResponse(raw: RawTradeResponse): ConstructorResult {
-  const out: ConstructorResult = {
-    trades: [],
+function coerceResponse(
+  raw: RawResponse,
+  candidateIds: Set<string>
+): RankCandidatesResult {
+  const out: RankCandidatesResult = {
+    picks: [],
     notes: typeof raw.notes === 'string' ? raw.notes : null,
   };
-  if (!Array.isArray(raw.trades)) return out;
+  if (!Array.isArray(raw.picks)) return out;
 
-  for (const item of raw.trades as RawTrade[]) {
+  const seen = new Set<string>();
+  for (const item of raw.picks as RawPick[]) {
     if (!item || typeof item !== 'object') continue;
-    if (typeof item.partnerTeamId !== 'string') continue;
-    if (!isStringArray(item.sentPlayerIds)) continue;
-    if (!isStringArray(item.receivedPlayerIds)) continue;
-    if (item.sentPlayerIds.length === 0 || item.receivedPlayerIds.length === 0) continue;
-
-    out.trades.push({
-      partnerTeamId: sanitizeId(item.partnerTeamId),
-      sentPlayerIds: item.sentPlayerIds.map(sanitizeId),
-      receivedPlayerIds: item.receivedPlayerIds.map(sanitizeId),
+    if (typeof item.candidateId !== 'string') continue;
+    const id = item.candidateId.trim();
+    if (!candidateIds.has(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.picks.push({
+      candidateId: id,
       userReasoning:
         typeof item.userReasoning === 'string' ? item.userReasoning : '',
       partnerReasoning:
         typeof item.partnerReasoning === 'string' ? item.partnerReasoning : '',
-      confidence: coerceConfidence(item.confidence),
     });
   }
-
   return out;
 }
 
 // ── Main entry point ────────────────────────────────────────────────
 
-export async function constructTrades(
-  args: ConstructorArgs
-): Promise<ConstructorResult | null> {
-  const { anthropicKey, snapshot, filters = {} } = args;
-  const mode = filters.mode ?? 'standard';
+/**
+ * Rank a pool of pre-generated candidates with one focused Claude
+ * call. Returns the picks (or null on total failure, which the
+ * caller handles by falling back to top-N by heuristic score).
+ */
+export async function rankCandidates(
+  args: RankCandidatesArgs
+): Promise<RankCandidatesResult | null> {
+  const { anthropicKey, candidates, desiredCount = 5 } = args;
 
-  const systemPrompt = buildSystemPrompt(mode);
-  const userMessage = buildUserMessage(snapshot, filters);
+  if (candidates.length === 0) return { picks: [], notes: null };
 
-  // Standard pass runs at moderate temperature. Creative pass runs
-  // hotter so the second-look actually explores different territory
-  // rather than re-proposing the same ideas.
-  const temperature = mode === 'creative' ? 0.7 : 0.5;
+  const userMessage = buildUserMessage(args);
+  const candidateIds = new Set(candidates.map((c) => c.candidateId));
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -462,22 +276,19 @@ export async function constructTrades(
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        // Larger budget than the analyzer pass — the constructor returns
-        // multiple trades each with reasoning text. 4500 leaves room for
-        // up to ~8 trades × ~500 tokens each plus notes.
-        max_tokens: 4500,
-        system: systemPrompt,
+        // Ranking output is small: 5 picks × ~100 tokens = ~500 tokens.
+        // Plus a little slack for notes.
+        max_tokens: 1500,
+        system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userMessage }],
-        temperature,
+        temperature: 0.4,
       }),
-      // Mega-call gets a longer timeout — it's doing more thinking than
-      // the per-trade analyzer calls.
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(45000),
     });
 
     if (!res.ok) {
       console.error(
-        '[tradeConstructor] AI call failed:',
+        '[tradeConstructor.rank] AI call failed:',
         res.status,
         await res.text().catch(() => '')
       );
@@ -494,17 +305,26 @@ export async function constructTrades(
     // Strip code fences if the model wrapped its JSON
     const jsonStr = rawText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
 
-    let parsed: RawTradeResponse;
+    let parsed: RawResponse;
     try {
-      parsed = JSON.parse(jsonStr) as RawTradeResponse;
+      parsed = JSON.parse(jsonStr) as RawResponse;
     } catch (parseErr) {
-      console.error('[tradeConstructor] JSON parse failed:', parseErr, jsonStr.slice(0, 200));
+      console.error(
+        '[tradeConstructor.rank] JSON parse failed:',
+        parseErr,
+        jsonStr.slice(0, 200)
+      );
       return null;
     }
 
-    return coerceResponse(parsed);
+    const result = coerceResponse(parsed, candidateIds);
+    console.log(
+      `[tradeConstructor.rank] model returned ${result.picks.length}/${desiredCount} valid picks` +
+        (result.notes ? ` — notes: ${result.notes.slice(0, 120)}` : '')
+    );
+    return result;
   } catch (err) {
-    console.error('[tradeConstructor] construct failed:', err);
+    console.error('[tradeConstructor.rank] call failed:', err);
     return null;
   }
 }
