@@ -296,14 +296,16 @@ tradeFinderRoutes.post('/needs', authMiddleware, async (c) => {
 
 interface RecommendationsBody {
   leagueId: string;
-  targetPosition?: string;
-  targetTeamId?: string;
+  /** REQUIRED — the player the user wants to acquire. The finder is
+   *  now target-focused: it returns 2-3 offer packages for this
+   *  specific player instead of trying to find arbitrary trades. */
+  targetPlayerId: string;
   leagueSettings?: Partial<LeagueSettings>;
   /** Optional: restrict the user's send-side candidate pool to these
    *  player ids (must be on their roster). */
   userPlayerIds?: string[];
   /** Optional: draft picks the user is willing to throw in. Attached
-   *  to every surviving candidate. */
+   *  to every offer on the user's send side. */
   userPicks?: Array<{ year: number; round: number }>;
 }
 
@@ -333,6 +335,16 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
   }
 
   if (!body.leagueId) return c.json({ error: 'leagueId required' }, 400);
+  if (!body.targetPlayerId) {
+    return c.json(
+      {
+        error:
+          'Pick a target player. The Trade Finder now shows realistic offers for a specific player you want to acquire.',
+        code: 'TARGET_REQUIRED',
+      },
+      400
+    );
+  }
 
   try {
     // Membership + team resolution (same as /needs)
@@ -379,11 +391,10 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
     // that would make previously cached results invalid (e.g. tighter
     // filters, new analyzer inputs). Bump it here when we ship fixes
     // that would make a user say "the old trade is still showing up".
-    // v8: loosened the matcher (scan all positions always, relaxed
-    //     mutual-benefit guard) AND gate 4 (breathable thresholds,
-    //     safety-net fallback) to actually surface trades. The
-    //     prior defaults were dropping everything silently.
-    const CACHE_VERSION = 'v8';
+    // v9: target-focused flow — finder is now "pick a player, get
+    //     2-3 offers for them" instead of "find me any trade." The
+    //     mega-call generator and its fallbacks are gone.
+    const CACHE_VERSION = 'v9';
     const todayKey = new Date().toISOString().slice(0, 10);
     const sortedPlayerIds = [...(body.userPlayerIds ?? [])].sort();
     const sortedPicks = [...(body.userPicks ?? [])]
@@ -393,7 +404,7 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
       sortedPlayerIds.length === 0 && sortedPicks.length === 0
         ? 'any'
         : `p[${sortedPlayerIds.join(',')}]|pk[${sortedPicks.join(',')}]`;
-    const filterKey = `${body.targetPosition || 'any'}-${body.targetTeamId || 'any'}-${assetKey}`;
+    const filterKey = `tgt[${body.targetPlayerId}]-${assetKey}`;
     const cacheKey = new Request(
       `https://cache.local/trade-finder/recs/${CACHE_VERSION}/${league.id}/${userTeam.id}/${league.currentWeek}/${filterKey}/${todayKey}`
     );
@@ -428,15 +439,11 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
       leagueSettings: mergedLeagueSettings,
       seasonYear: league.seasonYear,
       currentWeek: league.currentWeek,
-      // Critical for dynasty users: the trusted analyzer calibrates
-      // differently based on league type (age reasoning, pick value,
-      // future-value vs present-value trade-offs). Previously this
-      // was hardcoded to 'redraft' inside the finder which caused
-      // dynasty trades to grade as fair when they weren't.
+      // Dynasty vs redraft affects pick valuation + age reasoning in
+      // the trusted analyzer.
       leagueType: (league.leagueType as 'redraft' | 'dynasty' | 'keeper') ?? 'redraft',
-      targetPosition: body.targetPosition ?? null,
-      targetTeamId: body.targetTeamId ?? null,
-      maxRecommendations: 8,
+      targetPlayerId: body.targetPlayerId,
+      maxRecommendations: 3,
       userPlayerIds: body.userPlayerIds ?? null,
       userPicks: body.userPicks ?? null,
     });
