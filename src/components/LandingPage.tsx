@@ -1,400 +1,610 @@
-import { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 interface LandingPageProps {
   onNavigate: (view: string) => void;
 }
 
 const LANDING_CSS = `
-.lp *, .lp *::before, .lp *::after { margin: 0; padding: 0; box-sizing: border-box; }
-.lp { --bg: #0a0a0a; --surface: #111111; --surface-2: #1a1a1a; --border: #222222; --text: #e5e5e5; --text-muted: #737373; --accent: #3b82f6; --green: #22c55e; --red: #ef4444; font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; overflow-x: hidden; min-height: 100vh; }
-.lp .serif { font-family: 'Playfair Display', Georgia, serif; }
-.lp nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 16px 0; transition: background 0.3s, backdrop-filter 0.3s; }
-.lp nav.scrolled { background: rgba(10,10,10,0.85); backdrop-filter: blur(16px); border-bottom: 1px solid var(--border); }
-.lp .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
-.lp .nav-logo { font-weight: 800; font-size: 18px; letter-spacing: -0.5px; color: white; text-decoration: none; cursor: pointer; background: none; border: none; display: flex; align-items: center; gap: 8px; }
-.lp .nav-logo img { height: 28px; width: auto; }
-.lp .nav-logo-text { color: white; }
-.lp .nav-logo-text span { color: var(--accent); }
-.lp .nav-links { display: flex; gap: 32px; align-items: center; }
-.lp .nav-links a { color: var(--text-muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 0.2s; cursor: pointer; }
-.lp .nav-links a:hover { color: white; }
-.lp .nav-cta { background: white; color: black; padding: 8px 20px; border-radius: 6px; font-weight: 600; font-size: 14px; text-decoration: none; transition: opacity 0.2s; cursor: pointer; }
-.lp .nav-cta:hover { opacity: 0.85; }
-.lp .hero { padding: 160px 24px 80px; max-width: 1200px; margin: 0 auto; }
-.lp .hero-label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 24px; }
-.lp .hero-label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: lp-pulse 2s infinite; }
-@keyframes lp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.lp .hero h1 { font-size: clamp(40px, 7vw, 80px); font-weight: 900; letter-spacing: -2px; line-height: 0.95; color: white; max-width: 900px; margin-bottom: 28px; }
-.lp .hero p { font-size: 18px; color: var(--text-muted); max-width: 540px; line-height: 1.7; margin-bottom: 40px; }
-.lp .hero-actions { display: flex; gap: 16px; flex-wrap: wrap; }
-.lp .btn-primary { background: white; color: black; padding: 14px 28px; border-radius: 8px; font-weight: 700; font-size: 15px; text-decoration: none; transition: all 0.2s; border: none; cursor: pointer; display: inline-block; }
-.lp .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 24px rgba(255,255,255,0.15); }
-.lp .btn-secondary { background: transparent; color: white; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 15px; text-decoration: none; border: 1px solid #333; transition: all 0.2s; }
-.lp .btn-secondary:hover { border-color: #555; background: rgba(255,255,255,0.03); }
-.lp .ticker { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 14px 0; overflow: hidden; white-space: nowrap; }
-.lp .ticker-track { display: inline-flex; animation: lp-scroll 40s linear infinite; gap: 48px; }
-.lp .ticker-track:hover { animation-play-state: paused; }
-@keyframes lp-scroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-.lp .ticker-item { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
-.lp .ticker-item .name { color: white; }
-.lp .ticker-item .up { color: var(--green); }
-.lp .ticker-item .down { color: var(--red); }
-.lp .ticker-item .sep { color: #333; }
-.lp .rankings-section { max-width: 1200px; margin: 80px auto; padding: 0 24px; }
-.lp .section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
-.lp .section-header h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); }
-.lp .section-header a { font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 600; cursor: pointer; }
-.lp .rankings-table { width: 100%; border-collapse: collapse; }
-.lp .rankings-table th { text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
-.lp .rankings-table th.right { text-align: right; }
-.lp .rankings-table td { padding: 14px 16px; border-bottom: 1px solid #161616; font-size: 14px; vertical-align: middle; }
-.lp .rankings-table tr { transition: background 0.15s; }
-.lp .rankings-table tbody tr:hover { background: var(--surface); }
-.lp .player-name { font-weight: 700; color: white; }
-.lp .player-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.lp .pos-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
-.lp .pos-qb { background: #dc265220; color: #dc2652; }
-.lp .pos-rb { background: #16a34a20; color: #22c55e; }
-.lp .pos-wr { background: #2563eb20; color: #60a5fa; }
-.lp .pos-te { background: #d9731520; color: #f59e0b; }
-.lp .pts { font-weight: 800; color: white; font-variant-numeric: tabular-nums; text-align: right; }
-.lp .trend { text-align: right; font-weight: 600; font-size: 13px; }
-.lp .trend.up { color: var(--green); }
-.lp .trend.down { color: var(--red); }
-.lp .blur-overlay { position: relative; }
-.lp .blur-overlay::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 180px; background: linear-gradient(transparent, var(--bg)); pointer-events: none; }
-.lp .unlock-row td { text-align: center; padding: 32px 16px; }
-.lp .unlock-text { font-size: 15px; color: var(--text-muted); margin-bottom: 16px; }
-.lp .diff-section { max-width: 1200px; margin: 100px auto; padding: 0 24px; }
-.lp .diff-grid { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-@media (min-width: 768px) { .lp .diff-grid { grid-template-columns: 1fr 1fr; } }
-@media (min-width: 1024px) { .lp .diff-grid { grid-template-columns: 1fr 1fr 1fr; } }
-.lp .diff-card { background: var(--bg); padding: 40px 32px; }
-.lp .diff-card .num { font-size: 48px; font-weight: 900; color: white; letter-spacing: -2px; line-height: 1; margin-bottom: 12px; font-variant-numeric: tabular-nums; }
-.lp .diff-card h3 { font-size: 16px; font-weight: 700; color: white; margin-bottom: 8px; }
-.lp .diff-card p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
-.lp .how-section { max-width: 800px; margin: 120px auto; padding: 0 24px; }
-.lp .how-section h2 { font-size: clamp(32px, 5vw, 48px); font-weight: 900; letter-spacing: -1px; color: white; margin-bottom: 64px; text-align: center; }
-.lp .how-steps { display: flex; flex-direction: column; gap: 48px; }
-.lp .how-step { display: flex; gap: 24px; align-items: flex-start; }
-.lp .how-step .step-num { flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; border: 2px solid #333; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; color: white; }
-.lp .how-step h3 { font-weight: 700; font-size: 18px; color: white; margin-bottom: 6px; }
-.lp .how-step p { font-size: 15px; color: var(--text-muted); line-height: 1.6; }
-.lp .pricing-section { max-width: 1000px; margin: 120px auto; padding: 0 24px; }
-.lp .pricing-section h2 { font-size: clamp(32px, 5vw, 48px); font-weight: 900; letter-spacing: -1px; color: white; margin-bottom: 16px; text-align: center; }
-.lp .pricing-section .subtitle { text-align: center; font-size: 16px; color: var(--text-muted); margin-bottom: 48px; }
-.lp .pricing-grid { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-@media (min-width: 768px) { .lp .pricing-grid { grid-template-columns: 1fr 1fr 1fr; } }
-.lp .price-card { background: var(--bg); padding: 40px 32px; display: flex; flex-direction: column; }
-.lp .price-card.featured { background: var(--surface); }
-.lp .price-card .tier { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px; }
-.lp .price-card .tier.pop { color: var(--accent); }
-.lp .price-card .amount { font-size: 40px; font-weight: 900; color: white; letter-spacing: -2px; margin-bottom: 4px; }
-.lp .price-card .amount span { font-size: 16px; font-weight: 500; color: var(--text-muted); letter-spacing: 0; }
-.lp .price-card .period { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
-.lp .price-card ul { list-style: none; flex: 1; margin-bottom: 32px; }
-.lp .price-card li { font-size: 14px; color: var(--text-muted); padding: 6px 0; display: flex; align-items: center; gap: 10px; }
-.lp .price-card li::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: #444; flex-shrink: 0; }
-.lp .price-card li.highlight { color: white; }
-.lp .price-card li.highlight::before { background: var(--accent); }
-.lp .price-btn { display: block; text-align: center; padding: 12px; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; transition: all 0.2s; cursor: pointer; }
-.lp .price-btn.outline { border: 1px solid #333; color: white; background: transparent; }
-.lp .price-btn.outline:hover { border-color: #555; }
-.lp .price-btn.fill { background: white; color: black; border: none; }
-.lp .price-btn.fill:hover { opacity: 0.85; }
-.lp .final-cta { max-width: 1200px; margin: 120px auto 0; padding: 80px 24px; text-align: center; border-top: 1px solid var(--border); }
-.lp .final-cta h2 { font-size: clamp(28px, 4vw, 44px); font-weight: 900; letter-spacing: -1px; color: white; margin-bottom: 16px; }
-.lp .final-cta p { color: var(--text-muted); font-size: 16px; margin-bottom: 32px; }
-.lp footer { max-width: 1200px; margin: 0 auto; padding: 40px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
-.lp footer .left { font-size: 13px; color: var(--text-muted); }
-.lp footer .right { display: flex; gap: 24px; }
-.lp footer .right a { font-size: 13px; color: var(--text-muted); text-decoration: none; cursor: pointer; }
-.lp footer .right a:hover { color: white; }
-@media (max-width: 768px) { .lp .nav-links { display: none; } .lp .hero h1 { letter-spacing: -1px; } .lp .rankings-table .hide-mobile { display: none; } .lp .how-step { flex-direction: column; gap: 12px; } }
-.lp .fade-in { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease, transform 0.6s ease; }
-.lp .fade-in.visible { opacity: 1; transform: translateY(0); }
+:root{
+  --bg:#0a0a0a;
+  --bg2:#111111;
+  --card:#1a1a1a;
+  --card2:#222222;
+  --border:#222222;
+  --border2:#2a2a2a;
+  --text:#e5e5e5;
+  --text-bright:#ffffff;
+  --muted:#737373;
+  --muted2:#a3a3a3;
+  --blue:#3b82f6;
+  --blue-hover:#2563eb;
+  --blue-glow:rgba(59,130,246,.12);
+  --blue-border:rgba(59,130,246,.35);
+  --green:#22c55e;
+  --green-bg:rgba(34,197,94,.12);
+  --gold:#eab308;
+  --gold-bg:rgba(234,179,8,.12);
+  --red:#ef4444;
+  --orange:#f97316;
+}
+.lp *{box-sizing:border-box;margin:0;padding:0}
+.lp{font-family:'Inter',ui-sans-serif,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh}
+.lp a{color:inherit;text-decoration:none}
+.lp .container{max-width:1140px;margin:0 auto;padding:0 24px}
+.lp .topbar{background:var(--bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
+.lp .topbar-inner{display:flex;align-items:center;justify-content:space-between;height:56px}
+.lp .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;color:var(--text-bright);cursor:pointer;background:none;border:none}
+.lp .logo-icon{width:28px;height:28px}
+.lp .logo-icon svg{width:28px;height:28px}
+.lp .beta{background:var(--blue);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:4px;letter-spacing:.04em}
+.lp .nav-links{display:flex;gap:24px;font-size:14px;font-weight:500;color:var(--muted)}
+.lp .nav-links a{cursor:pointer}
+.lp .nav-links a:hover{color:var(--text)}
+.lp .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;border:none;transition:all .12s;font-family:inherit}
+.lp .btn-blue{background:var(--blue);color:#fff}
+.lp .btn-blue:hover{background:var(--blue-hover)}
+.lp .btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+.lp .btn-outline:hover{border-color:var(--muted)}
+.lp .hero{padding:72px 0 56px}
+.lp .hero-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:48px;align-items:center}
+.lp .hero-tag{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;background:var(--blue-glow);border:1px solid var(--blue-border);color:var(--blue);border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.03em;margin-bottom:20px}
+.lp .hero-tag-dot{width:6px;height:6px;background:var(--blue);border-radius:50%;flex-shrink:0}
+.lp h1{font-size:44px;line-height:1.1;margin:0 0 16px;letter-spacing:-.03em;font-weight:800;color:var(--text-bright)}
+.lp h1 em{font-style:normal;color:var(--blue)}
+.lp .hero-sub{font-size:16px;color:var(--muted2);margin-bottom:28px;max-width:480px;line-height:1.7}
+.lp .cta-row{display:flex;gap:10px;flex-wrap:wrap}
+.lp .stats-row{margin-top:32px;display:flex;gap:24px}
+.lp .stat{font-size:13px;color:var(--muted)}
+.lp .stat b{color:var(--text);font-weight:700}
+.lp .widget{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.lp .widget-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--border);background:var(--bg2)}
+.lp .widget-bar-left{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--text-bright)}
+.lp .widget-bar-left svg{width:16px;height:16px;fill:var(--muted)}
+.lp .tab-pills{display:flex;gap:3px}
+.lp .tab-pill{padding:5px 13px;border-radius:6px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .12s;background:none;border:none;font-family:inherit}
+.lp .tab-pill.on{background:var(--blue);color:#fff}
+.lp .tab-pill:hover:not(.on){background:var(--card2)}
+.lp .widget-body{padding:18px}
+.lp .controls{display:flex;gap:20px;margin-bottom:14px;flex-wrap:wrap}
+.lp .ctrl-group label{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-weight:600;margin-bottom:5px}
+.lp .pills{display:flex;gap:3px}
+.lp .pill{padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;color:var(--muted2);background:var(--bg);border:1px solid var(--border);cursor:pointer;transition:all .12s;font-family:inherit}
+.lp .pill.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.lp .trade-grid{display:grid;grid-template-columns:1fr 28px 1fr;gap:6px;align-items:start;margin-top:10px}
+.lp .trade-grid.teams-3,.lp .trade-grid.teams-4{grid-template-columns:1fr 1fr;gap:8px}
+.lp .team-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px}
+.lp .team-head{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.07em;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.lp .team-head svg{width:13px;height:13px;fill:var(--muted)}
+.lp .chip{display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:7px;background:var(--card);border:1px solid var(--border);margin-bottom:4px;font-size:12px;font-weight:500;cursor:pointer;transition:all .1s}
+.lp .chip:hover{border-color:var(--blue)}
+.lp .chip.dimmed{opacity:0.35}
+.lp .chip-left{display:flex;align-items:center;gap:7px}
+.lp .pos{padding:2px 5px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:.03em}
+.lp .pos.QB{background:rgba(239,68,68,.15);color:#f87171}
+.lp .pos.RB{background:rgba(34,197,94,.15);color:#4ade80}
+.lp .pos.WR{background:rgba(59,130,246,.15);color:#60a5fa}
+.lp .pos.TE{background:rgba(245,158,11,.15);color:#fbbf24}
+.lp .chip-val{font-size:10px;color:var(--muted);font-weight:600}
+.lp .swap-col{display:flex;align-items:center;justify-content:center;padding-top:42px;color:var(--border2);font-size:18px;font-weight:700}
+.lp .trade-grid.teams-3 .swap-col,.lp .trade-grid.teams-4 .swap-col{display:none}
+.lp .search-box{width:100%;padding:7px 9px;border-radius:7px;background:var(--card);border:1px solid var(--border);color:var(--muted);font-size:11px;font-family:inherit;outline:none;margin-top:3px}
+.lp .search-box::placeholder{color:var(--muted)}
+.lp .search-box:focus{border-color:var(--blue)}
+.lp .add-pick{font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer}
+.lp .add-pick:hover{color:var(--blue)}
+.lp .verdict{margin-top:14px;padding:14px 16px;border-radius:10px;background:var(--bg);border:1px solid var(--border)}
+.lp .verdict-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.lp .verdict-lbl{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em;font-weight:700}
+.lp .verdict-grade{font-size:28px;font-weight:800}
+.lp .verdict-bar{height:5px;background:var(--card2);border-radius:99px;overflow:hidden;margin:8px 0}
+.lp .verdict-fill{height:100%;background:linear-gradient(90deg,var(--blue),#60a5fa);border-radius:99px;transition:width .35s}
+.lp .verdict-desc{font-size:11px;color:var(--muted);line-height:1.6}
+.lp .verdict-desc b{color:var(--text)}
+.lp section{padding:72px 0}
+.lp .sec-head{text-align:center;margin-bottom:40px}
+.lp .sec-head h2{font-size:30px;margin:0 0 8px;letter-spacing:-.02em;font-weight:800;color:var(--text-bright)}
+.lp .sec-head p{color:var(--muted);max-width:520px;margin:0 auto;font-size:14px}
+.lp .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.lp .feat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px;transition:border-color .12s}
+.lp .feat:hover{border-color:var(--border2)}
+.lp .feat.primary{grid-column:span 3;display:grid;grid-template-columns:1.1fr 1fr;gap:28px;align-items:center;border-color:var(--blue-border);background:var(--card)}
+.lp .feat-ic{width:38px;height:38px;border-radius:8px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin-bottom:12px;font-size:18px}
+.lp .primary .feat-ic{background:var(--blue);border:none}
+.lp .feat h3{margin:0 0 6px;font-size:15px;font-weight:700;color:var(--text-bright)}
+.lp .feat p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.lp .primary h3{font-size:20px}
+.lp .mini-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px}
+.lp .mini-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:6px}
+.lp .mini-row{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
+.lp .mini-row .easy{color:var(--green);font-weight:600}
+.lp .mini-row .hard{color:var(--gold);font-weight:600}
+.lp .counter-text{font-size:12px;color:var(--text)}
+.lp .counter-text span{color:var(--blue);cursor:pointer;font-weight:600}
+.lp .steps-section{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.lp .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.lp .step{text-align:center;padding:20px}
+.lp .step-n{display:inline-flex;width:40px;height:40px;border-radius:50%;background:var(--blue-glow);border:1px solid var(--blue-border);color:var(--blue);align-items:center;justify-content:center;font-weight:800;font-size:16px;margin-bottom:12px}
+.lp .step h4{margin:0 0 6px;font-size:15px;font-weight:700;color:var(--text-bright)}
+.lp .step p{color:var(--muted);font-size:13px;margin:0}
+.lp .pricing-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:32px}
+.lp .price-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;position:relative}
+.lp .price-card.pop{border-color:var(--blue-border)}
+.lp .pop-badge{position:absolute;top:-10px;left:20px;background:var(--blue);color:#fff;font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px}
+.lp .price-card h4{font-size:16px;font-weight:700;color:var(--text-bright);margin:0 0 4px}
+.lp .price-card .amount{font-size:32px;font-weight:800;color:var(--text-bright);margin:0 0 2px}
+.lp .price-card .period{font-size:12px;color:var(--muted);margin-bottom:12px}
+.lp .price-card .desc{font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5}
+.lp .check-list{list-style:none;padding:0}
+.lp .check-list li{font-size:12px;color:var(--muted2);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.lp .check-list li::before{content:"\\2713";color:var(--green);font-weight:700;font-size:13px}
+.lp .price-btn{display:block;width:100%;padding:10px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;border:none;font-family:inherit;margin-top:16px;text-align:center;transition:all .12s}
+.lp .price-btn.primary{background:var(--blue);color:#fff}
+.lp .price-btn.primary:hover{background:var(--blue-hover)}
+.lp .price-btn.secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+.lp .bottom-cta{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:48px;text-align:center;margin:0 0 40px}
+.lp .bottom-cta h2{font-size:28px;margin:0 0 8px;font-weight:800;color:var(--text-bright);letter-spacing:-.02em}
+.lp .bottom-cta p{color:var(--muted);margin:0 0 20px;font-size:14px}
+.lp footer{border-top:1px solid var(--border);padding:24px 0;color:var(--muted);font-size:12px;text-align:center}
+.lp .finder-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
+.lp .finder-row:hover{border-color:var(--blue-border)}
+.lp .finder-players{display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap}
+.lp .finder-plus{color:var(--muted);font-size:12px;margin:0 2px;flex-shrink:0}
+.lp .finder-arrow{color:var(--muted);font-size:14px;margin:0 8px;flex-shrink:0}
+.lp .finder-grade{font-weight:800;font-size:14px;flex-shrink:0;width:28px;text-align:center}
+.lp .finder-tag{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600}
+.lp .finder-tag.buy{background:rgba(34,197,94,.12);color:var(--green)}
+.lp .finder-tag.sell{background:rgba(239,68,68,.12);color:var(--red)}
+.lp .finder-tag.offer{background:var(--blue-glow);color:var(--blue)}
+.lp .finder-pick{background:var(--gold-bg);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:.02em}
+.lp .finder-search{width:100%;padding:9px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:13px;font-family:inherit;outline:none;margin-bottom:12px}
+.lp .finder-search::placeholder{color:var(--muted)}
+.lp .finder-target{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:var(--blue-glow);border:1px solid var(--blue-border);margin-bottom:10px;font-size:12px}
+.lp .finder-target-label{font-size:10px;text-transform:uppercase;color:var(--blue);font-weight:700;letter-spacing:.06em;flex-shrink:0}
+.lp .finder-target-name{font-weight:700;color:var(--text-bright);flex:1}
+.lp .finder-target-team{font-size:11px;color:var(--muted)}
+.lp .finder-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
+.lp .history-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
+.lp .history-row:hover{border-color:var(--blue-border)}
+.lp .history-details{flex:1}
+.lp .history-teams{font-weight:600;color:var(--text-bright);margin-bottom:2px}
+.lp .history-meta{font-size:10px;color:var(--muted)}
+.lp .history-result{text-align:right;flex-shrink:0}
+.lp .history-grade{font-weight:800;font-size:14px}
+.lp .history-status{font-size:10px;font-weight:600;margin-top:1px}
+@media(max-width:860px){
+  .lp .hero-grid,.lp .feat-grid,.lp .steps,.lp .pricing-row{grid-template-columns:1fr}
+  .lp .feat.primary{grid-column:span 1;grid-template-columns:1fr}
+  .lp h1{font-size:30px}
+  .lp .nav-links{display:none}
+  .lp .trade-grid,.lp .trade-grid.teams-3,.lp .trade-grid.teams-4{grid-template-columns:1fr}
+  .lp .swap-col{display:none!important}
+}
 `;
 
-const TICKER_ITEMS = [
-  { name: 'J. Hurts', info: 'QB PHI', pts: '26.4', change: '+2.1', up: true },
-  { name: 'C. McCaffrey', info: 'RB SF', pts: '24.8', change: '+0.6', up: true },
-  { name: 'J. Chase', info: 'WR CIN', pts: '22.1', change: '-1.3', up: false },
-  { name: 'S. Barkley', info: 'RB PHI', pts: '21.9', change: '+3.4', up: true },
-  { name: 'T. Hill', info: 'WR MIA', pts: '20.5', change: '-0.8', up: false },
-  { name: 'L. Jackson', info: 'QB BAL', pts: '25.7', change: '+1.5', up: true },
-  { name: 'A. St. Brown', info: 'WR DET', pts: '19.2', change: '+0.9', up: true },
-  { name: 'B. Robinson', info: 'RB ATL', pts: '18.7', change: '-2.1', up: false },
-  { name: 'S. LaPorta', info: 'TE DET', pts: '14.3', change: '+1.1', up: true },
-  { name: 'P. Mahomes', info: 'QB KC', pts: '22.8', change: '+0.4', up: true },
+interface ChipData {
+  pos: string;
+  name: string;
+  val: number;
+}
+
+const ALL_TEAMS: ChipData[][] = [
+  [ { pos: 'WR', name: 'CeeDee Lamb', val: 24.1 }, { pos: 'RB', name: 'Javonte Williams', val: 11.3 } ],
+  [ { pos: 'RB', name: 'Bijan Robinson', val: 22.8 }, { pos: 'WR', name: 'DK Metcalf', val: 18.2 } ],
+  [ { pos: 'QB', name: 'Jalen Hurts', val: 26.4 }, { pos: 'TE', name: 'Sam LaPorta', val: 14.3 } ],
+  [ { pos: 'WR', name: 'Amon-Ra St. Brown', val: 19.2 }, { pos: 'RB', name: 'Saquon Barkley', val: 21.9 } ],
 ];
 
-const RANKINGS = [
-  { rank: 1, name: 'Jalen Hurts', meta: 'PHI vs DAL', pos: 'QB', line: 'PHI -6.5 \u2022 51.5', stat: '340 yds, 3 TD, 52 rush', pts: '26.4', trend: '+2.1', up: true },
-  { rank: 2, name: 'Lamar Jackson', meta: 'BAL vs CLE', pos: 'QB', line: 'BAL -9.0 \u2022 46.5', stat: '285 yds, 2 TD, 68 rush', pts: '25.7', trend: '+1.5', up: true },
-  { rank: 3, name: 'Christian McCaffrey', meta: 'SF vs ARI', pos: 'RB', line: 'SF -7.0 \u2022 49.0', stat: '88 rush, 5 rec, 42 rec yds', pts: '24.8', trend: '+0.6', up: true },
-  { rank: 4, name: 'Patrick Mahomes', meta: 'KC vs LAC', pos: 'QB', line: 'KC -3.5 \u2022 47.0', stat: '310 yds, 3 TD, 18 rush', pts: '22.8', trend: '+0.4', up: true },
-  { rank: 5, name: "Ja'Marr Chase", meta: 'CIN vs PIT', pos: 'WR', line: 'CIN -2.5 \u2022 44.5', stat: '8 rec, 118 yds, 1 TD', pts: '22.1', trend: '-1.3', up: false },
-  { rank: 6, name: 'Saquon Barkley', meta: 'PHI vs DAL', pos: 'RB', line: 'PHI -6.5 \u2022 51.5', stat: '95 rush, 4 rec, 32 rec yds', pts: '21.9', trend: '+3.4', up: true },
-  { rank: 7, name: 'Tyreek Hill', meta: 'MIA vs NE', pos: 'WR', line: 'MIA -5.5 \u2022 48.5', stat: '7 rec, 105 yds, 1 TD', pts: '20.5', trend: '-0.8', up: false },
-  { rank: 8, name: 'Amon-Ra St. Brown', meta: 'DET vs MIN', pos: 'WR', line: 'DET -3.0 \u2022 52.0', stat: '9 rec, 98 yds, 1 TD', pts: '19.2', trend: '+0.9', up: true },
-  { rank: 9, name: 'Bijan Robinson', meta: 'ATL vs NO', pos: 'RB', line: 'ATL -4.0 \u2022 43.5', stat: '82 rush, 3 rec, 24 rec yds', pts: '18.7', trend: '-2.1', up: false },
-];
-
-const posClass: Record<string, string> = { QB: 'pos-qb', RB: 'pos-rb', WR: 'pos-wr', TE: 'pos-te' };
+function computeMultiVerdict(totals: number[]) {
+  const max = Math.max(...totals);
+  const min = Math.min(...totals);
+  const winnerIdx = totals.indexOf(max);
+  const d = max - min;
+  const pct = Math.max(5, Math.min(95, 50 + d * 2));
+  let grade = 'C', color = 'var(--muted2)';
+  if (d > 12) { grade = 'A+'; color = 'var(--green)'; }
+  else if (d > 8) { grade = 'A\u2212'; color = 'var(--green)'; }
+  else if (d > 4) { grade = 'B'; color = 'var(--blue)'; }
+  else if (d > 1) { grade = 'C+'; color = 'var(--muted2)'; }
+  else { grade = 'C'; color = 'var(--muted2)'; }
+  const summary = d <= 1 ? 'Fair Trade' : `Team ${winnerIdx + 1} Wins`;
+  return { grade, summary, color, pct, delta: d, winnerIdx };
+}
 
 export function LandingPage({ onNavigate }: LandingPageProps) {
-  const navRef = useRef<HTMLElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState('Analyzer');
+  const [tradeType, setTradeType] = useState('2-Team Trade');
+  const [leagueFormat, setLeagueFormat] = useState('Redraft');
+  const [chipActive, setChipActive] = useState<boolean[][]>(ALL_TEAMS.map(t => t.map(() => true)));
+
+  const teamCount = tradeType === '4-Team' ? 4 : tradeType === '3-Team' ? 3 : 2;
 
   useEffect(() => {
-    // Load Playfair Display font
-    const link = document.createElement('link');
-    link.href = 'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&display=swap';
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
-
-    // Inject scoped styles
     const style = document.createElement('style');
     style.textContent = LANDING_CSS;
     document.head.appendChild(style);
-
-    // Sticky nav
-    const handleScroll = () => {
-      navRef.current?.classList.toggle('scrolled', window.scrollY > 40);
-    };
-    window.addEventListener('scroll', handleScroll);
-
-    // Fade-in on scroll
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((e) => {
-          if (e.isIntersecting) {
-            e.target.classList.add('visible');
-            observer.unobserve(e.target);
-          }
-        });
-      },
-      { threshold: 0.15 }
-    );
-    containerRef.current?.querySelectorAll('.fade-in').forEach((el) => observer.observe(el));
-
-    return () => {
-      window.removeEventListener('scroll', handleScroll);
-      observer.disconnect();
-      style.remove();
-      link.remove();
-    };
+    return () => { style.remove(); };
   }, []);
 
-  const viewPath: Record<string, string> = {
-    Board: '/player-rankings', TradeAnalyzer: '/trade-analyzer', GameSlate: '/game-slate',
-    Pricing: '/pricing', Articles: '/articles', Login: '/login', Privacy: '/privacy', Terms: '/terms',
-    Home: '/home',
-  };
+  const toggleChip = useCallback((teamIdx: number, playerIdx: number) => {
+    setChipActive(prev => prev.map((team, ti) =>
+      ti === teamIdx ? team.map((v, pi) => pi === playerIdx ? !v : v) : team
+    ));
+  }, []);
 
-  const nav = (view: string) => (e: React.MouseEvent) => {
-    e.preventDefault();
-    onNavigate(view);
-  };
+  const verdict = useMemo(() => {
+    const totals = ALL_TEAMS.slice(0, teamCount).map((team, ti) =>
+      team.reduce((s, p, pi) => s + (chipActive[ti]?.[pi] ? p.val : 0), 0)
+    );
+    return computeMultiVerdict(totals);
+  }, [chipActive, teamCount]);
+
+  const nav = (view: string) => (e: React.MouseEvent) => { e.preventDefault(); onNavigate(view); };
 
   return (
-    <div className="lp" ref={containerRef}>
-      <nav ref={navRef}>
-        <div className="nav-inner">
-          <button className="nav-logo" onClick={nav('Board')}><img src="/logo.png" alt="FilmRoom logo" /><span className="nav-logo-text">Film<span>Room</span></span></button>
+    <div className="lp">
+      {/* TOP BAR */}
+      <div className="topbar">
+        <div className="container topbar-inner">
+          <button className="logo" onClick={nav('Landing')}>
+            <div className="logo-icon">
+              <img src="/logo.png" alt="FilmRoom logo" style={{ width: 28, height: 28 }} />
+            </div>
+            FilmRoom <span className="beta">BETA</span>
+          </button>
           <div className="nav-links">
-            <a href="#rankings">Rankings</a>
-            <a href="#features">Why FilmRoom</a>
-            <a href="#pricing">Pricing</a>
-            <a href="/login" onClick={nav('Login')} className="nav-cta">Sign Up Free</a>
+            <a onClick={nav('TradeAnalyzer')}>Trade Analyzer</a>
+            <a onClick={nav('Board')}>Player Rankings</a>
+            <a onClick={nav('GameSlate')}>Game Slate</a>
+            <a onClick={nav('Trends')}>Trends</a>
+            <a onClick={nav('Articles')}>Articles</a>
+            <a onClick={nav('Pricing')}>Pricing</a>
           </div>
-        </div>
-      </nav>
-
-      <section className="hero">
-        <div className="hero-label"><span className="dot" /> 2026 NFL Season — Data Updated Every 4 Hours</div>
-        <h1>Your league.<br />Your edge.</h1>
-        <p>Sync your fantasy league, break down every projection, grade trades with AI, and build realistic offers for the players you actually want. One tool, no recycled rankings.</p>
-        <div className="hero-actions">
-          <button className="btn-primary" onClick={nav('Login')}>Start free &rarr;</button>
-          <a href="#rankings" className="btn-secondary">See the rankings</a>
-        </div>
-      </section>
-
-      <div className="ticker" aria-hidden="true">
-        <div className="ticker-track">
-          {[...TICKER_ITEMS, ...TICKER_ITEMS].map((t, i) => (
-            <span key={i} className="ticker-item">
-              <span className="name">{t.name}</span> {t.info}{' '}
-              <span className="pts">{t.pts}</span>{' '}
-              <span className={t.up ? 'up' : 'down'}>{t.change}</span>{' '}
-              <span className="sep">|</span>
-            </span>
-          ))}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-outline" onClick={nav('Login')}>Log in</button>
+            <button className="btn btn-blue" onClick={nav('Login')}>Sign Up Free</button>
+          </div>
         </div>
       </div>
 
-      <section className="rankings-section fade-in" id="rankings">
-        <div className="section-header">
-          <h2>Week 1 Rankings &mdash; PPR</h2>
-          <a href="/player-rankings" onClick={nav('Board')}>Full rankings &rarr;</a>
-        </div>
-        <div className="blur-overlay">
-          <table className="rankings-table">
-            <thead>
-              <tr>
-                <th style={{ width: 48 }}>#</th>
-                <th>Player</th>
-                <th className="hide-mobile" style={{ width: 64 }}>Pos</th>
-                <th className="hide-mobile">Line / O{'\u2009'}U</th>
-                <th className="hide-mobile">Key Stat</th>
-                <th className="right" style={{ width: 72 }}>Proj</th>
-                <th className="right hide-mobile" style={{ width: 72 }}>Trend</th>
-              </tr>
-            </thead>
-            <tbody>
-              {RANKINGS.map((r) => (
-                <tr key={r.rank}>
-                  <td style={{ color: '#555', fontWeight: 700 }}>{r.rank}</td>
-                  <td><div className="player-name">{r.name}</div><div className="player-meta">{r.meta}</div></td>
-                  <td className="hide-mobile"><span className={`pos-badge ${posClass[r.pos]}`}>{r.pos}</span></td>
-                  <td className="hide-mobile"><span className="line">{r.line}</span></td>
-                  <td className="hide-mobile"><span className="line">{r.stat}</span></td>
-                  <td className="pts">{r.pts}</td>
-                  <td className={`trend ${r.up ? 'up' : 'down'} hide-mobile`}>{r.trend}</td>
-                </tr>
-              ))}
-              <tr className="unlock-row">
-                <td colSpan={7}>
-                  <div className="unlock-text">350+ players ranked every week — full projection breakdowns, not just a number</div>
-                  <button className="btn-primary" onClick={nav('Board')}>See full rankings &rarr;</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {/* HERO */}
+      <header className="hero">
+        <div className="container hero-grid">
+          <div>
+            <div className="hero-tag"><span className="hero-tag-dot" /> AI-Powered Trade Analysis</div>
+            <h1>Know who wins the trade <em>before you accept.</em></h1>
+            <p className="hero-sub">FilmRoom&#39;s AI Trade Analyzer grades every deal using player valuations, strength of schedule, and your league&#39;s exact settings. Redraft, dynasty, and keeper.</p>
+            <div className="cta-row">
+              <button className="btn btn-blue" style={{ padding: '11px 22px', fontSize: 14 }} onClick={nav('TradeAnalyzer')}>Analyze a Trade Free</button>
 
-      <section className="diff-section fade-in" id="features">
-        <div className="section-header" style={{ marginBottom: 24 }}><h2>Why FilmRoom</h2></div>
-        <div className="diff-grid">
-          {[
-            { num: '\u{1F4CA}', title: 'Projection breakdowns', desc: 'See exactly why a player is ranked where they are. Vegas lines, stat projections, matchup grades, and scoring breakdowns \u2014 not a black box.' },
-            { num: '\u{1F916}', title: 'AI trade analysis', desc: 'Drop in a trade and get an instant AI-powered evaluation. Fair value, positional impact, league context \u2014 so you stop second-guessing.' },
-            { num: '\u{1F3AF}', title: 'Target-based trade finder', desc: 'Pick a player you want to acquire from any team in your league. AI builds 2-3 realistic offer packages from your roster and grades each one against your league\u2019s scoring.' },
-            { num: '\u{1F3C8}', title: 'Your league, your way', desc: 'Sync your Sleeper, Yahoo, ESPN, or MyFantasyLeague league and see everything through the lens of your roster, your matchups, your scoring settings.' },
-            { num: '\u{1F527}', title: 'Fully customizable', desc: 'Filter by scoring format, position, week, and more. PPR, Half PPR, Standard \u2014 see projections the way your league actually scores.' },
-            { num: '\u{1F3C6}', title: 'Dynamic playoff predictor', desc: 'Input scenarios \u2014 wins, losses, tiebreakers \u2014 and see your updated playoff odds in real time. Know exactly what you need to clinch.' },
-          ].map((d) => (
-            <div key={d.title} className="diff-card">
-              <div className="num">{d.num}</div>
-              <h3>{d.title}</h3>
-              <p>{d.desc}</p>
             </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="how-section fade-in">
-        <h2>Three steps. That&apos;s it.</h2>
-        <div className="how-steps">
-          {[
-            { n: '1', title: 'Sync your league', desc: 'Paste your Sleeper username or connect Yahoo, ESPN, or MyFantasyLeague. Your rosters, matchups, scoring settings, and schedule load instantly.' },
-            { n: '2', title: 'Break down every projection', desc: "See exactly how each player's projection is built — Vegas lines, stat models, matchup data. Filter by position, format, and week to fit your league." },
-            { n: '3', title: 'Trade smarter, win with confidence', desc: 'Grade any trade with AI, pick a player you want and let the Trade Finder build realistic offers, and make start/sit decisions with real breakdowns behind every number.' },
-          ].map((s) => (
-            <div key={s.n} className="how-step">
-              <div className="step-num">{s.n}</div>
-              <div><h3>{s.title}</h3><p>{s.desc}</p></div>
+            <div className="stats-row">
+              <div className="stat"><b>150k+</b> trades analyzed</div>
+              <div className="stat"><b>4.9&#9733;</b> user rating</div>
+              <div className="stat"><b>12</b> league formats</div>
             </div>
-          ))}
+          </div>
+
+          {/* LIVE WIDGET */}
+          <div className="widget">
+            <div className="widget-bar">
+              <div className="widget-bar-left">
+                <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+                AI Trade Analyzer
+              </div>
+              <div className="tab-pills">
+                {['Analyzer', 'Trade Finder', 'History'].map(t => (
+                  <button key={t} className={`tab-pill${activeTab === t ? ' on' : ''}`} onClick={() => setActiveTab(t)}>{t}</button>
+                ))}
+              </div>
+            </div>
+            <div className="widget-body">
+              {activeTab === 'Analyzer' && (
+                <>
+                  <div className="controls">
+                    <div className="ctrl-group">
+                      <label>Trade Type</label>
+                      <div className="pills">
+                        {['2-Team Trade', '3-Team', '4-Team'].map(t => (
+                          <button key={t} className={`pill${tradeType === t ? ' on' : ''}`} onClick={() => setTradeType(t)}>{t}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="ctrl-group">
+                      <label>League Format</label>
+                      <div className="pills">
+                        {['Redraft', 'Dynasty', 'Keeper'].map(f => (
+                          <button key={f} className={`pill${leagueFormat === f ? ' on' : ''}`} onClick={() => setLeagueFormat(f)}>{f}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`trade-grid${teamCount === 3 ? ' teams-3' : teamCount === 4 ? ' teams-4' : ''}`}>
+                    {ALL_TEAMS.slice(0, teamCount).map((team, ti) => (
+                      <React.Fragment key={ti}>
+                        {ti > 0 && <div className="swap-col">⇄</div>}
+                        <div className="team-box">
+                          <div className="team-head">
+                            <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                            Team {ti + 1} &middot; Sends away
+                          </div>
+                          {team.map((p, pi) => (
+                            <div key={p.name} className={`chip${!chipActive[ti]?.[pi] ? ' dimmed' : ''}`} onClick={() => toggleChip(ti, pi)}>
+                              <span className="chip-left"><span className={`pos ${p.pos}`}>{p.pos}</span>{p.name}</span>
+                              <span className="chip-val">{p.val}</span>
+                            </div>
+                          ))}
+                          <input className="search-box" placeholder="Search player to add..." readOnly />
+                          <div className="add-pick">+ Add Draft Pick</div>
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+
+                  <div className="verdict">
+                    <div className="verdict-top">
+                      <div className="verdict-lbl">AI Verdict &mdash; {verdict.summary}</div>
+                      <div className="verdict-grade" style={{ color: verdict.color }}>{verdict.grade}</div>
+                    </div>
+                    <div className="verdict-bar"><div className="verdict-fill" style={{ width: `${verdict.pct}%` }} /></div>
+                    <div className="verdict-desc">
+                      {verdict.delta <= 1
+                        ? 'Even trade across all teams.'
+                        : <>+{verdict.delta.toFixed(1)} value edge for <b>Team {verdict.winnerIdx + 1}</b>.</>
+                      }{' '}Click players to simulate different trade packages.
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {activeTab === 'Trade Finder' && (
+                <>
+                  <input
+                    className="finder-search"
+                    placeholder="Pick a player you want to acquire — e.g. CeeDee Lamb"
+                    readOnly
+                  />
+                  <div className="finder-target">
+                    <span className="finder-target-label">Target</span>
+                    <span className={`pos WR`}>WR</span>
+                    <span className="finder-target-name">CeeDee Lamb</span>
+                    <span className="finder-target-team">Ball Whackers</span>
+                  </div>
+                  <div className="finder-row">
+                    <div className="finder-players">
+                      <span className={`pos RB`}>RB</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Javonte Williams</span>
+                      <span className="finder-plus">+</span>
+                      <span className="finder-pick">2026 1st</span>
+                      <span className="finder-arrow">→</span>
+                      <span className={`pos WR`}>WR</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
+                    </div>
+                    <span className="finder-tag offer">Offer</span>
+                    <span className="finder-grade" style={{ color: 'var(--green)' }}>A</span>
+                  </div>
+                  <div className="finder-row">
+                    <div className="finder-players">
+                      <span className={`pos WR`}>WR</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>DK Metcalf</span>
+                      <span className="finder-plus">+</span>
+                      <span className={`pos RB`}>RB</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Tony Pollard</span>
+                      <span className="finder-arrow">→</span>
+                      <span className={`pos WR`}>WR</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
+                    </div>
+                    <span className="finder-tag offer">Offer</span>
+                    <span className="finder-grade" style={{ color: 'var(--blue)' }}>B+</span>
+                  </div>
+                  <div className="finder-row">
+                    <div className="finder-players">
+                      <span className={`pos RB`}>RB</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Saquon Barkley</span>
+                      <span className="finder-arrow">→</span>
+                      <span className={`pos WR`}>WR</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
+                    </div>
+                    <span className="finder-tag offer">Offer</span>
+                    <span className="finder-grade" style={{ color: 'var(--blue)' }}>B</span>
+                  </div>
+                  <div className="finder-hint">Pick a player → AI builds 2-3 realistic offers from your roster.</div>
+                </>
+              )}
+
+              {activeTab === 'History' && (
+                <>
+                  <div className="history-row">
+                    <div className="history-details">
+                      <div className="history-teams">CeeDee Lamb, Javonte Williams ⇄ Bijan Robinson</div>
+                      <div className="history-meta">Redraft &middot; 2-Team &middot; Apr 8, 2026</div>
+                    </div>
+                    <div className="history-result">
+                      <div className="history-grade" style={{ color: 'var(--green)' }}>A&minus;</div>
+                      <div className="history-status" style={{ color: 'var(--green)' }}>Accepted</div>
+                    </div>
+                  </div>
+                  <div className="history-row">
+                    <div className="history-details">
+                      <div className="history-teams">Jalen Hurts ⇄ Lamar Jackson, 2026 2nd</div>
+                      <div className="history-meta">Dynasty &middot; 2-Team &middot; Apr 5, 2026</div>
+                    </div>
+                    <div className="history-result">
+                      <div className="history-grade" style={{ color: 'var(--blue)' }}>B+</div>
+                      <div className="history-status" style={{ color: 'var(--green)' }}>Accepted</div>
+                    </div>
+                  </div>
+                  <div className="history-row">
+                    <div className="history-details">
+                      <div className="history-teams">DK Metcalf, Sam LaPorta ⇄ Amon-Ra St. Brown</div>
+                      <div className="history-meta">Redraft &middot; 2-Team &middot; Apr 2, 2026</div>
+                    </div>
+                    <div className="history-result">
+                      <div className="history-grade" style={{ color: 'var(--muted2)' }}>C+</div>
+                      <div className="history-status" style={{ color: 'var(--red)' }}>Declined</div>
+                    </div>
+                  </div>
+                  <div className="history-row">
+                    <div className="history-details">
+                      <div className="history-teams">Saquon Barkley ⇄ CeeDee Lamb, 2026 3rd</div>
+                      <div className="history-meta">Keeper &middot; 3-Team &middot; Mar 28, 2026</div>
+                    </div>
+                    <div className="history-result">
+                      <div className="history-grade" style={{ color: 'var(--green)' }}>A</div>
+                      <div className="history-status" style={{ color: 'var(--muted)' }}>Pending</div>
+                    </div>
+                  </div>
+                  <div className="finder-hint">All trades you&apos;ve analyzed this season</div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* FEATURES */}
+      <section>
+        <div className="container">
+          <div className="sec-head">
+            <h2>Everything built around the Trade Analyzer</h2>
+            <p>Every tool in FilmRoom feeds into smarter trade decisions.</p>
+          </div>
+          <div className="feat-grid">
+            <div className="feat primary">
+              <div>
+                <div className="feat-ic">⇄</div>
+                <h3>AI Trade Analyzer</h3>
+                <p>Drop in any trade and get an instant A-F grade tuned to your league&#39;s scoring, roster composition, and playoff schedule. Includes ROS projections, playoff-week matchup breakdowns, and AI-generated counter-offer suggestions. Supports 2, 3, and 4-team trades.</p>
+              </div>
+              <div>
+                <div className="mini-card">
+                  <div className="mini-label">Playoff Schedule Comparison</div>
+                  <div className="mini-row"><span>Bijan Robinson</span><span className="easy">Easy &middot; Easy &middot; Mid</span></div>
+                  <div className="mini-row"><span>CeeDee Lamb</span><span className="hard">Mid &middot; Hard &middot; Hard</span></div>
+                </div>
+                <div className="mini-card">
+                  <div className="mini-label">AI Counter-Offer</div>
+                  <div className="counter-text">Send <b>CeeDee Lamb + 2026 2nd</b> to balance this trade. <span>Copy offer &rarr;</span></div>
+                </div>
+              </div>
+            </div>
+            <div className="feat" style={{ cursor: 'pointer' }} onClick={nav('Board')}>
+              <div className="feat-ic">&#x1F4CA;</div>
+              <h3>Player Rankings</h3>
+              <p>Weekly and ROS rankings with PPR, Half PPR, and Standard scoring &mdash; wired directly into every trade grade.</p>
+            </div>
+            <div className="feat" style={{ cursor: 'pointer' }} onClick={nav('GameSlate')}>
+              <div className="feat-ic">&#x1F3AC;</div>
+              <h3>Game Slate</h3>
+              <p>Snap-count projections and matchup breakdowns for every game, every week.</p>
+            </div>
+            <div className="feat" style={{ cursor: 'pointer' }} onClick={nav('Trends')}>
+              <div className="feat-ic">&#x1F4C8;</div>
+              <h3>Trends</h3>
+              <p>Waiver wire risers, usage trends, and add/drop data across all platforms.</p>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="pricing-section fade-in" id="pricing">
-        <h2>Simple pricing</h2>
-        <p className="subtitle">Free to start. Upgrade when you want more.</p>
-        <div className="pricing-grid">
-          <div className="price-card">
-            <div className="tier">Free</div>
-            <div className="amount">$0</div>
-            <div className="period">Forever</div>
-            <ul>
-              <li className="highlight">Player rankings — all positions, all scoring formats</li>
-              <li className="highlight">NFL Game Slate with live scores</li>
-              <li className="highlight">News &amp; injury updates</li>
-              <li className="highlight">Current week projections</li>
-              <li>1 league sync</li>
-              <li>1 trade analysis per day</li>
-            </ul>
-            <a href="/login" className="price-btn outline" onClick={nav('Login')}>Start free</a>
+      {/* HOW IT WORKS */}
+      <section className="steps-section">
+        <div className="container">
+          <div className="sec-head">
+            <h2>From &quot;should I?&quot; to &quot;send it.&quot; in seconds</h2>
+            <p>No spreadsheets, no forum polls, no waiting.</p>
           </div>
-          <div className="price-card featured">
-            <div className="tier pop">Pro &mdash; Most Popular</div>
-            <div className="amount">$4.99<span>/mo</span></div>
-            <div className="period">or $49.99/year (save 17%)</div>
-            <ul>
-              <li className="highlight">Everything in Free</li>
-              <li className="highlight">Unlimited league syncs</li>
-              <li className="highlight">AI Trade Finder &mdash; target-based offer suggestions</li>
-              <li className="highlight">Trending players &amp; add/drop data</li>
-              <li className="highlight">5 trade analyses per day</li>
-            </ul>
-            <a href="/pricing" className="price-btn fill" onClick={nav('Pricing')}>Try Pro free for 3 days</a>
-          </div>
-          <div className="price-card">
-            <div className="tier">Elite</div>
-            <div className="amount">$9.99<span>/mo</span></div>
-            <div className="period">or $99.99/year (save 17%)</div>
-            <ul>
-              <li className="highlight">Everything in Pro</li>
-              <li className="highlight">Deeper player research — stats, Vegas props, game logs, matchup grades</li>
-              <li className="highlight">Unlimited trade analyses &amp; Trade Finder searches</li>
-              <li>Custom scoring models (coming soon)</li>
-              <li>Early access to new features</li>
-            </ul>
-            <a href="/pricing" className="price-btn outline" onClick={nav('Pricing')}>Try Elite free for 3 days</a>
+          <div className="steps">
+            <div className="step">
+              <div className="step-n">1</div>
+              <h4>Drop in the trade</h4>
+              <p>Search players or sync your Sleeper, ESPN, or Yahoo league.</p>
+            </div>
+            <div className="step">
+              <div className="step-n">2</div>
+              <h4>Get the AI grade</h4>
+              <p>Instant A-F verdict with value delta, playoff impact, and schedule analysis.</p>
+            </div>
+            <div className="step">
+              <div className="step-n">3</div>
+              <h4>Counter or accept</h4>
+              <p>Use the AI counter-offer or hit accept with full confidence.</p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="diff-section fade-in">
-        <div className="section-header" style={{ marginBottom: 24 }}><h2>Explore Our Tools</h2></div>
-        <div className="diff-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-          {[
-            { title: 'Projection Breakdowns', desc: 'See the full breakdown behind every player projection — Vegas lines, stat models, and matchup context.', view: 'Board' },
-            { title: 'AI Trade Analyzer', desc: 'Drop in any trade and get instant AI analysis — fair value, roster impact, and whether you should smash accept.', view: 'TradeAnalyzer' },
-            { title: 'AI Trade Finder', desc: 'Pick a player you want. The Finder builds 2-3 realistic offer packages from your roster and grades each one.', view: 'TradeAnalyzer' },
-            { title: 'My League Hub', desc: 'Sync your league from Sleeper, Yahoo, ESPN, or MyFantasyLeague. Your roster, matchups, waivers, and standings — all in one place.', view: 'Home' },
-            { title: 'NFL Game Slate', desc: 'Live scores, spreads, and fantasy-relevant game stats updated throughout the week.', view: 'GameSlate' },
-          ].map((t) => (
-            <a key={t.title} href={viewPath[t.view] || '/'} onClick={nav(t.view)} className="diff-card" style={{ cursor: 'pointer', textDecoration: 'none' }}>
-              <h3>{t.title}</h3>
-              <p>{t.desc}</p>
-              <span style={{ color: 'var(--accent)', fontSize: '13px', fontWeight: 600, marginTop: '12px', display: 'inline-block' }}>Explore &rarr;</span>
-            </a>
-          ))}
+      {/* PRICING */}
+      <section>
+        <div className="container">
+          <div className="sec-head">
+            <h2>Simple, transparent pricing</h2>
+            <p>Free to start. Upgrade when you need more.</p>
+          </div>
+          <div className="pricing-row">
+            <div className="price-card">
+              <h4>Free</h4>
+              <div className="amount">$0</div>
+              <div className="period">Forever</div>
+              <div className="desc">Try the Trade Analyzer with basic access.</div>
+              <ul className="check-list">
+                <li>1 trade analysis per day</li>
+                <li>2-team trades only</li>
+                <li>All league formats</li>
+                <li>AI verdict &amp; letter grade</li>
+                <li>Player rankings &amp; Game Slate</li>
+              </ul>
+              <button className="price-btn secondary" onClick={nav('Login')}>Get Started</button>
+            </div>
+            <div className="price-card pop">
+              <div className="pop-badge">Most Popular</div>
+              <h4>Pro</h4>
+              <div className="amount">$4.99</div>
+              <div className="period">per month</div>
+              <div className="desc">Unlock the full Trade Analyzer for your league.</div>
+              <ul className="check-list">
+                <li>5 trade analyses per day</li>
+                <li>2, 3, and 4-team trades</li>
+                <li>Redraft, Dynasty, and Keeper</li>
+                <li>AI counter-offer suggestions</li>
+                <li>Playoff schedule comparisons</li>
+                <li>Trade Finder &amp; Trade History</li>
+                <li>3-day free trial</li>
+              </ul>
+              <button className="price-btn primary" onClick={nav('Pricing')}>Start Free Trial</button>
+            </div>
+            <div className="price-card">
+              <h4>Elite</h4>
+              <div className="amount">$9.99</div>
+              <div className="period">per month</div>
+              <div className="desc">No limits. Every trade tool, unlimited.</div>
+              <ul className="check-list">
+                <li>Unlimited trade analyses</li>
+                <li>Everything in Pro</li>
+                <li>Deeper player research for trades</li>
+                <li>ROS projections &amp; value charts</li>
+                <li>Custom scoring models <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Coming Soon</span></li>
+                <li>Early access to new features</li>
+              </ul>
+              <button className="price-btn secondary" onClick={nav('Pricing')}>Start Free Trial</button>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="final-cta fade-in">
-        <h2>Your league deserves better tools.</h2>
-        <p>Sync your league, break down projections, and analyze trades with AI. Free to start.</p>
-        <button className="btn-primary" onClick={nav('Login')}>Get started free &rarr;</button>
+      {/* BOTTOM CTA */}
+      <section>
+        <div className="container">
+          <div className="bottom-cta">
+            <h2>Your next trade shouldn&#39;t be a coin flip.</h2>
+            <p>Analyze your first trade free. No credit card required.</p>
+            <button className="btn btn-blue" style={{ padding: '12px 24px', fontSize: 14 }} onClick={nav('TradeAnalyzer')}>Open the Trade Analyzer</button>
+          </div>
+        </div>
       </section>
 
       <footer>
-        <div className="left">&copy; 2026 FilmRoom Fantasy</div>
-        <div className="right">
-          <a href="/player-rankings" onClick={nav('Board')}>Player Rankings</a>
-          <a href="/trade-analyzer" onClick={nav('TradeAnalyzer')}>Trade Analyzer</a>
-          <a href="/game-slate" onClick={nav('GameSlate')}>NFL Games</a>
-          <a href="/pricing" onClick={nav('Pricing')}>Pricing</a>
-          <a href="/articles" onClick={nav('Articles')}>Articles</a>
-          <a href="/privacy" onClick={nav('Privacy')}>Privacy Policy</a>
-          <a href="/terms" onClick={nav('Terms')}>Terms of Service</a>
-          <a href="/login" onClick={nav('Login')}>Login</a>
-        </div>
+        <div className="container">&copy; 2026 FilmRoom &mdash; Film-based fantasy football analysis &amp; management.</div>
       </footer>
     </div>
   );
