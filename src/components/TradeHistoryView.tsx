@@ -74,9 +74,6 @@ interface HistoricalTrade {
     winner: string;
     winnerExplanation: string;
     teamGrades: Array<{ team: string; grade: string; summary: string }>;
-    fairnessScore?: { score: number; diff: number; favored: string };
-    improvements?: string[];
-    keyFactors?: string[];
   } | null;
   sides: TradeSide[];
   outcome: TradeOutcome | null;
@@ -137,62 +134,92 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
     !!user &&
     (user.subscriptionTier === 'pro' || user.subscriptionTier === 'elite');
 
-  const fetchAll = useCallback(async () => {
-    if (!selectedLeagueId) {
-      setTrades([]);
-      setImpacts([]);
-      setSeasons([]);
-      setCallerTeamName(null);
-      setCallerWarning(null);
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
-      const seasonQuery =
-        selectedSeason != null ? `&season=${selectedSeason}` : '';
-      const [historyRes, impactRes] = await Promise.all([
-        api.get<{
-          trades: HistoricalTrade[];
-          seasons: number[];
-          callerTeamId: string;
-          callerTeamName: string;
-          callerResolutionStrategy?: string;
-          callerResolutionWarning?: string | null;
-        }>(
-          `/trade-history/history?leagueId=${selectedLeagueId}${seasonQuery}`
-        ),
-        api
-          .get<{ impact: RecordImpact | null; impacts: RecordImpact[] }>(
-            `/trade-history/record-impact/${selectedLeagueId}`
-          )
-          .catch(() => ({ impact: null, impacts: [] })),
-      ]);
-      setTrades(historyRes.trades);
-      setCallerWarning(historyRes.callerResolutionWarning ?? null);
-      setSeasons(historyRes.seasons);
-      setCallerTeamName(historyRes.callerTeamName);
-      setImpacts(impactRes.impacts);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to load trade history.'
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedLeagueId, selectedSeason]);
+  // fetchAll is parameterized so the caller can pass an explicit
+  // league id — used by handleIngest/handleGrade so they refresh
+  // against the league they KICKED OFF against, not whatever the
+  // user has since switched to. The leading-edge cancellation token
+  // (`isMounted` in the effect below) guards against stale responses
+  // overwriting newer data when the user switches leagues rapidly.
+  const fetchAll = useCallback(
+    async (
+      leagueIdArg: string = selectedLeagueId,
+      seasonArg: number | null = selectedSeason,
+      { isCancelled }: { isCancelled?: () => boolean } = {}
+    ) => {
+      if (!leagueIdArg) {
+        setTrades([]);
+        setImpacts([]);
+        setSeasons([]);
+        setCallerTeamName(null);
+        setCallerWarning(null);
+        return;
+      }
+      setIsLoading(true);
+      setError(null);
+      try {
+        const seasonQuery = seasonArg != null ? `&season=${seasonArg}` : '';
+        const [historyRes, impactRes] = await Promise.all([
+          api.get<{
+            trades: HistoricalTrade[];
+            seasons: number[];
+            callerTeamName: string;
+            callerResolutionStrategy?: string;
+            callerResolutionWarning?: string | null;
+          }>(
+            `/trade-history/history?leagueId=${leagueIdArg}${seasonQuery}`
+          ),
+          api
+            .get<{ impact: RecordImpact | null; impacts: RecordImpact[] }>(
+              `/trade-history/record-impact/${leagueIdArg}`
+            )
+            .catch(() => ({ impact: null, impacts: [] as RecordImpact[] })),
+        ]);
+        if (isCancelled?.()) return;
+        setTrades(historyRes.trades);
+        setCallerWarning(historyRes.callerResolutionWarning ?? null);
+        // Defensive sort: newest season first, regardless of backend order.
+        setSeasons([...historyRes.seasons].sort((a, b) => b - a));
+        setCallerTeamName(historyRes.callerTeamName);
+        setImpacts(impactRes.impacts);
+      } catch (err) {
+        if (isCancelled?.()) return;
+        setError(
+          err instanceof Error ? err.message : 'Failed to load trade history.'
+        );
+      } finally {
+        if (!isCancelled?.()) setIsLoading(false);
+      }
+    },
+    [selectedLeagueId, selectedSeason]
+  );
 
+  // Fetch whenever (league, season) changes. Guarded with a
+  // cancellation token so stale responses are dropped if the user
+  // switches leagues or seasons while a request is in flight.
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    let cancelled = false;
+    fetchAll(selectedLeagueId, selectedSeason, { isCancelled: () => cancelled });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchAll, selectedLeagueId, selectedSeason]);
 
-  // Reset season filter when switching leagues
+  // When the league changes, clear any per-league transient UI state
+  // (season filter, ingest notice, error) so the user doesn't see a
+  // stale message from the previous league.
   useEffect(() => {
     setSelectedSeason(null);
+    setIngestNotice(null);
+    setError(null);
+    setExpanded(new Set());
   }, [selectedLeagueId]);
 
   const handleIngest = async () => {
     if (!selectedLeagueId) return;
+    // Capture the league id at click time so a mid-request league
+    // switch doesn't cause us to refresh or show a notice for the
+    // wrong league.
+    const leagueIdAtStart = selectedLeagueId;
     setIsIngesting(true);
     setIngestNotice(null);
     try {
@@ -210,8 +237,11 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
           weeklyTradeBreakdown: Record<number, number>;
           totalRawTransactions: number;
         };
-      }>(`/trade-history/ingest/${selectedLeagueId}`);
-      await fetchAll();
+      }>(`/trade-history/ingest/${leagueIdAtStart}`);
+      // Bail if the user switched leagues while the ingest was in
+      // flight — the result belongs to a league we're no longer on.
+      if (selectedLeagueId !== leagueIdAtStart) return;
+      await fetchAll(leagueIdAtStart, selectedSeason);
       // Build a compact notice so the user can see exactly what happened
       const s = res.stats;
       const parts: string[] = [];
@@ -253,26 +283,32 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
           `Roster ids without team mapping: ${s.unmappedRosterIds.join(', ')}. Re-sync the league from Settings to backfill team owners.`
         );
       }
+      // Same staleness guard before surfacing the notice.
+      if (selectedLeagueId !== leagueIdAtStart) return;
       setIngestNotice(parts.join(' • '));
     } catch (err) {
+      if (selectedLeagueId !== leagueIdAtStart) return;
       setError(
         err instanceof Error ? err.message : 'Ingest failed.'
       );
     } finally {
-      setIsIngesting(false);
+      if (selectedLeagueId === leagueIdAtStart) setIsIngesting(false);
     }
   };
 
   const handleGrade = async (tradeId: string) => {
     if (!gradingAllowed) return;
+    const leagueIdAtStart = selectedLeagueId;
     setGradingId(tradeId);
     try {
       await api.post(`/trade-history/grade/${tradeId}`);
-      await fetchAll();
+      if (selectedLeagueId !== leagueIdAtStart) return;
+      await fetchAll(leagueIdAtStart, selectedSeason);
     } catch (err) {
+      if (selectedLeagueId !== leagueIdAtStart) return;
       setError(err instanceof Error ? err.message : 'Grading failed.');
     } finally {
-      setGradingId(null);
+      if (selectedLeagueId === leagueIdAtStart) setGradingId(null);
     }
   };
 
@@ -352,6 +388,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         }`}
       >
         <label
+          htmlFor="trade-history-league-select"
           className={`block text-xs font-semibold uppercase tracking-wide ${
             isDarkMode ? 'text-slate-400' : 'text-slate-500'
           }`}
@@ -361,6 +398,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <select
+              id="trade-history-league-select"
               value={selectedLeagueId}
               onChange={(e) => setSelectedLeagueId(e.target.value)}
               className={`w-full appearance-none pr-9 pl-3 py-2 text-sm rounded-lg border transition-colors ${
@@ -444,9 +482,14 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         </div>
       )}
 
-      {/* Season tabs (show only if user has trades in 2+ seasons) */}
+      {/* Season tabs (show only if user has trades in 2+ seasons).
+          These behave as a group of toggle buttons, so we use
+          aria-pressed rather than a full tablist pattern (which
+          would require arrow-key navigation we don't implement). */}
       {seasons.length > 1 && (
         <div
+          role="group"
+          aria-label="Filter trades by season"
           className={`rounded-xl border p-2 flex items-center gap-1 overflow-x-auto ${
             isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
           }`}
@@ -454,6 +497,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
           <button
             type="button"
             onClick={() => setSelectedSeason(null)}
+            aria-pressed={selectedSeason == null}
             className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
               selectedSeason == null
                 ? 'bg-blue-600 text-white'
@@ -469,6 +513,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
               key={s}
               type="button"
               onClick={() => setSelectedSeason(s)}
+              aria-pressed={selectedSeason === s}
               className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
                 selectedSeason === s
                   ? 'bg-blue-600 text-white'
@@ -666,6 +711,10 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                 <button
                   type="button"
                   onClick={() => toggleExpand(t.id)}
+                  aria-expanded={isOpen}
+                  aria-label={`Trade from ${dateStr}${
+                    t.weekExecuted ? `, week ${t.weekExecuted}` : ''
+                  }. ${isOpen ? 'Collapse' : 'Expand'} details.`}
                   className={`w-full flex items-start gap-3 p-4 text-left ${
                     isDarkMode ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50'
                   }`}
