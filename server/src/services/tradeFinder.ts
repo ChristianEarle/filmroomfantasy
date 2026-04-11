@@ -401,6 +401,55 @@ export async function findTradeRecommendations(
     leagueType,
     seasonYear
   );
+
+  // ── Diagnostic: dump the request shape so we can correlate logs
+  //    with what the UI actually sent. ──
+  console.log(
+    `[tradeFinder] REQUEST userTeam=${userTeamId} hasPicks=${hasUserPicks} pickValueSum=${pickValueSum} restrictAssets=${
+      restrictUserAssets ? JSON.stringify(restrictUserAssets) : 'null'
+    } targetPosition=${targetPosition ?? 'null'} targetTeam=${targetTeamId ?? 'null'} leagueType=${leagueType}`
+  );
+
+  // If the user specified required assets, verify each one resolves
+  // to a real valuation and log its computed value. A missing or
+  // $0-valued asset is the #1 explanation for empty results — e.g.
+  // an injured player with injuryFactor ≈ 0.25 whose finalValue is
+  // tiny, so the matcher can't balance anything.
+  if (restrictUserAssets && restrictUserAssets.length > 0) {
+    for (const id of restrictUserAssets) {
+      const v = valuations.get(id);
+      const facts = factsById.get(id);
+      if (!v) {
+        console.log(
+          `[tradeFinder] REQUIRED ASSET MISSING VALUATION: id=${id} name=${facts?.name ?? '?'}`
+        );
+      } else {
+        console.log(
+          `[tradeFinder] required asset ${facts?.name ?? id}: pos=${v.position} finalValue=${Math.round(v.finalValue)} tier=${v.tier} injuryFactor=${v.injuryFactor} status=${facts?.identity.status ?? '?'}`
+        );
+      }
+    }
+  }
+
+  // User composition snapshot for diagnostic context.
+  const userCompNeeds = userComp.needs
+    .map((n) => `${n.position}(${n.level})`)
+    .join(', ');
+  console.log(
+    `[tradeFinder] user team composition: needs=[${userCompNeeds || 'none'}]`
+  );
+  for (const pos of ['QB', 'RB', 'WR', 'TE']) {
+    const summary = userComp.byPosition.get(pos);
+    if (!summary || summary.players.length === 0) continue;
+    const roles = summary.players
+      .map((p) => {
+        const facts = factsById.get(p.playerId);
+        return `${facts?.name ?? p.playerId}[${Math.round(p.finalValue)}/${p.tier}/${p.role}]`;
+      })
+      .join(', ');
+    console.log(`[tradeFinder]   ${pos}: ${roles}`);
+  }
+
   if (hasUserPicks) {
     console.log(
       `[tradeFinder] user picks valued at ${pickValueSum} (${leagueType}, ${normalizedPicks.length} pick(s))`
@@ -430,6 +479,10 @@ export async function findTradeRecommendations(
       },
     });
 
+    console.log(
+      `[tradeFinder]   partner ${partnerTeam.name}: matcher returned ${matched.length} candidates`
+    );
+
     for (const m of matched) {
       enumeratedPool.push({
         ...m,
@@ -442,6 +495,26 @@ export async function findTradeRecommendations(
   console.log(
     `[tradeFinder] phase1 enumerated ${enumeratedPool.length} candidates across ${new Set(enumeratedPool.map((c) => c.targetTeamId)).size} partners`
   );
+
+  // Dump the top 5 Phase 1 candidates by score so we can see exactly
+  // what the deterministic layer is producing, independent of the
+  // ranker/verifier stages.
+  if (enumeratedPool.length > 0) {
+    const preview = [...enumeratedPool]
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 5);
+    for (const c of preview) {
+      const sendNames = c.sendPlayerIds
+        .map((id) => factsById.get(id)?.name ?? id)
+        .join('+');
+      const recvNames = c.receivePlayerIds
+        .map((id) => factsById.get(id)?.name ?? id)
+        .join('+');
+      console.log(
+        `[tradeFinder]   top: ${c.targetTeamName} | ${sendNames} → ${recvNames} | u=${c.userValue} p=${c.partnerValue} imb=${(c.valueImbalancePct * 100).toFixed(0)}% score=${c.score}`
+      );
+    }
+  }
 
   if (enumeratedPool.length === 0) {
     console.log('[tradeFinder] phase1 empty — no balanced trade exists; returning []');
