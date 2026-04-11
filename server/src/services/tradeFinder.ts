@@ -40,10 +40,12 @@ import {
   buildValuationMap,
   sumPickValues,
   type PlayerValuation,
+  type PlayerTier,
 } from './playerValuation';
 import {
   buildTeamComposition,
   type TeamComposition,
+  type NeedLevel,
 } from './teamComposition';
 import {
   constructOffersForTarget,
@@ -633,6 +635,403 @@ export async function findTradeRecommendations(
   return filtered.sort(
     (a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff
   );
+}
+
+// ── Suggested Targets ───────────────────────────────────────────────
+//
+// "Here are 10 players on other rosters you should pursue." Pure
+// deterministic scoring + filtering — no AI call. Powers the browse
+// step of the Trade Finder: users open the finder, see suggested
+// targets grouped by which need each one addresses, and click one
+// to drop into the existing per-target offer flow.
+//
+// Scoring (higher = better):
+//   score = urgency × value × availability × recordMult
+//
+//     urgency       — from the user's need level at this position
+//                     (premium 3.0 / starter 2.0 / depth 1.0) or 1.0
+//                     when the target is just a tier upgrade at a
+//                     balanced position.
+//     value         — target's finalValue (ROS projection × factors)
+//     availability  — how moveable the target is from their current
+//                     team: starter w/ no backup = 0.3, starter w/
+//                     backup = 0.8, bench/flex = 1.0, surplus = 1.3
+//     recordMult    — partner's record vs league average. Rebuilding
+//                     teams get 1.3, middle 1.0, contenders 0.85.
+//
+// Filters:
+//   - No K/DEF
+//   - Skip players on the user's own roster
+//   - Skip injured/IR players
+//   - Skip tiny-value players (<20)
+//   - Skip a partner's ONLY elite starter at a position (untouchable)
+//   - Must address a user need OR be a real tier upgrade (>20% above
+//     the user's worst starter at that position)
+//
+// Diversity caps:
+//   - Max 2 targets per opponent team
+//   - Max 3 targets per position
+
+export interface SuggestedTarget {
+  playerId: string;
+  playerName: string;
+  position: string;
+  nflTeam: string;
+  tier: PlayerTier;
+  finalValue: number;
+  partnerTeamId: string;
+  partnerTeamName: string;
+  partnerRecord: string;
+  /** Short "why you should pursue" summary for the UI. */
+  rationale: string;
+  /** Which user need this target addresses — also the bucket key
+   *  for the UI grouping. "upgrade" level means "no computed need
+   *  but this is a clear tier upgrade." */
+  addresses: {
+    position: string;
+    level: NeedLevel | 'upgrade';
+    label: string;
+  };
+  /** Deterministic fit score, higher = better. UI sorts by this. */
+  score: number;
+}
+
+export interface SuggestedTargetsResult {
+  /** Top N targets across all needs, sorted by score. */
+  targets: SuggestedTarget[];
+  /** The distinct need buckets represented in the list. The UI uses
+   *  these to render grouped sections and collects targets by
+   *  matching the `addresses` field. */
+  needs: Array<{
+    position: string;
+    level: NeedLevel | 'upgrade';
+    label: string;
+  }>;
+}
+
+interface FindSuggestedTargetsArgs {
+  db: DB;
+  leagueId: string;
+  userTeamId: string;
+  leagueSettings: LeagueSettings;
+  seasonYear: number;
+  currentWeek: number;
+  leagueType?: 'redraft' | 'dynasty' | 'keeper';
+  maxTargets?: number;
+}
+
+// Human-readable bucket label for a deterministic need.
+function bucketLabel(position: string, level: NeedLevel | 'upgrade'): string {
+  switch (level) {
+    case 'premium':
+      return `Premium ${position} need`;
+    case 'starter':
+      return `Starting ${position}`;
+    case 'depth':
+      return `${position} depth`;
+    case 'none':
+      return `${position}`;
+    case 'upgrade':
+      return `Tier upgrade at ${position}`;
+  }
+}
+
+const NEED_URGENCY: Record<NeedLevel, number> = {
+  premium: 3.0,
+  starter: 2.0,
+  depth: 1.0,
+  none: 0.5,
+};
+
+export async function findSuggestedTargets(
+  args: FindSuggestedTargetsArgs
+): Promise<SuggestedTargetsResult> {
+  const {
+    db,
+    leagueId,
+    userTeamId,
+    leagueSettings,
+    seasonYear,
+    currentWeek,
+    maxTargets = 10,
+  } = args;
+
+  // unused suppressors
+  void seasonYear;
+
+  // 1. Load teams + rosters
+  const allTeams = await db.query.teams.findMany({
+    where: eq(schema.teams.leagueId, leagueId),
+  });
+  const userTeam = allTeams.find((t) => t.id === userTeamId);
+  if (!userTeam) return { targets: [], needs: [] };
+
+  const allRosterSpots = await db.query.rosterSpots.findMany({
+    where: inArray(
+      schema.rosterSpots.teamId,
+      allTeams.map((t) => t.id)
+    ),
+    with: { player: true },
+  });
+
+  const rosterByTeam = new Map<
+    string,
+    Array<{ playerId: string; player: (typeof allRosterSpots)[number]['player'] }>
+  >();
+  for (const r of allRosterSpots) {
+    const list = rosterByTeam.get(r.teamId) || [];
+    list.push({ playerId: r.playerId, player: r.player });
+    rosterByTeam.set(r.teamId, list);
+  }
+
+  // 2. Build trade context + valuations (same pipeline as finder)
+  const allPlayerIds = Array.from(
+    new Set(allRosterSpots.map((r) => r.playerId))
+  );
+  const megaContext = await buildTradeContext({
+    db,
+    playerIds: allPlayerIds,
+    leagueSettings,
+    seasonYear: args.seasonYear,
+    currentWeek,
+    leagueId,
+    userTeamId,
+  });
+  const factsById = new Map<string, PlayerFacts>();
+  for (const p of megaContext.players) factsById.set(p.id, p);
+
+  const valuations = buildValuationMap(
+    megaContext.players,
+    leagueSettings,
+    currentWeek
+  );
+
+  // 3. Build compositions
+  const compositionsByTeam = new Map<string, TeamComposition>();
+  for (const team of allTeams) {
+    const roster = rosterByTeam.get(team.id) || [];
+    compositionsByTeam.set(
+      team.id,
+      buildTeamComposition({
+        teamId: team.id,
+        rosteredPlayerIds: roster.map((r) => r.playerId),
+        valuations,
+        settings: leagueSettings,
+      })
+    );
+  }
+  const userComp = compositionsByTeam.get(userTeamId);
+  if (!userComp) return { targets: [], needs: [] };
+
+  const userRosterPlayerIds = new Set(
+    (rosterByTeam.get(userTeamId) ?? []).map((r) => r.playerId)
+  );
+
+  // 4. Compute league average record (wins / total games) for the
+  //    partner-record multiplier.
+  const avgWinPct = (() => {
+    let totalWins = 0;
+    let totalGames = 0;
+    for (const t of allTeams) {
+      const games = (t.wins ?? 0) + (t.losses ?? 0) + (t.ties ?? 0);
+      if (games === 0) continue;
+      totalWins += t.wins ?? 0;
+      totalGames += games;
+    }
+    return totalGames > 0 ? totalWins / totalGames : 0.5;
+  })();
+
+  // 5. For each user position, compute the worst-starter value so we
+  //    can check tier-upgrade eligibility.
+  const userWorstStarterByPos = new Map<string, number>();
+  for (const [pos, summary] of userComp.byPosition) {
+    const starters = summary.players.filter((p) => p.role === 'starter');
+    if (starters.length === 0) {
+      userWorstStarterByPos.set(pos, 0);
+      continue;
+    }
+    const worst = starters[starters.length - 1];
+    userWorstStarterByPos.set(pos, worst.finalValue);
+  }
+
+  // 6. Score every opponent player.
+  interface Scored {
+    target: SuggestedTarget;
+  }
+  const scored: Scored[] = [];
+
+  for (const team of allTeams) {
+    if (team.id === userTeamId) continue;
+    const partnerComp = compositionsByTeam.get(team.id);
+    if (!partnerComp) continue;
+
+    // Partner's record multiplier. Weaker teams = more willing to trade.
+    const partnerGames =
+      (team.wins ?? 0) + (team.losses ?? 0) + (team.ties ?? 0);
+    const partnerWinPct =
+      partnerGames > 0 ? (team.wins ?? 0) / partnerGames : avgWinPct;
+    const relWin = partnerWinPct - avgWinPct;
+    const recordMult =
+      relWin < -0.1 ? 1.3 : relWin > 0.1 ? 0.85 : 1.0;
+    const partnerRecord = `${team.wins ?? 0}-${team.losses ?? 0}${(team.ties ?? 0) > 0 ? `-${team.ties}` : ''}`;
+
+    for (const [pos, summary] of partnerComp.byPosition) {
+      // How many elite starters does the partner have at this position?
+      // A sole elite starter is usually untouchable.
+      const elitePlayersAtPos = summary.players.filter(
+        (p) => p.role === 'starter' && p.tier === 'elite'
+      );
+      const isSoleElite = (slotId: string) =>
+        elitePlayersAtPos.length === 1 &&
+        elitePlayersAtPos[0].playerId === slotId &&
+        summary.players.length < 3;
+
+      for (const slot of summary.players) {
+        // Skip untouchables + bad data
+        if (userRosterPlayerIds.has(slot.playerId)) continue;
+        if (slot.finalValue < 20) continue;
+        const facts = factsById.get(slot.playerId);
+        if (!facts) continue;
+        const status = facts.identity.status;
+        if (status === 'out' || status === 'injured_reserve') continue;
+        if (isSoleElite(slot.playerId)) continue;
+
+        // Does this address a user need or is it a tier upgrade?
+        const userNeed = userComp.needs.find((n) => n.position === pos);
+        const userStarterValue = userWorstStarterByPos.get(pos) ?? 0;
+        const isTierUpgrade =
+          userStarterValue > 0 && slot.finalValue >= userStarterValue * 1.2;
+
+        let addresses: SuggestedTarget['addresses'] | null = null;
+        let urgency = 0;
+        if (userNeed) {
+          addresses = {
+            position: pos,
+            level: userNeed.level,
+            label: bucketLabel(pos, userNeed.level),
+          };
+          urgency = NEED_URGENCY[userNeed.level];
+        } else if (isTierUpgrade) {
+          addresses = {
+            position: pos,
+            level: 'upgrade',
+            label: bucketLabel(pos, 'upgrade'),
+          };
+          urgency = 1.0;
+        } else {
+          continue; // neither a need nor an upgrade — skip
+        }
+
+        // Availability multiplier from the slot's role on partner team
+        let availability = 1.0;
+        const sameStarterCount = summary.players.filter(
+          (p) => p.role === 'starter'
+        ).length;
+        if (slot.role === 'starter') {
+          availability = sameStarterCount >= 2 ? 0.8 : 0.3;
+        } else if (slot.role === 'flex' || slot.role === 'bench') {
+          availability = 1.0;
+        } else if (slot.role === 'depth') {
+          availability = 1.1;
+        } else if (slot.role === 'surplus') {
+          availability = 1.3;
+        }
+
+        const score = urgency * slot.finalValue * availability * recordMult;
+
+        // Build a rationale string from the available signals.
+        const rationaleParts: string[] = [];
+        if (addresses.level === 'upgrade') {
+          const jump = Math.round(
+            ((slot.finalValue - userStarterValue) / userStarterValue) * 100
+          );
+          rationaleParts.push(`${jump}% upgrade over your current ${pos}`);
+        } else {
+          rationaleParts.push(
+            `Addresses your ${addresses.label.toLowerCase()} need`
+          );
+        }
+        if (slot.role === 'surplus') {
+          rationaleParts.push(`partner has ${pos} surplus`);
+        } else if (slot.role === 'flex' || slot.role === 'bench') {
+          rationaleParts.push(`partner depth piece`);
+        } else if (slot.role === 'starter' && sameStarterCount >= 2) {
+          rationaleParts.push(`partner has 2+ starters at ${pos}`);
+        }
+        if (recordMult > 1.0) {
+          rationaleParts.push(`rebuilding team (${partnerRecord})`);
+        }
+        const rationale = rationaleParts.join(' · ');
+
+        scored.push({
+          target: {
+            playerId: slot.playerId,
+            playerName: facts.name,
+            position: pos,
+            nflTeam: facts.nflTeam,
+            tier: slot.tier,
+            finalValue: Math.round(slot.finalValue),
+            partnerTeamId: team.id,
+            partnerTeamName: team.name,
+            partnerRecord,
+            rationale,
+            addresses,
+            score: Math.round(score * 10) / 10,
+          },
+        });
+      }
+    }
+  }
+
+  // 7. Sort by score descending, apply diversity caps.
+  scored.sort((a, b) => b.target.score - a.target.score);
+
+  const perTeam = new Map<string, number>();
+  const perPosition = new Map<string, number>();
+  const PER_TEAM_CAP = 2;
+  const PER_POSITION_CAP = 3;
+  const diverseTargets: SuggestedTarget[] = [];
+
+  for (const s of scored) {
+    if (diverseTargets.length >= maxTargets) break;
+    const t = s.target;
+    const teamCount = perTeam.get(t.partnerTeamId) ?? 0;
+    const posCount = perPosition.get(t.position) ?? 0;
+    if (teamCount >= PER_TEAM_CAP) continue;
+    if (posCount >= PER_POSITION_CAP) continue;
+    perTeam.set(t.partnerTeamId, teamCount + 1);
+    perPosition.set(t.position, posCount + 1);
+    diverseTargets.push(t);
+  }
+
+  // 8. Build the distinct needs list for the UI buckets.
+  const needsMap = new Map<string, SuggestedTargetsResult['needs'][number]>();
+  for (const t of diverseTargets) {
+    const key = `${t.addresses.position}|${t.addresses.level}`;
+    if (!needsMap.has(key)) {
+      needsMap.set(key, t.addresses);
+    }
+  }
+  // Sort needs by urgency (premium > starter > depth > upgrade > none)
+  const NEED_ORDER: Record<NeedLevel | 'upgrade', number> = {
+    premium: 0,
+    starter: 1,
+    depth: 2,
+    upgrade: 3,
+    none: 4,
+  };
+  const needs = Array.from(needsMap.values()).sort(
+    (a, b) => NEED_ORDER[a.level] - NEED_ORDER[b.level]
+  );
+
+  console.log(
+    `[tradeFinder.suggestTargets] scored ${scored.length}, returned ${diverseTargets.length} targets across ${needs.length} need buckets`
+  );
+
+  return {
+    targets: diverseTargets,
+    needs,
+  };
 }
 
 // ── Validation ──────────────────────────────────────────────────────
