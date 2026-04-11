@@ -214,7 +214,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
       <section className="hero">
         <div className="hero-label"><span className="dot" /> 2026 NFL Season — Data Updated Every 4 Hours</div>
         <h1>Your league.<br />Your edge.</h1>
-        <p>Sync your fantasy league, break down every projection, and let AI evaluate your trades — all in one place. Built for managers who want real analysis, not recycled rankings.</p>
+        <p>Sync your fantasy league, break down every projection, grade trades with AI, and build realistic offers for the players you actually want. One tool, no recycled rankings.</p>
         <div className="hero-actions">
           <button className="btn-primary" onClick={nav('Login')}>Start free &rarr;</button>
           <a href="#rankings" className="btn-secondary">See the rankings</a>
@@ -281,10 +281,10 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           {[
             { num: '\u{1F4CA}', title: 'Projection breakdowns', desc: 'See exactly why a player is ranked where they are. Vegas lines, stat projections, matchup grades, and scoring breakdowns \u2014 not a black box.' },
             { num: '\u{1F916}', title: 'AI trade analysis', desc: 'Drop in a trade and get an instant AI-powered evaluation. Fair value, positional impact, league context \u2014 so you stop second-guessing.' },
+            { num: '\u{1F3AF}', title: 'Target-based trade finder', desc: 'Pick a player you want to acquire from any team in your league. AI builds 2-3 realistic offer packages from your roster and grades each one against your league\u2019s scoring.' },
             { num: '\u{1F3C8}', title: 'Your league, your way', desc: 'Sync your Sleeper, Yahoo, ESPN, or MyFantasyLeague league and see everything through the lens of your roster, your matchups, your scoring settings.' },
             { num: '\u{1F527}', title: 'Fully customizable', desc: 'Filter by scoring format, position, week, and more. PPR, Half PPR, Standard \u2014 see projections the way your league actually scores.' },
             { num: '\u{1F3C6}', title: 'Dynamic playoff predictor', desc: 'Input scenarios \u2014 wins, losses, tiebreakers \u2014 and see your updated playoff odds in real time. Know exactly what you need to clinch.' },
-            { num: '$0', title: 'Free to use', desc: 'Core rankings and projections are free forever. No paywall, no email gate. Just open the page and see the data.' },
           ].map((d) => (
             <div key={d.title} className="diff-card">
               <div className="num">{d.num}</div>
@@ -301,7 +301,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           {[
             { n: '1', title: 'Sync your league', desc: 'Paste your Sleeper username or connect Yahoo, ESPN, or MyFantasyLeague. Your rosters, matchups, scoring settings, and schedule load instantly.' },
             { n: '2', title: 'Break down every projection', desc: "See exactly how each player's projection is built — Vegas lines, stat models, matchup data. Filter by position, format, and week to fit your league." },
-            { n: '3', title: 'Win with confidence', desc: 'Run trades through AI analysis, spot waiver pickups early, and make start/sit decisions with real breakdowns behind every number.' },
+            { n: '3', title: 'Trade smarter, win with confidence', desc: 'Grade any trade with AI, pick a player you want and let the Trade Finder build realistic offers, and make start/sit decisions with real breakdowns behind every number.' },
           ].map((s) => (
             <div key={s.n} className="how-step">
               <div className="step-num">{s.n}</div>
@@ -336,6 +336,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <ul>
               <li className="highlight">Everything in Free</li>
               <li className="highlight">Unlimited league syncs</li>
+              <li className="highlight">AI Trade Finder &mdash; target-based offer suggestions</li>
               <li className="highlight">Trending players &amp; add/drop data</li>
               <li className="highlight">5 trade analyses per day</li>
             </ul>
@@ -348,7 +349,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <ul>
               <li className="highlight">Everything in Pro</li>
               <li className="highlight">Deeper player research — stats, Vegas props, game logs, matchup grades</li>
-              <li className="highlight">Unlimited trade analyses</li>
+              <li className="highlight">Unlimited trade analyses &amp; Trade Finder searches</li>
               <li>Custom scoring models (coming soon)</li>
               <li>Early access to new features</li>
             </ul>
@@ -363,6 +364,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           {[
             { title: 'Projection Breakdowns', desc: 'See the full breakdown behind every player projection — Vegas lines, stat models, and matchup context.', view: 'Board' },
             { title: 'AI Trade Analyzer', desc: 'Drop in any trade and get instant AI analysis — fair value, roster impact, and whether you should smash accept.', view: 'TradeAnalyzer' },
+            { title: 'AI Trade Finder', desc: 'Pick a player you want. The Finder builds 2-3 realistic offer packages from your roster and grades each one.', view: 'TradeAnalyzer' },
             { title: 'My League Hub', desc: 'Sync your league from Sleeper, Yahoo, ESPN, or MyFantasyLeague. Your roster, matchups, waivers, and standings — all in one place.', view: 'Home' },
             { title: 'NFL Game Slate', desc: 'Live scores, spreads, and fantasy-relevant game stats updated throughout the week.', view: 'GameSlate' },
           ].map((t) => (
