@@ -7,8 +7,10 @@ import type { Env, Variables } from '../index';
 import {
   buildTeamNeeds,
   findTradeRecommendations,
+  findSuggestedTargets,
   type TeamNeeds,
   type TradeRecommendation,
+  type SuggestedTargetsResult,
 } from '../services/tradeFinder';
 import type { LeagueSettings } from '../services/tradeContext';
 
@@ -465,6 +467,137 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
     return c.json(
       {
         error: 'Failed to build trade recommendations.',
+        requestId,
+        detail: c.env.ENVIRONMENT === 'development' ? msg : undefined,
+      },
+      502
+    );
+  }
+});
+
+// ── POST /targets ────────────────────────────────────────────────────
+// Deterministic "players you should pursue" list. Zero AI calls —
+// powers the browse step of the Trade Finder. Users see this list
+// first, pick a target, and the /recommendations endpoint then
+// builds offer packages for that specific player.
+
+interface TargetsBody {
+  leagueId: string;
+}
+
+tradeFinderRoutes.post('/targets', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const tier = user.subscriptionTier || 'free';
+  if (!requiresProOrElite(tier)) {
+    return c.json(
+      { error: 'Trade Finder requires a Pro or Elite subscription.', code: 'TIER_REQUIRED' },
+      403
+    );
+  }
+
+  let body: TargetsBody;
+  try {
+    body = await c.req.json<TargetsBody>();
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400);
+  }
+  if (!body.leagueId) return c.json({ error: 'leagueId required' }, 400);
+
+  try {
+    const membership = await db.query.leagueMembers.findFirst({
+      where: and(
+        eq(schema.leagueMembers.userId, user.id),
+        eq(schema.leagueMembers.leagueId, body.leagueId)
+      ),
+    });
+    if (!membership) return c.json({ error: 'Not a member of this league' }, 403);
+
+    const allTeams = await db.query.teams.findMany({
+      where: eq(schema.teams.leagueId, body.leagueId),
+    });
+    let userTeam = null;
+    if (membership.externalUsername) {
+      userTeam = allTeams.find(
+        (t) => t.externalOwnerId === membership.externalUsername
+      );
+    }
+    if (!userTeam) userTeam = allTeams.find((t) => t.ownerId === user.id);
+    if (!userTeam) return c.json({ error: 'No team found for user' }, 404);
+
+    const league = await db.query.leagues.findFirst({
+      where: eq(schema.leagues.id, body.leagueId),
+      columns: {
+        id: true,
+        seasonYear: true,
+        currentWeek: true,
+        scoringFormat: true,
+        teamCount: true,
+        hasSuperflex: true,
+        hasTePremium: true,
+        leagueType: true,
+      },
+    });
+    if (!league) return c.json({ error: 'League not found' }, 404);
+
+    // Cache key — targets are pure functions of roster state so we
+    // can reuse the scouting-report fingerprint pattern: roster +
+    // week. Cheap to rebuild though, so a day-key is fine for now.
+    const CACHE_VERSION = 'v1';
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const cacheKey = new Request(
+      `https://cache.local/trade-finder/targets/${CACHE_VERSION}/${league.id}/${userTeam.id}/${league.currentWeek}/${todayKey}`
+    );
+    const cache = getSafeCache();
+
+    const cached = await safeCacheMatch(cache, cacheKey);
+    if (cached) {
+      try {
+        const data = (await cached.json()) as SuggestedTargetsResult;
+        return c.json(data);
+      } catch {
+        // malformed — rebuild
+      }
+    }
+
+    const leagueSettings: LeagueSettings = {
+      scoringFormat:
+        (league.scoringFormat as LeagueSettings['scoringFormat']) || 'ppr',
+      superflex: league.hasSuperflex ?? false,
+      tePremium: league.hasTePremium ?? false,
+      teamCount: league.teamCount,
+    };
+
+    const result = await findSuggestedTargets({
+      db,
+      leagueId: league.id,
+      userTeamId: userTeam.id,
+      leagueSettings,
+      seasonYear: league.seasonYear,
+      currentWeek: league.currentWeek,
+      leagueType: (league.leagueType as 'redraft' | 'dynasty' | 'keeper') ?? 'redraft',
+      maxTargets: 10,
+    });
+
+    const response = new Response(JSON.stringify(result), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'max-age=600',
+      },
+    });
+    safeCachePut(cache, cacheKey, response.clone(), c.executionCtx);
+
+    return c.json(result);
+  } catch (err) {
+    const requestId = c.get('requestId') || 'unknown';
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error(`[${requestId}] /trade-finder/targets failed:`, msg, stack);
+    return c.json(
+      {
+        error: 'Failed to build trade targets.',
         requestId,
         detail: c.env.ENVIRONMENT === 'development' ? msg : undefined,
       },

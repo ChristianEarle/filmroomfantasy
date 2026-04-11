@@ -79,6 +79,36 @@ interface MyRosterBrief {
   };
 }
 
+type NeedLevelUI = 'premium' | 'starter' | 'depth' | 'none' | 'upgrade';
+
+interface SuggestedTarget {
+  playerId: string;
+  playerName: string;
+  position: string;
+  nflTeam: string;
+  tier: string;
+  finalValue: number;
+  partnerTeamId: string;
+  partnerTeamName: string;
+  partnerRecord: string;
+  rationale: string;
+  addresses: {
+    position: string;
+    level: NeedLevelUI;
+    label: string;
+  };
+  score: number;
+}
+
+interface SuggestedTargetsResult {
+  targets: SuggestedTarget[];
+  needs: Array<{
+    position: string;
+    level: NeedLevelUI;
+    label: string;
+  }>;
+}
+
 const LEAGUE_SELECTION_KEY = 'filmroom.tradeAnalyzer.selectedLeagueId';
 
 function formatPickLabel(pick: DraftPickAsset): string {
@@ -143,6 +173,12 @@ export function TradeFinderView({
   // Every other team's roster in the league — powers the target
   // player picker. Excludes the user's own roster.
   const [otherRosters, setOtherRosters] = useState<MyRosterBrief[]>([]);
+
+  // Suggested targets: the deterministic "players you should pursue"
+  // list grouped by user-need buckets. Loaded when the league is
+  // selected so users see options immediately on open.
+  const [suggestedTargets, setSuggestedTargets] = useState<SuggestedTargetsResult | null>(null);
+  const [isLoadingTargets, setIsLoadingTargets] = useState(false);
 
   const tierAllowed =
     !!user && (user.subscriptionTier === 'pro' || user.subscriptionTier === 'elite');
@@ -220,6 +256,34 @@ export function TradeFinderView({
     };
   }, [selectedLeagueId, myRoster]);
 
+  // Load suggested targets — the deterministic "players you should
+  // pursue" list that the Trade Finder's browse step displays.
+  // Loads when the league is picked so users see options immediately.
+  useEffect(() => {
+    if (!selectedLeagueId || !tierAllowed) {
+      setSuggestedTargets(null);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingTargets(true);
+    api
+      .post<SuggestedTargetsResult>('/trade-finder/targets', {
+        leagueId: selectedLeagueId,
+      })
+      .then((data) => {
+        if (!cancelled) setSuggestedTargets(data);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestedTargets(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingTargets(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLeagueId, tierAllowed]);
+
   const addAssetPlayer = (playerId: string) => {
     setAssetPlayerIds((prev) =>
       prev.includes(playerId) ? prev : [...prev, playerId]
@@ -241,9 +305,10 @@ export function TradeFinderView({
     setAssetPicks((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const fetchRecommendations = async () => {
+  const fetchRecommendations = async (explicitTargetId?: string) => {
+    const effectiveTarget = explicitTargetId ?? targetPlayerId;
     if (!selectedLeagueId || !tierAllowed) return;
-    if (!targetPlayerId) {
+    if (!effectiveTarget) {
       setError('Pick a target player first.');
       return;
     }
@@ -255,7 +320,7 @@ export function TradeFinderView({
         '/trade-finder/recommendations',
         {
           leagueId: selectedLeagueId,
-          targetPlayerId,
+          targetPlayerId: effectiveTarget,
           userPlayerIds: assetPlayerIds.length > 0 ? assetPlayerIds : undefined,
           userPicks: assetPicks.length > 0 ? assetPicks : undefined,
         }
@@ -267,6 +332,22 @@ export function TradeFinderView({
       setIsLoadingRecs(false);
     }
   };
+
+  // Helper for the suggested-target cards: set the target and
+  // immediately kick off an offer fetch. Scrolls the results into
+  // view so the user can see what comes back.
+  const pickSuggestedTarget = useCallback(
+    (target: SuggestedTarget) => {
+      setTargetPlayerId(target.playerId);
+      setError(null);
+      // Fire the recommendations fetch immediately with the explicit
+      // target id — avoids waiting on the next render cycle of the
+      // targetPlayerId state update.
+      void fetchRecommendations(target.playerId);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedLeagueId, tierAllowed, assetPlayerIds, assetPicks]
+  );
 
   // Reset "has searched" state whenever inputs change so the empty
   // state goes away until the user re-runs the search.
@@ -535,16 +616,181 @@ export function TradeFinderView({
         </div>
       )}
 
-      {/* Target player picker + refinement + Suggest Offers button */}
+      {/* Suggested Targets — deterministic "players you should
+          pursue" list grouped by need bucket. This is the browse
+          step: users see 10 ranked targets on opponents without
+          making an AI call, and click any to drop into the
+          per-target offer flow below. */}
+      {selectedLeagueId && (
+        <div
+          className={`rounded-xl border p-4 ${
+            isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Target
+              className={`w-4 h-4 ${
+                isDarkMode ? 'text-purple-400' : 'text-purple-600'
+              }`}
+            />
+            <p
+              className={`text-sm font-semibold ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-700'
+              }`}
+            >
+              Players to target
+            </p>
+            <span
+              className={`text-[10px] uppercase tracking-wide ml-auto ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-400'
+              }`}
+            >
+              Ranked by fit
+            </span>
+          </div>
+
+          {isLoadingTargets ? (
+            <div className="flex items-center gap-2 py-4">
+              <Loader2
+                className={`w-4 h-4 animate-spin ${
+                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              />
+              <span
+                className={`text-sm ${
+                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              >
+                Scanning opponents...
+              </span>
+            </div>
+          ) : !suggestedTargets || suggestedTargets.targets.length === 0 ? (
+            <p
+              className={`text-sm py-4 ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-400'
+              }`}
+            >
+              No clear targets found. Your roster may already be stacked, or
+              rosters haven&apos;t synced yet.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {suggestedTargets.needs.map((bucket) => {
+                const bucketTargets = suggestedTargets.targets.filter(
+                  (t) =>
+                    t.addresses.position === bucket.position &&
+                    t.addresses.level === bucket.level
+                );
+                if (bucketTargets.length === 0) return null;
+                return (
+                  <div key={`${bucket.position}-${bucket.level}`}>
+                    <p
+                      className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${
+                        isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                      }`}
+                    >
+                      {bucket.label}
+                    </p>
+                    <div className="grid gap-2">
+                      {bucketTargets.map((t) => {
+                        const isSelected = targetPlayerId === t.playerId;
+                        return (
+                          <button
+                            key={t.playerId}
+                            type="button"
+                            onClick={() => pickSuggestedTarget(t)}
+                            disabled={isLoadingRecs}
+                            className={`flex items-center gap-3 text-left p-3 rounded-lg border transition-colors ${
+                              isSelected
+                                ? isDarkMode
+                                  ? 'bg-blue-500/10 border-blue-500/40'
+                                  : 'bg-blue-50 border-blue-300'
+                                : isDarkMode
+                                ? 'bg-slate-800/40 border-slate-700 hover:border-blue-500/40 hover:bg-slate-800/70'
+                                : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50/40'
+                            } ${isLoadingRecs ? 'opacity-60 cursor-wait' : ''}`}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span
+                                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                    isDarkMode
+                                      ? 'bg-slate-700 text-slate-300'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  {t.position}
+                                </span>
+                                <span
+                                  className={`text-sm font-semibold truncate ${
+                                    isDarkMode ? 'text-white' : 'text-slate-900'
+                                  }`}
+                                >
+                                  {t.playerName}
+                                </span>
+                                <span
+                                  className={`text-[10px] ${
+                                    isDarkMode ? 'text-slate-500' : 'text-slate-400'
+                                  }`}
+                                >
+                                  {t.nflTeam}
+                                </span>
+                              </div>
+                              <div
+                                className={`text-xs truncate ${
+                                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                                }`}
+                              >
+                                From {t.partnerTeamName} ({t.partnerRecord}) &middot; {t.rationale}
+                              </div>
+                            </div>
+                            <div className="flex-shrink-0 flex items-center gap-2">
+                              <span
+                                className={`text-[10px] font-semibold px-2 py-1 rounded-md ${
+                                  isDarkMode
+                                    ? 'bg-purple-500/20 text-purple-200'
+                                    : 'bg-purple-50 text-purple-700'
+                                }`}
+                              >
+                                Build Offer
+                              </span>
+                              <ArrowRight
+                                className={`w-4 h-4 ${
+                                  isDarkMode ? 'text-slate-500' : 'text-slate-400'
+                                }`}
+                              />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <p
+            className={`text-[10px] mt-3 ${
+              isDarkMode ? 'text-slate-500' : 'text-slate-400'
+            }`}
+          >
+            Click any target to build 2-3 realistic offer packages for that player.
+          </p>
+        </div>
+      )}
+
+      {/* Manual target picker + refinement + Suggest Offers button.
+          This is the power-user path — the suggested targets list
+          above handles the common case. Use this when you already
+          know exactly who you want (even if they aren't in the
+          suggested list) or to re-run with narrower Trade Assets. */}
       {selectedLeagueId && (
         <div
           className={`rounded-xl border p-4 space-y-4 ${
             isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
           }`}
         >
-          {/* Target a specific player (REQUIRED — this is now the
-              primary input. The finder is target-focused: pick a
-              player, get 2-3 realistic offers for them.) */}
           <div>
             <label
               className={`block text-xs font-semibold mb-1 flex items-center gap-1.5 ${
@@ -552,7 +798,7 @@ export function TradeFinderView({
               }`}
             >
               <Target className="w-3.5 h-3.5" />
-              Target a specific player
+              Or pick any player manually
             </label>
 
             {/* Current selection pill */}
@@ -838,7 +1084,7 @@ export function TradeFinderView({
 
           <button
             type="button"
-            onClick={fetchRecommendations}
+            onClick={() => fetchRecommendations()}
             disabled={isLoadingRecs || !targetPlayerId}
             className={`w-full sm:w-auto px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${
               isLoadingRecs || !targetPlayerId
