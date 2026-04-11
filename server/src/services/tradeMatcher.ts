@@ -84,8 +84,18 @@ export interface MatchOptions {
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /**
- * Does the receiving side get a player that addresses a real need?
- * Returns the list of positions where a need is met ([] if none).
+ * Does the receiving side get a player that's a plausible improvement?
+ * Returns the list of positions that qualify ([] if none).
+ *
+ * An incoming player qualifies if ANY of:
+ *  - Position has a computed need (premium/starter/depth) AND the
+ *    incoming player is at or above replacement level.
+ *  - Position has an actively-stated need level of premium/starter
+ *    and the incoming is anything but a stash-tier body.
+ *  - Position's current need level is 'none' BUT the incoming
+ *    player is a clear tier upgrade (>10% above the worst starter).
+ *    This catches "upgrade at a position you already have coverage
+ *    at" trades that every real GM considers.
  */
 function needsMetBy(
   receivingComposition: TeamComposition,
@@ -98,25 +108,27 @@ function needsMetBy(
     if (!v) continue;
     const summary = receivingComposition.byPosition.get(v.position.toUpperCase());
     if (!summary) continue;
-    const need = summary.needLevel;
-    if (need === 'none') continue;
 
-    // Incoming player must meaningfully exceed the replacement level at
-    // that position — we approximate "replacement" as the value of the
-    // worst starter plus a small buffer. If the roster has no starter
-    // yet (thin pos), any non-stash player counts.
     const starters = summary.players.filter((p) => p.role === 'starter');
     const replacement =
-      starters.length > 0
-        ? starters[starters.length - 1].finalValue
-        : 0;
-    const buffer = replacement * 0.1; // must be at least 10% better than worst starter
+      starters.length > 0 ? starters[starters.length - 1].finalValue : 0;
+    const buffer = replacement * 0.1; // at least 10% better than worst starter
+
+    if (summary.needLevel === 'none') {
+      // Tier-upgrade path: no computed need, but the incoming is a
+      // clear upgrade over the team's worst starter at this position.
+      // This is a legitimate reason to trade even without a "hole."
+      if (v.finalValue >= replacement + buffer) {
+        met.add(v.position.toUpperCase());
+      }
+      continue;
+    }
+
     if (v.finalValue >= replacement + buffer) {
       met.add(v.position.toUpperCase());
-    } else if (need === 'premium' || need === 'starter') {
-      // Premium/starter need + any non-stash addition still counts as
-      // "addresses the need" even if below replacement — we're plugging
-      // a hole, not upgrading.
+    } else if (summary.needLevel === 'premium' || summary.needLevel === 'starter') {
+      // Premium/starter need + any non-stash body counts — we're
+      // plugging a hole, not upgrading.
       if (v.tier !== 'stash') met.add(v.position.toUpperCase());
     }
   }
@@ -530,16 +542,17 @@ export function matchTrades(args: MatchTradesArgs): MatchedCandidate[] {
 
   // Which partner positions should the matcher scan?
   //
-  // Rule:
-  //  - targetPosition set         → only that position
-  //  - user has filters (restrict assets or picks) → ALL skill
-  //    positions, because the user has explicitly opted in and
-  //    wants to see what's possible, not just what their computed
-  //    needs say. Without this, "I want to trade my WR + a pick
-  //    for a better WR" dies silently when WR isn't in the
-  //    computed needs list.
-  //  - otherwise                  → computed needs list (or all
-  //    skill positions if the user has no computed needs)
+  // Previously the matcher scoped its scan to userComp.needs in the
+  // default path, which silently killed any trade involving a
+  // position the user was "balanced" at. A user with no computed
+  // needs would get zero candidates even when their league was
+  // full of obvious upgrades.
+  //
+  // New rule: ALWAYS scan every skill position unless the user
+  // explicitly narrowed via targetPosition. The matcher's scoring
+  // heuristic already weights need fit and tier upgrades, so real
+  // needs win the ranking naturally — we don't need the scoping
+  // gate on top of it.
   const userHasFilters =
     (restrictUserAssets != null && restrictUserAssets.length > 0) ||
     pickValueSum > 0;
@@ -551,14 +564,11 @@ export function matchTrades(args: MatchTradesArgs): MatchedCandidate[] {
     const pos = targetPosition.toUpperCase();
     const existing = userComp.needs.find((n) => n.position === pos);
     userNeedsList = [{ position: pos, level: existing?.level ?? 'depth' }];
-  } else if (userHasFilters || userComp.needs.length === 0) {
-    // Opt-in mode OR no computed needs — scan every skill position.
+  } else {
     userNeedsList = ALL_SKILL_POSITIONS.map((pos) => {
       const existing = userComp.needs.find((n) => n.position === pos);
       return { position: pos, level: existing?.level ?? ('depth' as NeedLevel) };
     });
-  } else {
-    userNeedsList = userComp.needs;
   }
 
   for (const seed of seeds) {
@@ -603,29 +613,23 @@ export function matchTrades(args: MatchTradesArgs): MatchedCandidate[] {
           const userNeedsMet = needsMetBy(userComp, pair.receive, valuations);
           const partnerNeedsMet = needsMetBy(partnerComp, pair.send, valuations);
 
-          // Mutual benefit guard — relaxed in opt-in mode.
+          // Benefit guard — generous by default.
           //
-          // Default mode: both sides must address at least one need.
-          //   Otherwise every search would return "value-matched
-          //   but nobody wants it" trades.
+          // Require that AT LEAST ONE side of the trade shows a
+          // benefit (user gets an upgrade OR partner plugs a hole).
+          // The old "both sides must benefit" rule was too strict
+          // and dropped a lot of legitimate trades (e.g. user gets
+          // a tier upgrade, partner gets a pick + depth filler).
           //
-          // Opt-in (user has filters): skip the user-side check —
-          //   the user already said "I want to move these assets."
-          //   Requiring their received player to meet a computed
-          //   need blocks "upgrade at a position you already have
-          //   coverage at" trades.
-          //
-          // Opt-in (user offers picks): also skip the partner-side
-          //   check — the pick is the sweetener. Many partners
-          //   accept a pick + filler for their spare starter without
-          //   the filler itself addressing a partner need.
-          const userCheckOk = userHasFilters || userNeedsMet.length > 0;
-          const partnerCheckOk =
-            partnerComp.needs.length === 0 ||
-            partnerNeedsMet.length > 0 ||
-            pickValueSum > 0;
-          if (!userCheckOk) continue;
-          if (!partnerCheckOk) continue;
+          // In opt-in mode (user has filters), skip both checks —
+          // the user has explicitly signaled intent.
+          if (!userHasFilters) {
+            const anyBenefit =
+              userNeedsMet.length > 0 ||
+              partnerNeedsMet.length > 0 ||
+              pickValueSum > 0;
+            if (!anyBenefit) continue;
+          }
 
           // Pick-aware value totals: pickValueSum is added to the user
           // side because that's what the partner actually receives

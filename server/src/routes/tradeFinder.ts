@@ -379,12 +379,11 @@ tradeFinderRoutes.post('/recommendations', authMiddleware, async (c) => {
     // that would make previously cached results invalid (e.g. tighter
     // filters, new analyzer inputs). Bump it here when we ship fixes
     // that would make a user say "the old trade is still showing up".
-    // v7: matcher now scans all skill positions and relaxes mutual
-    //     benefit when the user has opted in with filters (required
-    //     assets or picks). Fixes "Tank Dell + 1st for a better WR"
-    //     returning empty because WR wasn't in the user's computed
-    //     needs.
-    const CACHE_VERSION = 'v7';
+    // v8: loosened the matcher (scan all positions always, relaxed
+    //     mutual-benefit guard) AND gate 4 (breathable thresholds,
+    //     safety-net fallback) to actually surface trades. The
+    //     prior defaults were dropping everything silently.
+    const CACHE_VERSION = 'v8';
     const todayKey = new Date().toISOString().slice(0, 10);
     const sortedPlayerIds = [...(body.userPlayerIds ?? [])].sort();
     const sortedPicks = [...(body.userPicks ?? [])]

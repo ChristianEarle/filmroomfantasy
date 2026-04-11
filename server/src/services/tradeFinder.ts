@@ -702,18 +702,20 @@ export async function findTradeRecommendations(
   // set of thresholds.
   const userOptedIn = restrictUserAssets != null || hasUserPicks;
 
-  // Partner-favored tolerance: 0 in default mode, 12 in opt-in mode.
-  const MAX_PARTNER_FAVORED_DIFF = userOptedIn ? 12 : 0;
-  // User-favored cap: 15 in default mode, 25 in opt-in mode (picks
-  // often tip the analyzer's diff past 15 as a bonus on top of a
-  // balanced player-for-player core).
-  const MAX_USER_FAVORED_DIFF = userOptedIn ? 25 : 15;
-  // Accept grades: default drops C+/C/C-/D/F. Opt-in mode also
-  // allows C+ (and C, since a C user grade with the user-side
-  // pick premium is a realistic upgrade trade).
+  // Thresholds. Default mode is breathable enough to actually surface
+  // trades — the old "zero partner-favored tolerance, diff ≤ 15,
+  // B- minimum" combination was killing everything. The trusted
+  // analyzer regularly grades imperfect-but-acceptable trades in the
+  // partner-slightly-favored or user-favored-by-20 range, and we
+  // were dropping all of them silently.
+  const MAX_PARTNER_FAVORED_DIFF = userOptedIn ? 15 : 10;
+  const MAX_USER_FAVORED_DIFF = userOptedIn ? 30 : 25;
+  // Accept grades: C+ is "acceptable sidegrade", C is "breakeven."
+  // Both are legitimate trade outcomes — we just want to block D/F
+  // trades where the user is being openly robbed.
   const ACCEPTABLE_USER_GRADES = userOptedIn
-    ? new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C'])
-    : new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-']);
+    ? new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-'])
+    : new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C']);
 
   console.log(
     `[tradeFinder] gate4 mode=${userOptedIn ? 'opt-in' : 'default'} partnerMax=${MAX_PARTNER_FAVORED_DIFF} userMax=${MAX_USER_FAVORED_DIFF}`
@@ -766,6 +768,21 @@ export async function findTradeRecommendations(
   console.log(
     `[tradeFinder] gate4 output: ${filtered.length}/${valid.length} candidates passed`
   );
+
+  // Safety net: if gate 4 dropped everything but we DID have verified
+  // candidates, return the least-lopsided ones with a debug note. The
+  // user deserves SOMETHING to look at — they can decide whether to
+  // offer it. Empty responses here have proven uniformly confusing.
+  // We still ship the strict-mode grades so the UI's fairness meter
+  // visibly marks the imperfection.
+  if (filtered.length === 0 && valid.length > 0) {
+    console.log(
+      `[tradeFinder] gate4 SAFETY NET: returning ${Math.min(valid.length, 3)} least-lopsided candidates`
+    );
+    return [...valid]
+      .sort((a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff)
+      .slice(0, 3);
+  }
 
   return filtered.sort(
     (a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff
