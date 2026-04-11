@@ -30,7 +30,6 @@ import { sumValue } from './playerValuation';
 import type {
   TeamComposition,
   NeedLevel,
-  PositionSummary,
 } from './teamComposition';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -529,23 +528,41 @@ export function matchTrades(args: MatchTradesArgs): MatchedCandidate[] {
   const candidates: MatchedCandidate[] = [];
   const seenKeys = new Set<string>(); // dedupe identical packages
 
-  const userNeedsList =
-    userComp.needs.length > 0
-      ? userComp.needs
-      : [
-          // No explicit needs → still try to upgrade via tier jumps at
-          // any skill position. Treated as 'depth' needs so the matcher
-          // will still generate candidates.
-          ...Array.from(userComp.byPosition.values())
-            .filter((s): s is PositionSummary => !!s)
-            .map((s) => ({ position: s.position, level: 'depth' as NeedLevel })),
-        ];
+  // Which partner positions should the matcher scan?
+  //
+  // Rule:
+  //  - targetPosition set         → only that position
+  //  - user has filters (restrict assets or picks) → ALL skill
+  //    positions, because the user has explicitly opted in and
+  //    wants to see what's possible, not just what their computed
+  //    needs say. Without this, "I want to trade my WR + a pick
+  //    for a better WR" dies silently when WR isn't in the
+  //    computed needs list.
+  //  - otherwise                  → computed needs list (or all
+  //    skill positions if the user has no computed needs)
+  const userHasFilters =
+    (restrictUserAssets != null && restrictUserAssets.length > 0) ||
+    pickValueSum > 0;
+
+  const ALL_SKILL_POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const;
+  let userNeedsList: Array<{ position: string; level: NeedLevel }>;
+
+  if (targetPosition) {
+    const pos = targetPosition.toUpperCase();
+    const existing = userComp.needs.find((n) => n.position === pos);
+    userNeedsList = [{ position: pos, level: existing?.level ?? 'depth' }];
+  } else if (userHasFilters || userComp.needs.length === 0) {
+    // Opt-in mode OR no computed needs — scan every skill position.
+    userNeedsList = ALL_SKILL_POSITIONS.map((pos) => {
+      const existing = userComp.needs.find((n) => n.position === pos);
+      return { position: pos, level: existing?.level ?? ('depth' as NeedLevel) };
+    });
+  } else {
+    userNeedsList = userComp.needs;
+  }
 
   for (const seed of seeds) {
     for (const need of userNeedsList) {
-      // If the user filtered by targetPosition, only consider that position
-      if (targetPosition && need.position !== targetPosition.toUpperCase()) continue;
-
       const partnerSummary = partnerComp.byPosition.get(need.position);
       if (!partnerSummary) continue;
 
@@ -586,12 +603,29 @@ export function matchTrades(args: MatchTradesArgs): MatchedCandidate[] {
           const userNeedsMet = needsMetBy(userComp, pair.receive, valuations);
           const partnerNeedsMet = needsMetBy(partnerComp, pair.send, valuations);
 
-          // Mutual benefit guard — both sides must address at least one
-          // need. Exception: partner has zero needs (juggernaut team) —
-          // one-sided deals allowed because the partner might move depth
-          // for a marginal upgrade + user-offered picks.
-          if (userNeedsMet.length === 0) continue;
-          if (partnerComp.needs.length > 0 && partnerNeedsMet.length === 0) continue;
+          // Mutual benefit guard — relaxed in opt-in mode.
+          //
+          // Default mode: both sides must address at least one need.
+          //   Otherwise every search would return "value-matched
+          //   but nobody wants it" trades.
+          //
+          // Opt-in (user has filters): skip the user-side check —
+          //   the user already said "I want to move these assets."
+          //   Requiring their received player to meet a computed
+          //   need blocks "upgrade at a position you already have
+          //   coverage at" trades.
+          //
+          // Opt-in (user offers picks): also skip the partner-side
+          //   check — the pick is the sweetener. Many partners
+          //   accept a pick + filler for their spare starter without
+          //   the filler itself addressing a partner need.
+          const userCheckOk = userHasFilters || userNeedsMet.length > 0;
+          const partnerCheckOk =
+            partnerComp.needs.length === 0 ||
+            partnerNeedsMet.length > 0 ||
+            pickValueSum > 0;
+          if (!userCheckOk) continue;
+          if (!partnerCheckOk) continue;
 
           // Pick-aware value totals: pickValueSum is added to the user
           // side because that's what the partner actually receives
