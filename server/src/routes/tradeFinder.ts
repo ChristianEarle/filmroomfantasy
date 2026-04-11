@@ -163,9 +163,15 @@ tradeFinderRoutes.post('/needs', authMiddleware, async (c) => {
       where: eq(schema.teamScoutingReports.teamId, userTeam.id),
     });
 
+    // Reuse the saved report only when the season, week, AND roster
+    // fingerprint all match. Week-to-week we always re-scout — player
+    // values shift as the season progresses (injury trends, usage,
+    // schedule strength for remaining weeks), so last week's grades
+    // can be stale even against an identical roster.
     if (
       savedReport &&
       savedReport.seasonYear === league.seasonYear &&
+      savedReport.currentWeek === league.currentWeek &&
       savedReport.rosterFingerprint === rosterFingerprint
     ) {
       try {
@@ -182,7 +188,7 @@ tradeFinderRoutes.post('/needs', authMiddleware, async (c) => {
           summary: savedReport.summary,
         };
         console.log(
-          `[tradeFinder.needs] cache HIT for team=${userTeam.id} fingerprint match`
+          `[tradeFinder.needs] cache HIT for team=${userTeam.id} week=${league.currentWeek} fingerprint match`
         );
         return c.json({ needs });
       } catch (parseErr) {
@@ -194,8 +200,15 @@ tradeFinderRoutes.post('/needs', authMiddleware, async (c) => {
       }
     }
 
+    const missReason = !savedReport
+      ? 'no row'
+      : savedReport.seasonYear !== league.seasonYear
+      ? 'season changed'
+      : savedReport.currentWeek !== league.currentWeek
+      ? `week changed ${savedReport.currentWeek}→${league.currentWeek}`
+      : 'roster changed';
     console.log(
-      `[tradeFinder.needs] cache MISS for team=${userTeam.id} — generating (saved=${savedReport ? 'fingerprint mismatch' : 'no row'})`
+      `[tradeFinder.needs] cache MISS for team=${userTeam.id} — regenerating (${missReason})`
     );
 
     const leagueSettings: LeagueSettings = {
