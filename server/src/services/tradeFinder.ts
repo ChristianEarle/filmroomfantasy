@@ -458,6 +458,9 @@ export async function findTradeRecommendations(
       );
       return validated;
     }
+    console.log(
+      `[tradeFinder] constructor ${mode} returned ${result.trades.length} raw trades — validating...`
+    );
     for (const trade of result.trades) {
       const reason = validateConstructedTrade(
         trade,
@@ -630,75 +633,89 @@ export async function findTradeRecommendations(
 
   // 9. Post-process: REALISTIC-ACCEPTANCE fairness filter.
   //
-  // After the user complained about the finder surfacing
-  // "Jaxson Dart for Lamar Jackson" — a trade that would
-  // never be accepted because it's too good for the user —
-  // the filter is now symmetric AND tight in BOTH directions:
+  // Default mode (no user-provided filters): strict symmetric filter
+  // that killed "Jaxson Dart for Lamar Jackson" robberies.
+  //   A) Zero partner-favored tolerance
+  //   B) User grade must be B- or better
+  //   C) User-favored diff ≤ 15
   //
-  //   A) The trusted analyzer must NOT say the partner is
-  //      favored. Zero tolerance. (unchanged)
-  //
-  //   B) The user's letter grade must be B- or better.
-  //      Catches sidegrades and structurally weak trades
-  //      that happen to fairness-score 50/50. (unchanged)
-  //
-  //   C) If the USER is favored, diff must be <= 15 — the
-  //      manual analyzer's "Slightly Favored" threshold.
-  //      Anything beyond 15 is in "Favored" or "Heavily
-  //      Favored" territory and the partner's GM would
-  //      reject it in real life. Previously this was 30
-  //      (way too lenient) which is how Dart-for-Lamar
-  //      got through.
-  //
-  // The constructor is now explicitly told to pad the
-  // user's side with additional players when needed to
-  // reach this threshold, so trades near the 15 cap should
-  // come with the extra-pad construction instead of raw
-  // single-player robberies.
-  const MAX_USER_FAVORED_DIFF = 15;
-  const ACCEPTABLE_USER_GRADES = new Set([
-    'A+', 'A', 'A-',
-    'B+', 'B', 'B-',
-  ]);
+  // Opt-in mode (user specified required assets OR picks): the user
+  // is EXPLICITLY signaling "I want to move these specific assets to
+  // get an upgrade." In this mode the user is volunteering some
+  // premium, so partner-slightly-favored trades are legitimate and
+  // the user-favored cap can breathe because the pick-shaped delta
+  // often lands there. We still block frank robberies with a softer
+  // set of thresholds.
+  const userOptedIn = restrictUserAssets != null || hasUserPicks;
+
+  // Partner-favored tolerance: 0 in default mode, 12 in opt-in mode.
+  const MAX_PARTNER_FAVORED_DIFF = userOptedIn ? 12 : 0;
+  // User-favored cap: 15 in default mode, 25 in opt-in mode (picks
+  // often tip the analyzer's diff past 15 as a bonus on top of a
+  // balanced player-for-player core).
+  const MAX_USER_FAVORED_DIFF = userOptedIn ? 25 : 15;
+  // Accept grades: default drops C+/C/C-/D/F. Opt-in mode also
+  // allows C+ (and C, since a C user grade with the user-side
+  // pick premium is a realistic upgrade trade).
+  const ACCEPTABLE_USER_GRADES = userOptedIn
+    ? new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C'])
+    : new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-']);
+
+  console.log(
+    `[tradeFinder] gate4 mode=${userOptedIn ? 'opt-in' : 'default'} partnerMax=${MAX_PARTNER_FAVORED_DIFF} userMax=${MAX_USER_FAVORED_DIFF}`
+  );
 
   const valid = results.filter((r): r is TradeRecommendation => r != null);
+  console.log(
+    `[tradeFinder] gate4 input: ${valid.length} verified candidates`
+  );
 
-  return valid
-    .filter((rec) => {
-      const { diff, favored } = rec.analysis.fairnessScore;
-      const partnerFavored = favored === rec.targetTeamName;
+  const filtered = valid.filter((rec) => {
+    const { diff, favored } = rec.analysis.fairnessScore;
+    const partnerFavored = favored === rec.targetTeamName;
+    const sendNames = rec.userSends.map((p) => p.name).join('+');
+    const recvNames = rec.userReceives.map((p) => p.name).join('+');
+    const userGrade = rec.analysis.teamGrades.find(
+      (g) => g.team === userTeam.name
+    )?.grade;
 
-      // (A) Zero-tolerance partner-favored guard
-      if (partnerFavored) {
-        console.log(
-          `[tradeFinder] dropped partner-favored trade: diff=${diff} favored=${favored}`
-        );
-        return false;
-      }
+    // (A) Partner-favored cap
+    if (partnerFavored && diff > MAX_PARTNER_FAVORED_DIFF) {
+      console.log(
+        `[tradeFinder] gate4 DROP partner-favored: ${sendNames} → ${recvNames} diff=${diff} (> ${MAX_PARTNER_FAVORED_DIFF})`
+      );
+      return false;
+    }
 
-      // (B) User grade must be acceptable
-      const userGrade = rec.analysis.teamGrades.find(
-        (g) => g.team === userTeam.name
-      )?.grade;
-      if (!userGrade || !ACCEPTABLE_USER_GRADES.has(userGrade)) {
-        console.log(
-          `[tradeFinder] dropped trade with weak user grade: ${userGrade ?? 'missing'}`
-        );
-        return false;
-      }
+    // (B) User grade must be in the acceptable set
+    if (!userGrade || !ACCEPTABLE_USER_GRADES.has(userGrade)) {
+      console.log(
+        `[tradeFinder] gate4 DROP weak-user-grade: ${sendNames} → ${recvNames} grade=${userGrade ?? 'missing'}`
+      );
+      return false;
+    }
 
-      // (C) User-favored trades capped at diff <= 15
-      //     (partner wouldn't accept anything beyond that)
-      if (diff > MAX_USER_FAVORED_DIFF) {
-        console.log(
-          `[tradeFinder] dropped unrealistic user-favored trade: diff=${diff} (partner would reject)`
-        );
-        return false;
-      }
+    // (C) User-favored trades capped at MAX_USER_FAVORED_DIFF
+    if (!partnerFavored && diff > MAX_USER_FAVORED_DIFF) {
+      console.log(
+        `[tradeFinder] gate4 DROP unrealistic-user-favored: ${sendNames} → ${recvNames} diff=${diff} (> ${MAX_USER_FAVORED_DIFF})`
+      );
+      return false;
+    }
 
-      return true;
-    })
-    .sort((a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff);
+    console.log(
+      `[tradeFinder] gate4 PASS: ${sendNames} → ${recvNames} diff=${diff} favored=${favored} userGrade=${userGrade}`
+    );
+    return true;
+  });
+
+  console.log(
+    `[tradeFinder] gate4 output: ${filtered.length}/${valid.length} candidates passed`
+  );
+
+  return filtered.sort(
+    (a, b) => a.analysis.fairnessScore.diff - b.analysis.fairnessScore.diff
+  );
 }
 
 // ── Validation: constructor output ──────────────────────────────────

@@ -105,7 +105,13 @@ export function formatLeagueContextForConstructor(
     const meta: string[] = [];
     if (team.record) meta.push(team.record);
     if (team.rank != null) meta.push(`#${team.rank}`);
-    lines.push(`${header}${meta.length ? ` [${meta.join(', ')}]` : ''} ===`);
+    // Append the team ID so the AI can echo it back verbatim in
+    // partnerTeamId. Without this, Claude has to guess an opaque
+    // database ID from the team name alone, and the guess almost
+    // always fails downstream validation.
+    lines.push(
+      `${header}${meta.length ? ` [${meta.join(', ')}]` : ''} id=${team.id} ===`
+    );
 
     // Needs / strengths line
     const needs = team.composition.needs.length > 0
