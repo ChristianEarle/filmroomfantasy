@@ -132,11 +132,14 @@ tradeFinderRoutes.post('/needs', authMiddleware, async (c) => {
     });
     if (!league) return c.json({ error: 'League not found' }, 404);
 
-    // Guard against leagues with no rostered players yet (pre-sync state)
-    const anyRosterSpot = await db.query.rosterSpots.findFirst({
+    // Load every rostered player so we can compute the roster
+    // fingerprint. If the stored scouting report was built against
+    // the same fingerprint, we reuse it verbatim — no AI call.
+    const rosterSpots = await db.query.rosterSpots.findMany({
       where: eq(schema.rosterSpots.teamId, userTeam.id),
+      columns: { playerId: true },
     });
-    if (!anyRosterSpot) {
+    if (rosterSpots.length === 0) {
       return c.json(
         {
           error: 'No roster data for this league yet — sync the league first.',
@@ -146,22 +149,54 @@ tradeFinderRoutes.post('/needs', authMiddleware, async (c) => {
       );
     }
 
-    // Cache key based on league + team + current week + day (rebuilt each day)
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const cacheKey = new Request(
-      `https://cache.local/trade-finder/needs/${league.id}/${userTeam.id}/${league.currentWeek}/${todayKey}`
-    );
-    const cache = getSafeCache();
+    // Stable sorted-join fingerprint: any add/drop/trade changes it.
+    // We deliberately avoid hashing so the value is greppable in the
+    // DB when debugging.
+    const rosterFingerprint = [...rosterSpots.map((r) => r.playerId)]
+      .sort()
+      .join('|');
 
-    const cached = await safeCacheMatch(cache, cacheKey);
-    if (cached) {
+    // Look up any saved scouting report for this team. If the
+    // fingerprint + season year match what we have on file, return
+    // it directly. If not, regenerate and upsert.
+    const savedReport = await db.query.teamScoutingReports.findFirst({
+      where: eq(schema.teamScoutingReports.teamId, userTeam.id),
+    });
+
+    if (
+      savedReport &&
+      savedReport.seasonYear === league.seasonYear &&
+      savedReport.rosterFingerprint === rosterFingerprint
+    ) {
       try {
-        const data = (await cached.json()) as { needs: TeamNeeds };
-        return c.json(data);
-      } catch {
-        // cached body was malformed — fall through and rebuild
+        const needs: TeamNeeds = {
+          teamId: userTeam.id,
+          teamName: userTeam.name,
+          window: savedReport.window as TeamNeeds['window'],
+          positionGrades: JSON.parse(savedReport.positionGradesJson) as Record<
+            string,
+            string
+          >,
+          topNeeds: JSON.parse(savedReport.topNeedsJson) as string[],
+          topStrengths: JSON.parse(savedReport.topStrengthsJson) as string[],
+          summary: savedReport.summary,
+        };
+        console.log(
+          `[tradeFinder.needs] cache HIT for team=${userTeam.id} fingerprint match`
+        );
+        return c.json({ needs });
+      } catch (parseErr) {
+        // Malformed row — fall through and rebuild
+        console.warn(
+          `[tradeFinder.needs] saved report parse failed for team=${userTeam.id}:`,
+          parseErr
+        );
       }
     }
+
+    console.log(
+      `[tradeFinder.needs] cache MISS for team=${userTeam.id} — generating (saved=${savedReport ? 'fingerprint mismatch' : 'no row'})`
+    );
 
     const leagueSettings: LeagueSettings = {
       scoringFormat:
@@ -185,14 +220,47 @@ tradeFinderRoutes.post('/needs', authMiddleware, async (c) => {
       return c.json({ error: 'Needs assessment failed' }, 502);
     }
 
-    // Store in cache (10 min TTL) — best effort, never blocks the response
-    const response = new Response(JSON.stringify({ needs }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'max-age=600',
-      },
-    });
-    safeCachePut(cache, cacheKey, response.clone(), c.executionCtx);
+    // Upsert the scouting report so the next request short-circuits
+    // unless the roster actually changed. Best-effort — if the write
+    // fails, log and still return the freshly-built needs.
+    try {
+      const now = new Date();
+      const row: schema.NewTeamScoutingReport = {
+        teamId: userTeam.id,
+        seasonYear: league.seasonYear,
+        currentWeek: league.currentWeek,
+        rosterFingerprint,
+        window: needs.window,
+        positionGradesJson: JSON.stringify(needs.positionGrades),
+        topNeedsJson: JSON.stringify(needs.topNeeds),
+        topStrengthsJson: JSON.stringify(needs.topStrengths),
+        summary: needs.summary,
+        createdAt: savedReport?.createdAt ?? now,
+        updatedAt: now,
+      };
+      await db
+        .insert(schema.teamScoutingReports)
+        .values(row)
+        .onConflictDoUpdate({
+          target: schema.teamScoutingReports.teamId,
+          set: {
+            seasonYear: row.seasonYear,
+            currentWeek: row.currentWeek,
+            rosterFingerprint: row.rosterFingerprint,
+            window: row.window,
+            positionGradesJson: row.positionGradesJson,
+            topNeedsJson: row.topNeedsJson,
+            topStrengthsJson: row.topStrengthsJson,
+            summary: row.summary,
+            updatedAt: row.updatedAt,
+          },
+        });
+    } catch (writeErr) {
+      console.error(
+        `[tradeFinder.needs] failed to persist scouting report:`,
+        writeErr
+      );
+    }
 
     return c.json({ needs });
   } catch (err) {
