@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Plus,
   X,
+  Target,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -120,11 +121,16 @@ export function TradeFinderView({
   const [isLoadingNeeds, setIsLoadingNeeds] = useState(false);
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filterPosition, setFilterPosition] = useState<string>('');
-  const [filterTeam, setFilterTeam] = useState<string>('');
+
+  // Target: the player the user wants to acquire. The finder is
+  // target-focused — it returns 2-3 offer packages for a specific
+  // player instead of trying to "find any trade". This is the
+  // primary (required) input.
+  const [targetPlayerId, setTargetPlayerId] = useState<string>('');
 
   // "Trade Assets" filter — optional list of players + picks the user
-  // is willing to give up. Empty means "any asset on my roster".
+  // is willing to give up. Empty means "let the AI pick from my full
+  // roster". This narrows the offer search.
   const [assetPlayerIds, setAssetPlayerIds] = useState<string[]>([]);
   const [assetPicks, setAssetPicks] = useState<DraftPickAsset[]>([]);
   const [showAssets, setShowAssets] = useState(false);
@@ -133,6 +139,10 @@ export function TradeFinderView({
 
   // The user's own roster — needed to populate the asset picker
   const [myRoster, setMyRoster] = useState<MyRosterBrief | null>(null);
+
+  // Every other team's roster in the league — powers the target
+  // player picker. Excludes the user's own roster.
+  const [otherRosters, setOtherRosters] = useState<MyRosterBrief[]>([]);
 
   const tierAllowed =
     !!user && (user.subscriptionTier === 'pro' || user.subscriptionTier === 'elite');
@@ -178,12 +188,37 @@ export function TradeFinderView({
     };
   }, [selectedLeagueId]);
 
-  // If the league changes, reset the asset selection so stale player IDs
-  // from a different league don't leak through.
+  // If the league changes, reset all selection state so stale player
+  // IDs from a different league don't leak through.
   useEffect(() => {
     setAssetPlayerIds([]);
     setAssetPicks([]);
+    setTargetPlayerId('');
   }, [selectedLeagueId]);
+
+  // Load every team's roster in the league so the target picker has
+  // options. Excludes the user's own team.
+  useEffect(() => {
+    if (!selectedLeagueId || !myRoster) {
+      setOtherRosters([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ teams: MyRosterBrief[] }>(`/rosters/${selectedLeagueId}/all`)
+      .then((data) => {
+        if (cancelled) return;
+        setOtherRosters(
+          (data.teams ?? []).filter((t) => t.teamId !== myRoster.teamId)
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setOtherRosters([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLeagueId, myRoster]);
 
   const addAssetPlayer = (playerId: string) => {
     setAssetPlayerIds((prev) =>
@@ -208,6 +243,10 @@ export function TradeFinderView({
 
   const fetchRecommendations = async () => {
     if (!selectedLeagueId || !tierAllowed) return;
+    if (!targetPlayerId) {
+      setError('Pick a target player first.');
+      return;
+    }
     setIsLoadingRecs(true);
     setError(null);
     setHasSearched(true);
@@ -216,8 +255,7 @@ export function TradeFinderView({
         '/trade-finder/recommendations',
         {
           leagueId: selectedLeagueId,
-          targetPosition: filterPosition || undefined,
-          targetTeamId: filterTeam || undefined,
+          targetPlayerId,
           userPlayerIds: assetPlayerIds.length > 0 ? assetPlayerIds : undefined,
           userPicks: assetPicks.length > 0 ? assetPicks : undefined,
         }
@@ -230,12 +268,12 @@ export function TradeFinderView({
     }
   };
 
-  // Reset "has searched" state whenever filters change so the empty
-  // state goes away until the user re-runs the search
+  // Reset "has searched" state whenever inputs change so the empty
+  // state goes away until the user re-runs the search.
   useEffect(() => {
     setHasSearched(false);
     setRecommendations([]);
-  }, [selectedLeagueId, filterPosition, assetPlayerIds, assetPicks]);
+  }, [selectedLeagueId, targetPlayerId, assetPlayerIds, assetPicks]);
 
   if (!tierAllowed) {
     return (
@@ -497,38 +535,103 @@ export function TradeFinderView({
         </div>
       )}
 
-      {/* Filters + Find button */}
+      {/* Target player picker + refinement + Suggest Offers button */}
       {selectedLeagueId && (
         <div
           className={`rounded-xl border p-4 space-y-4 ${
             isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
           }`}
         >
-          <div className="grid md:grid-cols-2 gap-3">
-            <div>
-              <label
-                className={`block text-xs font-semibold mb-1 ${
-                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                }`}
-              >
-                Target Position (optional)
-              </label>
-              <select
-                value={filterPosition}
-                onChange={(e) => setFilterPosition(e.target.value)}
-                className={`w-full px-3 py-2 text-sm rounded-lg border ${
-                  isDarkMode
-                    ? 'bg-slate-800 border-slate-600 text-white'
-                    : 'bg-white border-slate-300 text-slate-900'
-                } outline-none`}
-              >
-                <option value="">Any position</option>
-                <option value="QB">QB</option>
-                <option value="RB">RB</option>
-                <option value="WR">WR</option>
-                <option value="TE">TE</option>
-              </select>
-            </div>
+          {/* Target a specific player (REQUIRED — this is now the
+              primary input. The finder is target-focused: pick a
+              player, get 2-3 realistic offers for them.) */}
+          <div>
+            <label
+              className={`block text-xs font-semibold mb-1 flex items-center gap-1.5 ${
+                isDarkMode ? 'text-slate-400' : 'text-slate-500'
+              }`}
+            >
+              <Target className="w-3.5 h-3.5" />
+              Target a specific player
+            </label>
+
+            {/* Current selection pill */}
+            {targetPlayerId && (() => {
+              const found = otherRosters
+                .flatMap((t) =>
+                  [
+                    ...(t.roster.starters || []),
+                    ...(t.roster.bench || []),
+                    ...(t.roster.ir || []),
+                  ].map((p) => ({ team: t.teamName, ...p }))
+                )
+                .find((p) => p.playerId === targetPlayerId);
+              if (!found) return null;
+              return (
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  <span
+                    className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+                      isDarkMode
+                        ? 'bg-purple-500/20 text-purple-200'
+                        : 'bg-purple-50 text-purple-800'
+                    }`}
+                  >
+                    <Target className="w-3 h-3" />
+                    <span className="text-[9px] opacity-70">{found.position}</span>
+                    {found.name}
+                    <span className="text-[9px] opacity-70">({found.team})</span>
+                    <button
+                      type="button"
+                      onClick={() => setTargetPlayerId('')}
+                      className="hover:opacity-70"
+                      aria-label="Clear target player"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                </div>
+              );
+            })()}
+
+            <select
+              value={targetPlayerId}
+              onChange={(e) => setTargetPlayerId(e.target.value)}
+              disabled={otherRosters.length === 0}
+              className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                isDarkMode
+                  ? 'bg-slate-800 border-slate-600 text-white'
+                  : 'bg-white border-slate-300 text-slate-900'
+              } outline-none disabled:opacity-50`}
+            >
+              <option value="">
+                {otherRosters.length === 0
+                  ? 'Loading league rosters...'
+                  : 'Pick a player you want to acquire...'}
+              </option>
+              {otherRosters.map((team) => {
+                const players = [
+                  ...(team.roster.starters || []),
+                  ...(team.roster.bench || []),
+                ].filter((p) => p.position !== 'K' && p.position !== 'DEF');
+                if (players.length === 0) return null;
+                return (
+                  <optgroup key={team.teamId} label={team.teamName}>
+                    {players.map((p) => (
+                      <option key={p.playerId} value={p.playerId}>
+                        {p.position} • {p.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+            <p
+              className={`mt-1 text-[10px] ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-400'
+              }`}
+            >
+              The finder suggests 2-3 realistic offer packages to send for your target.
+            </p>
           </div>
 
           {/* Trade Assets picker (optional) */}
@@ -736,9 +839,9 @@ export function TradeFinderView({
           <button
             type="button"
             onClick={fetchRecommendations}
-            disabled={isLoadingRecs}
+            disabled={isLoadingRecs || !targetPlayerId}
             className={`w-full sm:w-auto px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${
-              isLoadingRecs
+              isLoadingRecs || !targetPlayerId
                 ? isDarkMode
                   ? 'bg-slate-800 text-slate-500'
                   : 'bg-slate-200 text-slate-400'
@@ -748,19 +851,19 @@ export function TradeFinderView({
             {isLoadingRecs ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Finding trades (this takes ~30s)...
+                Building offers...
               </>
             ) : (
               <>
                 <Search className="w-4 h-4" />
-                Find Trades
+                {targetPlayerId ? 'Suggest Offers' : 'Pick a target player first'}
               </>
             )}
           </button>
         </div>
       )}
 
-      {/* Empty state when a search returned zero balanced trades */}
+      {/* Empty state when the finder returned zero offers for a target */}
       {hasSearched && !isLoadingRecs && recommendations.length === 0 && (
         <div
           className={`rounded-xl border p-6 text-center ${
@@ -772,17 +875,17 @@ export function TradeFinderView({
               isDarkMode ? 'text-white' : 'text-slate-900'
             }`}
           >
-            No mutually beneficial trades found
+            No realistic offers found for this target
           </p>
           <p
             className={`text-xs ${
               isDarkMode ? 'text-slate-400' : 'text-slate-500'
             }`}
           >
-            Trade Finder only surfaces deals where both sides address a
-            real need and the value stays within 25%. Try widening your
-            asset or position filter, clearing required picks, or
-            syncing the league again to refresh roster data.
+            Your roster probably doesn't have enough value to balance this
+            trade even with picks. Try a less valuable target, clear the
+            Trade Assets filter, or add a first-round pick to sweeten the
+            deal.
           </p>
         </div>
       )}

@@ -1,203 +1,269 @@
 /**
- * tradeConstructor — ranking primitive for the Trade Finder.
+ * tradeConstructor — target-focused offer builder.
  *
- * Philosophy: generation is hard for LLMs, ranking is easy.
+ * New architecture: the user picks a specific player they want to
+ * acquire from any opponent. This module makes ONE focused AI call
+ * that proposes 2-3 realistic offer packages the user could send.
  *
- * The finder's Phase 1 (tradeMatcher) deterministically enumerates
- * ~30 concrete, balanced, pick-aware trade candidates from the
- * league. This module's job is Phase 2: give Claude the candidate
- * list and a bit of user context, and ask it to pick the best 5
- * with one-sentence reasons for each side.
+ * This inverts the old "find me any trade" problem. Instead of
+ * making the AI guess what the user wants AND what the partner
+ * would accept simultaneously, the user provides the hard half
+ * (the target) and the AI only has to solve package balance +
+ * "would the partner accept this for this target specifically."
  *
- * Claude never constructs trades from scratch, never echoes player
- * IDs, never juggles multiple hard constraints in one shot. It
- * picks candidates by a short string ID we generated and writes
- * reasoning. That's a task LLMs nail reliably.
- *
- * The validateRankedPicks step guards against hallucinated IDs so
- * if the model gets creative we fall through to top-by-score from
- * Phase 1.
+ * Flow:
+ *   findTradeRecommendations in tradeFinder.ts resolves the target
+ *   → calls constructOffersForTarget with user roster + partner
+ *     roster + target facts
+ *   → this module builds one focused prompt and returns 2-3 offers
+ *   → caller validates ownership, runs each through the trusted
+ *     analyzer, applies gate 4, returns to UI.
  */
 
-import type { MatchedCandidate } from './tradeMatcher';
-import type { TeamComposition } from './teamComposition';
 import type { PlayerFacts } from './tradeContext';
 import type { PlayerValuation } from './playerValuation';
+import type { TeamComposition } from './teamComposition';
 
 // ── Types ────────────────────────────────────────────────────────────
 
-/**
- * A Phase 1 candidate carries everything needed to render it in the
- * Phase 2 prompt. It's the MatchedCandidate from tradeMatcher plus
- * partner team metadata and a stable per-request candidate id.
- */
-export interface RankableCandidate extends MatchedCandidate {
-  /** Short string ID we generate per-request (e.g. "c01"). The model
-   *  echoes these back so we never have to parse player IDs from the
-   *  AI response. */
-  candidateId: string;
-  /** The partner team this trade is against. */
+export interface ConstructedOffer {
+  /** Partner team id. Always the team that owns the target player. */
   partnerTeamId: string;
-  partnerTeamName: string;
-  partnerNeeds: Array<{ position: string; level: string }>;
-  partnerRecord: string | null;
-}
-
-/**
- * One pick the ranking call returns — a candidateId plus per-side
- * reasoning. Caller resolves the candidateId back to the full
- * RankableCandidate.
- */
-export interface RankedPick {
-  candidateId: string;
+  /** Player ids the user gives up. */
+  sentPlayerIds: string[];
+  /** Player ids the user receives. MUST include the target. */
+  receivedPlayerIds: string[];
+  /** One sentence on why this upgrades the user. */
   userReasoning: string;
+  /** One sentence on why the partner would accept. */
   partnerReasoning: string;
+  /** AI self-assessment of how likely the partner would click accept. */
+  confidence: 'high' | 'medium' | 'low';
 }
 
-export interface RankCandidatesArgs {
-  anthropicKey: string;
-  /** Up to ~30 pre-enumerated candidates. */
-  candidates: RankableCandidate[];
-  /** User team context for the prompt. */
-  userTeamName: string;
-  userTeamRecord: string | null;
-  userComp: TeamComposition;
-  factsById: Map<string, PlayerFacts>;
-  valuations: Map<string, PlayerValuation>;
-  /** How many picks to ask the model to return. Defaults to 5. */
-  desiredCount?: number;
-  /** Optional goal hint derived from request filters (e.g. "user
-   *  wants to use Tank Dell + 2026 1st to upgrade at WR"). Helps
-   *  the model prioritize the right candidates. */
-  goalHint?: string | null;
-}
-
-// Output: the ranked picks, or null if the model returned garbage.
-// The finder falls back to heuristic top-N when this is null.
-export interface RankCandidatesResult {
-  picks: RankedPick[];
+export interface ConstructOffersResult {
+  offers: ConstructedOffer[];
   notes: string | null;
 }
 
-// ── Prompt construction ─────────────────────────────────────────────
+export interface ConstructOffersArgs {
+  anthropicKey: string;
+  /** Target player facts for the header of the prompt. */
+  target: {
+    id: string;
+    name: string;
+    position: string;
+    nflTeam: string;
+    valuation: PlayerValuation | null;
+  };
+  /** Partner team metadata. */
+  partnerTeam: {
+    id: string;
+    name: string;
+    record: string | null;
+    composition: TeamComposition;
+  };
+  /** User team metadata. */
+  userTeam: {
+    id: string;
+    name: string;
+    record: string | null;
+    composition: TeamComposition;
+  };
+  /** Valuations and facts for all rostered players on both teams. */
+  valuations: Map<string, PlayerValuation>;
+  factsById: Map<string, PlayerFacts>;
+  /** If set, every offer MUST include at least one of these on the
+   *  sent side. Comes from the UI "Trade Assets" filter. */
+  requiredUserPlayerIds?: string[] | null;
+  /** If set, every offer treats these picks as added to the user's
+   *  sent side. Not included in sentPlayerIds — the caller threads
+   *  them separately through the trusted analyzer. */
+  userPicks?: Array<{ year: number; round: number }> | null;
+  /** Number of offers to ask for. Default 3. */
+  desiredCount?: number;
+  /** Estimated pick value in finalValue units, for the prompt. */
+  pickValueSum?: number;
+}
 
-const SYSTEM_PROMPT = `You are an elite fantasy football trade advisor. You are given a list of pre-generated candidate trades for a specific user team and asked to pick the BEST realistic trades from the list.
+// ── Prompt building ─────────────────────────────────────────────────
 
-### Your job
+const SYSTEM_PROMPT = `You are an elite fantasy football trade architect. The user has picked a specific target player they want to acquire from a specific partner team. Your job is to propose 2-3 realistic offer packages the user could send.
 
-For each candidate you choose, you must verify that BOTH sides would plausibly accept:
-  - The USER is clearly upgrading at a position of need OR consolidating a surplus position. No sidegrades.
-  - The PARTNER's GM would plausibly accept — they address one of their own needs, clear a logjam, or get clearly better value.
+### What "realistic" means
 
-You MAY consider context the numbers miss (injury news, usage trends, dynasty vs redraft, remaining schedule strength, tier differences) when ranking candidates.
+Each offer must clear BOTH of these bars:
+  1. The user's package values (player [val] tags + any pick value) are within ~20% of the target's value. Use multi-player packages when needed — 1-for-1 almost never balances against a valuable target.
+  2. The partner's GM would plausibly accept the offer. That means: the package addresses one of the partner's needs, gives them clearly better value than what they're giving up, or includes a pick they'd value for rebuild purposes.
 
-You MUST NOT invent new trades. Only pick from the numbered candidate list. Echo the exact candidateId string (e.g. "c07") for each pick — never invent candidate IDs, never echo player IDs.
+### How to build offers
 
-### Return format
+  - Sum the target's [val]. That's your target package value.
+  - On the user side, combine 1-3 players whose [val]s add up to within ~20% of the target, PLUS any pick value if the user is offering picks.
+  - Prefer sending the user's SURPLUS or BENCH/DEPTH pieces, not their starters. Real trades move depth for starters.
+  - If the required-assets filter is set, every offer MUST include at least one of those player IDs on the sent side.
+  - Diversify: the 3 offers should differ in shape — e.g. one "cheap" (depth + pick), one "balanced" (bench starter + filler), one "premium" (top surplus piece). If you can't find three distinct shapes, two is fine.
+
+### ID echo rules
+
+  - Each player line is shown as "Name [val/tier/role] id=PLAYER_ID".
+  - In sentPlayerIds and receivedPlayerIds, echo ONLY the raw PLAYER_ID value (e.g. "4046"), never the name or the "id=" prefix.
+  - NEVER invent IDs. Only use IDs visible in the roster blocks below.
+  - The partnerTeamId is the value shown after "id=" in the partner team header.
+  - The target player MUST appear in receivedPlayerIds for every offer.
+
+### Response format
 
 Respond with ONLY valid JSON in this exact shape:
 
 {
-  "picks": [
+  "offers": [
     {
-      "candidateId": "c01",
-      "userReasoning": "One sentence on why this upgrades the user's team.",
-      "partnerReasoning": "One sentence on why the partner would accept."
+      "partnerTeamId": "team_id",
+      "sentPlayerIds": ["player_id", "player_id"],
+      "receivedPlayerIds": ["target_player_id"],
+      "userReasoning": "1 sentence on why this upgrades the user",
+      "partnerReasoning": "1 sentence on why the partner would accept",
+      "confidence": "high" | "medium" | "low"
     }
   ],
-  "notes": "Optional short overall commentary, or null."
+  "notes": "optional short commentary or null"
 }
 
 Rules:
-- "picks" is an array. An empty array is valid if NO candidate on the list would be accepted by both sides.
-- Pick each candidateId at most once.
-- Order picks best-first.
-- No prose outside the JSON.`;
+  - "offers" is an array. Prefer 2-3 offers; 1 is acceptable; 0 (empty array) is acceptable only when no realistic package exists from this user roster.
+  - Each offer must pass both bars above.
+  - No prose outside the JSON.`;
 
-function formatCandidateLine(
-  c: RankableCandidate,
-  factsById: Map<string, PlayerFacts>,
-  valuations: Map<string, PlayerValuation>
-): string {
-  const fmtPlayer = (id: string): string => {
-    const f = factsById.get(id);
-    const v = valuations.get(id);
-    const name = f?.name ?? id;
-    const pos = f?.position ?? '?';
-    const tag = v
-      ? `[${Math.round(v.finalValue)}/${v.tier}]`
-      : '[?]';
-    return `${name} (${pos}) ${tag}`;
-  };
-
-  const sentNames = c.sendPlayerIds.map(fmtPlayer).join(' + ');
-  const recvNames = c.receivePlayerIds.map(fmtPlayer).join(' + ');
-  const fit = [
-    c.userNeedsMet.length > 0 ? `user-need: ${c.userNeedsMet.join(',')}` : null,
-    c.partnerNeedsMet.length > 0 ? `partner-need: ${c.partnerNeedsMet.join(',')}` : null,
-  ]
-    .filter(Boolean)
-    .join(' | ');
-  const imbalance = `imbalance ${(c.valueImbalancePct * 100).toFixed(0)}%`;
-  const partnerMeta = [c.partnerRecord, ...c.partnerNeeds.map((n) => `${n.position}(${n.level})`)]
-    .filter(Boolean)
-    .join(', ');
-
-  return [
-    `[${c.candidateId}] ${c.partnerTeamName}${partnerMeta ? ` — ${partnerMeta}` : ''}`,
-    `    You send:    ${sentNames}`,
-    `    You receive: ${recvNames}`,
-    `    user ${Math.round(c.userValue)} vs partner ${Math.round(c.partnerValue)} (${imbalance})`,
-    fit ? `    ${fit}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
+function formatPickAsset(p: { year: number; round: number }): string {
+  const ord =
+    p.round === 1 ? '1st' :
+    p.round === 2 ? '2nd' :
+    p.round === 3 ? '3rd' :
+    `${p.round}th`;
+  return `${p.year} ${ord}`;
 }
 
-function buildUserMessage(args: RankCandidatesArgs): string {
+function formatTeamRoster(
+  team: { name: string; id: string; record: string | null; composition: TeamComposition },
+  label: 'YOU' | 'PARTNER',
+  factsById: Map<string, PlayerFacts>,
+  valuations: Map<string, PlayerValuation>,
+  markPlayerId: string | null = null
+): string {
+  const lines: string[] = [];
+  const recordTag = team.record ? ` [${team.record}]` : '';
+  lines.push(`=== ${team.name} (${label})${recordTag} id=${team.id} ===`);
+
+  const needsStr =
+    team.composition.needs.length > 0
+      ? team.composition.needs.map((n) => `${n.position}(${n.level})`).join(', ')
+      : '(none)';
+  lines.push(`Needs: ${needsStr}`);
+
+  const strengths: string[] = [];
+  for (const [, summary] of team.composition.byPosition) {
+    if (summary.surplusCount > 0) strengths.push(`${summary.position}(surplus)`);
+    else if (summary.topTier === 'elite' && summary.needLevel === 'none') {
+      strengths.push(`${summary.position}(elite)`);
+    }
+  }
+  if (strengths.length > 0) {
+    lines.push(`Strengths: ${strengths.join(', ')}`);
+  }
+
+  for (const pos of ['QB', 'RB', 'WR', 'TE']) {
+    const summary = team.composition.byPosition.get(pos);
+    if (!summary || summary.players.length === 0) continue;
+    lines.push(`${pos}:`);
+    for (const slot of summary.players) {
+      const facts = factsById.get(slot.playerId);
+      const v = valuations.get(slot.playerId);
+      const name = facts?.name ?? slot.playerId;
+      const val = v ? Math.round(v.finalValue) : '?';
+      const tier = v?.tier ?? '?';
+      const status = facts?.identity.status;
+      const statusTag = status && status !== 'active' ? ` [${status.toUpperCase()}]` : '';
+      const marker = slot.playerId === markPlayerId ? ' <<< TARGET' : '';
+      lines.push(`  - ${name} [${val}/${tier}/${slot.role}] id=${slot.playerId}${statusTag}${marker}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function buildUserMessage(args: ConstructOffersArgs): string {
   const {
-    candidates,
-    userTeamName,
-    userTeamRecord,
-    userComp,
-    factsById,
+    target,
+    partnerTeam,
+    userTeam,
     valuations,
-    desiredCount = 5,
-    goalHint,
+    factsById,
+    requiredUserPlayerIds,
+    userPicks,
+    desiredCount = 3,
+    pickValueSum = 0,
   } = args;
 
   const lines: string[] = [];
 
-  // User context block
-  const needsStr =
-    userComp.needs.length > 0
-      ? userComp.needs.map((n) => `${n.position}(${n.level})`).join(', ')
-      : '(none)';
-  const strengthsStr: string[] = [];
-  for (const [, summary] of userComp.byPosition) {
-    if (summary.surplusCount > 0) strengthsStr.push(`${summary.position}(surplus)`);
-  }
-  lines.push(`USER CONTEXT:`);
-  lines.push(`  Team: "${userTeamName}"${userTeamRecord ? ` (${userTeamRecord})` : ''}`);
-  lines.push(`  Needs: ${needsStr}`);
-  if (strengthsStr.length > 0) {
-    lines.push(`  Strengths: ${strengthsStr.join(', ')}`);
-  }
-  if (goalHint) {
-    lines.push(`  Goal: ${goalHint}`);
-  }
+  lines.push(
+    `Propose ${desiredCount} realistic offer packages the user could send to acquire the TARGET below. Return JSON only.`
+  );
   lines.push('');
 
-  // Candidates
-  lines.push(`CANDIDATES (${candidates.length} pre-generated, balanced, pick-aware):`);
+  // Target block
+  lines.push('=== TARGET ===');
+  const tValTag = target.valuation
+    ? `[${Math.round(target.valuation.finalValue)}/${target.valuation.tier}]`
+    : '[?]';
+  lines.push(`${target.name} (${target.position}, ${target.nflTeam}) ${tValTag}`);
+  lines.push(`id=${target.id}`);
+  lines.push(`on team: ${partnerTeam.name} id=${partnerTeam.id}`);
   lines.push('');
-  for (const c of candidates) {
-    lines.push(formatCandidateLine(c, factsById, valuations));
+
+  // Filter block
+  const filterLines: string[] = [];
+  if (requiredUserPlayerIds && requiredUserPlayerIds.length > 0) {
+    filterLines.push(
+      `- REQUIRED USER ASSETS: every offer MUST include at least one of these player ids in sentPlayerIds: ${requiredUserPlayerIds.join(', ')}`
+    );
+  }
+  if (userPicks && userPicks.length > 0) {
+    const picksStr = userPicks.map(formatPickAsset).join(', ');
+    filterLines.push(
+      `- BONUS USER ASSETS: the user is offering these draft picks as part of every offer: ${picksStr}.`
+    );
+    filterLines.push(
+      `  * Do NOT add picks to sentPlayerIds. The caller threads them separately.`
+    );
+    if (pickValueSum > 0) {
+      filterLines.push(
+        `  * Estimated pick value: ${Math.round(pickValueSum)} in the same units as the [val] tags. Factor this into the user's side — the user-side PLAYER total can be LOWER than the target value by about this much, because the pick fills the gap.`
+      );
+    }
+  }
+  if (filterLines.length > 0) {
+    lines.push('USER FILTERS:');
+    lines.push(...filterLines);
     lines.push('');
   }
 
   lines.push(
-    `Pick the ${desiredCount} best. Return JSON ONLY — no prose.`
+    'NOTE: Every player line below includes id=... — echo those raw IDs in sentPlayerIds/receivedPlayerIds. Never echo names or the "id=" prefix.'
+  );
+  lines.push('');
+
+  // User roster
+  lines.push(formatTeamRoster(userTeam, 'YOU', factsById, valuations));
+  lines.push('');
+
+  // Partner roster with target marked
+  lines.push(formatTeamRoster(partnerTeam, 'PARTNER', factsById, valuations, target.id));
+  lines.push('');
+
+  lines.push(
+    `Now produce the JSON response with ${desiredCount} diverse realistic offers for ${target.name}. JSON only.`
   );
 
   return lines.join('\n');
@@ -205,66 +271,81 @@ function buildUserMessage(args: RankCandidatesArgs): string {
 
 // ── Parsing + validation ────────────────────────────────────────────
 
-interface RawPick {
-  candidateId?: unknown;
+interface RawOffer {
+  partnerTeamId?: unknown;
+  sentPlayerIds?: unknown;
+  receivedPlayerIds?: unknown;
   userReasoning?: unknown;
   partnerReasoning?: unknown;
+  confidence?: unknown;
 }
 
 interface RawResponse {
-  picks?: unknown;
+  offers?: unknown;
   notes?: unknown;
 }
 
+function isStringArray(x: unknown): x is string[] {
+  return Array.isArray(x) && x.every((v) => typeof v === 'string');
+}
+
+function coerceConfidence(x: unknown): 'high' | 'medium' | 'low' {
+  if (x === 'high' || x === 'medium' || x === 'low') return x;
+  return 'medium';
+}
+
 /**
- * Coerce + validate the AI response. Unknown candidateIds are dropped
- * silently (defensive — the model should only echo what it was shown).
+ * Sanitize a player or team ID the model returned. Handles the common
+ * case of the model echoing "id=4046" instead of "4046" and strips
+ * whitespace or surrounding quotes.
  */
-function coerceResponse(
-  raw: RawResponse,
-  candidateIds: Set<string>
-): RankCandidatesResult {
-  const out: RankCandidatesResult = {
-    picks: [],
+function sanitizeId(raw: string): string {
+  let s = raw.trim();
+  if (s.startsWith('id=')) s = s.slice(3);
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  return s.trim();
+}
+
+function coerceResponse(raw: RawResponse): ConstructOffersResult {
+  const out: ConstructOffersResult = {
+    offers: [],
     notes: typeof raw.notes === 'string' ? raw.notes : null,
   };
-  if (!Array.isArray(raw.picks)) return out;
+  if (!Array.isArray(raw.offers)) return out;
 
-  const seen = new Set<string>();
-  for (const item of raw.picks as RawPick[]) {
+  for (const item of raw.offers as RawOffer[]) {
     if (!item || typeof item !== 'object') continue;
-    if (typeof item.candidateId !== 'string') continue;
-    const id = item.candidateId.trim();
-    if (!candidateIds.has(id)) continue;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.picks.push({
-      candidateId: id,
+    if (typeof item.partnerTeamId !== 'string') continue;
+    if (!isStringArray(item.sentPlayerIds)) continue;
+    if (!isStringArray(item.receivedPlayerIds)) continue;
+    if (item.sentPlayerIds.length === 0 || item.receivedPlayerIds.length === 0) continue;
+
+    out.offers.push({
+      partnerTeamId: sanitizeId(item.partnerTeamId),
+      sentPlayerIds: item.sentPlayerIds.map(sanitizeId),
+      receivedPlayerIds: item.receivedPlayerIds.map(sanitizeId),
       userReasoning:
         typeof item.userReasoning === 'string' ? item.userReasoning : '',
       partnerReasoning:
         typeof item.partnerReasoning === 'string' ? item.partnerReasoning : '',
+      confidence: coerceConfidence(item.confidence),
     });
   }
+
   return out;
 }
 
 // ── Main entry point ────────────────────────────────────────────────
 
-/**
- * Rank a pool of pre-generated candidates with one focused Claude
- * call. Returns the picks (or null on total failure, which the
- * caller handles by falling back to top-N by heuristic score).
- */
-export async function rankCandidates(
-  args: RankCandidatesArgs
-): Promise<RankCandidatesResult | null> {
-  const { anthropicKey, candidates, desiredCount = 5 } = args;
+export async function constructOffersForTarget(
+  args: ConstructOffersArgs
+): Promise<ConstructOffersResult | null> {
+  const { anthropicKey, desiredCount = 3 } = args;
 
-  if (candidates.length === 0) return { picks: [], notes: null };
-
+  const systemPrompt = SYSTEM_PROMPT;
   const userMessage = buildUserMessage(args);
-  const candidateIds = new Set(candidates.map((c) => c.candidateId));
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -276,19 +357,18 @@ export async function rankCandidates(
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        // Ranking output is small: 5 picks × ~100 tokens = ~500 tokens.
-        // Plus a little slack for notes.
-        max_tokens: 1500,
-        system: SYSTEM_PROMPT,
+        // 3 offers × ~300 tokens each + notes = ~1200 tokens plus slack
+        max_tokens: 2000,
+        system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
-        temperature: 0.4,
+        temperature: 0.5,
       }),
       signal: AbortSignal.timeout(45000),
     });
 
     if (!res.ok) {
       console.error(
-        '[tradeConstructor.rank] AI call failed:',
+        '[tradeConstructor.target] AI call failed:',
         res.status,
         await res.text().catch(() => '')
       );
@@ -302,7 +382,6 @@ export async function rankCandidates(
     const rawText = textBlock?.text?.trim();
     if (!rawText) return null;
 
-    // Strip code fences if the model wrapped its JSON
     const jsonStr = rawText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
 
     let parsed: RawResponse;
@@ -310,21 +389,21 @@ export async function rankCandidates(
       parsed = JSON.parse(jsonStr) as RawResponse;
     } catch (parseErr) {
       console.error(
-        '[tradeConstructor.rank] JSON parse failed:',
+        '[tradeConstructor.target] JSON parse failed:',
         parseErr,
         jsonStr.slice(0, 200)
       );
       return null;
     }
 
-    const result = coerceResponse(parsed, candidateIds);
+    const result = coerceResponse(parsed);
     console.log(
-      `[tradeConstructor.rank] model returned ${result.picks.length}/${desiredCount} valid picks` +
+      `[tradeConstructor.target] returned ${result.offers.length}/${desiredCount} offers` +
         (result.notes ? ` — notes: ${result.notes.slice(0, 120)}` : '')
     );
     return result;
   } catch (err) {
-    console.error('[tradeConstructor.rank] call failed:', err);
+    console.error('[tradeConstructor.target] call failed:', err);
     return null;
   }
 }

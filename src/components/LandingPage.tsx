@@ -147,14 +147,21 @@ const LANDING_CSS = `
 .lp footer{border-top:1px solid var(--border);padding:24px 0;color:var(--muted);font-size:12px;text-align:center}
 .lp .finder-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
 .lp .finder-row:hover{border-color:var(--blue-border)}
-.lp .finder-players{display:flex;align-items:center;gap:6px;flex:1}
-.lp .finder-arrow{color:var(--muted);font-size:14px;margin:0 10px;flex-shrink:0}
+.lp .finder-players{display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap}
+.lp .finder-plus{color:var(--muted);font-size:12px;margin:0 2px;flex-shrink:0}
+.lp .finder-arrow{color:var(--muted);font-size:14px;margin:0 8px;flex-shrink:0}
 .lp .finder-grade{font-weight:800;font-size:14px;flex-shrink:0;width:28px;text-align:center}
 .lp .finder-tag{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600}
 .lp .finder-tag.buy{background:rgba(34,197,94,.12);color:var(--green)}
 .lp .finder-tag.sell{background:rgba(239,68,68,.12);color:var(--red)}
+.lp .finder-tag.offer{background:var(--blue-glow);color:var(--blue)}
+.lp .finder-pick{background:var(--gold-bg);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:.02em}
 .lp .finder-search{width:100%;padding:9px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:13px;font-family:inherit;outline:none;margin-bottom:12px}
 .lp .finder-search::placeholder{color:var(--muted)}
+.lp .finder-target{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:var(--blue-glow);border:1px solid var(--blue-border);margin-bottom:10px;font-size:12px}
+.lp .finder-target-label{font-size:10px;text-transform:uppercase;color:var(--blue);font-weight:700;letter-spacing:.06em;flex-shrink:0}
+.lp .finder-target-name{font-weight:700;color:var(--text-bright);flex:1}
+.lp .finder-target-team{font-size:11px;color:var(--muted)}
 .lp .finder-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
 .lp .history-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
 .lp .history-row:hover{border-color:var(--blue-border)}
@@ -352,52 +359,56 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
 
               {activeTab === 'Trade Finder' && (
                 <>
-                  <input className="finder-search" placeholder="Search your roster — e.g. CeeDee Lamb" readOnly />
-                  <div className="finder-row">
-                    <div className="finder-players">
-                      <span className={`pos WR`}>WR</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
-                      <span className="finder-arrow">→</span>
-                      <span className={`pos RB`}>RB</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Bijan Robinson</span>
-                    </div>
-                    <span className="finder-tag buy">Buy Low</span>
-                    <span className="finder-grade" style={{ color: 'var(--green)' }}>A</span>
+                  <input
+                    className="finder-search"
+                    placeholder="Pick a player you want to acquire — e.g. CeeDee Lamb"
+                    readOnly
+                  />
+                  <div className="finder-target">
+                    <span className="finder-target-label">Target</span>
+                    <span className={`pos WR`}>WR</span>
+                    <span className="finder-target-name">CeeDee Lamb</span>
+                    <span className="finder-target-team">Ball Whackers</span>
                   </div>
                   <div className="finder-row">
                     <div className="finder-players">
                       <span className={`pos RB`}>RB</span>
                       <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Javonte Williams</span>
+                      <span className="finder-plus">+</span>
+                      <span className="finder-pick">2026 1st</span>
                       <span className="finder-arrow">→</span>
+                      <span className={`pos WR`}>WR</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
+                    </div>
+                    <span className="finder-tag offer">Offer</span>
+                    <span className="finder-grade" style={{ color: 'var(--green)' }}>A</span>
+                  </div>
+                  <div className="finder-row">
+                    <div className="finder-players">
                       <span className={`pos WR`}>WR</span>
                       <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>DK Metcalf</span>
-                    </div>
-                    <span className="finder-tag buy">Buy Low</span>
-                    <span className="finder-grade" style={{ color: 'var(--green)' }}>B+</span>
-                  </div>
-                  <div className="finder-row">
-                    <div className="finder-players">
-                      <span className={`pos QB`}>QB</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Jalen Hurts</span>
-                      <span className="finder-arrow">→</span>
-                      <span className={`pos QB`}>QB</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Lamar Jackson</span>
-                    </div>
-                    <span className="finder-tag sell">Sell High</span>
-                    <span className="finder-grade" style={{ color: 'var(--blue)' }}>B</span>
-                  </div>
-                  <div className="finder-row">
-                    <div className="finder-players">
-                      <span className={`pos TE`}>TE</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Sam LaPorta</span>
+                      <span className="finder-plus">+</span>
+                      <span className={`pos RB`}>RB</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Tony Pollard</span>
                       <span className="finder-arrow">→</span>
                       <span className={`pos WR`}>WR</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Amon-Ra St. Brown</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
                     </div>
-                    <span className="finder-tag buy">Buy Low</span>
-                    <span className="finder-grade" style={{ color: 'var(--green)' }}>A&minus;</span>
+                    <span className="finder-tag offer">Offer</span>
+                    <span className="finder-grade" style={{ color: 'var(--blue)' }}>B+</span>
                   </div>
-                  <div className="finder-hint">AI-suggested trades based on your roster &amp; league trends</div>
+                  <div className="finder-row">
+                    <div className="finder-players">
+                      <span className={`pos RB`}>RB</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Saquon Barkley</span>
+                      <span className="finder-arrow">→</span>
+                      <span className={`pos WR`}>WR</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
+                    </div>
+                    <span className="finder-tag offer">Offer</span>
+                    <span className="finder-grade" style={{ color: 'var(--blue)' }}>B</span>
+                  </div>
+                  <div className="finder-hint">Pick a player → AI builds 2-3 realistic offers from your roster.</div>
                 </>
               )}
 

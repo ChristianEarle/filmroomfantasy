@@ -1,53 +1,29 @@
 /**
  * Trade Finder (Feature 2).
  *
- * Architecture: enumerate → rank → verify.
+ * Target-focused flow: the user picks a specific player they want to
+ * acquire from any opponent, and the finder proposes 2-3 realistic
+ * offer packages to send. No more "find me any trade" open-ended
+ * discovery — that problem is too hard and kept returning empty.
  *
- *  Phase 0 — setup (no AI, ~50ms):
- *   1. Load rosters for every team in the league.
- *   2. Build TradeContext with facts for every rostered player.
- *   3. Compute PlayerValuations (ROS pts × scarcity × schedule × injury).
- *   4. Build TeamComposition for every team: starter / depth / surplus
- *      / needs per position.
- *
- *  Phase 1 — deterministic enumeration (no AI):
- *   5. For each partner team, run tradeMatcher to produce balanced,
- *      pick-aware, needs-aware candidate trades. Shapes: 1v1, 2v1,
- *      1v2, 2v2, 3v1. When restrictUserAssets is set, every
- *      candidate is STRUCTURALLY seeded with one of those assets
- *      on the sent side. When hasUserPicks is true, estimated pick
- *      value is folded into the user's side so the matcher finds
- *      upgrades instead of sidegrades.
- *   6. Merge, dedupe, and cap to a small pool (~30 candidates). As
- *      long as any balanced trade exists in the league, Phase 1
- *      produces a non-empty pool. "AI returned 0 trades for
- *      mysterious reasons" is structurally impossible.
- *
- *  Phase 2 — Claude ranks the pool (one call):
- *   7. rankCandidates passes the top ~30 to Claude with user context
- *      and asks it to pick the best 5 with one-sentence per-side
- *      reasoning. Claude never constructs trades from scratch and
- *      never echoes player IDs — it just picks short candidateIds
- *      from the list we showed it.
- *   8. If Phase 2 returns an empty set or garbage, the finder falls
- *      back to the top 5 from Phase 1 by heuristic score. We always
- *      have something to serve as long as Phase 1 produced anything.
- *
- *  Phase 3 — trusted-analyzer verification (parallel AI):
- *   9. Each picked candidate goes through analyzeCandidateWithAI (the
- *      same trusted analyzer as the manual /analyze route) which
- *      independently grades fairness, winner, and team letter grades.
- *
- *  Phase 4 — realistic-acceptance filter:
- *  10. Default mode: zero-tolerance on partner-favored, user grade
- *      must be B- or better, user-favored capped at diff ≤ 15.
- *  11. Opt-in mode (when restrictUserAssets or userPicks is set):
- *      softer thresholds that respect the user's explicit choice to
- *      offer specific assets / accept a small premium for an upgrade.
+ * Pipeline:
+ *   1. Setup — load teams, rosters, valuations, compositions (~50ms).
+ *   2. Resolve target — find which partner team owns targetPlayerId.
+ *      Bail if not found or the target is on the user's own team.
+ *   3. constructOffersForTarget — one focused AI call that returns
+ *      2-3 offer packages. Sees only two rosters (user + partner),
+ *      never the whole league.
+ *   4. Validate each returned offer — ownership, required-asset
+ *      filter, target actually included, basic sanity.
+ *   5. Verify each with analyzeCandidateWithAI — the trusted
+ *      analyzer the manual route uses. Produces fairness + grades.
+ *   6. Gate 4 filter — relaxed "opt-in" thresholds because the user
+ *      has explicitly chosen this target flow.
  *
  * Team Needs Dashboard is a separate AI-generated narrative — see
  * buildTeamNeeds below. It uses the same Claude client but a different
- * prompt with no trade construction.
+ * prompt with no trade construction, and is persisted per week and
+ * roster fingerprint in the team_scouting_reports table.
  */
 
 import { eq, inArray } from 'drizzle-orm';
@@ -70,13 +46,8 @@ import {
   type TeamComposition,
 } from './teamComposition';
 import {
-  matchTrades,
-  pickDiverseMatches,
-  type MatchedCandidate,
-} from './tradeMatcher';
-import {
-  rankCandidates,
-  type RankableCandidate,
+  constructOffersForTarget,
+  type ConstructedOffer,
 } from './tradeConstructor';
 import {
   analyzeTrade,
@@ -260,14 +231,16 @@ interface FindRecommendationsArgs {
    *  reasoning) instead of redraft grades. Falls back to 'redraft' if
    *  unset. */
   leagueType?: 'redraft' | 'dynasty' | 'keeper';
-  targetPosition?: string | null;
-  targetTeamId?: string | null;
+  /** REQUIRED — the specific player the user wants to acquire. This
+   *  is the target-focused flow's core input. An offer search is
+   *  anchored to one player at a time. */
+  targetPlayerId: string;
   maxRecommendations?: number;
-  /** Optional: if set, the user's candidate pool is restricted to
-   *  these player IDs (all must be on their roster). Picks are not
-   *  scored in the pre-filter but are threaded through to every
-   *  surviving candidate as mandatory "user sends" assets. */
+  /** Optional: if set, the user's send-side candidate pool is
+   *  restricted to these player IDs (must be on their roster).
+   *  Used to narrow what the user is willing to give up. */
   userPlayerIds?: string[] | null;
+  /** Optional: draft picks the user is throwing into every offer. */
   userPicks?: DraftPickAsset[] | null;
 }
 
@@ -283,12 +256,18 @@ export async function findTradeRecommendations(
     seasonYear,
     currentWeek,
     leagueType = 'redraft',
-    targetPosition,
-    targetTeamId,
-    maxRecommendations = 5,
+    targetPlayerId,
+    maxRecommendations = 3,
     userPlayerIds,
     userPicks,
   } = args;
+
+  // Target flow: caller MUST provide a specific player to acquire.
+  // This is enforced at the route but we guard defensively here too.
+  if (!targetPlayerId) {
+    console.log('[tradeFinder] target flow called without targetPlayerId');
+    return [];
+  }
 
   // 1. Load ALL teams in the league + their rosters
   const allTeams = await db.query.teams.findMany({
@@ -381,19 +360,30 @@ export async function findTradeRecommendations(
       ? userPlayerIds.filter((id) => userRosterPlayerIds.has(id))
       : null;
 
-  const partnerTeamIds = targetTeamId
-    ? [targetTeamId]
-    : allTeams.filter((t) => t.id !== userTeamId).map((t) => t.id);
-
-  // 6. Phase 1 — deterministic enumeration. For each partner team,
-  //    run the matcher to generate a pool of balanced, pick-aware,
-  //    needs-aware candidates. Merge, dedupe, and cap to ~30.
-  type ValidatedTrade = {
-    targetTeamId: string;
-    sendPlayerIds: string[];
-    receivePlayerIds: string[];
-    fit: TradeRecommendation['fit'];
-  };
+  // 5. Resolve the target: find which partner team owns it.
+  const partnerTeamId = (() => {
+    for (const [teamId, roster] of rosterByTeam) {
+      if (teamId === userTeamId) continue;
+      if (roster.some((r) => r.playerId === targetPlayerId)) return teamId;
+    }
+    return null;
+  })();
+  if (!partnerTeamId) {
+    console.log(
+      `[tradeFinder] target ${targetPlayerId} not found on any opponent team — returning []`
+    );
+    return [];
+  }
+  const partnerTeam = allTeams.find((t) => t.id === partnerTeamId);
+  const partnerComp = compositionsByTeam.get(partnerTeamId);
+  const targetFacts = factsById.get(targetPlayerId);
+  const targetValuation = valuations.get(targetPlayerId) ?? null;
+  if (!partnerTeam || !partnerComp || !targetFacts) {
+    console.log(
+      `[tradeFinder] target ${targetPlayerId} found on team ${partnerTeamId} but context incomplete`
+    );
+    return [];
+  }
 
   const hasUserPicks = normalizedPicks.length > 0;
   const pickValueSum = sumPickValues(
@@ -402,243 +392,117 @@ export async function findTradeRecommendations(
     seasonYear
   );
 
-  // ── Diagnostic: dump the request shape so we can correlate logs
-  //    with what the UI actually sent. ──
   console.log(
-    `[tradeFinder] REQUEST userTeam=${userTeamId} hasPicks=${hasUserPicks} pickValueSum=${pickValueSum} restrictAssets=${
-      restrictUserAssets ? JSON.stringify(restrictUserAssets) : 'null'
-    } targetPosition=${targetPosition ?? 'null'} targetTeam=${targetTeamId ?? 'null'} leagueType=${leagueType}`
+    `[tradeFinder] target flow: user=${userTeam.name} wants ${targetFacts.name} (${targetFacts.position}) from ${partnerTeam.name}` +
+      (restrictUserAssets ? ` restrictAssets=${restrictUserAssets.length}` : '') +
+      (hasUserPicks ? ` picks=${normalizedPicks.length}(val=${Math.round(pickValueSum)})` : '')
   );
 
-  // If the user specified required assets, verify each one resolves
-  // to a real valuation and log its computed value. A missing or
-  // $0-valued asset is the #1 explanation for empty results — e.g.
-  // an injured player with injuryFactor ≈ 0.25 whose finalValue is
-  // tiny, so the matcher can't balance anything.
-  if (restrictUserAssets && restrictUserAssets.length > 0) {
-    for (const id of restrictUserAssets) {
-      const v = valuations.get(id);
-      const facts = factsById.get(id);
-      if (!v) {
-        console.log(
-          `[tradeFinder] REQUIRED ASSET MISSING VALUATION: id=${id} name=${facts?.name ?? '?'}`
-        );
-      } else {
-        console.log(
-          `[tradeFinder] required asset ${facts?.name ?? id}: pos=${v.position} finalValue=${Math.round(v.finalValue)} tier=${v.tier} injuryFactor=${v.injuryFactor} status=${facts?.identity.status ?? '?'}`
-        );
-      }
-    }
-  }
+  // 6. Construct 2-3 focused offer packages.
+  const userRecord = `${userTeam.wins}-${userTeam.losses}${userTeam.ties ? `-${userTeam.ties}` : ''}`;
+  const partnerRecord = `${partnerTeam.wins}-${partnerTeam.losses}${partnerTeam.ties ? `-${partnerTeam.ties}` : ''}`;
 
-  // User composition snapshot for diagnostic context.
-  const userCompNeeds = userComp.needs
-    .map((n) => `${n.position}(${n.level})`)
-    .join(', ');
-  console.log(
-    `[tradeFinder] user team composition: needs=[${userCompNeeds || 'none'}]`
-  );
-  for (const pos of ['QB', 'RB', 'WR', 'TE']) {
-    const summary = userComp.byPosition.get(pos);
-    if (!summary || summary.players.length === 0) continue;
-    const roles = summary.players
-      .map((p) => {
-        const facts = factsById.get(p.playerId);
-        return `${facts?.name ?? p.playerId}[${Math.round(p.finalValue)}/${p.tier}/${p.role}]`;
-      })
-      .join(', ');
-    console.log(`[tradeFinder]   ${pos}: ${roles}`);
-  }
+  const constructed = await constructOffersForTarget({
+    anthropicKey,
+    target: {
+      id: targetPlayerId,
+      name: targetFacts.name,
+      position: targetFacts.position,
+      nflTeam: targetFacts.nflTeam,
+      valuation: targetValuation,
+    },
+    partnerTeam: {
+      id: partnerTeamId,
+      name: partnerTeam.name,
+      record: partnerRecord,
+      composition: partnerComp,
+    },
+    userTeam: {
+      id: userTeamId,
+      name: userTeam.name,
+      record: userRecord,
+      composition: userComp,
+    },
+    valuations,
+    factsById,
+    requiredUserPlayerIds: restrictUserAssets,
+    userPicks: hasUserPicks ? normalizedPicks : null,
+    desiredCount: Math.max(maxRecommendations, 3),
+    pickValueSum,
+  });
 
-  if (hasUserPicks) {
+  if (!constructed || constructed.offers.length === 0) {
     console.log(
-      `[tradeFinder] user picks valued at ${pickValueSum} (${leagueType}, ${normalizedPicks.length} pick(s))`
+      `[tradeFinder] constructor returned 0 offers for ${targetFacts.name}` +
+        (constructed?.notes ? ` — notes: ${constructed.notes.slice(0, 160)}` : '')
     );
-  }
-
-  const enumeratedPool: Array<MatchedCandidate & { targetTeamId: string; targetTeamName: string }> = [];
-  for (const partnerId of partnerTeamIds) {
-    const partnerComp = compositionsByTeam.get(partnerId);
-    if (!partnerComp) continue;
-    const partnerTeam = allTeams.find((t) => t.id === partnerId);
-    if (!partnerTeam) continue;
-
-    const matched = matchTrades({
-      userComp,
-      partnerComp,
-      valuations,
-      factsById,
-      settings: leagueSettings,
-      options: {
-        maxCandidates: 20,
-        imbalanceTolerance: 0.25,
-        targetPosition: targetPosition ?? null,
-        restrictUserAssets,
-        pickValueSum,
-        maxPlayersPerSide: 3,
-      },
-    });
-
-    console.log(
-      `[tradeFinder]   partner ${partnerTeam.name}: matcher returned ${matched.length} candidates`
-    );
-
-    for (const m of matched) {
-      enumeratedPool.push({
-        ...m,
-        targetTeamId: partnerId,
-        targetTeamName: partnerTeam.name,
-      });
-    }
-  }
-
-  console.log(
-    `[tradeFinder] phase1 enumerated ${enumeratedPool.length} candidates across ${new Set(enumeratedPool.map((c) => c.targetTeamId)).size} partners`
-  );
-
-  // Dump the top 5 Phase 1 candidates by score so we can see exactly
-  // what the deterministic layer is producing, independent of the
-  // ranker/verifier stages.
-  if (enumeratedPool.length > 0) {
-    const preview = [...enumeratedPool]
-      .sort((a, b) => a.score - b.score)
-      .slice(0, 5);
-    for (const c of preview) {
-      const sendNames = c.sendPlayerIds
-        .map((id) => factsById.get(id)?.name ?? id)
-        .join('+');
-      const recvNames = c.receivePlayerIds
-        .map((id) => factsById.get(id)?.name ?? id)
-        .join('+');
-      console.log(
-        `[tradeFinder]   top: ${c.targetTeamName} | ${sendNames} → ${recvNames} | u=${c.userValue} p=${c.partnerValue} imb=${(c.valueImbalancePct * 100).toFixed(0)}% score=${c.score}`
-      );
-    }
-  }
-
-  if (enumeratedPool.length === 0) {
-    console.log('[tradeFinder] phase1 empty — no balanced trade exists; returning []');
     return [];
   }
 
-  // Sort by score (lower is better — see matcher scoring) and trim to
-  // top 30 with per-player diversity so no single player dominates.
-  enumeratedPool.sort((a, b) => a.score - b.score);
-  const TOP_POOL_SIZE = 30;
-  const diversePool = pickDiverseMatches(
-    enumeratedPool.slice(0, TOP_POOL_SIZE * 2),
-    TOP_POOL_SIZE,
-    3
+  console.log(
+    `[tradeFinder] constructor returned ${constructed.offers.length} raw offers — validating...`
   );
+
+  // 7. Validate each offer: ownership, target inclusion, required assets.
+  type ValidatedTrade = {
+    targetTeamId: string;
+    sendPlayerIds: string[];
+    receivePlayerIds: string[];
+    fit: TradeRecommendation['fit'];
+  };
+
+  const requiredAssetSet = restrictUserAssets
+    ? new Set(restrictUserAssets)
+    : null;
+  const partnerRosterPlayerIds = new Set(
+    (rosterByTeam.get(partnerTeamId) ?? []).map((r) => r.playerId)
+  );
+
+  const validated: ValidatedTrade[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const offer of constructed.offers) {
+    const reason = validateOffer(
+      offer,
+      userTeamId,
+      partnerTeamId,
+      userRosterPlayerIds,
+      partnerRosterPlayerIds,
+      targetPlayerId,
+      requiredAssetSet
+    );
+    if (reason !== null) {
+      console.log(
+        `[tradeFinder] dropped offer: ${reason}`,
+        offer.sentPlayerIds,
+        '→',
+        offer.receivedPlayerIds
+      );
+      continue;
+    }
+    const key = `${[...offer.sentPlayerIds].sort().join(',')}→${[...offer.receivedPlayerIds].sort().join(',')}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    validated.push({
+      targetTeamId: partnerTeamId,
+      sendPlayerIds: offer.sentPlayerIds,
+      receivePlayerIds: offer.receivedPlayerIds,
+      fit: {
+        forYou: offer.userReasoning ? [offer.userReasoning] : [],
+        forThem: offer.partnerReasoning ? [offer.partnerReasoning] : [],
+        userNeedsMet: [],
+        partnerNeedsMet: [],
+      },
+    });
+  }
 
   console.log(
-    `[tradeFinder] phase1 diverse pool: ${diversePool.length} candidates after dedup`
+    `[tradeFinder] ${validated.length}/${constructed.offers.length} offers passed validation`
   );
 
-  // Tag each with a short candidateId the ranker can echo back.
-  const rankablePool: RankableCandidate[] = diversePool.map((c, idx) => {
-    const partnerComp = compositionsByTeam.get(c.targetTeamId);
-    const partnerTeam = allTeams.find((t) => t.id === c.targetTeamId);
-    return {
-      ...c,
-      candidateId: `c${String(idx + 1).padStart(2, '0')}`,
-      partnerTeamId: c.targetTeamId,
-      partnerTeamName: c.targetTeamName,
-      partnerNeeds:
-        partnerComp?.needs.map((n) => ({
-          position: n.position,
-          level: n.level,
-        })) ?? [],
-      partnerRecord: partnerTeam
-        ? `${partnerTeam.wins}-${partnerTeam.losses}${partnerTeam.ties ? `-${partnerTeam.ties}` : ''}`
-        : null,
-    };
-  });
+  if (validated.length === 0) return [];
 
-  // 7. Phase 2 — one Claude call to rank the pool. If the model returns
-  //    an empty set or garbage, fall back to the top 5 by heuristic
-  //    score from Phase 1.
-  const goalHintParts: string[] = [];
-  if (restrictUserAssets && restrictUserAssets.length > 0) {
-    const names = restrictUserAssets
-      .map((id) => factsById.get(id)?.name ?? id)
-      .join(' + ');
-    goalHintParts.push(`User explicitly chose to offer ${names}`);
-  }
-  if (hasUserPicks) {
-    const picksStr = normalizedPicks
-      .map((p) => `${p.year} round ${p.round}`)
-      .join(' + ');
-    goalHintParts.push(`user is offering ${picksStr} as a bonus`);
-  }
-  if (targetPosition) {
-    goalHintParts.push(`user wants to upgrade at ${targetPosition}`);
-  }
-  const goalHint = goalHintParts.length > 0 ? goalHintParts.join('; ') : null;
-
-  const userRecord = `${userTeam.wins}-${userTeam.losses}${userTeam.ties ? `-${userTeam.ties}` : ''}`;
-  const rankResult = await rankCandidates({
-    anthropicKey,
-    candidates: rankablePool,
-    userTeamName: userTeam.name,
-    userTeamRecord: userRecord,
-    userComp,
-    factsById,
-    valuations,
-    desiredCount: Math.max(maxRecommendations, 5),
-    goalHint,
-  });
-
-  const rankedById = new Map(rankablePool.map((c) => [c.candidateId, c]));
-  let topGlobal: ValidatedTrade[] = [];
-
-  if (rankResult && rankResult.picks.length > 0) {
-    for (const pick of rankResult.picks) {
-      const source = rankedById.get(pick.candidateId);
-      if (!source) continue;
-      topGlobal.push({
-        targetTeamId: source.partnerTeamId,
-        sendPlayerIds: source.sendPlayerIds,
-        receivePlayerIds: source.receivePlayerIds,
-        fit: {
-          forYou: pick.userReasoning
-            ? [pick.userReasoning]
-            : source.fitReasons.forYou,
-          forThem: pick.partnerReasoning
-            ? [pick.partnerReasoning]
-            : source.fitReasons.forThem,
-          userNeedsMet: source.userNeedsMet,
-          partnerNeedsMet: source.partnerNeedsMet,
-        },
-      });
-    }
-    console.log(
-      `[tradeFinder] phase2 ranker picked ${topGlobal.length} candidates`
-    );
-  }
-
-  // Phase 2 fallback — if the model picked nothing useful, use the top
-  // N from Phase 1 directly. We always have something as long as the
-  // enumerated pool is non-empty.
-  if (topGlobal.length === 0) {
-    console.log(
-      '[tradeFinder] phase2 produced 0 picks — falling back to top-by-score from phase1'
-    );
-    const fallbackCount = Math.max(maxRecommendations, 5);
-    topGlobal = rankablePool.slice(0, fallbackCount).map((c) => ({
-      targetTeamId: c.partnerTeamId,
-      sendPlayerIds: c.sendPlayerIds,
-      receivePlayerIds: c.receivePlayerIds,
-      fit: {
-        forYou: c.fitReasons.forYou,
-        forThem: c.fitReasons.forThem,
-        userNeedsMet: c.userNeedsMet,
-        partnerNeedsMet: c.partnerNeedsMet,
-      },
-    }));
-  }
-
-  if (topGlobal.length === 0) return [];
+  const topGlobal: ValidatedTrade[] = validated.slice(0, maxRecommendations);
 
   // 7. Pre-fetch enrichment (season stats, trend, news) for every
   //    player that appears in any surviving candidate. This matches
@@ -685,40 +549,22 @@ export async function findTradeRecommendations(
     )
   );
 
-  // 9. Post-process: REALISTIC-ACCEPTANCE fairness filter.
+  // 9. Realistic-acceptance filter.
   //
-  // Default mode (no user-provided filters): strict symmetric filter
-  // that killed "Jaxson Dart for Lamar Jackson" robberies.
-  //   A) Zero partner-favored tolerance
-  //   B) User grade must be B- or better
-  //   C) User-favored diff ≤ 15
-  //
-  // Opt-in mode (user specified required assets OR picks): the user
-  // is EXPLICITLY signaling "I want to move these specific assets to
-  // get an upgrade." In this mode the user is volunteering some
-  // premium, so partner-slightly-favored trades are legitimate and
-  // the user-favored cap can breathe because the pick-shaped delta
-  // often lands there. We still block frank robberies with a softer
-  // set of thresholds.
-  const userOptedIn = restrictUserAssets != null || hasUserPicks;
-
-  // Thresholds. Default mode is breathable enough to actually surface
-  // trades — the old "zero partner-favored tolerance, diff ≤ 15,
-  // B- minimum" combination was killing everything. The trusted
-  // analyzer regularly grades imperfect-but-acceptable trades in the
-  // partner-slightly-favored or user-favored-by-20 range, and we
-  // were dropping all of them silently.
-  const MAX_PARTNER_FAVORED_DIFF = userOptedIn ? 15 : 10;
-  const MAX_USER_FAVORED_DIFF = userOptedIn ? 30 : 25;
-  // Accept grades: C+ is "acceptable sidegrade", C is "breakeven."
-  // Both are legitimate trade outcomes — we just want to block D/F
-  // trades where the user is being openly robbed.
-  const ACCEPTABLE_USER_GRADES = userOptedIn
-    ? new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-'])
-    : new Set(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C']);
+  // Target flow is always opt-in: the user has explicitly picked a
+  // player they want to acquire and implicitly accepted that a
+  // realistic offer for a valuable player may run slightly in the
+  // partner's favor. The thresholds below block obvious robberies
+  // in either direction but leave breathing room for "reasonable
+  // upgrade premium" trades.
+  const MAX_PARTNER_FAVORED_DIFF = 15;
+  const MAX_USER_FAVORED_DIFF = 30;
+  const ACCEPTABLE_USER_GRADES = new Set([
+    'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-',
+  ]);
 
   console.log(
-    `[tradeFinder] gate4 mode=${userOptedIn ? 'opt-in' : 'default'} partnerMax=${MAX_PARTNER_FAVORED_DIFF} userMax=${MAX_USER_FAVORED_DIFF}`
+    `[tradeFinder] gate4 partnerMax=${MAX_PARTNER_FAVORED_DIFF} userMax=${MAX_USER_FAVORED_DIFF}`
   );
 
   const valid = results.filter((r): r is TradeRecommendation => r != null);
@@ -789,6 +635,56 @@ export async function findTradeRecommendations(
   );
 }
 
+// ── Validation ──────────────────────────────────────────────────────
+
+/**
+ * Validate a single constructed offer against the real roster state.
+ * Returns null if valid, or a short reason string if not (logged for
+ * debugging — never shown to the user).
+ *
+ * Checks:
+ *  1. partnerTeamId matches the target's actual owner.
+ *  2. All sent player ids are on the user's roster.
+ *  3. All received player ids are on the partner's roster.
+ *  4. The target player is in receivedPlayerIds.
+ *  5. If requiredAssets is set, at least one is in sentPlayerIds.
+ */
+function validateOffer(
+  offer: ConstructedOffer,
+  userTeamId: string,
+  expectedPartnerId: string,
+  userRosterPlayerIds: Set<string>,
+  partnerRosterPlayerIds: Set<string>,
+  targetPlayerId: string,
+  requiredAssets: Set<string> | null
+): string | null {
+  if (offer.partnerTeamId !== expectedPartnerId) {
+    return `partner team mismatch: got ${offer.partnerTeamId} expected ${expectedPartnerId}`;
+  }
+  if (userTeamId === expectedPartnerId) {
+    return 'partner is user team';
+  }
+  for (const id of offer.sentPlayerIds) {
+    if (!userRosterPlayerIds.has(id)) {
+      return `sent player ${id} not on user roster`;
+    }
+  }
+  for (const id of offer.receivedPlayerIds) {
+    if (!partnerRosterPlayerIds.has(id)) {
+      return `received player ${id} not on partner roster`;
+    }
+  }
+  if (!offer.receivedPlayerIds.includes(targetPlayerId)) {
+    return `received players do not include the target ${targetPlayerId}`;
+  }
+  if (requiredAssets && requiredAssets.size > 0) {
+    const usesRequired = offer.sentPlayerIds.some((id) => requiredAssets.has(id));
+    if (!usesRequired) {
+      return 'requiredUserPlayerIds set but offer uses none of them';
+    }
+  }
+  return null;
+}
 
 interface AnalyzeArgs {
   anthropicKey: string;
