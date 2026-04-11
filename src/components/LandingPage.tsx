@@ -292,7 +292,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                 AI Trade Analyzer
               </div>
               <div className="tab-pills">
-                {['Analyzer', 'Trade Finder', 'History'].map(t => (
+                {['Analyzer', 'History'].map(t => (
                   <button key={t} className={`tab-pill${activeTab === t ? ' on' : ''}`} onClick={() => setActiveTab(t)}>{t}</button>
                 ))}
               </div>
@@ -354,61 +354,6 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                       }{' '}Click players to simulate different trade packages.
                     </div>
                   </div>
-                </>
-              )}
-
-              {activeTab === 'Trade Finder' && (
-                <>
-                  <input
-                    className="finder-search"
-                    placeholder="Pick a player you want to acquire — e.g. CeeDee Lamb"
-                    readOnly
-                  />
-                  <div className="finder-target">
-                    <span className="finder-target-label">Target</span>
-                    <span className={`pos WR`}>WR</span>
-                    <span className="finder-target-name">CeeDee Lamb</span>
-                    <span className="finder-target-team">Ball Whackers</span>
-                  </div>
-                  <div className="finder-row">
-                    <div className="finder-players">
-                      <span className={`pos RB`}>RB</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Javonte Williams</span>
-                      <span className="finder-plus">+</span>
-                      <span className="finder-pick">2026 1st</span>
-                      <span className="finder-arrow">→</span>
-                      <span className={`pos WR`}>WR</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
-                    </div>
-                    <span className="finder-tag offer">Offer</span>
-                    <span className="finder-grade" style={{ color: 'var(--green)' }}>A</span>
-                  </div>
-                  <div className="finder-row">
-                    <div className="finder-players">
-                      <span className={`pos WR`}>WR</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>DK Metcalf</span>
-                      <span className="finder-plus">+</span>
-                      <span className={`pos RB`}>RB</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Tony Pollard</span>
-                      <span className="finder-arrow">→</span>
-                      <span className={`pos WR`}>WR</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
-                    </div>
-                    <span className="finder-tag offer">Offer</span>
-                    <span className="finder-grade" style={{ color: 'var(--blue)' }}>B+</span>
-                  </div>
-                  <div className="finder-row">
-                    <div className="finder-players">
-                      <span className={`pos RB`}>RB</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Saquon Barkley</span>
-                      <span className="finder-arrow">→</span>
-                      <span className={`pos WR`}>WR</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>CeeDee Lamb</span>
-                    </div>
-                    <span className="finder-tag offer">Offer</span>
-                    <span className="finder-grade" style={{ color: 'var(--blue)' }}>B</span>
-                  </div>
-                  <div className="finder-hint">Pick a player → AI builds 2-3 realistic offers from your roster.</div>
                 </>
               )}
 
@@ -568,7 +513,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                 <li>Redraft, Dynasty, and Keeper</li>
                 <li>AI counter-offer suggestions</li>
                 <li>Playoff schedule comparisons</li>
-                <li>Trade Finder &amp; Trade History</li>
+                <li>Trade History with AI grades</li>
                 <li>3-day free trial</li>
               </ul>
               <button className="price-btn primary" onClick={nav('Pricing')}>Start Free Trial</button>
