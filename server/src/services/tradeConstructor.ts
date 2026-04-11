@@ -186,7 +186,11 @@ ${PICK_VALUE_REFERENCE}
 - Every received player must be on the named PARTNER team's roster.
 - Packages can include 1-5 players on either side. Use as many as
   needed to balance value. DO NOT default to 1-for-1.
-- Each player line in the snapshot includes an id=... tag (e.g.
+- Each team header includes an id=... tag (e.g.
+  "=== Team Name [3-2, #4] id=abc_123 ==="). Use ONLY the raw
+  ID value (e.g. "abc_123") as partnerTeamId. NEVER use the
+  team name as the team ID.
+- Each player line also includes an id=... tag (e.g.
   "Patrick Mahomes [180/elite/starter] id=4046"). Use ONLY the raw
   ID value (e.g. "4046") in sentPlayerIds and receivedPlayerIds.
   NEVER invent IDs or use player names as IDs.
