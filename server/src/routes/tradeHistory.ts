@@ -595,11 +595,12 @@ tradeHistoryRoutes.get('/record-impact/:leagueId', authMiddleware, async (c) => 
   // Multi-season mode: list distinct seasons from this team's executed
   // trades and compute impact for each.
   const seasonYears = new Set<number>();
+  const allCallerTeamIds = [userTeam.id, ...extraTeamIds];
   const userTradeItems = await db.query.tradeItems.findMany({
-    where: eq(schema.tradeItems.fromTeamId, userTeam.id),
+    where: inArray(schema.tradeItems.fromTeamId, allCallerTeamIds),
   });
   const receivedItems = await db.query.tradeItems.findMany({
-    where: eq(schema.tradeItems.toTeamId, userTeam.id),
+    where: inArray(schema.tradeItems.toTeamId, allCallerTeamIds),
   });
   const allTradeIdSet = new Set<string>([
     ...userTradeItems.map((i) => i.tradeId),
