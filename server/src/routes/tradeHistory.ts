@@ -7,6 +7,7 @@ import type { Env, Variables } from '../index';
 import { computeOutcome, computeRecordImpact } from '../services/tradeOutcomes';
 import { ingestSleeperTrades } from '../services/tradeIngest';
 import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
+import { buildTradeChains, computeChainSummary } from '../services/tradeChains';
 
 /**
  * Resolution result for the caller's team in a league. Includes the
@@ -1143,6 +1144,164 @@ Provide your JSON analysis. Weight the ACTUAL OUTCOME block more heavily than th
     console.error('Retro grade error:', err);
     return c.json({ error: 'Unexpected error during grading.' }, 500);
   }
+});
+
+// ── GET /trade-trees/:leagueId — Trade Chain / Trade Tree view ──────
+//
+// Traces the lineage of players through successive trades to build
+// branching "trade trees". Each root is a trade where a player first
+// entered the user's roster; children are subsequent trades of those
+// players.
+
+tradeHistoryRoutes.get('/trade-trees/:leagueId', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const leagueId = c.req.param('leagueId');
+  const seasonParam = c.req.query('season');
+  const seasonFilter = seasonParam ? parseInt(seasonParam, 10) : null;
+
+  const membership = await db.query.leagueMembers.findFirst({
+    where: and(
+      eq(schema.leagueMembers.userId, user.id),
+      eq(schema.leagueMembers.leagueId, leagueId)
+    ),
+  });
+  if (!membership) {
+    return c.json({ error: 'Not a member of this league' }, 403);
+  }
+
+  const leagueTeams = await db.query.teams.findMany({
+    where: eq(schema.teams.leagueId, leagueId),
+  });
+  const resolution = resolveCallerTeam(leagueTeams, membership, user.id);
+  const callerTeam = resolution.team;
+  if (!callerTeam) {
+    return c.json({ error: 'No team found for user in this league' }, 404);
+  }
+
+  // Fetch all executed trades for the league
+  const allTrades = await db.query.trades.findMany({
+    where: and(
+      eq(schema.trades.leagueId, leagueId),
+      eq(schema.trades.status, 'executed')
+    ),
+    orderBy: [desc(schema.trades.executedAt)],
+  });
+
+  if (allTrades.length === 0) {
+    return c.json({
+      trees: [],
+      summary: { totalChains: 0, longestChainDepth: 0, bestChainDifferential: 0, worstChainDifferential: 0, totalPointsGained: 0 },
+      callerTeamId: callerTeam.id,
+      callerTeamName: callerTeam.name,
+    });
+  }
+
+  // Fetch all trade items (chunked for dynasty leagues)
+  const allTradeIds = allTrades.map((t) => t.id);
+  const allItems = await chunkedInArrayFetch(
+    allTradeIds,
+    DEFAULT_ID_CHUNK,
+    (chunk) =>
+      db.query.tradeItems.findMany({
+        where: inArray(schema.tradeItems.tradeId, chunk),
+      })
+  );
+
+  // Filter trades by season if requested
+  const [leagueRow] = await Promise.all([
+    db.query.leagues.findFirst({
+      where: eq(schema.leagues.id, leagueId),
+      columns: { seasonYear: true },
+    }),
+  ]);
+
+  const trades = seasonFilter != null
+    ? allTrades.filter(
+        (t) =>
+          t.seasonYear === seasonFilter ||
+          (t.seasonYear == null && seasonFilter === leagueRow?.seasonYear)
+      )
+    : allTrades;
+
+  // Collect player IDs for stats + name lookup
+  const playerIds = new Set<string>();
+  for (const item of allItems) {
+    if (item.playerId) playerIds.add(item.playerId);
+  }
+
+  // Fetch weekly stats for all traded players across all relevant seasons
+  const seasonYears = new Set<number>();
+  for (const t of trades) {
+    if (t.seasonYear != null) seasonYears.add(t.seasonYear);
+  }
+  if (leagueRow?.seasonYear != null) seasonYears.add(leagueRow.seasonYear);
+
+  const [playerRows, weeklyStats] = await Promise.all([
+    playerIds.size > 0
+      ? chunkedInArrayFetch(
+          Array.from(playerIds),
+          DEFAULT_ID_CHUNK,
+          (chunk) =>
+            db.query.nflPlayers.findMany({
+              where: inArray(schema.nflPlayers.id, chunk),
+              columns: { id: true, name: true, position: true, team: true },
+            })
+        )
+      : Promise.resolve([]),
+    playerIds.size > 0 && seasonYears.size > 0
+      ? chunkedInArrayFetch(
+          Array.from(playerIds),
+          DEFAULT_ID_CHUNK,
+          (chunk) =>
+            db.query.playerWeeklyStats.findMany({
+              where: and(
+                inArray(schema.playerWeeklyStats.playerId, chunk),
+                inArray(
+                  schema.playerWeeklyStats.seasonYear,
+                  Array.from(seasonYears)
+                )
+              ),
+            })
+        )
+      : Promise.resolve([]),
+  ]);
+
+  // Build lookup maps
+  const playerInfoById = new Map(
+    playerRows.map((p) => [p.id, { name: p.name, position: p.position, team: p.team || '' }])
+  );
+
+  const pointsByPlayerWeek = new Map<string, number>();
+  const lastWeekBySeason = new Map<number, number>();
+  for (const s of weeklyStats) {
+    pointsByPlayerWeek.set(
+      `${s.playerId}_${s.seasonYear}_${s.week}`,
+      Number(s.fantasyPointsPPR ?? 0)
+    );
+    const current = lastWeekBySeason.get(s.seasonYear) ?? 0;
+    if (s.week > current) lastWeekBySeason.set(s.seasonYear, s.week);
+  }
+
+  const trees = buildTradeChains(
+    resolution.teamIds,
+    trades,
+    allItems,
+    pointsByPlayerWeek,
+    playerInfoById,
+    lastWeekBySeason
+  );
+
+  const summary = computeChainSummary(trees);
+
+  return c.json({
+    trees,
+    summary,
+    callerTeamId: callerTeam.id,
+    callerTeamName: callerTeam.name,
+  });
 });
 
 export { tradeHistoryRoutes };
