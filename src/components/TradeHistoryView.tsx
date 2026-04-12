@@ -121,6 +121,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
   const [impacts, setImpacts] = useState<RecordImpact[]>([]);
   const [seasons, setSeasons] = useState<number[]>([]);
   const [callerTeamName, setCallerTeamName] = useState<string | null>(null);
+  const [callerTeamId, setCallerTeamId] = useState<string | null>(null);
   const [callerWarning, setCallerWarning] = useState<string | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -151,6 +152,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         setImpacts([]);
         setSeasons([]);
         setCallerTeamName(null);
+        setCallerTeamId(null);
         setCallerWarning(null);
         return;
       }
@@ -162,6 +164,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
           api.get<{
             trades: HistoricalTrade[];
             seasons: number[];
+            callerTeamId: string;
             callerTeamName: string;
             callerResolutionStrategy?: string;
             callerResolutionWarning?: string | null;
@@ -180,6 +183,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         // Defensive sort: newest season first, regardless of backend order.
         setSeasons([...historyRes.seasons].sort((a, b) => b - a));
         setCallerTeamName(historyRes.callerTeamName);
+        setCallerTeamId(historyRes.callerTeamId ?? null);
         setImpacts(impactRes.impacts);
       } catch (err) {
         if (isCancelled?.()) return;
@@ -611,16 +615,18 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                   isDarkMode ? 'text-slate-400' : 'text-slate-500'
                 }`}
               >
-                Net points:{' '}
+                Net points from trading:{' '}
                 <span
                   className={
-                    im.totalPointDifferential >= 0
+                    im.totalPointDifferential < 0
                       ? 'text-emerald-500 font-semibold'
-                      : 'text-red-500 font-semibold'
+                      : im.totalPointDifferential > 0
+                      ? 'text-red-500 font-semibold'
+                      : isDarkMode ? 'text-slate-300 font-semibold' : 'text-slate-600 font-semibold'
                   }
                 >
-                  {im.totalPointDifferential >= 0 ? '+' : ''}
-                  {im.totalPointDifferential}
+                  {im.totalPointDifferential <= 0 ? '+' : ''}
+                  {Math.round(-im.totalPointDifferential * 10) / 10}
                 </span>
                 <span className="ml-2 opacity-70">
                   — points alone don't tell the whole story. Open a trade
@@ -647,7 +653,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                         <span className="font-semibold">Week {fw.week}</span>
                         <span
                           className={
-                            fw.hypotheticalResult === 'W'
+                            fw.actualResult === 'W' || (fw.actualResult === 'T' && fw.hypotheticalResult === 'L')
                               ? 'text-emerald-500'
                               : 'text-red-500'
                           }
@@ -699,6 +705,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
             const dateStr = t.executedAt
               ? new Date(t.executedAt).toLocaleDateString()
               : 'Unknown date';
+            const callerOutcome = t.outcome?.sides.find(s => s.teamId === callerTeamId) ?? null;
             return (
               <div
                 key={t.id}
@@ -743,6 +750,23 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                           }`}
                         >
                           AI: {t.aiGrade}
+                        </span>
+                      )}
+                      {callerOutcome && (
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            callerOutcome.differential > 0
+                              ? isDarkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-50 text-emerald-700'
+                              : callerOutcome.differential < 0
+                              ? isDarkMode ? 'bg-red-500/20 text-red-300' : 'bg-red-50 text-red-700'
+                              : isDarkMode ? 'bg-slate-500/20 text-slate-300' : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {callerOutcome.differential > 0
+                            ? `+${callerOutcome.differential} pts`
+                            : callerOutcome.differential < 0
+                            ? `${callerOutcome.differential} pts`
+                            : 'Even'}
                         </span>
                       )}
                     </div>
@@ -806,6 +830,44 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                       isDarkMode ? 'border-slate-800' : 'border-slate-200'
                     }`}
                   >
+                    {/* Your trade result summary */}
+                    {callerOutcome && (
+                      <div className={`mt-4 px-3 py-2.5 rounded-lg flex items-center gap-2.5 ${
+                        callerOutcome.differential > 0
+                          ? isDarkMode ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-50 border border-emerald-200'
+                          : callerOutcome.differential < 0
+                          ? isDarkMode ? 'bg-red-500/10 border border-red-500/20' : 'bg-red-50 border border-red-200'
+                          : isDarkMode ? 'bg-slate-800/50 border border-slate-700' : 'bg-slate-50 border border-slate-200'
+                      }`}>
+                        {callerOutcome.differential > 0 ? (
+                          <TrendingUp className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                        ) : callerOutcome.differential < 0 ? (
+                          <TrendingDown className="w-4 h-4 text-red-500 flex-shrink-0" />
+                        ) : (
+                          <ArrowRightLeft className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+                        )}
+                        <div>
+                          <p className={`text-sm font-semibold ${
+                            callerOutcome.differential > 0
+                              ? isDarkMode ? 'text-emerald-400' : 'text-emerald-700'
+                              : callerOutcome.differential < 0
+                              ? isDarkMode ? 'text-red-400' : 'text-red-700'
+                              : isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                          }`}>
+                            {callerOutcome.differential > 0
+                              ? `You profited +${callerOutcome.differential} pts`
+                              : callerOutcome.differential < 0
+                              ? `You lost ${Math.abs(callerOutcome.differential)} pts`
+                              : 'Even trade'}
+                          </p>
+                          <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                            Received {callerOutcome.receivedTotal} pts — Sent {callerOutcome.sentTotal} pts
+                            {t.weekExecuted ? ` since Week ${t.weekExecuted + 1}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Detailed weekly outcomes */}
                     {t.outcome && (
                       <div className="pt-4 space-y-3">
