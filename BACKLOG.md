@@ -193,6 +193,7 @@
 - [x] **Audit MatchupView** - Fixed 22 issues
 - [x] **Audit SettingsView + FeedbackWidget** - Fixed 33 issues
 - [x] **Audit PlayoffPredictorView** - Fixed 18 issues (ties in records, findIndex guards, dynamic playoff weeks, memoization, tied scores, ARIA tabs, aria-labels, error display, unused vars)
+- [x] **Audit TradeHistoryView** - Fixed 11 issues (fetchAll race condition w/ cancellation token, handleIngest/handleGrade stale-league races, double fetch on league change, ingestNotice/error persistence across league switches, defensive seasons sort, dead callerTeamId field, dead aiAnalysis optional fields, label htmlFor, aria-pressed on season tabs, aria-expanded + aria-label on trade row expand button, clearing expanded set on league change)
 
 **Views — Not yet audited:**
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
