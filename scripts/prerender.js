@@ -69,12 +69,12 @@ const ROUTES = [
   '/game-slate',
   '/trends',
   '/pricing',
-  '/login',
   '/articles',
   '/playoff-predictor',
-  '/draft-rankings',
-  '/league-analyzer',
-  '/research',
+  '/privacy',
+  '/terms',
+  // login, register: utility screens (noindex)
+  // draft-rankings, league-analyzer, research: Coming Soon placeholders (noindex)
   // Individual articles
   '/articles/how-vegas-lines-predict-fantasy-football-points',
   '/articles/fantasy-football-waiver-wire-strategy-guide',
