@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const ADSENSE_SRC = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6355054767351119';
 
@@ -24,6 +24,18 @@ function loadAdSenseScript(): Promise<void> {
   });
 }
 
+/**
+ * Minimum amount of visible text (in characters) on the page for ads to render.
+ * Prevents ads from showing on thin/empty screens (AdSense "low value content" policy).
+ */
+const MIN_PAGE_TEXT_LENGTH = 500;
+
+function pageHasEnoughContent(): boolean {
+  const main = document.querySelector('main');
+  const textContent = (main || document.body).innerText || '';
+  return textContent.length >= MIN_PAGE_TEXT_LENGTH;
+}
+
 interface AdUnitProps {
   slot: string;
   format?: 'auto' | 'rectangle' | 'horizontal' | 'vertical';
@@ -33,14 +45,23 @@ interface AdUnitProps {
 
 export function AdUnit({ slot, format = 'auto', className = '', isDarkMode }: AdUnitProps) {
   const adRef = useRef<HTMLDivElement>(null);
+  const [hasContent, setHasContent] = useState(false);
 
   useEffect(() => {
-    loadAdSenseScript().then(() => {
-      try {
-        ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
-      } catch {}
-    });
+    // Defer the content check so the page has time to render
+    const timer = setTimeout(() => {
+      if (!pageHasEnoughContent()) return;
+      setHasContent(true);
+      loadAdSenseScript().then(() => {
+        try {
+          ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
+        } catch {}
+      });
+    }, 100);
+    return () => clearTimeout(timer);
   }, []);
+
+  if (!hasContent) return null;
 
   return (
     <div className={`ad-unit ${className}`} ref={adRef}>
