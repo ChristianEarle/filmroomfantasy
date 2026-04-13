@@ -9,25 +9,44 @@ import type { Game } from './types/game';
 import { GameDetailModal } from './components/GameDetailModal';
 import { SEO, getSEOPropsForView } from './components/SEO';
 
-// Lazy load views for better initial bundle size
-const TrendsView = lazy(() => import('./components/TrendsView').then(m => ({ default: m.TrendsView })));
-const PlayoffPredictorView = lazy(() => import('./components/PlayoffPredictorView').then(m => ({ default: m.PlayoffPredictorView })));
-const ResearchView = lazy(() => import('./components/ResearchView').then(m => ({ default: m.ResearchView })));
-const TeamView = lazy(() => import('./components/TeamView').then(m => ({ default: m.TeamView })));
-const MatchupView = lazy(() => import('./components/MatchupView').then(m => ({ default: m.MatchupView })));
-const WaiversView = lazy(() => import('./components/WaiversView').then(m => ({ default: m.WaiversView })));
-const HomeView = lazy(() => import('./components/HomeView').then(m => ({ default: m.HomeView })));
-const GameSlateView = lazy(() => import('./components/GameSlateView').then(m => ({ default: m.GameSlateView })));
-const TradeAnalyzerShell = lazy(() => import('./components/TradeAnalyzerShell').then(m => ({ default: m.TradeAnalyzerShell })));
-const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
-const PricingView = lazy(() => import('./components/PricingView').then(m => ({ default: m.PricingView })));
-const AdminView = lazy(() => import('./components/AdminView').then(m => ({ default: m.AdminView })));
-const AllPlayersView = lazy(() => import('./components/AllPlayersView').then(m => ({ default: m.AllPlayersView })));
-const ProfileView = lazy(() => import('./components/ProfileView').then(m => ({ default: m.ProfileView })));
-const ArticlesView = lazy(() => import('./components/ArticlesView').then(m => ({ default: m.ArticlesView })));
-const ArticleDetailView = lazy(() => import('./components/ArticleDetailView').then(m => ({ default: m.ArticleDetailView })));
-const PrivacyPolicyView = lazy(() => import('./components/PrivacyPolicyView').then(m => ({ default: m.PrivacyPolicyView })));
-const TermsOfServiceView = lazy(() => import('./components/TermsOfServiceView').then(m => ({ default: m.TermsOfServiceView })));
+// Lazy load with auto-reload on stale chunks after deploy.
+// When a deploy changes chunk hashes, users with cached HTML get 404s on old
+// chunk filenames. This wrapper reloads the page once to fetch fresh HTML.
+function lazyWithReload<T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T }>
+) {
+  return lazy(() =>
+    factory().catch((err) => {
+      const hasReloaded = sessionStorage.getItem('chunk_reload');
+      if (!hasReloaded) {
+        sessionStorage.setItem('chunk_reload', '1');
+        window.location.reload();
+      }
+      throw err;
+    })
+  );
+}
+// Clear the reload flag on successful page load
+if (sessionStorage.getItem('chunk_reload')) sessionStorage.removeItem('chunk_reload');
+
+const TrendsView = lazyWithReload(() => import('./components/TrendsView').then(m => ({ default: m.TrendsView })));
+const PlayoffPredictorView = lazyWithReload(() => import('./components/PlayoffPredictorView').then(m => ({ default: m.PlayoffPredictorView })));
+const ResearchView = lazyWithReload(() => import('./components/ResearchView').then(m => ({ default: m.ResearchView })));
+const TeamView = lazyWithReload(() => import('./components/TeamView').then(m => ({ default: m.TeamView })));
+const MatchupView = lazyWithReload(() => import('./components/MatchupView').then(m => ({ default: m.MatchupView })));
+const WaiversView = lazyWithReload(() => import('./components/WaiversView').then(m => ({ default: m.WaiversView })));
+const HomeView = lazyWithReload(() => import('./components/HomeView').then(m => ({ default: m.HomeView })));
+const GameSlateView = lazyWithReload(() => import('./components/GameSlateView').then(m => ({ default: m.GameSlateView })));
+const TradeAnalyzerShell = lazyWithReload(() => import('./components/TradeAnalyzerShell').then(m => ({ default: m.TradeAnalyzerShell })));
+const SettingsView = lazyWithReload(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
+const PricingView = lazyWithReload(() => import('./components/PricingView').then(m => ({ default: m.PricingView })));
+const AdminView = lazyWithReload(() => import('./components/AdminView').then(m => ({ default: m.AdminView })));
+const AllPlayersView = lazyWithReload(() => import('./components/AllPlayersView').then(m => ({ default: m.AllPlayersView })));
+const ProfileView = lazyWithReload(() => import('./components/ProfileView').then(m => ({ default: m.ProfileView })));
+const ArticlesView = lazyWithReload(() => import('./components/ArticlesView').then(m => ({ default: m.ArticlesView })));
+const ArticleDetailView = lazyWithReload(() => import('./components/ArticleDetailView').then(m => ({ default: m.ArticleDetailView })));
+const PrivacyPolicyView = lazyWithReload(() => import('./components/PrivacyPolicyView').then(m => ({ default: m.PrivacyPolicyView })));
+const TermsOfServiceView = lazyWithReload(() => import('./components/TermsOfServiceView').then(m => ({ default: m.TermsOfServiceView })));
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
 import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswordView';
