@@ -292,7 +292,12 @@ function DraftPickInput({
   isDarkMode: boolean;
   onAdd: (asset: TradeAsset) => void;
 }) {
-  const [year, setYear] = useState('2025');
+  // NFL Draft is in late April — if we're past May, the next tradeable draft is next year
+  const now = new Date();
+  const nextDraftYear = now.getMonth() >= 4 ? now.getFullYear() + 1 : now.getFullYear();
+  const pickYears = [nextDraftYear, nextDraftYear + 1, nextDraftYear + 2, nextDraftYear + 3];
+
+  const [year, setYear] = useState(String(nextDraftYear));
   const [round, setRound] = useState('1');
 
   const handleAdd = () => {
@@ -314,7 +319,7 @@ function DraftPickInput({
   return (
     <div className="flex items-center gap-2">
       <select value={year} onChange={(e) => setYear(e.target.value)} className={selectClasses}>
-        {[2025, 2026, 2027, 2028].map((y) => (
+        {pickYears.map((y) => (
           <option key={y} value={y}>
             {y}
           </option>
