@@ -15,7 +15,7 @@
  * let the AI reason about it.
  */
 
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, gte } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
@@ -121,6 +121,15 @@ export interface PlayerFacts {
       impliedTotal: number | null;
     }>;
   };
+
+  /** Recent news items (last 7 days, up to 5 per player) */
+  recentNews: Array<{
+    headline: string;
+    source: string | null;
+    impactLevel: string | null; // 'high' | 'medium' | 'low'
+    aiSummary: string | null;
+    publishedAt: string; // ISO date
+  }> | null;
 }
 
 export interface UserContext {
@@ -242,6 +251,25 @@ export async function buildTradeContext({
     const arr = statsByPlayer.get(s.playerId) || [];
     arr.push(s);
     statsByPlayer.set(s.playerId, arr);
+  }
+
+  // 2b. Fetch recent news for these players (last 7 days, chunked)
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recentNewsRows = await chunkedInArrayFetch(playerIds, ID_CHUNK, (chunk) =>
+    db.query.playerNews.findMany({
+      where: and(
+        inArray(schema.playerNews.playerId, chunk),
+        gte(schema.playerNews.publishedAt, sevenDaysAgo)
+      ),
+      orderBy: [desc(schema.playerNews.publishedAt)],
+    })
+  );
+
+  const newsByPlayer = new Map<string, typeof recentNewsRows>();
+  for (const n of recentNewsRows) {
+    const arr = newsByPlayer.get(n.playerId) || [];
+    arr.push(n);
+    newsByPlayer.set(n.playerId, arr);
   }
 
   // 3. Fetch next-week projection per player (matching scoring format, chunked)
@@ -550,6 +578,19 @@ export async function buildTradeContext({
       projection,
       marketSignal,
       schedule: { nextFour, playoffWeeks },
+      recentNews: (() => {
+        const news = newsByPlayer.get(p.id);
+        if (!news || news.length === 0) return null;
+        return news.slice(0, 5).map((n) => ({
+          headline: n.headline,
+          source: n.source,
+          impactLevel: n.impactLevel,
+          aiSummary: n.aiSummary,
+          publishedAt: n.publishedAt instanceof Date
+            ? n.publishedAt.toISOString()
+            : new Date(n.publishedAt as any).toISOString(),
+        }));
+      })(),
     };
   });
 
@@ -802,6 +843,18 @@ export function formatTradeContextForPrompt(ctx: TradeContext): string {
         )
         .join(', ');
       lines.push(`  Playoffs (W15-17): ${sched}`);
+    }
+    if (p.recentNews && p.recentNews.length > 0) {
+      lines.push(`  Recent News (last 7 days):`);
+      for (const n of p.recentNews) {
+        const date = n.publishedAt.slice(0, 10); // YYYY-MM-DD
+        const impact = n.impactLevel ? ` [${n.impactLevel.toUpperCase()}]` : '';
+        const source = n.source ? ` (${n.source})` : '';
+        const summary = n.aiSummary || n.headline;
+        lines.push(`    - ${date}${impact}${source}: ${summary}`);
+      }
+    } else {
+      lines.push('  Recent News: NONE');
     }
   }
 

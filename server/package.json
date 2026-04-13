@@ -19,6 +19,8 @@
     "sync:games": "node scripts/sync-games.mjs",
     "sync:news": "node scripts/sync-news.mjs",
     "sync:twitter": "node scripts/sync-twitter-news.mjs",
+    "sync:espn": "node scripts/sync-espn-news.mjs",
+    "sync:rotowire": "node scripts/sync-rotowire-news.mjs",
     "backfill": "node scripts/backfill-season.mjs",
     "db:stats-sample": "node scripts/print-stats-sample.mjs"
   },

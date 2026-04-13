@@ -1,6 +1,6 @@
 /**
  * AI service for filtering and summarizing player news.
- * Uses OpenAI API to determine relevance of tweets/articles to specific players.
+ * Uses Claude API to determine relevance of tweets/articles to specific players.
  */
 
 export interface RelevanceResult {
@@ -13,7 +13,7 @@ export interface RelevanceResult {
 /**
  * Check which of the mentioned players are actually relevant to this news item,
  * and get a brief fantasy-relevant summary.
- * Returns null if OPENAI_API_KEY is not configured.
+ * Returns null if ANTHROPIC_API_KEY is not configured.
  */
 export async function checkNewsRelevance(
   text: string,
@@ -23,47 +23,64 @@ export async function checkNewsRelevance(
   if (!apiKey || !apiKey.trim()) return null;
   if (playerNames.length === 0) return null;
 
-  const prompt = `You are a fantasy football assistant. Given this sports news or tweet, determine which of the listed NFL players this news is RELEVANT to for fantasy purposes.
+  const prompt = `You are a fantasy football news analyst. Given a sports news article or tweet, determine which of the listed NFL players this news is DIRECTLY RELEVANT to for fantasy football purposes.
 
-RELEVANT means: injury/status update, performance, role change, trade, contract, lineup decision, snap count, targets, or other news that directly affects that player's fantasy value.
-NOT RELEVANT: player is only mentioned in passing (e.g., "Team A beat Team B" where the player is just on the losing side), or the news is about someone else entirely.
+A player is RELEVANT only if the news:
+- Is specifically ABOUT that player (injury update, status change, suspension, trade, signing)
+- Directly affects that player's role, usage, or opportunity (e.g. the starter ahead of them got injured)
+- Contains a performance detail specific to that player (snap count, target share, usage change)
+- Involves a coaching or scheme decision that specifically impacts that player
+
+A player is NOT RELEVANT if:
+- They are only mentioned in passing or for context (e.g. "Team A, led by [Player], beat Team B")
+- The news is about their team generally but doesn't affect their individual value
+- Their name appears only because they played in the same game being discussed
+- They are mentioned as a comparison or reference point for another player's news
+
+Be strict — only mark a player as relevant if the news would change how a fantasy manager values them.
 
 News/tweet:
 """
 ${text.slice(0, 600)}
 """
 
-Players mentioned (check each for relevance): ${playerNames.join(', ')}
+Players to evaluate (check EACH one): ${playerNames.join(', ')}
 
 Respond with ONLY valid JSON, no other text:
-{"relevantPlayerNames": ["Name1", "Name2"], "summary": "One sentence fantasy-relevant summary of this news", "playerSummaries": {"Name1": "Summary specific to Name1", "Name2": "Summary specific to Name2"}}
+{"relevantPlayerNames": ["Name1", "Name2"], "summary": "One sentence fantasy-relevant summary of this news", "playerSummaries": {"name1": "Summary specific to Name1", "name2": "Summary specific to Name2"}}
 
-Rules: relevantPlayerNames must be a subset of the listed players. summary must be 1-2 sentences as an overall summary. playerSummaries must have a key for EACH relevant player with a 1-sentence summary explaining what this news means specifically for that player's fantasy value. If no players are relevant, use empty array [] and empty object {}.`;
+Rules:
+- relevantPlayerNames must be a subset of the listed players. Use exact names as provided.
+- summary: 1-2 sentence overall summary of the fantasy impact.
+- playerSummaries: keys are LOWERCASE player names, each with a 1-sentence summary explaining what this news means for that specific player's fantasy value.
+- If no players are truly relevant, return {"relevantPlayerNames": [], "summary": "", "playerSummaries": {}}`;
 
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 200,
-        temperature: 0.2,
       }),
       signal: AbortSignal.timeout(10000),
     });
 
     if (!res.ok) {
       const err = await res.text();
-      console.error('OpenAI API error:', res.status, err);
+      console.error('Claude API error:', res.status, err);
       return null;
     }
 
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content?.trim();
+    const data = (await res.json()) as {
+      content?: Array<{ type: string; text?: string }>;
+    };
+    const content = data.content?.find((c) => c.type === 'text')?.text?.trim();
     if (!content) return null;
 
     // Parse JSON (handle potential markdown code block)
