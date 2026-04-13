@@ -714,151 +714,151 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
               ? (callerOutcome.lineupDifferential ?? callerOutcome.differential)
               : 0;
             const hasLineupData = callerOutcome?.lineupDifferential != null;
+
+            // Derive what the caller sent and received from the trade sides
+            const callerSide = t.sides.find(s => s.teamId === callerTeamId);
+            const otherSides = t.sides.filter(s => s.teamId !== callerTeamId);
+            const youSent = callerSide?.sent || [];
+            const youGot = otherSides.flatMap(s => s.sent);
+
+            // Win / Loss / Even label
+            const verdict = callerDiff > 0 ? 'W' : callerDiff < 0 ? 'L' : 'E';
+            const borderColor = callerOutcome
+              ? callerDiff > 0
+                ? isDarkMode ? 'border-l-emerald-500' : 'border-l-emerald-500'
+                : callerDiff < 0
+                ? isDarkMode ? 'border-l-red-500' : 'border-l-red-500'
+                : isDarkMode ? 'border-l-slate-600' : 'border-l-slate-300'
+              : isDarkMode ? 'border-l-slate-700' : 'border-l-slate-200';
+
             return (
               <div
                 key={t.id}
-                className={`rounded-xl border overflow-hidden ${
+                className={`rounded-xl border border-l-4 overflow-hidden ${borderColor} ${
                   isDarkMode
                     ? 'bg-slate-900/50 border-slate-700'
                     : 'bg-white border-slate-200'
                 }`}
               >
+                {/* ── Collapsed header ── */}
                 <button
                   type="button"
                   onClick={() => toggleExpand(t.id)}
                   aria-expanded={isOpen}
-                  aria-label={`Trade from ${dateStr}${
-                    t.weekExecuted ? `, week ${t.weekExecuted}` : ''
-                  }. ${isOpen ? 'Collapse' : 'Expand'} details.`}
-                  className={`w-full flex items-start gap-3 p-4 text-left ${
+                  aria-label={`Trade from ${dateStr}. ${isOpen ? 'Collapse' : 'Expand'} details.`}
+                  className={`w-full flex items-center gap-3 p-4 text-left transition-colors ${
                     isDarkMode ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50'
                   }`}
                 >
-                  <ArrowRightLeft
-                    className={`w-4 h-4 mt-1 flex-shrink-0 ${
-                      isDarkMode ? 'text-blue-400' : 'text-blue-600'
-                    }`}
-                  />
+                  {/* Win/Loss badge */}
+                  {callerOutcome ? (
+                    <div className={`flex-shrink-0 w-12 h-12 rounded-lg flex flex-col items-center justify-center ${
+                      callerDiff > 0
+                        ? isDarkMode ? 'bg-emerald-500/15' : 'bg-emerald-50'
+                        : callerDiff < 0
+                        ? isDarkMode ? 'bg-red-500/15' : 'bg-red-50'
+                        : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
+                    }`}>
+                      <span className={`text-base font-black leading-none ${
+                        callerDiff > 0
+                          ? 'text-emerald-500'
+                          : callerDiff < 0
+                          ? 'text-red-500'
+                          : isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                      }`}>
+                        {verdict}
+                      </span>
+                      <span className={`text-[9px] font-bold leading-tight mt-0.5 ${
+                        callerDiff > 0
+                          ? 'text-emerald-500'
+                          : callerDiff < 0
+                          ? 'text-red-500'
+                          : isDarkMode ? 'text-slate-500' : 'text-slate-400'
+                      }`}>
+                        {callerDiff > 0 ? '+' : ''}{callerDiff}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className={`flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center ${
+                      isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
+                    }`}>
+                      <ArrowRightLeft className={`w-5 h-5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+                    </div>
+                  )}
+
+                  {/* Trade summary */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className={`text-xs font-medium ${
-                          isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                        }`}
-                      >
-                        {dateStr}
-                        {t.weekExecuted ? ` • Week ${t.weekExecuted}` : ''}
+                    {/* "You gave X for Y" */}
+                    <p className={`text-sm leading-snug ${
+                      isDarkMode ? 'text-slate-200' : 'text-slate-800'
+                    }`}>
+                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Gave </span>
+                      <span className="font-semibold">
+                        {youSent.map(p => p.name || `${p.pickYear} R${p.pickRound}`).join(', ') || '—'}
+                      </span>
+                    </p>
+                    <p className={`text-sm leading-snug ${
+                      isDarkMode ? 'text-slate-200' : 'text-slate-800'
+                    }`}>
+                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Got{'  '}</span>
+                      <span className="font-semibold">
+                        {youGot.map(p => p.name || `${p.pickYear} R${p.pickRound}`).join(', ') || '—'}
+                      </span>
+                    </p>
+                    {/* Meta row: date, week, badges */}
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className={`text-[11px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {dateStr}{t.weekExecuted ? ` · Wk ${t.weekExecuted}` : ''}
+                        {otherSides.length > 0 ? ` · vs ${otherSides.map(s => s.teamName).join(', ')}` : ''}
                       </span>
                       {t.aiGrade && (
-                        <span
-                          className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                            isDarkMode
-                              ? 'bg-blue-500/20 text-blue-300'
-                              : 'bg-blue-50 text-blue-700'
-                          }`}
-                        >
+                        <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                          isDarkMode ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-50 text-blue-700'
+                        }`}>
                           AI: {t.aiGrade}
                         </span>
                       )}
-                      {callerOutcome && (
-                        <span
-                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            callerDiff > 0
-                              ? isDarkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-50 text-emerald-700'
-                              : callerDiff < 0
-                              ? isDarkMode ? 'bg-red-500/20 text-red-300' : 'bg-red-50 text-red-700'
-                              : isDarkMode ? 'bg-slate-500/20 text-slate-300' : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {callerDiff > 0
-                            ? `+${callerDiff} pts`
-                            : callerDiff < 0
-                            ? `${callerDiff} pts`
-                            : 'Even'}
-                        </span>
-                      )}
                     </div>
-                    <div
-                      className={`text-sm mt-1 ${
-                        isDarkMode ? 'text-slate-200' : 'text-slate-800'
-                      }`}
-                    >
-                      {t.sides.map((s, i) => (
-                        <span key={s.teamId}>
-                          <span className="font-semibold">{s.teamName}</span>{' '}
-                          sends{' '}
-                          {s.sent
-                            .map((p) => p.name || `${p.pickYear} R${p.pickRound}`)
-                            .join(', ')}
-                          {i < t.sides.length - 1 ? ' • ' : ''}
-                        </span>
-                      ))}
-                    </div>
-                    {/* Inline outcome totals */}
-                    {t.outcome && (
-                      <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                        {t.outcome.sides.map((s) => {
-                          const diff = s.lineupDifferential ?? s.differential;
-                          return (
-                            <span
-                              key={s.teamId}
-                              className={`inline-flex items-center gap-1 ${
-                                isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                              }`}
-                            >
-                              {diff >= 0 ? (
-                                <TrendingUp className="w-3 h-3 text-emerald-500" />
-                              ) : (
-                                <TrendingDown className="w-3 h-3 text-red-500" />
-                              )}
-                              {s.teamName}:{' '}
-                              <span
-                                className={
-                                  diff >= 0
-                                    ? 'text-emerald-500 font-semibold'
-                                    : 'text-red-500 font-semibold'
-                                }
-                              >
-                                {diff >= 0 ? '+' : ''}
-                                {diff}
-                              </span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
+
                   {isOpen ? (
-                    <ChevronDown className="w-4 h-4 mt-1 flex-shrink-0" />
+                    <ChevronDown className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
                   ) : (
-                    <ChevronRight className="w-4 h-4 mt-1 flex-shrink-0" />
+                    <ChevronRight className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
                   )}
                 </button>
 
+                {/* ── Expanded details ── */}
                 {isOpen && (
-                  <div
-                    className={`px-4 pb-4 border-t space-y-4 ${
-                      isDarkMode ? 'border-slate-800' : 'border-slate-200'
-                    }`}
-                  >
-                    {/* Your trade result summary */}
+                  <div className={`px-4 pb-4 border-t ${
+                    isDarkMode ? 'border-slate-800' : 'border-slate-100'
+                  }`}>
+                    {/* Verdict banner */}
                     {callerOutcome && (
-                      <div className={`mt-4 px-3 py-2.5 rounded-lg flex items-center gap-2.5 ${
+                      <div className={`mt-4 p-4 rounded-lg flex items-center gap-3 ${
                         callerDiff > 0
                           ? isDarkMode ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-50 border border-emerald-200'
                           : callerDiff < 0
                           ? isDarkMode ? 'bg-red-500/10 border border-red-500/20' : 'bg-red-50 border border-red-200'
                           : isDarkMode ? 'bg-slate-800/50 border border-slate-700' : 'bg-slate-50 border border-slate-200'
                       }`}>
-                        {callerDiff > 0 ? (
-                          <TrendingUp className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                        ) : callerDiff < 0 ? (
-                          <TrendingDown className="w-4 h-4 text-red-500 flex-shrink-0" />
-                        ) : (
-                          <ArrowRightLeft className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
-                        )}
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          callerDiff > 0
+                            ? isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-100'
+                            : callerDiff < 0
+                            ? isDarkMode ? 'bg-red-500/20' : 'bg-red-100'
+                            : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'
+                        }`}>
+                          {callerDiff > 0 ? (
+                            <TrendingUp className="w-5 h-5 text-emerald-500" />
+                          ) : callerDiff < 0 ? (
+                            <TrendingDown className="w-5 h-5 text-red-500" />
+                          ) : (
+                            <ArrowRightLeft className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+                          )}
+                        </div>
                         <div>
-                          <p className={`text-sm font-semibold ${
+                          <p className={`text-lg font-bold ${
                             callerDiff > 0
                               ? isDarkMode ? 'text-emerald-400' : 'text-emerald-700'
                               : callerDiff < 0
@@ -866,80 +866,126 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                               : isDarkMode ? 'text-slate-300' : 'text-slate-700'
                           }`}>
                             {callerDiff > 0
-                              ? `You profited +${callerDiff} pts`
+                              ? `You won this trade (+${callerDiff} pts)`
                               : callerDiff < 0
-                              ? `You lost ${Math.abs(callerDiff)} pts`
+                              ? `You lost this trade (${callerDiff} pts)`
                               : 'Even trade'}
-                            {hasLineupData ? ' (lineup)' : ''}
                           </p>
                           <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                             {hasLineupData
-                              ? 'Based on points scored while in starting lineup'
-                              : `Received ${callerOutcome.receivedTotal} pts — Sent ${callerOutcome.sentTotal} pts`}
-                            {t.weekExecuted ? ` since Week ${t.weekExecuted + 1}` : ''}
+                              ? 'Based on starter production'
+                              : `Received ${callerOutcome.receivedTotal} — Sent ${callerOutcome.sentTotal}`}
+                            {t.weekExecuted ? ` · Since Week ${t.weekExecuted + 1}` : ''}
                           </p>
                         </div>
                       </div>
                     )}
 
-                    {/* Detailed weekly outcomes */}
-                    {t.outcome && (
+                    {/* Two-column Sent vs Received from caller's perspective */}
+                    {t.outcome && callerOutcome && (
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        {/* You Sent */}
+                        <div className={`p-3 rounded-lg ${
+                          isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
+                        }`}>
+                          <p className={`text-[10px] font-bold uppercase mb-2 ${
+                            isDarkMode ? 'text-red-400/70' : 'text-red-500/60'
+                          }`}>
+                            You Sent
+                          </p>
+                          <div className="space-y-1.5">
+                            {callerOutcome.sent.map((p) => (
+                              <div key={p.playerId} className="text-xs">
+                                <div className="flex items-baseline justify-between gap-1">
+                                  <span className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                                    {p.playerName}
+                                  </span>
+                                  <span className={`tabular-nums font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                                    {p.totalPoints}
+                                  </span>
+                                </div>
+                                <div className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                  {p.position}
+                                  {p.startedPoints != null && p.startedPoints !== p.totalPoints
+                                    ? ` · ${p.startedPoints} as starter`
+                                    : ''}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className={`mt-2 pt-2 border-t text-xs font-semibold ${
+                            isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'
+                          }`}>
+                            Total: {callerOutcome.sentTotal} pts
+                          </div>
+                        </div>
+
+                        {/* You Received */}
+                        <div className={`p-3 rounded-lg ${
+                          isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
+                        }`}>
+                          <p className={`text-[10px] font-bold uppercase mb-2 ${
+                            isDarkMode ? 'text-emerald-400/70' : 'text-emerald-500/60'
+                          }`}>
+                            You Received
+                          </p>
+                          <div className="space-y-1.5">
+                            {callerOutcome.received.map((p) => (
+                              <div key={p.playerId} className="text-xs">
+                                <div className="flex items-baseline justify-between gap-1">
+                                  <span className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                                    {p.playerName}
+                                  </span>
+                                  <span className={`tabular-nums font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                                    {p.totalPoints}
+                                  </span>
+                                </div>
+                                <div className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                  {p.position}
+                                  {p.startedPoints != null && p.startedPoints !== p.totalPoints
+                                    ? ` · ${p.startedPoints} as starter`
+                                    : ''}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className={`mt-2 pt-2 border-t text-xs font-semibold ${
+                            isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'
+                          }`}>
+                            Total: {callerOutcome.receivedTotal} pts
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Fallback: show all sides if no caller outcome match */}
+                    {t.outcome && !callerOutcome && (
                       <div className="pt-4 space-y-3">
                         {t.outcome.sides.map((s) => (
                           <div key={s.teamId}>
-                            <p
-                              className={`text-xs font-bold uppercase mb-1 ${
-                                isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                              }`}
-                            >
+                            <p className={`text-xs font-bold uppercase mb-1 ${
+                              isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                            }`}>
                               {s.teamName}
                             </p>
                             <div className="grid grid-cols-2 gap-3 text-xs">
                               <div>
-                                <p
-                                  className={
-                                    isDarkMode ? 'text-slate-500' : 'text-slate-400'
-                                  }
-                                >
+                                <p className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>
                                   Sent ({s.sentTotal} pts)
                                 </p>
                                 {s.sent.map((p) => (
-                                  <p
-                                    key={p.playerId}
-                                    className={
-                                      isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                                    }
-                                  >
+                                  <p key={p.playerId} className={isDarkMode ? 'text-slate-300' : 'text-slate-700'}>
                                     {p.playerName}: {p.totalPoints}
-                                    {p.startedPoints != null && p.startedPoints !== p.totalPoints && (
-                                      <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>
-                                        {' '}({p.startedPoints} as starter)
-                                      </span>
-                                    )}
                                   </p>
                                 ))}
                               </div>
                               <div>
-                                <p
-                                  className={
-                                    isDarkMode ? 'text-slate-500' : 'text-slate-400'
-                                  }
-                                >
+                                <p className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>
                                   Received ({s.receivedTotal} pts)
                                 </p>
                                 {s.received.map((p) => (
-                                  <p
-                                    key={p.playerId}
-                                    className={
-                                      isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                                    }
-                                  >
+                                  <p key={p.playerId} className={isDarkMode ? 'text-slate-300' : 'text-slate-700'}>
                                     {p.playerName}: {p.totalPoints}
-                                    {p.startedPoints != null && p.startedPoints !== p.totalPoints && (
-                                      <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>
-                                        {' '}({p.startedPoints} as starter)
-                                      </span>
-                                    )}
                                   </p>
                                 ))}
                               </div>
@@ -949,10 +995,10 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                       </div>
                     )}
 
-                    {/* AI analysis (if graded) */}
+                    {/* AI analysis */}
                     {t.aiAnalysis ? (
                       <div
-                        className={`p-3 rounded-lg text-sm ${
+                        className={`mt-4 p-3 rounded-lg text-sm ${
                           isDarkMode
                             ? 'bg-blue-500/10 border border-blue-500/20'
                             : 'bg-blue-50 border border-blue-200'
@@ -974,7 +1020,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                         </p>
                       </div>
                     ) : (
-                      <div>
+                      <div className="mt-4">
                         <button
                           type="button"
                           onClick={() => handleGrade(t.id)}
@@ -992,18 +1038,16 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                           ) : (
                             <Sparkles className="w-3 h-3" />
                           )}
-                          Grade this trade with AI
+                          Grade with AI
                           {!gradingAllowed && (
                             <Crown className="w-3 h-3 text-amber-400" />
                           )}
                         </button>
                         {!gradingAllowed && (
-                          <p
-                            className={`text-[10px] mt-1 ${
-                              isDarkMode ? 'text-slate-500' : 'text-slate-400'
-                            }`}
-                          >
-                            Retroactive grading is a Pro/Elite feature.
+                          <p className={`text-[10px] mt-1 ${
+                            isDarkMode ? 'text-slate-500' : 'text-slate-400'
+                          }`}>
+                            Pro/Elite feature
                           </p>
                         )}
                       </div>
