@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck, Medal, BarChart3, FileText, ChevronDown } from 'lucide-react';
+import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck, Medal, BarChart3, FileText, ChevronDown, ChartNoAxesCombined, Shield, Wrench } from 'lucide-react';
 import { LeagueManager } from './LeagueManager';
 
 type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'LeagueAnalyzer' | 'Settings' | 'Pricing' | 'Admin' | 'Articles' | 'ArticleDetail';
@@ -12,6 +12,7 @@ interface MenuItem {
 }
 
 interface MenuGroup {
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   items: MenuItem[];
 }
@@ -40,6 +41,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
   // Collapsible groups
   const groups: MenuGroup[] = [
     {
+      icon: ChartNoAxesCombined,
       label: 'Rankings',
       items: [
         { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board', comingSoon: false },
@@ -48,6 +50,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
       ],
     },
     {
+      icon: Shield,
       label: 'League',
       items: [
         { icon: UsersIcon, label: 'Team', view: 'Team', comingSoon: false },
@@ -58,6 +61,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
       ],
     },
     {
+      icon: Wrench,
       label: 'Tools',
       items: [
         { icon: CalendarRange, label: 'Game Slate', view: 'GameSlate', comingSoon: false },
@@ -155,40 +159,44 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           {/* Top-level items */}
-          <ul className="space-y-1">
+          <ul className="space-y-0.5">
             {topItems.map((item) => (
               <li key={item.view}>{renderItem(item)}</li>
             ))}
           </ul>
 
           {/* Collapsible groups */}
+          <ul className="mt-1 space-y-0.5">
           {groups.map((group) => {
             const isExpanded = expandedGroups.has(group.label);
             const hasActiveChild = group.items.some((item) => item.view === activeView);
+            const GroupIcon = group.icon;
 
             return (
-              <div key={group.label} className="mt-3">
+              <li key={group.label}>
                 <button
                   onClick={() => toggleGroup(group.label)}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md transition-colors ${
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                     isDarkMode
-                      ? `text-slate-500 hover:text-slate-300 ${hasActiveChild && !isExpanded ? 'text-blue-400' : ''}`
-                      : `text-slate-400 hover:text-slate-600 ${hasActiveChild && !isExpanded ? 'text-blue-600' : ''}`
+                      ? `text-slate-400 hover:bg-slate-800 hover:text-white ${hasActiveChild && !isExpanded ? 'text-blue-400' : ''}`
+                      : `text-slate-600 hover:bg-slate-100 hover:text-slate-900 ${hasActiveChild && !isExpanded ? 'text-blue-600' : ''}`
                   }`}
                 >
-                  <span className="text-xs font-semibold uppercase tracking-wider">{group.label}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  <GroupIcon className="w-5 h-5" />
+                  <span className="text-sm font-medium">{group.label}</span>
+                  <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 </button>
                 {isExpanded && (
-                  <ul className="mt-1 space-y-0.5">
+                  <ul className="mt-0.5 space-y-0.5 pl-4">
                     {group.items.map((item) => (
                       <li key={item.view}>{renderItem(item)}</li>
                     ))}
                   </ul>
                 )}
-              </div>
+              </li>
             );
           })}
+          </ul>
 
           {/* Bottom items */}
           <div className={`mt-4 pt-3 border-t space-y-1 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>

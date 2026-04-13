@@ -559,8 +559,8 @@ export function PlayerTable({
           </div>
         )}
 
-        {/* AdSense Ad Unit */}
-        {!error && totalPlayers > 0 && (
+        {/* AdSense Ad Unit — only when table has substantial content */}
+        {!error && totalPlayers >= 10 && (
           <div className="my-4 rounded-lg overflow-hidden px-6">
             <div className={`text-[10px] text-slate-600 text-center mb-1`}>Ad</div>
             <AdUnit slot="board-below-table" isDarkMode={isDarkMode} />

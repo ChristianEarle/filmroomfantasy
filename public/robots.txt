@@ -2,4 +2,14 @@ User-agent: *
 Allow: /
 Disallow: /api/
 
+# Thin/utility pages — no substantial publisher content (AdSense compliance)
+Disallow: /login
+Disallow: /register
+Disallow: /research
+Disallow: /draft-rankings
+Disallow: /league-analyzer
+Disallow: /settings
+Disallow: /profile
+Disallow: /admin
+
 Sitemap: https://filmroomfantasy.com/sitemap.xml

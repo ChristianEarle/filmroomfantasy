@@ -406,8 +406,8 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
           </div>
           );
 
-          // Show ad after every 4th game
-          const showAd = (idx + 1) % 4 === 0 && idx !== displayGames.length - 1;
+          // Show a single ad after the 6th game (only when 8+ games provide enough content)
+          const showAd = displayGames.length >= 8 && idx === 5;
 
           return (
             <div key={game.id} className="contents">
