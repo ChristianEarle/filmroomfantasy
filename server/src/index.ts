@@ -25,6 +25,7 @@ import { tradeHistoryRoutes } from './routes/tradeHistory';
 import { tradeFinderRoutes } from './routes/tradeFinder';
 import { analyticsRoutes } from './routes/analytics';
 import { articleRoutes } from './routes/articles';
+import { draftRankingsRoutes } from './routes/draftRankings';
 
 // Types
 export type Env = {
@@ -188,6 +189,7 @@ app.route('/api/rosters', rostersRoutes);
 app.route('/api/admin', adminStatsRoutes);
 app.route('/api/analytics', analyticsRoutes);
 app.route('/api/articles', articleRoutes);
+app.route('/api/draft-rankings', draftRankingsRoutes);
 
 // 404 handler
 app.notFound((c) => {
@@ -285,6 +287,13 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-twitter-news');
     await callSync('/api/admin/sync-espn-news');
     await callSync('/api/admin/sync-rotowire-news');
+  } else if (event.cron === '0 20 * * 1') {
+    // Weekly Monday 3 PM CT: regenerate AI draft rankings
+    // Generate PPR + Half PPR for both redraft and dynasty rookie
+    await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'half-ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'half-ppr' });
   }
 }
 

@@ -187,7 +187,7 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
   const noindexViews = [
     'Home', 'Team', 'Matchup', 'Settings', 'Profile', 'Admin', 'AllPlayers', // private
     'Login', 'Register',                                                       // utility screens
-    'Research', 'DraftRankings', 'LeagueAnalyzer',                             // Coming Soon placeholders
+    'Research', 'LeagueAnalyzer',                                               // Coming Soon placeholders
   ];
   if (noindexViews.includes(effectiveView)) {
     props.noindex = true;

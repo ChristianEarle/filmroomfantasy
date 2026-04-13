@@ -47,6 +47,7 @@ const ArticlesView = lazyWithReload(() => import('./components/ArticlesView').th
 const ArticleDetailView = lazyWithReload(() => import('./components/ArticleDetailView').then(m => ({ default: m.ArticleDetailView })));
 const PrivacyPolicyView = lazyWithReload(() => import('./components/PrivacyPolicyView').then(m => ({ default: m.PrivacyPolicyView })));
 const TermsOfServiceView = lazyWithReload(() => import('./components/TermsOfServiceView').then(m => ({ default: m.TermsOfServiceView })));
+const DraftRankingsView = lazyWithReload(() => import('./components/DraftRankingsView').then(m => ({ default: m.DraftRankingsView })));
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
 import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswordView';
@@ -643,7 +644,7 @@ function AppContent() {
                 <Suspense fallback={suspenseFallback}><WaiversView onPlayerClick={setSelectedPlayer} onViewAll={handleViewAllFromWaivers} isDarkMode={isDarkMode} /></Suspense>
               )
             ) : activeView === 'DraftRankings' ? (
-              <ComingSoonView title="Draft Rankings" description="AI-powered draft rankings with ADP tracking, tier breakdowns, and custom scoring projections." icon="draft" isDarkMode={isDarkMode} />
+              <Suspense fallback={suspenseFallback}><DraftRankingsView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
             ) : activeView === 'LeagueAnalyzer' ? (
               <ComingSoonView title="League Analyzer" description="Deep dive into your league with power rankings, strength of schedule analysis, and roster composition breakdowns." icon="league" isDarkMode={isDarkMode} />
             ) : activeView === 'TradeAnalyzer' ? (

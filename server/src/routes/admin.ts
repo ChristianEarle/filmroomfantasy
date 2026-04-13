@@ -8,6 +8,7 @@ import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
 import { generateProjectionsFromProps } from '../services/projections';
+import { generateDraftRankings } from '../services/draftRankings';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
 import type { Env, Variables } from '../index';
 
@@ -1924,5 +1925,71 @@ adminRoutes.post('/bulk-set-tier', async (c) => {
       },
       500
     );
+  }
+});
+
+/**
+ * POST /api/admin/generate-draft-rankings
+ *
+ * Triggers AI draft ranking generation. Body:
+ *  - type: 'redraft' | 'dynasty_rookie' (default: 'redraft')
+ *  - scoring: 'ppr' | 'half-ppr' | 'standard' (default: 'ppr')
+ *  - superflex: boolean (default: false)
+ *  - season: number (default: current year)
+ */
+adminRoutes.post('/generate-draft-rankings', async (c) => {
+  const db = c.get('db');
+  const anthropicKey = c.env.ANTHROPIC_API_KEY;
+
+  if (!anthropicKey) {
+    return c.json({ error: 'ANTHROPIC_API_KEY not configured' }, 500);
+  }
+
+  try {
+    const body = await c.req.json().catch(() => ({})) as {
+      type?: string;
+      scoring?: string;
+      superflex?: boolean;
+      season?: number;
+    };
+
+    const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty_rookie';
+    const scoringFormat = (body.scoring || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
+    const superflex = body.superflex ?? false;
+    const seasonYear = body.season || new Date().getFullYear();
+
+    if (!['redraft', 'dynasty_rookie'].includes(rankingType)) {
+      return c.json({ error: 'Invalid type — use "redraft" or "dynasty_rookie"' }, 400);
+    }
+    if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
+      return c.json({ error: 'Invalid scoring — use "ppr", "half-ppr", or "standard"' }, 400);
+    }
+
+    const result = await generateDraftRankings({
+      db,
+      anthropicKey,
+      rankingType,
+      scoringFormat,
+      superflex,
+      seasonYear,
+    });
+
+    // Invalidate cache for this combination
+    invalidateCache('draft-rankings:', true);
+
+    if (!result.ok) {
+      return c.json({ error: result.error, count: 0 }, 500);
+    }
+
+    return c.json({
+      message: `Generated ${result.count} ${rankingType} rankings (${scoringFormat}, superflex=${superflex})`,
+      count: result.count,
+    });
+  } catch (err) {
+    console.error('[admin] generate-draft-rankings error:', err);
+    return c.json({
+      error: 'Failed to generate draft rankings',
+      message: err instanceof Error ? err.message : 'Unknown error',
+    }, 500);
   }
 });

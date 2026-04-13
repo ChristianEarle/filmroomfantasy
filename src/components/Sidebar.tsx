@@ -46,7 +46,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
       items: [
         { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board', comingSoon: false },
         { icon: TrendingUp, label: 'Trends', view: 'Trends', comingSoon: false },
-        { icon: Medal, label: 'Draft Rankings', view: 'DraftRankings', comingSoon: true },
+        { icon: Medal, label: 'Draft Rankings', view: 'DraftRankings', comingSoon: false },
       ],
     },
     {
