@@ -281,8 +281,10 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
       await callSync('/api/admin/sync-odds');
     }
   } else if (event.cron === '0 */6 * * *') {
-    // Every 6 hours: sync RSS sports news
+    // Every 6 hours: sync all news sources
     await callSync('/api/admin/sync-twitter-news');
+    await callSync('/api/admin/sync-espn-news');
+    await callSync('/api/admin/sync-rotowire-news');
   }
 }
 

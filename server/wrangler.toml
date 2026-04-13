@@ -17,8 +17,8 @@ database_id = "6acfacc9-ccdd-46bd-9cea-8693306ed524"
 #   wrangler secret put SYNC_SECRET --env production
 #     → Protects admin sync endpoints (X-Admin-Key header)
 #
-#   wrangler secret put OPENAI_API_KEY --env production
-#     → Optional: enables AI relevance filtering of player news
+#   wrangler secret put ANTHROPIC_API_KEY --env production
+#     → For AI trade analysis and news relevance filtering
 #
 #   wrangler secret put GOOGLE_CLIENT_ID --env production
 #     → Google OAuth client ID from https://console.cloud.google.com/apis/credentials
