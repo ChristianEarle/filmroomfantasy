@@ -554,6 +554,317 @@ adminRoutes.post('/sync-twitter-news', async (c) => {
 });
 
 /**
+ * POST /api/admin/sync-espn-news
+ * Fetches player news from ESPN's public API and upserts into player_news.
+ * Uses name-matching to link articles to players in the database.
+ * No API key required — uses ESPN's undocumented public endpoints.
+ * Body: { limit?: number } - max articles to fetch (default 50, max 100)
+ */
+adminRoutes.post('/sync-espn-news', async (c) => {
+  const db = c.get('db');
+
+  try {
+    let body: { limit?: number } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body - use defaults
+    }
+    const limit = Math.min(Math.max(body.limit ?? 50, 1), 100);
+
+    // Fetch NFL news from ESPN public API
+    const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=${limit}`;
+    const res = await fetch(espnUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; FilmRoomFantasy/1.0)',
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) {
+      return c.json({ error: 'ESPN API error', status: res.status, statusText: res.statusText }, 502);
+    }
+
+    const data = await res.json() as {
+      articles?: Array<{
+        headline?: string;
+        description?: string;
+        published?: string;
+        links?: { web?: { href?: string } };
+        type?: string;
+        categories?: Array<{
+          type?: string;
+          description?: string;
+          athleteId?: number;
+          athlete?: { id?: number; fullName?: string };
+        }>;
+      }>;
+    };
+
+    const articles = data.articles || [];
+    if (articles.length === 0) {
+      return c.json({ success: true, message: 'No articles returned from ESPN', inserted: 0 });
+    }
+
+    // Fetch all players for name-matching
+    const allPlayers = await db.query.nflPlayers.findMany({
+      columns: { id: true, name: true, position: true },
+    });
+    const playersByNameLength = [...allPlayers]
+      .filter((p) => p.position && p.position !== 'DEF')
+      .sort((a, b) => (b.name?.length ?? 0) - (a.name?.length ?? 0));
+
+    let inserted = 0;
+    let skipped = 0;
+    const openaiKey = c.env.OPENAI_API_KEY;
+    const useAi = !!openaiKey?.trim();
+
+    for (const article of articles) {
+      const headline = (article.headline || '').trim();
+      const description = (article.description || '').trim();
+      const sourceUrl = article.links?.web?.href || null;
+      const publishedAt = article.published ? new Date(article.published) : new Date();
+
+      if (!headline) continue;
+
+      const searchText = `${headline} ${description}`.toLowerCase();
+      const searchStart = searchText.slice(0, 500);
+
+      // Match players mentioned in headline or description
+      const mentionedPlayers: { id: string; name: string }[] = [];
+      for (const player of playersByNameLength) {
+        const name = player.name?.trim();
+        if (!name || name.length < 4) continue;
+        if (!searchStart.includes(name.toLowerCase())) continue;
+        mentionedPlayers.push({ id: player.id, name });
+      }
+
+      if (mentionedPlayers.length === 0) continue;
+
+      // AI filter if available (same pattern as twitter sync)
+      let playersToInsert = mentionedPlayers;
+      let aiSummary: string | null = null;
+      let playerSummaries: Record<string, string> = {};
+
+      if (useAi && mentionedPlayers.length > 1) {
+        const result = await checkNewsRelevance(
+          `${headline}. ${description}`,
+          mentionedPlayers.map((p) => p.name),
+          openaiKey
+        );
+        if (result) {
+          const relevantSet = new Set(result.relevantPlayerNames.map((n) => n.trim().toLowerCase()));
+          playersToInsert = mentionedPlayers.filter((p) =>
+            relevantSet.has(p.name.trim().toLowerCase())
+          );
+          aiSummary = result.summary || null;
+          playerSummaries = result.playerSummaries || {};
+        }
+      }
+
+      for (const player of playersToInsert) {
+        // Deduplicate: skip if this sourceUrl + player combo already exists
+        if (sourceUrl) {
+          const existingEntry = await db.query.playerNews.findFirst({
+            where: and(
+              eq(schema.playerNews.sourceUrl, sourceUrl),
+              eq(schema.playerNews.playerId, player.id)
+            ),
+            columns: { id: true },
+          });
+          if (existingEntry) {
+            skipped++;
+            continue;
+          }
+        }
+
+        const playerNameLower = player.name.trim().toLowerCase();
+        const perPlayerSummary = playerSummaries[playerNameLower] || aiSummary;
+
+        const truncatedHeadline = headline.length > 150 ? headline.slice(0, 147) + '...' : headline;
+
+        await db.insert(schema.playerNews).values({
+          id: generateId(),
+          playerId: player.id,
+          headline: truncatedHeadline,
+          content: description || headline,
+          source: 'ESPN',
+          sourceUrl,
+          aiSummary: perPlayerSummary,
+          impactLevel: 'medium',
+          publishedAt,
+        });
+        inserted++;
+      }
+    }
+
+    // Invalidate news cache
+    invalidateCache('player-news:', true);
+
+    return c.json({
+      success: true,
+      message: 'ESPN news sync completed',
+      articlesFetched: articles.length,
+      inserted,
+      skipped,
+      aiFiltering: useAi,
+    });
+  } catch (err) {
+    console.error('Sync ESPN news error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-rotowire-news
+ * Fetches player news from Rotowire's public RSS feed and upserts into player_news.
+ * Rotowire provides short, actionable fantasy-relevant blurbs (injuries, role changes, etc.).
+ * No API key required.
+ */
+adminRoutes.post('/sync-rotowire-news', async (c) => {
+  const db = c.get('db');
+
+  try {
+    const rssUrl = 'https://www.rotowire.com/rss/news.php?sport=NFL';
+    const { items: feedItems, diagnostics } = await fetchTwitterTweets(rssUrl + '|Rotowire');
+
+    if (feedItems.length === 0) {
+      return c.json({
+        success: true,
+        message: 'No items returned from Rotowire RSS',
+        inserted: 0,
+        diagnostics,
+      });
+    }
+
+    // Fetch all players for name-matching
+    const allPlayers = await db.query.nflPlayers.findMany({
+      columns: { id: true, name: true, position: true },
+    });
+    const playersByNameLength = [...allPlayers]
+      .filter((p) => p.position && p.position !== 'DEF')
+      .sort((a, b) => (b.name?.length ?? 0) - (a.name?.length ?? 0));
+
+    let inserted = 0;
+    let skipped = 0;
+    const openaiKey = c.env.OPENAI_API_KEY;
+    const useAi = !!openaiKey?.trim();
+    const seen = new Set<string>();
+
+    for (const item of feedItems) {
+      if (!item.text || item.text.length > 800) continue;
+      if (!item.url || !item.url.trim()) continue;
+
+      const text = item.text.toLowerCase();
+      const textStart = text.slice(0, 400);
+
+      // Match players by name
+      const mentionedPlayers: { id: string; name: string }[] = [];
+      for (const player of playersByNameLength) {
+        const name = player.name?.trim();
+        if (!name || name.length < 4) continue;
+        if (!textStart.includes(name.toLowerCase())) continue;
+        const key = `${player.id}:${item.text.slice(0, 80)}`;
+        if (seen.has(key)) continue;
+        mentionedPlayers.push({ id: player.id, name });
+      }
+
+      if (mentionedPlayers.length === 0) continue;
+
+      // AI filter if available
+      let playersToInsert = mentionedPlayers;
+      let aiSummary: string | null = null;
+      let playerSummaries: Record<string, string> = {};
+
+      if (useAi) {
+        const result = await checkNewsRelevance(
+          item.text,
+          mentionedPlayers.map((p) => p.name),
+          openaiKey
+        );
+        if (result) {
+          const relevantSet = new Set(result.relevantPlayerNames.map((n) => n.trim().toLowerCase()));
+          playersToInsert = mentionedPlayers.filter((p) =>
+            relevantSet.has(p.name.trim().toLowerCase())
+          );
+          aiSummary = result.summary || null;
+          playerSummaries = result.playerSummaries || {};
+        }
+      }
+
+      for (const player of playersToInsert) {
+        const key = `${player.id}:${item.text.slice(0, 80)}`;
+        seen.add(key);
+
+        // Deduplicate against existing entries
+        const existingEntry = await db.query.playerNews.findFirst({
+          where: and(
+            eq(schema.playerNews.sourceUrl, item.url),
+            eq(schema.playerNews.playerId, player.id)
+          ),
+          columns: { id: true },
+        });
+        if (existingEntry) {
+          skipped++;
+          continue;
+        }
+
+        const playerNameLower = player.name.trim().toLowerCase();
+        const perPlayerSummary = playerSummaries[playerNameLower] || aiSummary;
+
+        const rawHeadline = playersToInsert.length > 1
+          ? `${player.name}: ${item.text}`
+          : item.text;
+        const headline = rawHeadline.length > 150 ? rawHeadline.slice(0, 147) + '...' : rawHeadline;
+
+        await db.insert(schema.playerNews).values({
+          id: generateId(),
+          playerId: player.id,
+          headline,
+          content: item.text,
+          source: 'Rotowire',
+          sourceUrl: item.url,
+          aiSummary: perPlayerSummary,
+          impactLevel: 'medium',
+          publishedAt: item.publishedAt,
+        });
+        inserted++;
+      }
+    }
+
+    // Invalidate news cache
+    invalidateCache('player-news:', true);
+
+    return c.json({
+      success: true,
+      message: 'Rotowire news sync completed',
+      itemsFetched: feedItems.length,
+      inserted,
+      skipped,
+      diagnostics,
+      aiFiltering: useAi,
+    });
+  } catch (err) {
+    console.error('Sync Rotowire news error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
  * POST /api/admin/sync-games
  * Fetches NFL games from ESPN for specified weeks and upserts into nfl_games (with weather).
  * Body: { seasonYear?: number, weeks?: number[] } - defaults to current season, weeks 1-18
