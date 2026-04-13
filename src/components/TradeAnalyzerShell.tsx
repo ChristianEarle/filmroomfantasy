@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { ArrowRightLeft, History, GitBranch } from 'lucide-react';
+import { ArrowRightLeft, History } from 'lucide-react';
 import { TradeAnalyzerView } from './TradeAnalyzerView';
 import { TradeHistoryView } from './TradeHistoryView';
-import { TradeTreeView } from './TradeTreeView';
 // NOTE: TradeFinderView is intentionally NOT imported — the Trade
 // Finder tab is hidden for now. The component, backend route, and
 // related services are still in the repo so we can re-enable the
@@ -10,14 +9,14 @@ import { TradeTreeView } from './TradeTreeView';
 // the import, the 'finder' Tab union member, the tabs array entry,
 // and the render case below.
 
-type Tab = 'analyzer' | 'history' | 'trees';
+type Tab = 'analyzer' | 'history';
 
 interface TradeAnalyzerShellProps {
   isDarkMode: boolean;
 }
 
 /**
- * Shell that hosts the trade-related tabs: Analyzer, History, and Trade Trees.
+ * Shell that hosts the trade-related tabs: Analyzer and History.
  * (Trade Finder is currently hidden — see note above.)
  */
 export function TradeAnalyzerShell({ isDarkMode }: TradeAnalyzerShellProps) {
@@ -26,7 +25,6 @@ export function TradeAnalyzerShell({ isDarkMode }: TradeAnalyzerShellProps) {
   const tabs: Array<{ id: Tab; label: string; icon: typeof ArrowRightLeft }> = [
     { id: 'analyzer', label: 'Analyzer', icon: ArrowRightLeft },
     { id: 'history', label: 'History', icon: History },
-    { id: 'trees', label: 'Trade Trees', icon: GitBranch },
   ];
 
   return (
@@ -62,7 +60,6 @@ export function TradeAnalyzerShell({ isDarkMode }: TradeAnalyzerShellProps) {
 
       {tab === 'analyzer' && <TradeAnalyzerView isDarkMode={isDarkMode} />}
       {tab === 'history' && <TradeHistoryView isDarkMode={isDarkMode} />}
-      {tab === 'trees' && <TradeTreeView isDarkMode={isDarkMode} />}
     </div>
   );
 }
