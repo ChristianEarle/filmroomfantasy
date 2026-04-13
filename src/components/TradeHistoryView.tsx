@@ -708,16 +708,28 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
             const dateStr = t.executedAt
               ? new Date(t.executedAt).toLocaleDateString()
               : 'Unknown date';
-            const callerOutcome = t.outcome?.sides.find(s => s.teamId === callerTeamId) ?? null;
+
+            // Match the caller's side by ID first, then by team name as
+            // a fallback (handles duplicate team rows where trade items
+            // are attributed to a different ID than the primary).
+            const callerOutcome = t.outcome?.sides.find(s => s.teamId === callerTeamId)
+              ?? t.outcome?.sides.find(s => callerTeamName != null && s.teamName === callerTeamName)
+              ?? null;
             // Prefer lineup-adjusted differential when available
             const callerDiff = callerOutcome
               ? (callerOutcome.lineupDifferential ?? callerOutcome.differential)
               : 0;
             const hasLineupData = callerOutcome?.lineupDifferential != null;
 
-            // Derive what the caller sent and received from the trade sides
-            const callerSide = t.sides.find(s => s.teamId === callerTeamId);
-            const otherSides = t.sides.filter(s => s.teamId !== callerTeamId);
+            // Derive what the caller sent and received from the trade sides.
+            // Same ID-then-name fallback for the display sides.
+            const matchedCallerId = callerOutcome?.teamId;
+            const callerSide = matchedCallerId
+              ? t.sides.find(s => s.teamId === matchedCallerId)
+              : t.sides.find(s => s.teamId === callerTeamId)
+                ?? t.sides.find(s => callerTeamName != null && s.teamName === callerTeamName);
+            const callerSideId = callerSide?.teamId;
+            const otherSides = t.sides.filter(s => s.teamId !== callerSideId);
             const youSent = callerSide?.sent || [];
             const youGot = otherSides.flatMap(s => s.sent);
 
