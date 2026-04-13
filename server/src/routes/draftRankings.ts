@@ -67,6 +67,7 @@ draftRankingsRoutes.get('/', async (c) => {
       adp: r.adp,
       adpDelta: r.adpDelta,
       rationale: r.rationale,
+      analysis: r.analysis,
       generatedAt: r.generatedAt,
       player: r.player,
     }));

@@ -287,6 +287,13 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-twitter-news');
     await callSync('/api/admin/sync-espn-news');
     await callSync('/api/admin/sync-rotowire-news');
+  } else if (event.cron === '0 14 * * 1') {
+    // Weekly Monday 8 AM CT: regenerate AI draft rankings
+    // Generate PPR + Half PPR for both redraft and dynasty rookie
+    await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'half-ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'half-ppr' });
   }
 }
 

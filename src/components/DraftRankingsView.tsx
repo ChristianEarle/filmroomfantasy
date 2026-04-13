@@ -29,6 +29,7 @@ interface DraftRanking {
   adp: number | null;
   adpDelta: number | null;
   rationale: string;
+  analysis: string | null;
   generatedAt: string;
   player: DraftRankingPlayer;
 }
@@ -535,12 +536,23 @@ function PlayerRow({
         </button>
       </div>
 
-      {/* Expanded Rationale */}
-      {isExpanded && ranking.rationale && (
+      {/* Expanded Analysis */}
+      {isExpanded && (ranking.analysis || ranking.rationale) && (
         <div className={`px-3 pb-3 pt-0 ml-11`}>
-          <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            {ranking.rationale}
-          </p>
+          {ranking.analysis ? (
+            <div className="space-y-1.5">
+              <p className={`text-xs font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                AI Analysis
+              </p>
+              <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                {ranking.analysis}
+              </p>
+            </div>
+          ) : (
+            <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              {ranking.rationale}
+            </p>
+          )}
           {/* Mobile-only: show projected points and ADP */}
           <div className="flex gap-4 mt-2 sm:hidden">
             {ranking.projectedPoints != null && (

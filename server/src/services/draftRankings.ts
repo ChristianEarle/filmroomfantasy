@@ -189,7 +189,8 @@ RESPOND WITH ONLY VALID JSON — an array of objects, one per ranked player. Ran
     "positionRank": 1,
     "tier": 1,
     "projectedPoints": 320.5,
-    "rationale": "1-2 sentence explanation of ranking and any ADP disagreement"
+    "rationale": "1 concise sentence summarizing rank and ADP value",
+    "analysis": "3-5 sentence detailed breakdown covering: key strengths, primary risks/concerns, situation/opportunity outlook, and fantasy upside/ceiling vs floor. Reference specific stats, coaching changes, depth chart battles, or scheme fit."
   }
 ]
 
@@ -208,7 +209,8 @@ IMPORTANT:
 - Tiers should have natural breakpoints — don't force exact counts
 - Flag players where you meaningfully disagree with ADP in the rationale
 - Account for injury risk, age, opportunity changes, and coaching/scheme changes
-- Be specific in rationale — "elite volume" is lazy, "led NFL in targets last season at age 24 with a healthy QB returning" is good`;
+- rationale: 1 punchy sentence (shown inline in the rankings table)
+- analysis: 3-5 sentences of real scouting — strengths, weaknesses, situation, fantasy outlook. This is the main value-add. Be specific: reference stats, scheme, coaching, age curves, injury history. "Elite volume" is lazy; "led NFL with 178 targets at age 24, now gets a healthy Dak back after relying on Cooper Rush for 6 games" is good.`;
 }
 
 function buildDynastyRookiePrompt(
@@ -245,7 +247,8 @@ RESPOND WITH ONLY VALID JSON — an array of objects, one per ranked rookie:
     "positionRank": 1,
     "tier": 1,
     "projectedPoints": null,
-    "rationale": "1-2 sentence explanation focusing on draft capital, landing spot, and path to production"
+    "rationale": "1 concise sentence on rank and value",
+    "analysis": "3-5 sentence detailed breakdown covering: draft capital and what it signals, landing spot quality (scheme, coaching, offensive line), path to playing time (who's ahead, competition), college production profile, and realistic year-1 vs long-term dynasty outlook."
   }
 ]
 
@@ -258,7 +261,8 @@ TIER RULES (dynasty rookie context):
 
 IMPORTANT:
 - projectedPoints can be null for rookies with high uncertainty, or a rough estimate if you're confident
-- Be specific about WHY a player is ranked where they are — "Day 2 pick in a run-heavy offense behind an aging starter" is better than "good prospect"
+- rationale: 1 punchy sentence (shown inline in the rankings table)
+- analysis: 3-5 sentences of real scouting — draft capital, landing spot, depth chart, college production, year-1 vs long-term outlook. Be specific: "Day 2 pick in a run-heavy offense behind an aging Derrick Henry, with the offensive line ranked 5th in run blocking" is good. "Good prospect with upside" is worthless.
 - Landing spot matters MORE than college tape for year-1 fantasy value`;
 }
 
@@ -354,6 +358,7 @@ export async function generateDraftRankings(
     tier: number;
     projectedPoints: number | null;
     rationale: string;
+    analysis?: string;
   }>;
 
   try {
@@ -412,6 +417,7 @@ export async function generateDraftRankings(
       adp: player.adp,
       adpDelta: player.adp != null ? r.overallRank - player.adp : null,
       rationale: r.rationale || '',
+      analysis: r.analysis || null,
       seasonYear,
       generatedAt: now,
     });

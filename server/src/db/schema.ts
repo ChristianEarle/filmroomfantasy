@@ -689,6 +689,7 @@ export const draftRankings = sqliteTable('draft_rankings', {
   adp: real('adp'), // average draft position from Sleeper
   adpDelta: real('adp_delta'), // rank - ADP (negative = value, positive = reach)
   rationale: text('rationale').notNull(), // AI-generated 1-2 sentence blurb
+  analysis: text('analysis'), // AI-generated detailed player analysis (strengths, risks, outlook)
   seasonYear: integer('season_year').notNull(),
   generatedAt: integer('generated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
