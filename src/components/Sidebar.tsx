@@ -1,7 +1,20 @@
-import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck, Medal, BarChart3, FileText } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck, Medal, BarChart3, FileText, ChevronDown } from 'lucide-react';
 import { LeagueManager } from './LeagueManager';
 
 type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'LeagueAnalyzer' | 'Settings' | 'Pricing' | 'Admin' | 'Articles' | 'ArticleDetail';
+
+interface MenuItem {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  view: SidebarView;
+  comingSoon: boolean;
+}
+
+interface MenuGroup {
+  label: string;
+  items: MenuItem[];
+}
 
 interface SidebarProps {
   activeView: SidebarView | 'Profile' | 'Login';
@@ -18,29 +31,104 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated = false, isAdmin = false, selectedLeagueId, onLeagueSelect, onConnectLeague, mobileOpen = false, onMobileClose, userTier = 'free' }: SidebarProps) {
-  const menuItems = [
-    { icon: Home, label: 'Home', view: 'Home' as const, comingSoon: false },
-    { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board' as const, comingSoon: false },
-    { icon: Swords, label: 'Matchup', view: 'Matchup' as const, comingSoon: false },
-    { icon: UsersIcon, label: 'Team', view: 'Team' as const, comingSoon: false },
-    { icon: ListPlus, label: 'Waivers', view: 'Waivers' as const, comingSoon: false },
-    { icon: ArrowLeftRight, label: 'Trade Analyzer', view: 'TradeAnalyzer' as const, comingSoon: false },
-    { icon: CalendarRange, label: 'Game Slate', view: 'GameSlate' as const, comingSoon: false },
-    { icon: TrendingUp, label: 'Trends', view: 'Trends' as const, comingSoon: false },
-    { icon: BookOpen, label: 'Research', view: 'Research' as const, comingSoon: true },
-    { icon: BarChart3, label: 'League Analyzer', view: 'LeagueAnalyzer' as const, comingSoon: true },
-    { icon: Medal, label: 'Draft Rankings', view: 'DraftRankings' as const, comingSoon: true },
-    { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs' as const, comingSoon: false },
-    { icon: FileText, label: 'Articles', view: 'Articles' as const, comingSoon: false },
-    { icon: CreditCard, label: 'Pricing', view: 'Pricing' as const, comingSoon: false },
-    { icon: Settings, label: 'Settings', view: 'Settings' as const, comingSoon: false },
-    ...(isAdmin ? [{ icon: ShieldCheck, label: 'Admin', view: 'Admin' as const, comingSoon: false }] : []),
+  // Top-level items (always visible)
+  const topItems: MenuItem[] = [
+    { icon: Home, label: 'Home', view: 'Home', comingSoon: false },
+    { icon: ArrowLeftRight, label: 'Trade Analyzer', view: 'TradeAnalyzer', comingSoon: false },
   ];
+
+  // Collapsible groups
+  const groups: MenuGroup[] = [
+    {
+      label: 'Rankings',
+      items: [
+        { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board', comingSoon: false },
+        { icon: TrendingUp, label: 'Trends', view: 'Trends', comingSoon: false },
+        { icon: Medal, label: 'Draft Rankings', view: 'DraftRankings', comingSoon: true },
+      ],
+    },
+    {
+      label: 'League',
+      items: [
+        { icon: UsersIcon, label: 'Team', view: 'Team', comingSoon: false },
+        { icon: Swords, label: 'Matchup', view: 'Matchup', comingSoon: false },
+        { icon: ListPlus, label: 'Waivers', view: 'Waivers', comingSoon: false },
+        { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs', comingSoon: false },
+        { icon: BarChart3, label: 'League Analyzer', view: 'LeagueAnalyzer', comingSoon: true },
+      ],
+    },
+    {
+      label: 'Tools',
+      items: [
+        { icon: CalendarRange, label: 'Game Slate', view: 'GameSlate', comingSoon: false },
+        { icon: BookOpen, label: 'Research', view: 'Research', comingSoon: true },
+        { icon: FileText, label: 'Articles', view: 'Articles', comingSoon: false },
+      ],
+    },
+  ];
+
+  // Bottom items (always visible, separated)
+  const bottomItems: MenuItem[] = [
+    { icon: CreditCard, label: 'Pricing', view: 'Pricing', comingSoon: false },
+    { icon: Settings, label: 'Settings', view: 'Settings', comingSoon: false },
+    ...(isAdmin ? [{ icon: ShieldCheck, label: 'Admin', view: 'Admin' as SidebarView, comingSoon: false }] : []),
+  ];
+
+  // Auto-expand the group that contains the active view
+  const activeGroup = groups.find((g) => g.items.some((item) => item.view === activeView));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    if (activeGroup) initial.add(activeGroup.label);
+    return initial;
+  });
+
+  // Auto-expand group when navigating to a child view (e.g. browser back/forward)
+  useEffect(() => {
+    if (activeGroup && !expandedGroups.has(activeGroup.label)) {
+      setExpandedGroups((prev) => new Set(prev).add(activeGroup.label));
+    }
+  }, [activeView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleGroup = (label: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
 
   const handleNavClick = (view: SidebarView) => {
     onViewChange(view);
     onMobileClose?.();
   };
+
+  const renderItem = (item: MenuItem) => (
+    <button
+      onClick={() => handleNavClick(item.view)}
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+        item.view === activeView
+          ? 'bg-blue-600 text-white shadow-sm'
+          : isDarkMode
+            ? 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+      }`}
+    >
+      <item.icon className="w-5 h-5" />
+      <span className="text-sm font-medium">{item.label}</span>
+      {item.comingSoon && (
+        <span className={`ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${
+          item.view === activeView
+            ? 'bg-white/20 text-white'
+            : isDarkMode
+              ? 'bg-amber-500/15 text-amber-400'
+              : 'bg-amber-100 text-amber-600'
+        }`}>
+          SOON
+        </span>
+      )}
+    </button>
+  );
 
   return (
     <>
@@ -66,36 +154,46 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
+          {/* Top-level items */}
           <ul className="space-y-1">
-            {menuItems.map((item, index) => (
-              <li key={index}>
-                <button
-                  onClick={() => handleNavClick(item.view)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                    item.view === activeView
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : isDarkMode
-                        ? 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <item.icon className="w-5 h-5" />
-                  <span className={`text-sm font-medium`}>{item.label}</span>
-                  {item.comingSoon && (
-                    <span className={`ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${
-                      item.view === activeView
-                        ? 'bg-white/20 text-white'
-                        : isDarkMode
-                          ? 'bg-amber-500/15 text-amber-400'
-                          : 'bg-amber-100 text-amber-600'
-                    }`}>
-                      SOON
-                    </span>
-                  )}
-                </button>
-              </li>
+            {topItems.map((item) => (
+              <li key={item.view}>{renderItem(item)}</li>
             ))}
           </ul>
+
+          {/* Collapsible groups */}
+          {groups.map((group) => {
+            const isExpanded = expandedGroups.has(group.label);
+            const hasActiveChild = group.items.some((item) => item.view === activeView);
+
+            return (
+              <div key={group.label} className="mt-3">
+                <button
+                  onClick={() => toggleGroup(group.label)}
+                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md transition-colors ${
+                    isDarkMode
+                      ? `text-slate-500 hover:text-slate-300 ${hasActiveChild && !isExpanded ? 'text-blue-400' : ''}`
+                      : `text-slate-400 hover:text-slate-600 ${hasActiveChild && !isExpanded ? 'text-blue-600' : ''}`
+                  }`}
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider">{group.label}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                </button>
+                {isExpanded && (
+                  <ul className="mt-1 space-y-0.5">
+                    {group.items.map((item) => (
+                      <li key={item.view}>{renderItem(item)}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Bottom items */}
+          <div className={`mt-4 pt-3 border-t space-y-1 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+            {bottomItems.map((item) => renderItem(item))}
+          </div>
         </nav>
 
         {/* League Manager */}
