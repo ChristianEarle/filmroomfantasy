@@ -26,6 +26,11 @@ export interface PlayerSideOutcome {
   position: string;
   weeklyPoints: Array<{ week: number; points: number }>;
   totalPoints: number;
+  /** Points scored only in weeks the player was in the starting lineup.
+   *  Null when lineup data isn't available (pre-migration). */
+  startedPoints: number | null;
+  /** Number of weeks the player was in the starting lineup post-trade. */
+  starterWeeks: number | null;
 }
 
 export interface TradeOutcome {
@@ -39,7 +44,11 @@ export interface TradeOutcome {
     received: PlayerSideOutcome[];
     sentTotal: number;
     receivedTotal: number;
-    differential: number; // received - sent
+    differential: number; // received - sent (raw, all points)
+    /** Lineup-adjusted differential: only counts points from weeks
+     *  the player was actually started. Null when lineup data isn't
+     *  available. */
+    lineupDifferential: number | null;
   }>;
 }
 
@@ -113,6 +122,44 @@ export async function computeOutcome(
     pointsByPlayer.set(s.playerId, list);
   }
 
+  // Fetch matchup starters for lineup-aware outcome scoring.
+  // Each matchup stores JSON arrays of internal player IDs for
+  // each team's starting lineup. When available, we compute a
+  // lineup-adjusted differential that only counts weeks a player
+  // was actually started (not riding the bench).
+  const leagueId = trade.leagueId;
+  const matchupsForStarters = await db.query.matchups.findMany({
+    where: and(
+      eq(schema.matchups.leagueId, leagueId),
+      eq(schema.matchups.isComplete, true),
+      gte(schema.matchups.week, weekCutoff + 1)
+    ),
+  });
+
+  // Build per-team-per-week starter sets
+  const startersByTeamWeek = new Map<string, Set<string>>();
+  let hasAnyStarterData = false;
+  for (const m of matchupsForStarters) {
+    if (m.homeStartersJson) {
+      try {
+        startersByTeamWeek.set(
+          `${m.homeTeamId}_${m.week}`,
+          new Set(JSON.parse(m.homeStartersJson) as string[])
+        );
+        hasAnyStarterData = true;
+      } catch { /* ignore */ }
+    }
+    if (m.awayStartersJson) {
+      try {
+        startersByTeamWeek.set(
+          `${m.awayTeamId}_${m.week}`,
+          new Set(JSON.parse(m.awayStartersJson) as string[])
+        );
+        hasAnyStarterData = true;
+      } catch { /* ignore */ }
+    }
+  }
+
   // Build per-team side outcomes
   const sides: TradeOutcome['sides'] = [];
   for (const teamId of teamIds) {
@@ -124,7 +171,8 @@ export async function computeOutcome(
     );
 
     const makeSide = (
-      itemList: typeof items
+      itemList: typeof items,
+      sideTeamId: string
     ): PlayerSideOutcome[] =>
       itemList.map((i) => {
         const info = playerInfoById.get(i.playerId!) || {
@@ -136,23 +184,103 @@ export async function computeOutcome(
         );
         const totalPoints =
           Math.round(weekly.reduce((sum, w) => sum + w.points, 0) * 10) / 10;
+
+        // Compute started-only points when lineup data is available
+        let startedPoints: number | null = null;
+        let starterWeeks: number | null = null;
+        if (hasAnyStarterData) {
+          let sp = 0;
+          let sw = 0;
+          for (const w of weekly) {
+            const starters = startersByTeamWeek.get(`${sideTeamId}_${w.week}`);
+            if (starters && starters.has(i.playerId!)) {
+              sp += w.points;
+              sw++;
+            } else if (!starters) {
+              // No starter data for this week — count the points
+              // to avoid understating when data is partially available
+              sp += w.points;
+              sw++;
+            }
+          }
+          startedPoints = Math.round(sp * 10) / 10;
+          starterWeeks = sw;
+        }
+
         return {
           playerId: i.playerId!,
           playerName: info.name,
           position: info.position,
           weeklyPoints: weekly,
           totalPoints,
+          startedPoints,
+          starterWeeks,
         };
       });
 
-    const sent = makeSide(sentPlayers);
-    const received = makeSide(receivedPlayers);
+    // For received players, use this team's starters. For sent players,
+    // use the team they went TO (their new team's starters).
+    const received = makeSide(receivedPlayers, teamId);
+
+    // Sent players: compute on the destination team. Each sent item has
+    // toTeamId = the team that received the player.
+    const sent: PlayerSideOutcome[] = sentPlayers.map((i) => {
+      const info = playerInfoById.get(i.playerId!) || {
+        name: 'Unknown',
+        position: 'UNK',
+      };
+      const weekly = (pointsByPlayer.get(i.playerId!) || []).sort(
+        (a, b) => a.week - b.week
+      );
+      const totalPoints =
+        Math.round(weekly.reduce((sum, w) => sum + w.points, 0) * 10) / 10;
+
+      let startedPoints: number | null = null;
+      let starterWeeks: number | null = null;
+      if (hasAnyStarterData) {
+        let sp = 0;
+        let sw = 0;
+        // Check if the player was started by their NEW team
+        const destTeamId = i.toTeamId;
+        for (const w of weekly) {
+          const starters = startersByTeamWeek.get(`${destTeamId}_${w.week}`);
+          if (starters && starters.has(i.playerId!)) {
+            sp += w.points;
+            sw++;
+          } else if (!starters) {
+            sp += w.points;
+            sw++;
+          }
+        }
+        startedPoints = Math.round(sp * 10) / 10;
+        starterWeeks = sw;
+      }
+
+      return {
+        playerId: i.playerId!,
+        playerName: info.name,
+        position: info.position,
+        weeklyPoints: weekly,
+        totalPoints,
+        startedPoints,
+        starterWeeks,
+      };
+    });
+
     const sentTotal = Math.round(
       sent.reduce((s, p) => s + p.totalPoints, 0) * 10
     ) / 10;
     const receivedTotal = Math.round(
       received.reduce((s, p) => s + p.totalPoints, 0) * 10
     ) / 10;
+
+    // Lineup-adjusted: only count points from started weeks
+    let lineupDifferential: number | null = null;
+    if (hasAnyStarterData) {
+      const receivedStarted = received.reduce((s, p) => s + (p.startedPoints ?? p.totalPoints), 0);
+      const sentStarted = sent.reduce((s, p) => s + (p.startedPoints ?? p.totalPoints), 0);
+      lineupDifferential = Math.round((receivedStarted - sentStarted) * 10) / 10;
+    }
 
     sides.push({
       teamId,
@@ -162,6 +290,7 @@ export async function computeOutcome(
       sentTotal,
       receivedTotal,
       differential: Math.round((receivedTotal - sentTotal) * 10) / 10,
+      lineupDifferential,
     });
   }
 
@@ -332,9 +461,33 @@ export async function computeRecordImpact(
     );
   }
 
+  // Build a lookup of which players were starters for the user's team
+  // each week, so we only adjust for players who actually affected the
+  // lineup score (not bench riders). Falls back to the old "count all
+  // traded players" behaviour when starter data isn't available.
+  const startersByWeek = new Map<number, Set<string>>();
+  for (const m of userMatchups) {
+    const isHome = callerTeamIdSet.has(m.homeTeamId);
+    const startersJson = isHome ? m.homeStartersJson : m.awayStartersJson;
+    if (startersJson) {
+      try {
+        const ids: string[] = JSON.parse(startersJson);
+        startersByWeek.set(m.week, new Set(ids));
+      } catch { /* ignore malformed JSON */ }
+    }
+  }
+
   // For each completed matchup, compute the net adjustment:
-  //   adjustment = (sum of "sent" players' points) - (sum of "received" players' points)
-  //   but only for trades executed BEFORE this week.
+  //   Only adjust for players who were actually in a starting lineup:
+  //   - Received player in user's starters → their pts are in the actual
+  //     score, so subtract them for the hypothetical.
+  //   - Sent player who was in user's starters pre-trade → they would
+  //     have contributed to the hypothetical score, so add them back.
+  //     When we don't have pre-trade lineup data, we use the sent
+  //     player's new team's starters as a proxy — if they were good
+  //     enough to start there, they'd likely have started here.
+  //   Falls back to counting all traded players when no starter data
+  //   exists (pre-migration matchups).
   const flippedWeeks: RecordImpact['flippedWeeks'] = [];
   let actualWins = 0;
   let actualLosses = 0;
@@ -344,10 +497,35 @@ export async function computeRecordImpact(
   let hypoTies = 0;
   let totalPointDifferential = 0;
 
+  // Also collect the OTHER teams' starters for the "sent player" proxy.
+  // We need to check all matchups, not just the user's, because the sent
+  // player is now on another team.
+  const startersByTeamWeek = new Map<string, Set<string>>();
+  for (const m of matchups) {
+    if (m.homeStartersJson) {
+      try {
+        startersByTeamWeek.set(
+          `${m.homeTeamId}_${m.week}`,
+          new Set(JSON.parse(m.homeStartersJson) as string[])
+        );
+      } catch { /* ignore */ }
+    }
+    if (m.awayStartersJson) {
+      try {
+        startersByTeamWeek.set(
+          `${m.awayTeamId}_${m.week}`,
+          new Set(JSON.parse(m.awayStartersJson) as string[])
+        );
+      } catch { /* ignore */ }
+    }
+  }
+
   for (const m of userMatchups) {
     const isHome = callerTeamIdSet.has(m.homeTeamId);
     const myScore = (isHome ? m.homeScore : m.awayScore) ?? 0;
     const oppScore = (isHome ? m.awayScore : m.homeScore) ?? 0;
+
+    const myStarters = startersByWeek.get(m.week);
 
     let adjustment = 0;
     for (const t of userTrades) {
@@ -358,11 +536,21 @@ export async function computeRecordImpact(
         if (!item.playerId) continue;
         const pts = pointsByPlayerWeek.get(`${item.playerId}_${m.week}`) || 0;
         if (callerTeamIdSet.has(item.toTeamId)) {
-          // Received this player -> hypothetical lineup doesn't have them
-          adjustment -= pts;
+          // Received this player → only subtract if they were in our
+          // starting lineup (their pts are in our actual score).
+          // If no starter data, fall back to counting all.
+          if (!myStarters || myStarters.has(item.playerId)) {
+            adjustment -= pts;
+          }
         } else if (callerTeamIdSet.has(item.fromTeamId)) {
-          // Sent this player -> hypothetical lineup still has them
-          adjustment += pts;
+          // Sent this player → only add back if they would have started.
+          // Proxy: if they started on their new team, they were
+          // start-worthy. If no starter data, fall back to counting all.
+          const newTeamId = item.toTeamId;
+          const newTeamStarters = startersByTeamWeek.get(`${newTeamId}_${m.week}`);
+          if (!newTeamStarters || newTeamStarters.has(item.playerId)) {
+            adjustment += pts;
+          }
         }
       }
     }

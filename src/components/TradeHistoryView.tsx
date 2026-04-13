@@ -40,6 +40,8 @@ interface PlayerOutcome {
   playerName: string;
   position: string;
   totalPoints: number;
+  startedPoints: number | null;
+  starterWeeks: number | null;
   weeklyPoints: Array<{ week: number; points: number }>;
 }
 
@@ -51,6 +53,7 @@ interface TradeOutcomeSide {
   sentTotal: number;
   receivedTotal: number;
   differential: number;
+  lineupDifferential: number | null;
 }
 
 interface TradeOutcome {
@@ -706,6 +709,11 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
               ? new Date(t.executedAt).toLocaleDateString()
               : 'Unknown date';
             const callerOutcome = t.outcome?.sides.find(s => s.teamId === callerTeamId) ?? null;
+            // Prefer lineup-adjusted differential when available
+            const callerDiff = callerOutcome
+              ? (callerOutcome.lineupDifferential ?? callerOutcome.differential)
+              : 0;
+            const hasLineupData = callerOutcome?.lineupDifferential != null;
             return (
               <div
                 key={t.id}
@@ -755,17 +763,17 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                       {callerOutcome && (
                         <span
                           className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            callerOutcome.differential > 0
+                            callerDiff > 0
                               ? isDarkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-50 text-emerald-700'
-                              : callerOutcome.differential < 0
+                              : callerDiff < 0
                               ? isDarkMode ? 'bg-red-500/20 text-red-300' : 'bg-red-50 text-red-700'
                               : isDarkMode ? 'bg-slate-500/20 text-slate-300' : 'bg-slate-100 text-slate-600'
                           }`}
                         >
-                          {callerOutcome.differential > 0
-                            ? `+${callerOutcome.differential} pts`
-                            : callerOutcome.differential < 0
-                            ? `${callerOutcome.differential} pts`
+                          {callerDiff > 0
+                            ? `+${callerDiff} pts`
+                            : callerDiff < 0
+                            ? `${callerDiff} pts`
                             : 'Even'}
                         </span>
                       )}
@@ -789,31 +797,34 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                     {/* Inline outcome totals */}
                     {t.outcome && (
                       <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                        {t.outcome.sides.map((s) => (
-                          <span
-                            key={s.teamId}
-                            className={`inline-flex items-center gap-1 ${
-                              isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                            }`}
-                          >
-                            {s.differential >= 0 ? (
-                              <TrendingUp className="w-3 h-3 text-emerald-500" />
-                            ) : (
-                              <TrendingDown className="w-3 h-3 text-red-500" />
-                            )}
-                            {s.teamName}:{' '}
+                        {t.outcome.sides.map((s) => {
+                          const diff = s.lineupDifferential ?? s.differential;
+                          return (
                             <span
-                              className={
-                                s.differential >= 0
-                                  ? 'text-emerald-500 font-semibold'
-                                  : 'text-red-500 font-semibold'
-                              }
+                              key={s.teamId}
+                              className={`inline-flex items-center gap-1 ${
+                                isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                              }`}
                             >
-                              {s.differential >= 0 ? '+' : ''}
-                              {s.differential}
+                              {diff >= 0 ? (
+                                <TrendingUp className="w-3 h-3 text-emerald-500" />
+                              ) : (
+                                <TrendingDown className="w-3 h-3 text-red-500" />
+                              )}
+                              {s.teamName}:{' '}
+                              <span
+                                className={
+                                  diff >= 0
+                                    ? 'text-emerald-500 font-semibold'
+                                    : 'text-red-500 font-semibold'
+                                }
+                              >
+                                {diff >= 0 ? '+' : ''}
+                                {diff}
+                              </span>
                             </span>
-                          </span>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -833,35 +844,38 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                     {/* Your trade result summary */}
                     {callerOutcome && (
                       <div className={`mt-4 px-3 py-2.5 rounded-lg flex items-center gap-2.5 ${
-                        callerOutcome.differential > 0
+                        callerDiff > 0
                           ? isDarkMode ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-50 border border-emerald-200'
-                          : callerOutcome.differential < 0
+                          : callerDiff < 0
                           ? isDarkMode ? 'bg-red-500/10 border border-red-500/20' : 'bg-red-50 border border-red-200'
                           : isDarkMode ? 'bg-slate-800/50 border border-slate-700' : 'bg-slate-50 border border-slate-200'
                       }`}>
-                        {callerOutcome.differential > 0 ? (
+                        {callerDiff > 0 ? (
                           <TrendingUp className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                        ) : callerOutcome.differential < 0 ? (
+                        ) : callerDiff < 0 ? (
                           <TrendingDown className="w-4 h-4 text-red-500 flex-shrink-0" />
                         ) : (
                           <ArrowRightLeft className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
                         )}
                         <div>
                           <p className={`text-sm font-semibold ${
-                            callerOutcome.differential > 0
+                            callerDiff > 0
                               ? isDarkMode ? 'text-emerald-400' : 'text-emerald-700'
-                              : callerOutcome.differential < 0
+                              : callerDiff < 0
                               ? isDarkMode ? 'text-red-400' : 'text-red-700'
                               : isDarkMode ? 'text-slate-300' : 'text-slate-700'
                           }`}>
-                            {callerOutcome.differential > 0
-                              ? `You profited +${callerOutcome.differential} pts`
-                              : callerOutcome.differential < 0
-                              ? `You lost ${Math.abs(callerOutcome.differential)} pts`
+                            {callerDiff > 0
+                              ? `You profited +${callerDiff} pts`
+                              : callerDiff < 0
+                              ? `You lost ${Math.abs(callerDiff)} pts`
                               : 'Even trade'}
+                            {hasLineupData ? ' (lineup)' : ''}
                           </p>
                           <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                            Received {callerOutcome.receivedTotal} pts — Sent {callerOutcome.sentTotal} pts
+                            {hasLineupData
+                              ? 'Based on points scored while in starting lineup'
+                              : `Received ${callerOutcome.receivedTotal} pts — Sent ${callerOutcome.sentTotal} pts`}
                             {t.weekExecuted ? ` since Week ${t.weekExecuted + 1}` : ''}
                           </p>
                         </div>
@@ -897,6 +911,11 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                                     }
                                   >
                                     {p.playerName}: {p.totalPoints}
+                                    {p.startedPoints != null && p.startedPoints !== p.totalPoints && (
+                                      <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>
+                                        {' '}({p.startedPoints} as starter)
+                                      </span>
+                                    )}
                                   </p>
                                 ))}
                               </div>
@@ -916,6 +935,11 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                                     }
                                   >
                                     {p.playerName}: {p.totalPoints}
+                                    {p.startedPoints != null && p.startedPoints !== p.totalPoints && (
+                                      <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>
+                                        {' '}({p.startedPoints} as starter)
+                                      </span>
+                                    )}
                                   </p>
                                 ))}
                               </div>

@@ -1051,6 +1051,14 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
               const isPlayoffWeek = week > regularSeasonWeeks;
               const isChampionshipWeek = week === regularSeasonWeeks + playoffWeeksCount;
 
+              // Convert Sleeper starters (external IDs) to internal IDs
+              const homeStarters = (team1.starters || [])
+                .map((eid: string) => existingPlayersByExtId.get(eid)?.id)
+                .filter((id: string | undefined): id is string => !!id);
+              const awayStarters = (team2.starters || [])
+                .map((eid: string) => existingPlayersByExtId.get(eid)?.id)
+                .filter((id: string | undefined): id is string => !!id);
+
               if (!existingMatchup) {
                 // Create the matchup
                 await db.insert(schema.matchups).values({
@@ -1066,6 +1074,8 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
                   isComplete: week < effectiveCurrentWeek,
                   isPlayoff: isPlayoffWeek,
                   isChampionship: isChampionshipWeek,
+                  homeStartersJson: homeStarters.length > 0 ? JSON.stringify(homeStarters) : null,
+                  awayStartersJson: awayStarters.length > 0 ? JSON.stringify(awayStarters) : null,
                 });
                 matchupsImported++;
               } else {
@@ -1077,6 +1087,8 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
                     isComplete: week < effectiveCurrentWeek,
                     isPlayoff: isPlayoffWeek,
                     isChampionship: isChampionshipWeek,
+                    homeStartersJson: homeStarters.length > 0 ? JSON.stringify(homeStarters) : null,
+                    awayStartersJson: awayStarters.length > 0 ? JSON.stringify(awayStarters) : null,
                   })
                   .where(eq(schema.matchups.id, existingMatchup.id));
               }

@@ -314,6 +314,10 @@ export const matchups = sqliteTable('matchups', {
   isPlayoff: integer('is_playoff', { mode: 'boolean' }).notNull().default(false),
   isChampionship: integer('is_championship', { mode: 'boolean' }).notNull().default(false),
   isComplete: integer('is_complete', { mode: 'boolean' }).notNull().default(false),
+  /** JSON array of Sleeper external player IDs in the home team's starting lineup */
+  homeStartersJson: text('home_starters_json'),
+  /** JSON array of Sleeper external player IDs in the away team's starting lineup */
+  awayStartersJson: text('away_starters_json'),
 }, (table) => ({
   matchupUnique: uniqueIndex('matchup_unique').on(table.leagueId, table.week, table.homeTeamId),
 }));
