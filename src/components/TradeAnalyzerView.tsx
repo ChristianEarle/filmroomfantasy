@@ -1166,13 +1166,22 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   }, []);
 
   const handleAddAsset = useCallback((teamId: number, asset: TradeAsset) => {
-    setTeams((prev) =>
-      prev.map((t) =>
+    setTeams((prev) => {
+      // In multi-team trades, auto-assign destination to the first other team
+      // so the user doesn't get silently blocked by validation
+      const isMulti = prev.length > 2;
+      const defaultDest = isMulti
+        ? prev.find((t) => t.id !== teamId)?.id ?? undefined
+        : undefined;
+      const assetWithDest = defaultDest != null
+        ? { ...asset, destinationTeamId: defaultDest }
+        : asset;
+      return prev.map((t) =>
         t.id === teamId
-          ? { ...t, sends: [...t.sends, asset] }
+          ? { ...t, sends: [...t.sends, assetWithDest] }
           : t
-      )
-    );
+      );
+    });
     setResult(null);
   }, []);
 
