@@ -170,14 +170,14 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
               <div key={group.label} className="mt-3">
                 <button
                   onClick={() => toggleGroup(group.label)}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-md transition-colors ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
                     isDarkMode
-                      ? `text-slate-500 hover:text-slate-300 ${hasActiveChild && !isExpanded ? 'text-blue-400' : ''}`
-                      : `text-slate-400 hover:text-slate-600 ${hasActiveChild && !isExpanded ? 'text-blue-600' : ''}`
+                      ? `text-slate-400 hover:bg-slate-800 hover:text-white ${hasActiveChild && !isExpanded ? 'text-blue-400' : ''}`
+                      : `text-slate-600 hover:bg-slate-100 hover:text-slate-900 ${hasActiveChild && !isExpanded ? 'text-blue-600' : ''}`
                   }`}
                 >
-                  <span className="text-xs font-semibold uppercase tracking-wider">{group.label}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  <span className="text-sm font-medium">{group.label}</span>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 </button>
                 {isExpanded && (
                   <ul className="mt-1 space-y-0.5">
