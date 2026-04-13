@@ -668,6 +668,42 @@ export type TeamScoutingReport = typeof teamScoutingReports.$inferSelect;
 export type NewTeamScoutingReport = typeof teamScoutingReports.$inferInsert;
 
 // ============================================
+// DRAFT RANKINGS
+// ============================================
+//
+// Pre-computed AI draft rankings. Redraft rankings are anchored on
+// Sleeper ADP + Claude analysis; dynasty rookie rankings are
+// generated entirely by Claude from player context. Rankings are
+// regenerated on-demand from the admin panel or via cron.
+
+export const draftRankings = sqliteTable('draft_rankings', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
+  superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
+  overallRank: integer('overall_rank').notNull(),
+  positionRank: integer('position_rank').notNull(),
+  tier: integer('tier').notNull(), // 1-8 tier grouping
+  projectedPoints: real('projected_points'), // full-season projected total (null for rookies without data)
+  adp: real('adp'), // average draft position from Sleeper
+  adpDelta: real('adp_delta'), // rank - ADP (negative = value, positive = reach)
+  rationale: text('rationale').notNull(), // AI-generated 1-2 sentence blurb
+  seasonYear: integer('season_year').notNull(),
+  generatedAt: integer('generated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  draftRankUnique: uniqueIndex('draft_rank_unique').on(table.playerId, table.rankingType, table.scoringFormat, table.superflex, table.seasonYear),
+  draftRankTypeIdx: index('idx_draft_rank_type').on(table.rankingType, table.scoringFormat, table.superflex, table.seasonYear),
+}));
+
+export const draftRankingsRelations = relations(draftRankings, ({ one }) => ({
+  player: one(nflPlayers, { fields: [draftRankings.playerId], references: [nflPlayers.id] }),
+}));
+
+export type DraftRanking = typeof draftRankings.$inferSelect;
+export type NewDraftRanking = typeof draftRankings.$inferInsert;
+
+// ============================================
 // TYPE EXPORTS
 // ============================================
 

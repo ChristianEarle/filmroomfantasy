@@ -25,6 +25,7 @@ import { tradeHistoryRoutes } from './routes/tradeHistory';
 import { tradeFinderRoutes } from './routes/tradeFinder';
 import { analyticsRoutes } from './routes/analytics';
 import { articleRoutes } from './routes/articles';
+import { draftRankingsRoutes } from './routes/draftRankings';
 
 // Types
 export type Env = {
@@ -188,6 +189,7 @@ app.route('/api/rosters', rostersRoutes);
 app.route('/api/admin', adminStatsRoutes);
 app.route('/api/analytics', analyticsRoutes);
 app.route('/api/articles', articleRoutes);
+app.route('/api/draft-rankings', draftRankingsRoutes);
 
 // 404 handler
 app.notFound((c) => {
