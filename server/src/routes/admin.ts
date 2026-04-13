@@ -437,8 +437,8 @@ adminRoutes.post('/sync-twitter-news', async (c) => {
     let inserted = 0;
     let skipped = 0;
     const seen = new Set<string>();
-    const openaiKey = c.env.OPENAI_API_KEY;
-    const useAi = !!openaiKey?.trim();
+    const aiKey = c.env.ANTHROPIC_API_KEY;
+    const useAi = !!aiKey?.trim();
 
     // Allow longer RSS article snippets (RotoWire, PFF, etc.) - 800 chars
     const MAX_ITEM_LENGTH = 800;
@@ -473,7 +473,7 @@ adminRoutes.post('/sync-twitter-news', async (c) => {
         const result = await checkNewsRelevance(
           tweet.text,
           mentionedPlayers.map((p) => p.name),
-          openaiKey
+          aiKey
         );
         if (result) {
           const relevantSet = new Set(result.relevantPlayerNames.map((n) => n.trim().toLowerCase()));
@@ -618,8 +618,8 @@ adminRoutes.post('/sync-espn-news', async (c) => {
 
     let inserted = 0;
     let skipped = 0;
-    const openaiKey = c.env.OPENAI_API_KEY;
-    const useAi = !!openaiKey?.trim();
+    const aiKey = c.env.ANTHROPIC_API_KEY;
+    const useAi = !!aiKey?.trim();
 
     for (const article of articles) {
       const headline = (article.headline || '').trim();
@@ -648,11 +648,11 @@ adminRoutes.post('/sync-espn-news', async (c) => {
       let aiSummary: string | null = null;
       let playerSummaries: Record<string, string> = {};
 
-      if (useAi && mentionedPlayers.length > 1) {
+      if (useAi) {
         const result = await checkNewsRelevance(
           `${headline}. ${description}`,
           mentionedPlayers.map((p) => p.name),
-          openaiKey
+          aiKey
         );
         if (result) {
           const relevantSet = new Set(result.relevantPlayerNames.map((n) => n.trim().toLowerCase()));
@@ -755,8 +755,8 @@ adminRoutes.post('/sync-rotowire-news', async (c) => {
 
     let inserted = 0;
     let skipped = 0;
-    const openaiKey = c.env.OPENAI_API_KEY;
-    const useAi = !!openaiKey?.trim();
+    const aiKey = c.env.ANTHROPIC_API_KEY;
+    const useAi = !!aiKey?.trim();
     const seen = new Set<string>();
 
     for (const item of feedItems) {
@@ -788,7 +788,7 @@ adminRoutes.post('/sync-rotowire-news', async (c) => {
         const result = await checkNewsRelevance(
           item.text,
           mentionedPlayers.map((p) => p.name),
-          openaiKey
+          aiKey
         );
         if (result) {
           const relevantSet = new Set(result.relevantPlayerNames.map((n) => n.trim().toLowerCase()));

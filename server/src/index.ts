@@ -34,8 +34,8 @@ export type Env = {
   SYNC_SECRET?: string; // Optional: required for POST /api/admin/sync-players
   ODDS_API_KEY?: string; // Optional: The Odds API key for fetching NFL odds
   TWITTER_RSS_URLS?: string; // Comma-separated RSS URLs, e.g. https://nitter.net/AdamSchefter/rss
-  OPENAI_API_KEY?: string; // For AI relevance filtering of player news
-  ANTHROPIC_API_KEY?: string; // For AI trade analysis (Claude API)
+  OPENAI_API_KEY?: string; // Deprecated: was used for news filtering, now uses ANTHROPIC_API_KEY
+  ANTHROPIC_API_KEY?: string; // For AI trade analysis and news relevance filtering (Claude API)
   GOOGLE_CLIENT_ID?: string; // Google OAuth client ID — get from https://console.cloud.google.com/apis/credentials
   YAHOO_CLIENT_ID?: string; // Yahoo OAuth client ID — get from https://developer.yahoo.com/apps/
   YAHOO_CLIENT_SECRET?: string; // Yahoo OAuth client secret
