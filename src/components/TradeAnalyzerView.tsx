@@ -1372,7 +1372,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   // Roster panel
   const [myRoster, setMyRoster] = useState<MyRoster | null>(null);
   const [isLoadingRoster, setIsLoadingRoster] = useState(false);
-  const [showMyRoster, setShowMyRoster] = useState(true);
+  const [showMyRoster, setShowMyRoster] = useState(false);
 
   // Follow-up chat
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
@@ -1810,7 +1810,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                   setSelectedLeagueId(e.target.value);
                   setResult(null);
                 }}
-                className={`appearance-none pr-8 pl-3 py-1.5 text-xs font-semibold rounded-md border transition-colors cursor-pointer ${
+                className={`appearance-none pr-8 pl-3 py-1.5 text-xs font-semibold rounded-md border transition-colors cursor-pointer max-w-[220px] truncate ${
                   isDarkMode
                     ? 'bg-slate-950 border-slate-800 text-white hover:border-slate-600'
                     : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
@@ -2201,35 +2201,42 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         </div>
 
         {teamCount === 2 ? (
-          <div className="grid md:grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
-            {teams.map((team, i) => (
-              <div key={team.id} className="contents md:contents">
-                {i === 1 && (
-                  <div className="flex md:flex-col items-center justify-center py-2 md:py-0">
-                    <div
-                      className={`w-10 h-10 rounded-full border flex items-center justify-center ${
-                        isDarkMode
-                          ? 'bg-slate-900 border-slate-700 text-slate-400'
-                          : 'bg-slate-100 border-slate-200 text-slate-500'
-                      }`}
-                    >
-                      <ArrowRightLeft className="w-4 h-4" />
-                    </div>
-                  </div>
-                )}
-                <TradeTeamCard
-                  team={team}
-                  teamIndex={i}
-                  isDarkMode={isDarkMode}
-                  allTeams={teams}
-                  isMultiTeam={isMultiTeam}
-                  onAddAsset={handleAddAsset}
-                  onRemoveAsset={handleRemoveAsset}
-                  onLabelChange={handleLabelChange}
-                  onAssetDestinationChange={handleAssetDestinationChange}
-                />
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
+            <TradeTeamCard
+              key={teams[0].id}
+              team={teams[0]}
+              teamIndex={0}
+              isDarkMode={isDarkMode}
+              allTeams={teams}
+              isMultiTeam={isMultiTeam}
+              onAddAsset={handleAddAsset}
+              onRemoveAsset={handleRemoveAsset}
+              onLabelChange={handleLabelChange}
+              onAssetDestinationChange={handleAssetDestinationChange}
+            />
+            <div className="flex items-center justify-center py-1 md:py-0">
+              <div
+                className={`w-10 h-10 rounded-full border flex items-center justify-center ${
+                  isDarkMode
+                    ? 'bg-slate-900 border-slate-700 text-slate-400'
+                    : 'bg-slate-100 border-slate-200 text-slate-500'
+                }`}
+              >
+                <ArrowRightLeft className="w-4 h-4" />
               </div>
-            ))}
+            </div>
+            <TradeTeamCard
+              key={teams[1].id}
+              team={teams[1]}
+              teamIndex={1}
+              isDarkMode={isDarkMode}
+              allTeams={teams}
+              isMultiTeam={isMultiTeam}
+              onAddAsset={handleAddAsset}
+              onRemoveAsset={handleRemoveAsset}
+              onLabelChange={handleLabelChange}
+              onAssetDestinationChange={handleAssetDestinationChange}
+            />
           </div>
         ) : (
           <div
