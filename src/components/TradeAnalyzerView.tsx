@@ -1078,6 +1078,46 @@ function TradeResultsCard({
             ? 'bg-amber-500/15 text-amber-400'
             : 'bg-amber-50 text-amber-700';
 
+          // Per-team derived stats (using data we already have)
+          const teamForGrade = teams.find(
+            (t) => (t.label || `Team ${t.id + 1}`).toLowerCase() === tg.team.toLowerCase(),
+          );
+          const isFavored =
+            result.fairnessScore.favored.toLowerCase() === tg.team.toLowerCase();
+          const fairnessMagnitude = Math.abs(result.fairnessScore.score - 50);
+          const fairnessDeltaLabel = fairnessMagnitude === 0
+            ? '0'
+            : isFavored
+            ? `+${Math.round(fairnessMagnitude)}`
+            : `-${Math.round(fairnessMagnitude)}`;
+          const fairnessColorClass = fairnessMagnitude === 0
+            ? (isDarkMode ? 'text-slate-300' : 'text-slate-700')
+            : isFavored
+            ? 'text-emerald-500'
+            : isDarkMode
+            ? 'text-amber-400'
+            : 'text-amber-600';
+          const sendsCount = teamForGrade?.sends.length ?? 0;
+          // Receives = assets from other teams destined for this team.
+          // In 2-team trades, destinationTeamId is unset — every asset from
+          // the other team comes to this one, so we fall back to that count.
+          const receivesCount = teams.length === 2
+            ? (teams.find((t) => t.id !== (teamForGrade?.id ?? -1))?.sends.length ?? 0)
+            : teams.reduce(
+                (n, t) =>
+                  t.id === teamForGrade?.id
+                    ? n
+                    : n + t.sends.filter((a) => a.destinationTeamId === teamForGrade?.id).length,
+                0,
+              );
+
+          const statLabelCls = `text-[10px] uppercase tracking-wider font-bold mt-1 ${
+            isDarkMode ? 'text-slate-500' : 'text-slate-500'
+          }`;
+          const statValueCls = `text-lg font-extrabold leading-none ${
+            isDarkMode ? 'text-white' : 'text-slate-900'
+          }`;
+
           return (
             <div
               key={i}
@@ -1114,6 +1154,24 @@ function TradeResultsCard({
               >
                 {tg.summary}
               </p>
+              <div
+                className={`flex items-center gap-4 mt-4 pt-4 border-t ${
+                  isDarkMode ? 'border-slate-800' : 'border-slate-200'
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className={`${statValueCls} ${fairnessColorClass}`}>{fairnessDeltaLabel}</div>
+                  <div className={statLabelCls}>Fairness Δ</div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className={statValueCls}>{sendsCount}</div>
+                  <div className={statLabelCls}>Sends</div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className={statValueCls}>{receivesCount}</div>
+                  <div className={statLabelCls}>Receives</div>
+                </div>
+              </div>
             </div>
           );
         })}
@@ -1260,6 +1318,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const [leagueType, setLeagueType] = useState<LeagueType>('redraft');
   const [strategy, setStrategy] = useState<TeamStrategy>('balanced');
   const [context, setContext] = useState('');
+  const [showContext, setShowContext] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<TradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -2195,47 +2254,76 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
           </div>
         )}
 
-        {/* Context (compact, inside builder) */}
-        <div
-          className={`rounded-xl border p-3 ${
-            isDarkMode
-              ? 'bg-slate-950/50 border-slate-800'
-              : 'bg-slate-50 border-slate-200'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <label
-              className={`text-[10px] uppercase tracking-wider font-bold ${
-                isDarkMode ? 'text-slate-500' : 'text-slate-500'
+        {/* Context (subtle collapsible) */}
+        <div>
+          {showContext ? (
+            <div
+              className={`rounded-lg border p-3 ${
+                isDarkMode
+                  ? 'bg-slate-950/50 border-slate-800'
+                  : 'bg-slate-50 border-slate-200'
               }`}
             >
-              Additional context (optional)
-            </label>
-            <span
-              className={`text-[10px] font-semibold ${
-                charCount >= MAX_CONTEXT_CHARS
-                  ? isDarkMode
-                    ? 'text-amber-400'
-                    : 'text-amber-600'
-                  : isDarkMode
-                  ? 'text-slate-500'
-                  : 'text-slate-400'
+              <div className="flex items-center justify-between mb-2">
+                <label
+                  className={`text-[10px] uppercase tracking-wider font-bold ${
+                    isDarkMode ? 'text-slate-500' : 'text-slate-500'
+                  }`}
+                >
+                  Additional context for the AI
+                </label>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`text-[10px] font-semibold ${
+                      charCount >= MAX_CONTEXT_CHARS
+                        ? isDarkMode
+                          ? 'text-amber-400'
+                          : 'text-amber-600'
+                        : isDarkMode
+                        ? 'text-slate-500'
+                        : 'text-slate-400'
+                    }`}
+                  >
+                    {charCount}/{MAX_CONTEXT_CHARS}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowContext(false)}
+                    className={`text-[10px] font-semibold uppercase tracking-wider ${
+                      isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Hide
+                  </button>
+                </div>
+              </div>
+              <textarea
+                value={context}
+                onChange={(e) => handleContextChange(e.target.value)}
+                placeholder="League quirks, roster needs, trade motivation, anything the AI should weigh..."
+                rows={2}
+                autoFocus
+                className={`w-full px-2 py-1.5 text-sm rounded border resize-none transition-colors ${
+                  isDarkMode
+                    ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-500 focus:border-blue-500'
+                    : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
+                } outline-none`}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowContext(true)}
+              className={`text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                isDarkMode ? 'text-slate-400 hover:text-blue-400' : 'text-slate-500 hover:text-blue-600'
               }`}
             >
-              {charCount}/{MAX_CONTEXT_CHARS}
-            </span>
-          </div>
-          <textarea
-            value={context}
-            onChange={(e) => handleContextChange(e.target.value)}
-            placeholder="Add context about your league, roster needs, scoring settings, or anything else the AI should consider..."
-            rows={2}
-            className={`w-full px-2 py-1.5 text-sm rounded border resize-none transition-colors ${
-              isDarkMode
-                ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-500 focus:border-blue-500'
-                : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
-            } outline-none`}
-          />
+              <Plus className="w-3 h-3" />
+              {context
+                ? `Context added (${charCount}/${MAX_CONTEXT_CHARS})`
+                : 'Add context for the AI (optional)'}
+            </button>
+          )}
         </div>
 
         {/* CTA row */}
