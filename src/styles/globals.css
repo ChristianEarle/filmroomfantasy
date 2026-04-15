@@ -803,3 +803,161 @@ html {
 /* Animation */
 @keyframes fr-pulse { 50% { opacity: 0.5; } }
 .animate-pulse { animation: fr-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+
+/* -- Comprehensive Tailwind utility patch --
+ * Yet more standard utilities missing from the pre-compiled bundle.
+ * Kept together so future audits know where to look.
+ */
+
+/* Display */
+.hidden      { display: none; }
+.block       { display: block; }
+.inline      { display: inline; }
+.inline-block { display: inline-block; }
+.inline-grid { display: inline-grid; }
+.inline-flex { display: inline-flex; }
+.contents    { display: contents; }
+
+/* Position */
+.sticky    { position: sticky; }
+.absolute  { position: absolute; }
+.relative  { position: relative; }
+.fixed     { position: fixed; }
+
+/* z-index */
+.z-0  { z-index: 0; }
+.z-10 { z-index: 10; }
+.z-20 { z-index: 20; }
+.z-30 { z-index: 30; }
+.z-40 { z-index: 40; }
+.z-50 { z-index: 50; }
+
+/* Top / Right / Bottom / Left */
+.top-0     { top: 0; }
+.top-1\/2  { top: 50%; }
+.top-2     { top: 0.5rem; }
+.right-0   { right: 0; }
+.right-1   { right: 0.25rem; }
+.right-2   { right: 0.5rem; }
+.right-3   { right: 0.75rem; }
+.bottom-0  { bottom: 0; }
+.bottom-4  { bottom: 1rem; }
+.left-0    { left: 0; }
+.left-1\/2 { left: 50%; }
+.-right-20 { right: -5rem; }
+.-top-20   { top: -5rem; }
+
+/* Translate (for absolutely-positioned helpers) */
+.-translate-y-1\/2 { --tw-translate-y: -50%; transform: translateY(-50%); }
+.-translate-x-1\/2 { --tw-translate-x: -50%; transform: translateX(-50%); }
+.translate-y-0     { transform: translateY(0); }
+.translate-y-4     { transform: translateY(1rem); }
+
+/* Additional sizing */
+.w-60  { width: 15rem; }
+.h-60  { height: 15rem; }
+.w-80  { width: 20rem; }
+.h-80  { height: 20rem; }
+.max-h-48 { max-height: 12rem; }
+.max-h-60 { max-height: 15rem; }
+.max-w-lg { max-width: 32rem; }
+
+/* Padding */
+.p-5   { padding: 1.25rem; }
+.px-1  { padding-left: 0.25rem; padding-right: 0.25rem; }
+.px-1\.5 { padding-left: 0.375rem; padding-right: 0.375rem; }
+.px-5  { padding-left: 1.25rem; padding-right: 1.25rem; }
+.pl-2  { padding-left: 0.5rem; }
+.pl-3  { padding-left: 0.75rem; }
+.pr-6  { padding-right: 1.5rem; }
+.pr-8  { padding-right: 2rem; }
+.pt-2  { padding-top: 0.5rem; }
+.py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+
+/* Margin */
+.mb-5     { margin-bottom: 1.25rem; }
+.mt-0\.5  { margin-top: 0.125rem; }
+.mt-1\.5  { margin-top: 0.375rem; }
+.mt-4     { margin-top: 1rem; }
+.ml-0\.5  { margin-left: 0.125rem; }
+.ml-auto  { margin-left: auto; }
+.mr-auto  { margin-right: auto; }
+.mt-auto  { margin-top: auto; }
+.mr-1     { margin-right: 0.25rem; }
+
+/* Gap */
+.gap-2\.5 { gap: 0.625rem; }
+.gap-5    { gap: 1.25rem; }
+
+/* Font weight */
+.font-normal    { font-weight: 400; }
+.font-semibold  { font-weight: 600; }
+.font-extrabold { font-weight: 800; }
+.font-black     { font-weight: 900; }
+
+/* Line height */
+.leading-none    { line-height: 1; }
+.leading-tight   { line-height: 1.25; }
+.leading-snug    { line-height: 1.375; }
+.leading-normal  { line-height: 1.5; }
+
+/* Align items / content */
+.items-baseline { align-items: baseline; }
+.items-end      { align-items: flex-end; }
+.content-center { align-content: center; }
+.place-items-center { place-items: center; }
+
+/* Border */
+.border-0      { border-width: 0; }
+.border-dashed { border-style: dashed; }
+.border-none   { border-style: none; }
+
+/* Background */
+.bg-transparent { background-color: transparent; }
+
+/* Colors */
+.text-black { color: #000000; }
+
+/* Filters / effects */
+.blur-3xl { filter: blur(64px); }
+.shadow        { box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1); }
+.shadow-sm     { box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); }
+.shadow-lg     { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1); }
+
+/* Pointer events */
+.pointer-events-none { pointer-events: none; }
+.pointer-events-auto { pointer-events: auto; }
+
+/* Transitions */
+.transition-opacity  { transition-property: opacity; transition-duration: 150ms; transition-timing-function: cubic-bezier(0.4,0,0.2,1); }
+.duration-200 { transition-duration: 200ms; }
+.duration-300 { transition-duration: 300ms; }
+.duration-500 { transition-duration: 500ms; }
+.ease-out     { transition-timing-function: cubic-bezier(0, 0, 0.2, 1); }
+.ease-in-out  { transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* Animations */
+@keyframes fr-spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: fr-spin 1s linear infinite; }
+
+/* Forms */
+.outline-none    { outline: none; outline-offset: 0; }
+.appearance-none { appearance: none; -webkit-appearance: none; }
+.resize-none     { resize: none; }
+
+/* Backdrop */
+.backdrop-blur   { -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+
+/* sm: responsive variants for the CTA row + mobile adjustments */
+@media (min-width: 640px) {
+  .sm\:flex-row     { flex-direction: row; }
+  .sm\:items-center { align-items: center; }
+  .sm\:w-auto       { width: auto; }
+}
+
+/* Override: some patterns use accent-blue-600 on checkboxes/radios */
+.accent-blue-600 { accent-color: #2563eb; }
+
+/* Disabled cursor helpers used on buttons */
+.disabled\:cursor-not-allowed:disabled { cursor: not-allowed; }
+.disabled\:opacity-50:disabled         { opacity: 0.5; }

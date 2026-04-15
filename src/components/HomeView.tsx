@@ -549,7 +549,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           }`}
         >
           <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center flex-shrink-0">
-            <ArrowLeftRight className="w-[18px] h-[18px] text-blue-500" aria-hidden="true" />
+            <ArrowLeftRight style={{ width: '18px', height: '18px' }} className="text-blue-500" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <div className={`text-sm font-semibold ${textCls}`}>Trade Analyzer</div>
@@ -565,7 +565,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           }`}
         >
           <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
-            <Plus className="w-[18px] h-[18px] text-emerald-500" aria-hidden="true" />
+            <Plus style={{ width: '18px', height: '18px' }} className="text-emerald-500" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <div className={`text-sm font-semibold flex items-center gap-2 ${textCls}`}>
@@ -588,7 +588,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           }`}
         >
           <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-            <BarChart3 className="w-[18px] h-[18px] text-amber-500" aria-hidden="true" />
+            <BarChart3 style={{ width: '18px', height: '18px' }} className="text-amber-500" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <div className={`text-sm font-semibold flex items-center gap-2 ${textCls}`}>
