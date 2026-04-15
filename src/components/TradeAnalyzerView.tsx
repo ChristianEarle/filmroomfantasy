@@ -14,6 +14,14 @@ import {
   Send,
   Lightbulb,
   Crown,
+  Scale,
+  BarChart3,
+  Calendar,
+  Target,
+  TrendingUp,
+  Shield,
+  MessageCircle,
+  Wand2,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -345,6 +353,15 @@ function DraftPickInput({
 
 // ── Asset Chip ─────────────────────────────────────────────────────────
 
+function positionBadgeClasses(position: string | undefined, isDarkMode: boolean) {
+  const p = (position || '').toUpperCase();
+  if (p === 'QB') return isDarkMode ? 'bg-red-500/20 text-red-300' : 'bg-red-50 text-red-700';
+  if (p === 'RB') return isDarkMode ? 'bg-green-500/20 text-green-300' : 'bg-green-50 text-green-700';
+  if (p === 'WR') return isDarkMode ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-50 text-blue-700';
+  if (p === 'TE') return isDarkMode ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-50 text-amber-700';
+  return isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600';
+}
+
 function AssetChip({
   asset,
   isDarkMode,
@@ -360,31 +377,41 @@ function AssetChip({
   onDestinationChange?: (destinationTeamId: number) => void;
   showDestination?: boolean;
 }) {
+  const isPick = asset.type === 'pick';
+  const badgeLabel = isPick ? 'PICK' : asset.position || '—';
+  const badgeClasses = isPick
+    ? isDarkMode
+      ? 'bg-slate-700 text-slate-200'
+      : 'bg-slate-200 text-slate-600'
+    : positionBadgeClasses(asset.position, isDarkMode);
+
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div
+      className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+        isDarkMode
+          ? 'bg-slate-900 border-slate-700 hover:border-blue-500/60'
+          : 'bg-white border-slate-200 hover:border-blue-400'
+      }`}
+    >
       <span
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium ${
-          asset.type === 'player'
-            ? isDarkMode
-              ? 'bg-blue-500/20 text-blue-300'
-              : 'bg-blue-50 text-blue-700'
-            : isDarkMode
-            ? 'bg-amber-500/20 text-amber-300'
-            : 'bg-amber-50 text-amber-700'
-        }`}
+        className={`inline-flex items-center justify-center min-w-[34px] px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${badgeClasses}`}
       >
-        {asset.position && (
-          <span className="text-[10px] font-bold opacity-70">{asset.position}</span>
-        )}
-        {asset.name}
-        <button
-          type="button"
-          onClick={onRemove}
-          className="ml-0.5 hover:opacity-70 transition-opacity"
-        >
-          <X className="w-3 h-3" />
-        </button>
+        {badgeLabel}
       </span>
+      <div className="flex-1 min-w-0">
+        <p
+          className={`truncate text-sm font-semibold ${
+            isDarkMode ? 'text-white' : 'text-slate-900'
+          }`}
+        >
+          {asset.name}
+        </p>
+        {asset.team && !isPick && (
+          <p className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            {asset.team}
+          </p>
+        )}
+      </div>
       {showDestination && otherTeams && otherTeams.length > 0 && onDestinationChange && (
         <div className="flex items-center gap-1">
           <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>→</span>
@@ -395,10 +422,10 @@ function AssetChip({
               className={`appearance-none pr-6 pl-2 py-0.5 text-xs rounded border transition-colors cursor-pointer ${
                 asset.destinationTeamId != null
                   ? isDarkMode
-                    ? 'bg-slate-700 border-slate-500 text-white'
+                    ? 'bg-slate-800 border-slate-600 text-white'
                     : 'bg-white border-slate-300 text-slate-900'
                   : isDarkMode
-                  ? 'bg-slate-700 border-amber-500/50 text-amber-400'
+                  ? 'bg-slate-800 border-amber-500/50 text-amber-400'
                   : 'bg-amber-50 border-amber-300 text-amber-700'
               } outline-none`}
             >
@@ -413,6 +440,18 @@ function AssetChip({
           </div>
         </div>
       )}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="Remove asset"
+        className={`p-1 rounded transition-colors ${
+          isDarkMode
+            ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
+            : 'text-slate-400 hover:text-red-500 hover:bg-red-50'
+        }`}
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 }
@@ -441,38 +480,54 @@ function TradeTeamCard({
   onAssetDestinationChange: (teamId: number, assetId: string, destinationTeamId: number) => void;
 }) {
   const [showPickInput, setShowPickInput] = useState(false);
-  const colors = [
-    { border: 'border-blue-500/30', bg: isDarkMode ? 'bg-blue-500/5' : 'bg-blue-50/50', accent: 'text-blue-500' },
-    { border: 'border-emerald-500/30', bg: isDarkMode ? 'bg-emerald-500/5' : 'bg-emerald-50/50', accent: 'text-emerald-500' },
-    { border: 'border-purple-500/30', bg: isDarkMode ? 'bg-purple-500/5' : 'bg-purple-50/50', accent: 'text-purple-500' },
-    { border: 'border-orange-500/30', bg: isDarkMode ? 'bg-orange-500/5' : 'bg-orange-50/50', accent: 'text-orange-500' },
-  ];
-  const color = colors[teamIndex % colors.length];
 
   const otherTeams = allTeams
     .filter((t) => t.id !== team.id)
     .map((t) => ({ id: t.id, label: t.label || `Team ${t.id + 1}` }));
 
+  const assetCount = team.sends.length;
+
   return (
-    <div className={`rounded-xl border ${color.border} ${color.bg} p-4`}>
-      <div className="flex items-center gap-2 mb-3">
-        <Users className={`w-4 h-4 ${color.accent}`} />
-        <input
-          type="text"
-          value={team.label}
-          onChange={(e) => onLabelChange(team.id, e.target.value)}
-          placeholder={`Team ${teamIndex + 1}`}
-          className={`text-sm font-semibold bg-transparent border-none outline-none w-full ${
-            isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
-          }`}
-        />
+    <div
+      className={`flex flex-col min-h-[260px] rounded-xl border p-4 ${
+        isDarkMode
+          ? 'bg-slate-950/60 border-slate-800'
+          : 'bg-slate-50 border-slate-200'
+      }`}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Users
+            className={`w-4 h-4 flex-shrink-0 ${
+              isDarkMode ? 'text-blue-400' : 'text-blue-600'
+            }`}
+          />
+          <input
+            type="text"
+            value={team.label}
+            onChange={(e) => onLabelChange(team.id, e.target.value)}
+            placeholder={`Team ${teamIndex + 1}`}
+            className={`text-sm font-bold bg-transparent border-none outline-none w-full truncate ${
+              isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
+            }`}
+          />
+        </div>
       </div>
 
-      <p className={`text-xs mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-        Sends away:
-      </p>
+      {/* Summary line */}
+      <div
+        className={`flex items-center justify-between text-[11px] font-medium mb-2 ${
+          isDarkMode ? 'text-slate-500' : 'text-slate-500'
+        }`}
+      >
+        <span>Sends away</span>
+        <span className={isDarkMode ? 'text-slate-300' : 'text-slate-700'}>
+          {assetCount} {assetCount === 1 ? 'asset' : 'assets'}
+        </span>
+      </div>
 
-      {/* Current assets */}
+      {/* Asset chips */}
       {team.sends.length > 0 && (
         <div className="flex flex-col gap-1.5 mb-3">
           {team.sends.map((asset) => (
@@ -491,16 +546,17 @@ function TradeTeamCard({
         </div>
       )}
 
-      {/* Add player */}
-      <PlayerSearchInput
-        key={`search-${team.id}`}
-        isDarkMode={isDarkMode}
-        onSelect={(asset) => onAddAsset(team.id, asset)}
-        placeholder="Search player to add..."
-      />
+      {/* Spacer pushes search to bottom */}
+      <div className="flex-1" />
 
-      {/* Add pick toggle */}
-      <div className="mt-2">
+      {/* Add player + pick */}
+      <div className="mt-2 space-y-2">
+        <PlayerSearchInput
+          key={`search-${team.id}`}
+          isDarkMode={isDarkMode}
+          onSelect={(asset) => onAddAsset(team.id, asset)}
+          placeholder="Search player or add draft pick..."
+        />
         {showPickInput ? (
           <div className="space-y-2">
             <DraftPickInput
@@ -513,7 +569,9 @@ function TradeTeamCard({
             <button
               type="button"
               onClick={() => setShowPickInput(false)}
-              className={`text-xs ${isDarkMode ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-600'}`}
+              className={`text-xs ${
+                isDarkMode ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-600'
+              }`}
             >
               Cancel
             </button>
@@ -522,11 +580,13 @@ function TradeTeamCard({
           <button
             type="button"
             onClick={() => setShowPickInput(true)}
-            className={`flex items-center gap-1 text-xs font-medium mt-1 transition-colors ${
-              isDarkMode ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-600'
+            className={`flex items-center gap-1 text-[11px] font-medium transition-colors ${
+              isDarkMode
+                ? 'text-slate-400 hover:text-blue-400'
+                : 'text-slate-500 hover:text-blue-600'
             }`}
           >
-            <Plus className="w-3 h-3" /> Add Draft Pick
+            <Plus className="w-3 h-3" /> Add draft pick
           </button>
         )}
       </div>
@@ -564,8 +624,6 @@ function FairnessMeter({
   favored: string;
   isDarkMode: boolean;
 }) {
-  // The meter is a horizontal bar from 0..100 with 50 as fair
-  // We render a marker at `score`. Distance from 50 = how lopsided.
   const leftPct = Math.max(0, Math.min(100, score));
   const diff = Math.abs(score - 50);
   const label =
@@ -577,69 +635,85 @@ function FairnessMeter({
       ? 'Favored'
       : 'Heavily Favored';
 
-  const barColor =
+  const markerBorder =
+    diff < 5
+      ? 'border-emerald-500'
+      : diff < 15
+      ? 'border-lime-500'
+      : diff < 30
+      ? 'border-amber-500'
+      : 'border-orange-500';
+
+  const tagClasses =
     diff < 5
       ? isDarkMode
-        ? 'bg-emerald-500'
-        : 'bg-emerald-600'
+        ? 'bg-emerald-500/15 text-emerald-300'
+        : 'bg-emerald-50 text-emerald-700'
       : diff < 15
       ? isDarkMode
-        ? 'bg-lime-500'
-        : 'bg-lime-600'
+        ? 'bg-lime-500/15 text-lime-300'
+        : 'bg-lime-50 text-lime-700'
       : diff < 30
       ? isDarkMode
-        ? 'bg-amber-500'
-        : 'bg-amber-600'
+        ? 'bg-amber-500/15 text-amber-300'
+        : 'bg-amber-50 text-amber-700'
       : isDarkMode
-      ? 'bg-orange-500'
-      : 'bg-orange-600';
+      ? 'bg-orange-500/15 text-orange-300'
+      : 'bg-orange-50 text-orange-700';
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <p
-          className={`text-sm font-semibold ${
-            isDarkMode ? 'text-slate-300' : 'text-slate-700'
-          }`}
+    <div
+      className={`rounded-xl border p-5 ${
+        isDarkMode
+          ? 'bg-slate-900/50 border-slate-700'
+          : 'bg-white border-slate-200'
+      }`}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Scale className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+          <h4 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            Fairness Score
+          </h4>
+        </div>
+        <span
+          className={`text-[11px] font-bold px-2.5 py-1 rounded ${tagClasses}`}
         >
-          Fairness
-        </p>
-        <p
-          className={`text-xs font-medium ${
-            isDarkMode ? 'text-slate-400' : 'text-slate-500'
-          }`}
-        >
-          {label} — {diff < 5 ? 'even' : favored}
-        </p>
+          {Math.round(score)} · {diff < 5 ? 'Even' : `Favors ${favored}`}
+        </span>
       </div>
       <div
-        className={`relative h-3 rounded-full overflow-hidden ${
-          isDarkMode ? 'bg-slate-800' : 'bg-slate-200'
-        }`}
-      >
-        {/* Fair midpoint marker */}
+        className="relative h-2.5 rounded-full"
+        style={{
+          background:
+            'linear-gradient(90deg, rgb(239,68,68) 0%, rgb(234,179,8) 35%, rgb(34,197,94) 50%, rgb(234,179,8) 65%, rgb(239,68,68) 100%)',
+          opacity: 0.45,
+        }}
+      />
+      <div className="relative h-0">
         <div
-          className={`absolute top-0 bottom-0 w-px ${
-            isDarkMode ? 'bg-slate-600' : 'bg-slate-400'
+          className={`absolute -top-[18px] w-5 h-5 rounded-full border-[3px] shadow transition-all duration-500 ${markerBorder} ${
+            isDarkMode ? 'bg-white' : 'bg-slate-900'
           }`}
-          style={{ left: '50%' }}
-        />
-        {/* Score marker */}
-        <div
-          className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 ${
-            isDarkMode ? 'border-white' : 'border-slate-900'
-          } ${barColor} transition-all duration-500`}
-          style={{ left: `calc(${leftPct}% - 8px)` }}
+          style={{
+            left: `calc(${leftPct}% - 10px)`,
+            boxShadow: isDarkMode
+              ? '0 0 0 3px rgba(2,6,23,1)'
+              : '0 0 0 3px rgba(255,255,255,1)',
+          }}
+          aria-label={`Fairness score ${score}`}
         />
       </div>
       <div
-        className={`flex justify-between text-[10px] font-medium ${
+        className={`flex justify-between text-[10px] font-semibold mt-4 ${
           isDarkMode ? 'text-slate-500' : 'text-slate-400'
         }`}
       >
-        <span>0 • Team A robs</span>
-        <span>50 • Fair</span>
-        <span>Team B robs • 100</span>
+        <span>0 · Team A robs</span>
+        <span className={isDarkMode ? 'text-slate-300' : 'text-slate-700'}>
+          50 · {label}
+        </span>
+        <span>Team B robs · 100</span>
       </div>
     </div>
   );
@@ -663,44 +737,17 @@ function FollowUpChat({
   disabledReason: string | null;
 }) {
   const [draft, setDraft] = useState('');
-  const handleSend = () => {
-    const q = draft.trim();
+  const handleSend = (question?: string) => {
+    const q = (question ?? draft).trim();
     if (!q || !isAllowed) return;
     onSend(q);
     setDraft('');
   };
 
+  const quickChips = ['Counter-offer?', 'Roster fit?', 'Dynasty angle?'];
+
   return (
-    <div
-      className={`space-y-3 p-4 rounded-lg ${
-        isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <Sparkles
-          className={`w-4 h-4 ${
-            isDarkMode ? 'text-blue-400' : 'text-blue-600'
-          }`}
-        />
-        <p
-          className={`text-sm font-semibold ${
-            isDarkMode ? 'text-white' : 'text-slate-900'
-          }`}
-        >
-          Ask a Follow-up
-        </p>
-        {!isAllowed && (
-          <span
-            className={`ml-auto inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-              isDarkMode
-                ? 'bg-amber-500/20 text-amber-300'
-                : 'bg-amber-100 text-amber-700'
-            }`}
-          >
-            <Crown className="w-3 h-3" /> Pro
-          </span>
-        )}
-      </div>
+    <div className="space-y-3">
       {turns.length > 0 && (
         <div className="space-y-2 max-h-60 overflow-y-auto">
           {turns.map((t, i) => (
@@ -712,7 +759,7 @@ function FollowUpChat({
                     ? 'bg-blue-500/10 text-blue-200'
                     : 'bg-blue-50 text-blue-900'
                   : isDarkMode
-                  ? 'bg-slate-900 text-slate-200'
+                  ? 'bg-slate-900 text-slate-200 border border-slate-800'
                   : 'bg-white text-slate-700 border border-slate-200'
               }`}
             >
@@ -721,7 +768,42 @@ function FollowUpChat({
           ))}
         </div>
       )}
-      <div className="flex gap-2">
+
+      <div
+        className={`flex items-center gap-2 p-2 rounded-2xl border shadow-lg ${
+          isDarkMode
+            ? 'bg-slate-900 border-slate-700 shadow-black/40'
+            : 'bg-white border-slate-200 shadow-slate-200/60'
+        }`}
+      >
+        <div
+          className={`flex items-center justify-center w-9 h-9 rounded-xl flex-shrink-0 ${
+            isDarkMode ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-600'
+          }`}
+        >
+          <MessageCircle className="w-4 h-4" />
+        </div>
+
+        {turns.length === 0 && isAllowed && (
+          <div className="hidden md:flex items-center gap-1.5 flex-shrink-0">
+            {quickChips.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => handleSend(chip)}
+                disabled={isSending}
+                className={`px-2.5 py-1 rounded-full border text-[11px] font-medium whitespace-nowrap transition-colors ${
+                  isDarkMode
+                    ? 'bg-slate-950 border-slate-700 text-slate-300 hover:border-blue-500 hover:text-blue-300'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-700'
+                } disabled:opacity-50`}
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        )}
+
         <input
           type="text"
           value={draft}
@@ -735,20 +817,34 @@ function FollowUpChat({
           disabled={!isAllowed || isSending}
           placeholder={
             isAllowed
-              ? 'Ask about roster fit, a counter-offer, etc...'
+              ? 'Ask about roster fit, a counter-offer, alternate packages...'
               : disabledReason || 'Upgrade to Pro for follow-ups'
           }
-          className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+          className={`flex-1 min-w-0 bg-transparent border-0 outline-none text-sm px-2 ${
             isDarkMode
-              ? 'bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500'
-              : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
-          } outline-none disabled:opacity-50 disabled:cursor-not-allowed`}
+              ? 'text-white placeholder:text-slate-500'
+              : 'text-slate-900 placeholder:text-slate-400'
+          } disabled:cursor-not-allowed`}
         />
+
+        {!isAllowed && (
+          <span
+            className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${
+              isDarkMode
+                ? 'bg-amber-500/20 text-amber-300'
+                : 'bg-amber-100 text-amber-700'
+            }`}
+          >
+            <Crown className="w-3 h-3" /> Pro
+          </span>
+        )}
+
         <button
           type="button"
-          onClick={handleSend}
+          onClick={() => handleSend()}
           disabled={!isAllowed || isSending || !draft.trim()}
-          className={`px-3 rounded-lg font-medium transition-colors ${
+          aria-label="Send follow-up"
+          className={`flex items-center justify-center w-9 h-9 rounded-xl flex-shrink-0 transition-colors ${
             !isAllowed || isSending || !draft.trim()
               ? isDarkMode
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
@@ -769,8 +865,11 @@ function FollowUpChat({
 
 // ── Results Card ───────────────────────────────────────────────────────
 
+const FACTOR_ICONS = [BarChart3, Calendar, Target, TrendingUp, Shield, Users];
+
 function TradeResultsCard({
   result,
+  teams,
   isDarkMode,
   resultsRef,
   chatTurns,
@@ -780,6 +879,7 @@ function TradeResultsCard({
   followUpDisabledReason,
 }: {
   result: TradeResult;
+  teams: TradeTeam[];
   isDarkMode: boolean;
   resultsRef: React.RefObject<HTMLDivElement | null>;
   chatTurns: ChatTurn[];
@@ -789,15 +889,26 @@ function TradeResultsCard({
   followUpDisabledReason: string | null;
 }) {
   const [visible, setVisible] = useState(false);
-  const [showKeyFactors, setShowKeyFactors] = useState(false);
 
   useEffect(() => {
-    // Scroll into view
     resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // Trigger entrance animation
     const raf = requestAnimationFrame(() => setVisible(true));
     return () => cancelAnimationFrame(raf);
   }, [resultsRef]);
+
+  const winnerGrade =
+    result.teamGrades.find(
+      (g) => g.team.toLowerCase() === result.winner.toLowerCase(),
+    )?.grade ?? '';
+
+  const winnerGradeColor = (() => {
+    const g = winnerGrade.toUpperCase();
+    if (g.startsWith('A')) return isDarkMode ? 'text-emerald-400' : 'text-emerald-600';
+    if (g.startsWith('B')) return isDarkMode ? 'text-blue-400' : 'text-blue-600';
+    if (g.startsWith('C')) return isDarkMode ? 'text-amber-400' : 'text-amber-600';
+    if (g.startsWith('D')) return isDarkMode ? 'text-orange-400' : 'text-orange-600';
+    return isDarkMode ? 'text-red-400' : 'text-red-600';
+  })();
 
   return (
     <div
@@ -807,142 +918,320 @@ function TradeResultsCard({
       }`}
     >
       {/* Results header */}
-      <div className={`flex items-center gap-3 pt-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-        <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${isDarkMode ? 'bg-blue-500/20' : 'bg-blue-50'}`}>
-          <Sparkles className={`w-4 h-4 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex items-center justify-center w-8 h-8 rounded-lg ${
+              isDarkMode ? 'bg-blue-500/20' : 'bg-blue-50'
+            }`}
+          >
+            <Sparkles className={`w-4 h-4 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+          </div>
+          <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            Analysis
+          </h2>
         </div>
-        <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-          Analysis Complete
-        </h2>
+        <span className={`text-[11px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          Analyzed just now
+        </span>
       </div>
 
-      <div className={`rounded-xl border p-6 space-y-6 ${isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'}`}>
-        {/* Winner callout */}
-        <div className={`flex items-start gap-3 p-4 rounded-lg ${isDarkMode ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-50 border border-emerald-200'}`}>
-          <Trophy className={`w-6 h-6 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
-          <div>
-            <p className={`text-base font-bold mb-1 ${isDarkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
-              Trade Winner: {result.winner}
-            </p>
-            <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-              {result.winnerExplanation}
-            </p>
-          </div>
-        </div>
-
-        {/* Fairness meter */}
-        <FairnessMeter
-          score={result.fairnessScore.score}
-          favored={result.fairnessScore.favored}
-          isDarkMode={isDarkMode}
-        />
-
-        {/* Per-team grades */}
-        <div className="space-y-4">
-          <h4 className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-            Team Grades
-          </h4>
-          {result.teamGrades.map((tg, i) => (
-            <div
-              key={i}
-              className={`flex items-start gap-4 p-4 rounded-lg transition-all duration-300 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}
-              style={{ transitionDelay: `${(i + 1) * 100}ms`, opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(8px)' }}
-            >
-              <GradeBadge grade={tg.grade} isDarkMode={isDarkMode} />
-              <div className="flex-1 min-w-0">
-                <p className={`text-sm font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  {tg.team}
-                </p>
-                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                  {tg.summary}
-                </p>
-              </div>
+      {/* Persistent trade recap strip */}
+      <div
+        className={`sticky top-2 z-10 rounded-xl border backdrop-blur px-4 py-3 ${
+          isDarkMode
+            ? 'bg-slate-950/85 border-slate-800'
+            : 'bg-white/90 border-slate-200'
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          {teams.map((team, idx) => (
+            <div key={team.id} className="flex items-center gap-2 flex-wrap">
+              {idx > 0 && (
+                <span className={`text-base font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                  ⇄
+                </span>
+              )}
+              <span
+                className={`text-[10px] font-bold uppercase tracking-wider ${
+                  isDarkMode ? 'text-slate-500' : 'text-slate-500'
+                }`}
+              >
+                {team.label || `Team ${team.id + 1}`} sends
+              </span>
+              {team.sends.map((a) => (
+                <span
+                  key={a.id}
+                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-semibold ${
+                    isDarkMode
+                      ? 'bg-slate-900 border-slate-700 text-slate-200'
+                      : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`px-1 py-0.5 rounded text-[9px] font-bold ${positionBadgeClasses(
+                      a.type === 'pick' ? undefined : a.position,
+                      isDarkMode,
+                    )}`}
+                  >
+                    {a.type === 'pick' ? 'PICK' : a.position || '—'}
+                  </span>
+                  {a.name}
+                </span>
+              ))}
             </div>
           ))}
         </div>
+      </div>
 
-        {/* Improvements */}
-        {result.improvements.length > 0 && (
+      {/* Hero verdict */}
+      <div
+        className={`rounded-2xl border p-6 ${
+          isDarkMode
+            ? 'bg-gradient-to-br from-slate-900 to-emerald-500/5 border-emerald-500/30'
+            : 'bg-gradient-to-br from-white to-emerald-50/50 border-emerald-200'
+        }`}
+      >
+        <div className="grid md:grid-cols-[auto_1fr_auto] gap-6 items-center">
           <div
-            className={`p-4 rounded-lg ${
+            className={`flex items-center justify-center w-12 h-12 rounded-xl border flex-shrink-0 ${
               isDarkMode
-                ? 'bg-blue-500/10 border border-blue-500/20'
-                : 'bg-blue-50 border border-blue-200'
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                : 'bg-emerald-50 border-emerald-200 text-emerald-600'
             }`}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <Lightbulb
-                className={`w-4 h-4 ${
-                  isDarkMode ? 'text-blue-400' : 'text-blue-600'
-                }`}
-              />
-              <p
-                className={`text-sm font-semibold ${
-                  isDarkMode ? 'text-blue-200' : 'text-blue-900'
+            <Trophy className="w-6 h-6" />
+          </div>
+          <div className="min-w-0">
+            <p
+              className={`text-[11px] font-bold uppercase tracking-wider mb-1 ${
+                isDarkMode ? 'text-emerald-400' : 'text-emerald-700'
+              }`}
+            >
+              Trade Winner · {result.winner}
+            </p>
+            <h3
+              className={`text-lg font-extrabold leading-snug mb-1 ${
+                isDarkMode ? 'text-white' : 'text-slate-900'
+              }`}
+            >
+              {result.winner} wins this trade
+            </h3>
+            <p className={`text-sm leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+              {result.winnerExplanation}
+            </p>
+          </div>
+          {winnerGrade && (
+            <div
+              className={`md:pl-6 md:border-l flex md:block items-baseline gap-3 md:text-center ${
+                isDarkMode ? 'border-slate-800' : 'border-slate-200'
+              }`}
+            >
+              <div
+                className={`text-4xl md:text-5xl font-black leading-none tracking-tight ${winnerGradeColor}`}
+              >
+                {winnerGrade}
+              </div>
+              <div
+                className={`text-[10px] font-bold uppercase tracking-wider mt-2 ${
+                  isDarkMode ? 'text-slate-500' : 'text-slate-400'
                 }`}
               >
-                How to make it more balanced
+                Winner Grade
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Fairness meter */}
+      <FairnessMeter
+        score={result.fairnessScore.score}
+        favored={result.fairnessScore.favored}
+        isDarkMode={isDarkMode}
+      />
+
+      {/* Team grade cards */}
+      <div
+        className={`grid gap-4 ${
+          result.teamGrades.length === 1
+            ? 'grid-cols-1'
+            : result.teamGrades.length === 2
+            ? 'md:grid-cols-2'
+            : 'md:grid-cols-2 xl:grid-cols-3'
+        }`}
+      >
+        {result.teamGrades.map((tg, i) => {
+          const isWinner = tg.team.toLowerCase() === result.winner.toLowerCase();
+          const cardClasses = isWinner
+            ? isDarkMode
+              ? 'bg-gradient-to-br from-slate-900 to-emerald-500/5 border-emerald-500/30'
+              : 'bg-gradient-to-br from-white to-emerald-50/60 border-emerald-200'
+            : isDarkMode
+            ? 'bg-gradient-to-br from-slate-900 to-amber-500/5 border-amber-500/30'
+            : 'bg-gradient-to-br from-white to-amber-50/60 border-amber-200';
+          const badgeClasses = isWinner
+            ? isDarkMode
+              ? 'bg-emerald-500/15 text-emerald-400'
+              : 'bg-emerald-50 text-emerald-700'
+            : isDarkMode
+            ? 'bg-amber-500/15 text-amber-400'
+            : 'bg-amber-50 text-amber-700';
+
+          return (
+            <div
+              key={i}
+              className={`rounded-xl border p-5 transition-all duration-300 ${cardClasses}`}
+              style={{
+                transitionDelay: `${(i + 1) * 100}ms`,
+                opacity: visible ? 1 : 0,
+                transform: visible ? 'translateY(0)' : 'translateY(8px)',
+              }}
+            >
+              <div className="flex items-start gap-4 mb-4">
+                <GradeBadge grade={tg.grade} isDarkMode={isDarkMode} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <p
+                      className={`text-sm font-bold ${
+                        isDarkMode ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
+                      {tg.team}
+                    </p>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${badgeClasses}`}
+                    >
+                      {isWinner ? 'Wins' : 'Loses'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p
+                className={`text-sm leading-relaxed ${
+                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                }`}
+              >
+                {tg.summary}
               </p>
             </div>
-            <ul
-              className={`text-sm space-y-1 list-disc list-inside ${
-                isDarkMode ? 'text-slate-300' : 'text-slate-700'
-              }`}
-            >
-              {result.improvements.map((imp, i) => (
-                <li key={i}>{imp}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+          );
+        })}
+      </div>
 
-        {/* Key Factors (collapsible) */}
-        {result.keyFactors.length > 0 && (
-          <div
-            className={`rounded-lg border ${
-              isDarkMode ? 'border-slate-700' : 'border-slate-200'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => setShowKeyFactors((v) => !v)}
-              className={`w-full flex items-center justify-between px-4 py-3 text-sm font-semibold transition-colors ${
-                isDarkMode
-                  ? 'text-slate-200 hover:bg-slate-800/50'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span>Key Factors Considered</span>
-              {showKeyFactors ? (
-                <ChevronDown className="w-4 h-4" />
-              ) : (
-                <ChevronRight className="w-4 h-4" />
-              )}
-            </button>
-            {showKeyFactors && (
-              <ul
-                className={`px-4 pb-4 text-sm space-y-2 list-disc list-inside ${
-                  isDarkMode ? 'text-slate-400' : 'text-slate-600'
+      {/* Balance suggestions */}
+      {result.improvements.length > 0 && (
+        <div
+          className={`rounded-xl border p-5 ${
+            isDarkMode
+              ? 'bg-gradient-to-br from-slate-900 to-blue-500/5 border-blue-500/30'
+              : 'bg-gradient-to-br from-white to-blue-50/60 border-blue-200'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Lightbulb
+              className={`w-4 h-4 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}
+            />
+            <h4 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              How to balance this trade
+            </h4>
+            <span className={`ml-auto text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              {result.improvements.length} suggestion{result.improvements.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="grid gap-2">
+            {result.improvements.map((imp, i) => (
+              <div
+                key={i}
+                className={`flex items-start gap-3 p-3 rounded-lg border ${
+                  isDarkMode
+                    ? 'bg-slate-950/50 border-slate-800'
+                    : 'bg-white border-slate-200'
                 }`}
               >
-                {result.keyFactors.map((kf, i) => (
-                  <li key={i}>{kf}</li>
-                ))}
-              </ul>
-            )}
+                <div
+                  className={`flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold flex-shrink-0 ${
+                    isDarkMode
+                      ? 'bg-blue-500/15 text-blue-400'
+                      : 'bg-blue-50 text-blue-600'
+                  }`}
+                >
+                  {i + 1}
+                </div>
+                <p
+                  className={`flex-1 text-sm leading-relaxed ${
+                    isDarkMode ? 'text-slate-200' : 'text-slate-700'
+                  }`}
+                >
+                  {imp}
+                </p>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Follow-up chat */}
-        <FollowUpChat
-          isDarkMode={isDarkMode}
-          turns={chatTurns}
-          onSend={onSendFollowUp}
-          isSending={isSendingFollowUp}
-          isAllowed={followUpAllowed}
-          disabledReason={followUpDisabledReason}
-        />
-      </div>
+      {/* Key factors grid */}
+      {result.keyFactors.length > 0 && (
+        <div
+          className={`rounded-xl border p-5 ${
+            isDarkMode
+              ? 'bg-slate-900/50 border-slate-700'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h4 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              Key Factors Considered
+            </h4>
+            <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              {result.keyFactors.length} factors
+            </span>
+          </div>
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {result.keyFactors.map((kf, i) => {
+              const Icon = FACTOR_ICONS[i % FACTOR_ICONS.length];
+              return (
+                <div
+                  key={i}
+                  className={`p-4 rounded-lg border ${
+                    isDarkMode
+                      ? 'bg-slate-950/50 border-slate-800'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div
+                    className={`flex items-center justify-center w-7 h-7 rounded-lg mb-2 ${
+                      isDarkMode
+                        ? 'bg-slate-800 text-slate-300'
+                        : 'bg-white text-slate-600 border border-slate-200'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </div>
+                  <p
+                    className={`text-sm leading-relaxed ${
+                      isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                    }`}
+                  >
+                    {kf}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Follow-up chat */}
+      <FollowUpChat
+        isDarkMode={isDarkMode}
+        turns={chatTurns}
+        onSend={onSendFollowUp}
+        isSending={isSendingFollowUp}
+        isAllowed={followUpAllowed}
+        disabledReason={followUpDisabledReason}
+      />
     </div>
   );
 }
@@ -1367,26 +1656,6 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     setError(null);
   };
 
-  const optionBtn = (
-    active: boolean,
-    onClick: () => void,
-    label: string
-  ) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-all ${
-        active
-          ? 'bg-blue-600 text-white shadow-sm'
-          : isDarkMode
-          ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300'
-          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800'
-      }`}
-    >
-      {label}
-    </button>
-  );
-
   // Validation message
   const validationMessage = (() => {
     if (isAnalyzing) return null;
@@ -1400,28 +1669,52 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     return null;
   })();
 
+  const pill = (active: boolean, onClick: () => void, label: string) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${
+        active
+          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+          : isDarkMode
+          ? 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-600 hover:text-white'
+          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const hasDraft = teams.some((t) => t.sends.length > 0) || !!context;
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
+    <div className="max-w-6xl mx-auto space-y-4">
+      {/* Page head */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-              isDarkMode ? 'bg-blue-600/20' : 'bg-blue-50'
+            className={`w-11 h-11 rounded-xl border flex items-center justify-center ${
+              isDarkMode
+                ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                : 'bg-blue-50 border-blue-200 text-blue-600'
             }`}
           >
-            <ArrowRightLeft className={`w-5 h-5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+            <ArrowRightLeft className="w-5 h-5" />
           </div>
           <div>
-            <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            <h1
+              className={`text-2xl font-extrabold tracking-tight ${
+                isDarkMode ? 'text-white' : 'text-slate-900'
+              }`}
+            >
               AI Trade Analyzer
             </h1>
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              Get AI-powered trade analysis with grades and insights
+              Get AI-powered trade analysis with grades, fairness scoring, and balance suggestions.
             </p>
           </div>
         </div>
-        {(teams.some((t) => t.sends.length > 0) || context) && (
+        {hasDraft && (
           <button
             type="button"
             onClick={handleReset}
@@ -1436,22 +1729,21 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         )}
       </div>
 
-      {/* Configuration Row */}
+      {/* Compact setup bar */}
       <div
-        className={`rounded-xl border p-4 space-y-4 ${
+        className={`rounded-xl border px-4 py-3 flex items-center gap-5 flex-wrap ${
           isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
         }`}
       >
-        {/* League Selector */}
         {user && (
-          <div>
-            <label
-              className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${
-                isDarkMode ? 'text-slate-400' : 'text-slate-500'
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`text-[10px] uppercase tracking-wider font-bold ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-500'
               }`}
             >
-              Connected League
-            </label>
+              League
+            </span>
             <div className="relative">
               <select
                 value={selectedLeagueId}
@@ -1459,13 +1751,13 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                   setSelectedLeagueId(e.target.value);
                   setResult(null);
                 }}
-                className={`w-full appearance-none pr-9 pl-3 py-2 text-sm rounded-lg border transition-colors ${
+                className={`appearance-none pr-8 pl-3 py-1.5 text-xs font-semibold rounded-md border transition-colors cursor-pointer ${
                   isDarkMode
-                    ? 'bg-slate-800 border-slate-600 text-white'
-                    : 'bg-white border-slate-300 text-slate-900'
+                    ? 'bg-slate-950 border-slate-800 text-white hover:border-slate-600'
+                    : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
                 } outline-none`}
               >
-                <option value="">Custom Scenario (no league)</option>
+                <option value="">Custom Scenario</option>
                 {leagues.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
@@ -1474,178 +1766,226 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                 ))}
               </select>
               <ChevronDown
-                className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${
-                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                className={`absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none ${
+                  isDarkMode ? 'text-slate-500' : 'text-slate-400'
                 }`}
               />
             </div>
-            {selectedLeagueId && (
-              <p
-                className={`text-xs mt-1 ${
-                  isDarkMode ? 'text-slate-500' : 'text-slate-400'
-                }`}
-              >
-                The AI will use your team's record, standings, and roster when
-                analyzing.
-              </p>
-            )}
           </div>
         )}
 
-        {/* Trade Type (team count) */}
-        <div>
-          <label className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            Trade Type
-          </label>
-          <div className="flex gap-2">
-            {([2, 3, 4] as const).map((n) =>
-              optionBtn(teamCount === n, () => handleTeamCountChange(n), `${n}-Team Trade`)
-            )}
-          </div>
-        </div>
-
-        {/* League Type */}
-        <div>
-          <label className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            League Format
-          </label>
-          <div className="flex gap-2">
-            {optionBtn(leagueType === 'redraft', () => { setLeagueType('redraft'); setResult(null); }, 'Redraft')}
-            {optionBtn(leagueType === 'dynasty', () => { setLeagueType('dynasty'); setResult(null); }, 'Dynasty')}
-            {optionBtn(leagueType === 'keeper', () => { setLeagueType('keeper'); setResult(null); }, 'Keeper')}
-          </div>
-        </div>
-
-        {/* Strategy (dynasty/keeper only) */}
-        {leagueType !== 'redraft' && (
-          <div>
-            <label className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              Your Team Strategy
-            </label>
-            <div className="flex gap-2">
-              {optionBtn(strategy === 'win-now', () => { setStrategy('win-now'); setResult(null); }, 'Win Now')}
-              {optionBtn(strategy === 'rebuilding', () => { setStrategy('rebuilding'); setResult(null); }, 'Rebuilding')}
-              {optionBtn(strategy === 'balanced', () => { setStrategy('balanced'); setResult(null); }, 'Balanced')}
-            </div>
-          </div>
-        )}
-
-        {/* Advanced Settings (collapsible) */}
-        <div
-          className={`border-t pt-4 ${
-            isDarkMode ? 'border-slate-800' : 'border-slate-200'
-          }`}
-        >
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((v) => !v)}
-            className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${
-              isDarkMode
-                ? 'text-slate-400 hover:text-slate-300'
-                : 'text-slate-500 hover:text-slate-600'
+        <div className="flex items-center gap-2.5">
+          <span
+            className={`text-[10px] uppercase tracking-wider font-bold ${
+              isDarkMode ? 'text-slate-500' : 'text-slate-500'
             }`}
           >
-            <Settings2 className="w-3.5 h-3.5" />
-            Advanced Settings
-            {showAdvanced ? (
-              <ChevronDown className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5" />
+            Type
+          </span>
+          <div className="flex items-center gap-1">
+            {([2, 3, 4] as const).map((n) => (
+              <span key={n}>
+                {pill(teamCount === n, () => handleTeamCountChange(n), `${n}-Team`)}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <span
+            className={`text-[10px] uppercase tracking-wider font-bold ${
+              isDarkMode ? 'text-slate-500' : 'text-slate-500'
+            }`}
+          >
+            Format
+          </span>
+          <div className="flex items-center gap-1">
+            {pill(
+              leagueType === 'redraft',
+              () => {
+                setLeagueType('redraft');
+                setResult(null);
+              },
+              'Redraft',
             )}
-          </button>
-          {showAdvanced && (
-            <div className="mt-3 space-y-3">
-              <div>
-                <label
-                  className={`block text-xs font-medium mb-1 ${
-                    isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                  }`}
-                >
-                  Scoring Format
-                </label>
-                <div className="flex gap-2">
-                  {(['ppr', 'half-ppr', 'standard'] as const).map((fmt) =>
-                    optionBtn(
-                      advanced.scoringFormat === fmt,
-                      () => {
-                        setAdvanced((a) => ({ ...a, scoringFormat: fmt }));
-                        setResult(null);
-                      },
-                      fmt === 'ppr'
-                        ? 'Full PPR'
-                        : fmt === 'half-ppr'
-                        ? 'Half PPR'
-                        : 'Standard'
-                    )
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <label
-                  className={`flex items-center gap-2 text-sm cursor-pointer ${
-                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={advanced.superflex}
-                    onChange={(e) => {
-                      setAdvanced((a) => ({ ...a, superflex: e.target.checked }));
-                      setResult(null);
-                    }}
-                    className="accent-blue-600"
-                  />
-                  Superflex
-                </label>
-                <label
-                  className={`flex items-center gap-2 text-sm cursor-pointer ${
-                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={advanced.tePremium}
-                    onChange={(e) => {
-                      setAdvanced((a) => ({ ...a, tePremium: e.target.checked }));
-                      setResult(null);
-                    }}
-                    className="accent-blue-600"
-                  />
-                  TE Premium
-                </label>
-              </div>
-              <div>
-                <label
-                  className={`block text-xs font-medium mb-1 ${
-                    isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                  }`}
-                >
-                  Team Count
-                </label>
-                <input
-                  type="number"
-                  min={4}
-                  max={20}
-                  value={advanced.teamCount}
-                  onChange={(e) => {
-                    const n = Math.max(
-                      4,
-                      Math.min(20, parseInt(e.target.value, 10) || 12)
-                    );
-                    setAdvanced((a) => ({ ...a, teamCount: n }));
-                    setResult(null);
-                  }}
-                  className={`w-24 px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                    isDarkMode
-                      ? 'bg-slate-800 border-slate-600 text-white'
-                      : 'bg-white border-slate-300 text-slate-900'
-                  } outline-none`}
-                />
-              </div>
+            {pill(
+              leagueType === 'dynasty',
+              () => {
+                setLeagueType('dynasty');
+                setResult(null);
+              },
+              'Dynasty',
+            )}
+            {pill(
+              leagueType === 'keeper',
+              () => {
+                setLeagueType('keeper');
+                setResult(null);
+              },
+              'Keeper',
+            )}
+          </div>
+        </div>
+
+        {leagueType !== 'redraft' && (
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`text-[10px] uppercase tracking-wider font-bold ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-500'
+              }`}
+            >
+              Strategy
+            </span>
+            <div className="flex items-center gap-1">
+              {pill(
+                strategy === 'win-now',
+                () => {
+                  setStrategy('win-now');
+                  setResult(null);
+                },
+                'Win Now',
+              )}
+              {pill(
+                strategy === 'rebuilding',
+                () => {
+                  setStrategy('rebuilding');
+                  setResult(null);
+                },
+                'Rebuilding',
+              )}
+              {pill(
+                strategy === 'balanced',
+                () => {
+                  setStrategy('balanced');
+                  setResult(null);
+                },
+                'Balanced',
+              )}
             </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((v) => !v)}
+          className={`ml-auto flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded transition-colors ${
+            isDarkMode
+              ? 'text-slate-400 hover:text-white'
+              : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Settings2 className="w-3.5 h-3.5" />
+          Advanced Settings
+          {showAdvanced ? (
+            <ChevronDown className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5" />
+          )}
+        </button>
+      </div>
+
+      {/* Advanced Settings drawer */}
+      {showAdvanced && (
+        <div
+          className={`rounded-xl border p-4 space-y-3 ${
+            isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
+          }`}
+        >
+          <div>
+            <label
+              className={`block text-[10px] uppercase tracking-wider font-bold mb-2 ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-500'
+              }`}
+            >
+              Scoring Format
+            </label>
+            <div className="flex gap-1 flex-wrap">
+              {(['ppr', 'half-ppr', 'standard'] as const).map((fmt) => (
+                <span key={fmt}>
+                  {pill(
+                    advanced.scoringFormat === fmt,
+                    () => {
+                      setAdvanced((a) => ({ ...a, scoringFormat: fmt }));
+                      setResult(null);
+                    },
+                    fmt === 'ppr' ? 'Full PPR' : fmt === 'half-ppr' ? 'Half PPR' : 'Standard',
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <label
+              className={`flex items-center gap-2 text-sm cursor-pointer ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-700'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={advanced.superflex}
+                onChange={(e) => {
+                  setAdvanced((a) => ({ ...a, superflex: e.target.checked }));
+                  setResult(null);
+                }}
+                className="accent-blue-600"
+              />
+              Superflex
+            </label>
+            <label
+              className={`flex items-center gap-2 text-sm cursor-pointer ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-700'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={advanced.tePremium}
+                onChange={(e) => {
+                  setAdvanced((a) => ({ ...a, tePremium: e.target.checked }));
+                  setResult(null);
+                }}
+                className="accent-blue-600"
+              />
+              TE Premium
+            </label>
+            <label
+              className={`flex items-center gap-2 text-sm ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-700'
+              }`}
+            >
+              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
+                Teams
+              </span>
+              <input
+                type="number"
+                min={4}
+                max={20}
+                value={advanced.teamCount}
+                onChange={(e) => {
+                  const n = Math.max(
+                    4,
+                    Math.min(20, parseInt(e.target.value, 10) || 12),
+                  );
+                  setAdvanced((a) => ({ ...a, teamCount: n }));
+                  setResult(null);
+                }}
+                className={`w-16 px-2 py-1 text-sm rounded border transition-colors ${
+                  isDarkMode
+                    ? 'bg-slate-950 border-slate-800 text-white'
+                    : 'bg-white border-slate-200 text-slate-900'
+                } outline-none`}
+              />
+            </label>
+          </div>
+          {selectedLeagueId && (
+            <p
+              className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+            >
+              The AI will use your team's record, standings, and roster when
+              analyzing.
+            </p>
           )}
         </div>
-      </div>
+      )}
 
       {/* My Roster Panel */}
       {selectedLeagueId && (
@@ -1766,99 +2106,222 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         </div>
       )}
 
-      {/* Trade Teams */}
-      <div className={`grid gap-4 ${teamCount <= 2 ? 'md:grid-cols-2' : teamCount === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'}`}>
-        {teams.map((team, i) => (
-          <TradeTeamCard
-            key={team.id}
-            team={team}
-            teamIndex={i}
-            isDarkMode={isDarkMode}
-            allTeams={teams}
-            isMultiTeam={isMultiTeam}
-            onAddAsset={handleAddAsset}
-            onRemoveAsset={handleRemoveAsset}
-            onLabelChange={handleLabelChange}
-            onAssetDestinationChange={handleAssetDestinationChange}
-          />
-        ))}
-      </div>
-
-      {/* Context */}
+      {/* Trade Flow Builder */}
       <div
-        className={`rounded-xl border p-4 ${
+        className={`rounded-2xl border p-5 space-y-4 ${
           isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
         }`}
       >
-        <label className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-          Additional Context{' '}
-          <span className="font-normal normal-case">(optional)</span>
-        </label>
-        <textarea
-          value={context}
-          onChange={(e) => handleContextChange(e.target.value)}
-          placeholder="Add context about your league, roster needs, scoring settings, or anything else the AI should consider..."
-          rows={3}
-          className={`w-full px-3 py-2 text-sm rounded-lg border resize-none transition-colors ${
-            isDarkMode
-              ? 'bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-blue-500'
-              : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
-          } outline-none`}
-        />
-        <p className={`text-xs mt-1 ${charCount >= MAX_CONTEXT_CHARS ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-          {charCount}/{MAX_CONTEXT_CHARS}
-        </p>
-      </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Wand2
+              className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+            />
+            <h3
+              className={`text-sm font-bold ${
+                isDarkMode ? 'text-white' : 'text-slate-900'
+              }`}
+            >
+              Build Your Trade
+            </h3>
+          </div>
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold ${
+              isDarkMode
+                ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                : 'bg-blue-50 border-blue-200 text-blue-700'
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                isDarkMode ? 'bg-blue-400' : 'bg-blue-500'
+              } animate-pulse`}
+            />
+            {teamCount}-team trade
+          </span>
+        </div>
 
-      {/* Analyze Button */}
-      <div className="flex flex-col items-center gap-3">
-        <button
-          type="button"
-          onClick={handleAnalyze}
-          disabled={!canAnalyze}
-          className={`w-full sm:w-auto px-8 py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
-            canAnalyze
-              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/20'
-              : isDarkMode
-              ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+        {teamCount === 2 ? (
+          <div className="grid md:grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
+            {teams.map((team, i) => (
+              <div key={team.id} className="contents md:contents">
+                {i === 1 && (
+                  <div className="flex md:flex-col items-center justify-center py-2 md:py-0">
+                    <div
+                      className={`w-10 h-10 rounded-full border flex items-center justify-center ${
+                        isDarkMode
+                          ? 'bg-slate-900 border-slate-700 text-slate-400'
+                          : 'bg-slate-100 border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      <ArrowRightLeft className="w-4 h-4" />
+                    </div>
+                  </div>
+                )}
+                <TradeTeamCard
+                  team={team}
+                  teamIndex={i}
+                  isDarkMode={isDarkMode}
+                  allTeams={teams}
+                  isMultiTeam={isMultiTeam}
+                  onAddAsset={handleAddAsset}
+                  onRemoveAsset={handleRemoveAsset}
+                  onLabelChange={handleLabelChange}
+                  onAssetDestinationChange={handleAssetDestinationChange}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            className={`grid gap-3 ${
+              teamCount === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'
+            }`}
+          >
+            {teams.map((team, i) => (
+              <TradeTeamCard
+                key={team.id}
+                team={team}
+                teamIndex={i}
+                isDarkMode={isDarkMode}
+                allTeams={teams}
+                isMultiTeam={isMultiTeam}
+                onAddAsset={handleAddAsset}
+                onRemoveAsset={handleRemoveAsset}
+                onLabelChange={handleLabelChange}
+                onAssetDestinationChange={handleAssetDestinationChange}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Context (compact, inside builder) */}
+        <div
+          className={`rounded-xl border p-3 ${
+            isDarkMode
+              ? 'bg-slate-950/50 border-slate-800'
+              : 'bg-slate-50 border-slate-200'
           }`}
         >
-          {isAnalyzing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Analyzing Trade...
-            </>
-          ) : (
-            <>
-              <ArrowRightLeft className="w-4 h-4" />
-              Analyze Trade
-            </>
+          <div className="flex items-center justify-between mb-2">
+            <label
+              className={`text-[10px] uppercase tracking-wider font-bold ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-500'
+              }`}
+            >
+              Additional context (optional)
+            </label>
+            <span
+              className={`text-[10px] font-semibold ${
+                charCount >= MAX_CONTEXT_CHARS
+                  ? isDarkMode
+                    ? 'text-amber-400'
+                    : 'text-amber-600'
+                  : isDarkMode
+                  ? 'text-slate-500'
+                  : 'text-slate-400'
+              }`}
+            >
+              {charCount}/{MAX_CONTEXT_CHARS}
+            </span>
+          </div>
+          <textarea
+            value={context}
+            onChange={(e) => handleContextChange(e.target.value)}
+            placeholder="Add context about your league, roster needs, scoring settings, or anything else the AI should consider..."
+            rows={2}
+            className={`w-full px-2 py-1.5 text-sm rounded border resize-none transition-colors ${
+              isDarkMode
+                ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-500 focus:border-blue-500'
+                : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
+            } outline-none`}
+          />
+        </div>
+
+        {/* CTA row */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {hasDraft && (
+            <button
+              type="button"
+              onClick={handleReset}
+              className={`px-5 py-2.5 rounded-lg text-sm font-semibold border transition-colors ${
+                isDarkMode
+                  ? 'bg-transparent border-slate-700 text-slate-300 hover:border-slate-600 hover:text-white'
+                  : 'bg-transparent border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900'
+              }`}
+            >
+              Reset
+            </button>
           )}
-        </button>
-
-        {/* Usage indicator */}
-        {usage && (
-          <p className={`text-xs ${!hasUsesLeft ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-            {isUnlimited ? (
-              'Unlimited analyses'
-            ) : !hasUsesLeft ? (
-              !user
-                ? 'Create an account for 1 free analysis per day'
-                : user.subscriptionTier === 'free'
-                ? 'No analyses left today. Upgrade for more.'
-                : 'No analyses left today. Resets at midnight.'
+          <button
+            type="button"
+            onClick={handleAnalyze}
+            disabled={!canAnalyze}
+            className={`flex-1 px-6 py-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+              canAnalyze
+                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/20'
+                : isDarkMode
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            }`}
+          >
+            {isAnalyzing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Analyzing Trade...
+              </>
             ) : (
-              `${usage.remaining}/${usage.limit} analyses remaining${usage.resetsDaily ? ' today' : usage.resetsWeekly ? ' this week' : ''}`
+              <>
+                <ArrowRightLeft className="w-4 h-4" />
+                Analyze Trade with AI
+              </>
             )}
-          </p>
-        )}
+          </button>
+        </div>
 
-        {validationMessage && (
-          <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-            {validationMessage}
-          </p>
-        )}
+        {/* Usage + validation */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          {usage ? (
+            <p
+              className={`text-[11px] ${
+                !hasUsesLeft
+                  ? isDarkMode
+                    ? 'text-amber-400'
+                    : 'text-amber-600'
+                  : isDarkMode
+                  ? 'text-slate-500'
+                  : 'text-slate-400'
+              }`}
+            >
+              {isUnlimited
+                ? 'Unlimited analyses'
+                : !hasUsesLeft
+                ? !user
+                  ? 'Create an account for 1 free analysis per day'
+                  : user.subscriptionTier === 'free'
+                  ? 'No analyses left today. Upgrade for more.'
+                  : 'No analyses left today. Resets at midnight.'
+                : `${usage.remaining}/${usage.limit} analyses remaining${
+                    usage.resetsDaily
+                      ? ' today'
+                      : usage.resetsWeekly
+                      ? ' this week'
+                      : ''
+                  }`}
+            </p>
+          ) : (
+            <span />
+          )}
+          {validationMessage && (
+            <p
+              className={`text-[11px] ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-400'
+              }`}
+            >
+              {validationMessage}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Error */}
@@ -1873,6 +2336,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
       {result && (
         <TradeResultsCard
           result={result}
+          teams={teams}
           isDarkMode={isDarkMode}
           resultsRef={resultsRef}
           chatTurns={chatTurns}

@@ -31,7 +31,7 @@ export function TradeAnalyzerShell({ isDarkMode }: TradeAnalyzerShellProps) {
     <div className="space-y-6">
       {/* Tab bar */}
       <div
-        className={`max-w-4xl mx-auto flex items-center gap-1 p-1 rounded-xl border overflow-x-auto ${
+        className={`max-w-6xl mx-auto flex items-center gap-1 p-1 rounded-xl border overflow-x-auto ${
           isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
         }`}
       >
