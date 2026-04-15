@@ -489,7 +489,8 @@ function TradeTeamCard({
 
   return (
     <div
-      className={`flex flex-col min-h-[260px] rounded-xl border p-4 ${
+      style={{ minHeight: '260px' }}
+      className={`flex flex-col w-full rounded-xl border p-4 ${
         isDarkMode
           ? 'bg-slate-950/60 border-slate-800'
           : 'bg-slate-50 border-slate-200'
@@ -992,7 +993,7 @@ function TradeResultsCard({
             : 'bg-gradient-to-br from-white to-emerald-50/50 border-emerald-200'
         }`}
       >
-        <div className="grid md:grid-cols-[auto_1fr_auto] gap-6 items-center">
+        <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
           <div
             className={`flex items-center justify-center w-12 h-12 rounded-xl border flex-shrink-0 ${
               isDarkMode
@@ -1002,7 +1003,7 @@ function TradeResultsCard({
           >
             <Trophy className="w-6 h-6" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p
               className={`text-[11px] font-bold uppercase tracking-wider mb-1 ${
                 isDarkMode ? 'text-emerald-400' : 'text-emerald-700'
@@ -2201,20 +2202,22 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         </div>
 
         {teamCount === 2 ? (
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
-            <TradeTeamCard
-              key={teams[0].id}
-              team={teams[0]}
-              teamIndex={0}
-              isDarkMode={isDarkMode}
-              allTeams={teams}
-              isMultiTeam={isMultiTeam}
-              onAddAsset={handleAddAsset}
-              onRemoveAsset={handleRemoveAsset}
-              onLabelChange={handleLabelChange}
-              onAssetDestinationChange={handleAssetDestinationChange}
-            />
-            <div className="flex items-center justify-center py-1 md:py-0">
+          <div className="flex flex-col md:flex-row gap-3 items-stretch">
+            <div className="flex-1 min-w-0 flex">
+              <TradeTeamCard
+                key={teams[0].id}
+                team={teams[0]}
+                teamIndex={0}
+                isDarkMode={isDarkMode}
+                allTeams={teams}
+                isMultiTeam={isMultiTeam}
+                onAddAsset={handleAddAsset}
+                onRemoveAsset={handleRemoveAsset}
+                onLabelChange={handleLabelChange}
+                onAssetDestinationChange={handleAssetDestinationChange}
+              />
+            </div>
+            <div className="flex items-center justify-center py-1 md:py-0 flex-shrink-0">
               <div
                 className={`w-10 h-10 rounded-full border flex items-center justify-center ${
                   isDarkMode
@@ -2225,18 +2228,20 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                 <ArrowRightLeft className="w-4 h-4" />
               </div>
             </div>
-            <TradeTeamCard
-              key={teams[1].id}
-              team={teams[1]}
-              teamIndex={1}
-              isDarkMode={isDarkMode}
-              allTeams={teams}
-              isMultiTeam={isMultiTeam}
-              onAddAsset={handleAddAsset}
-              onRemoveAsset={handleRemoveAsset}
-              onLabelChange={handleLabelChange}
-              onAssetDestinationChange={handleAssetDestinationChange}
-            />
+            <div className="flex-1 min-w-0 flex">
+              <TradeTeamCard
+                key={teams[1].id}
+                team={teams[1]}
+                teamIndex={1}
+                isDarkMode={isDarkMode}
+                allTeams={teams}
+                isMultiTeam={isMultiTeam}
+                onAddAsset={handleAddAsset}
+                onRemoveAsset={handleRemoveAsset}
+                onLabelChange={handleLabelChange}
+                onAssetDestinationChange={handleAssetDestinationChange}
+              />
+            </div>
           </div>
         ) : (
           <div
