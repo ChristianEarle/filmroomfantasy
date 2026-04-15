@@ -292,7 +292,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
       {/* Greeting row */}
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div className="min-w-0">
-          <h1 className={`text-2xl font-bold tracking-tight flex items-center gap-2 ${textCls}`}>
+          <h1 className={`text-2xl font-bold flex items-center gap-2 ${textCls}`}>
             <span aria-hidden="true">👋</span>
             Welcome back, {displayName}.
           </h1>
@@ -334,11 +334,10 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
       </div>
 
       {/* Hero: matchup + countdown + lineup state */}
-      <div className="flex flex-col lg:flex-row gap-3 items-stretch">
+      <div className="fr-home-hero">
         {/* Main hero (matchup) */}
         <div
-          style={{ flex: '3 1 0' }}
-          className={`relative overflow-hidden rounded-2xl border p-6 min-w-0 ${
+          className={`relative overflow-hidden rounded-2xl border p-6 ${
           isDarkMode
             ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950/40 border-slate-700'
             : 'bg-gradient-to-br from-white to-blue-50/40 border-slate-200'
@@ -346,11 +345,11 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" aria-hidden="true" />
           <div className="relative">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-500">
+              <span className="fr-text-11 font-bold uppercase fr-tracking-wider text-blue-500">
                 {league ? `Week ${league.currentWeek} · This Week` : 'This Week'}
               </span>
               {firstGame && countdown && !countdown.done && (
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-bold tracking-wider">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 fr-text-10 font-bold fr-tracking-wider">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" aria-hidden="true" />
                   UPCOMING
                 </span>
@@ -374,10 +373,10 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
               </p>
             )}
             {hasMatchup && opponentProjection != null && (
-              <div className={`flex gap-4 items-center p-4 rounded-xl border mb-4 ${
+              <div className={`fr-matchup p-4 rounded-xl border mb-4 ${
                 isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
-                <div className="flex-1 min-w-0 flex items-center gap-3">
+                <div className="flex items-center gap-3 fr-min-w-0">
                   <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                     {getInitials(userTeam?.name || 'You')}
                   </div>
@@ -385,20 +384,20 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                     <div className={`text-sm font-semibold truncate ${textCls}`}>
                       {userTeam?.name || 'You'}
                     </div>
-                    <div className={`text-[11px] mt-0.5 ${mutedCls}`}>
+                    <div className={`fr-text-11 mt-0.5 ${mutedCls}`}>
                       {userTeam ? `${userTeam.wins}-${userTeam.losses}${userTeam.ties > 0 ? `-${userTeam.ties}` : ''}` : '—'}
                       {standingRank != null ? ` · ${standingRank}${getOrdinal(standingRank)}` : ''}
                     </div>
                     <div className={`mt-1 flex items-baseline gap-1 font-bold text-base ${youFavored ? 'text-emerald-500' : textCls}`}>
-                      <span className={`text-[9px] uppercase font-normal tracking-wider ${mutedCls}`}>proj</span>
+                      <span className={`fr-text-9 uppercase font-normal fr-tracking-wider ${mutedCls}`}>proj</span>
                       <span className="font-mono">{starterProjection > 0 ? starterProjection.toFixed(1) : '—'}</span>
                     </div>
                   </div>
                 </div>
-                <div className="flex-shrink-0 text-center">
+                <div className="text-center">
                   <div className={`font-mono text-xs font-bold ${mutedCls}`} style={{ letterSpacing: '.15em' }}>VS</div>
                 </div>
-                <div className="flex-1 min-w-0 flex items-center gap-3 flex-row-reverse text-right">
+                <div className="flex items-center gap-3 fr-min-w-0 text-right" style={{ flexDirection: 'row-reverse' }}>
                   <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 ${
                     isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'
                   }`}>
@@ -408,9 +407,9 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                     <div className={`text-sm font-semibold truncate ${textCls}`}>
                       {opponentName || 'Opponent'}
                     </div>
-                    <div className={`text-[11px] mt-0.5 ${mutedCls}`}>Opponent</div>
+                    <div className={`fr-text-11 mt-0.5 ${mutedCls}`}>Opponent</div>
                     <div className={`mt-1 flex items-baseline gap-1 font-bold text-base justify-end ${!youFavored ? 'text-emerald-500' : textCls}`}>
-                      <span className={`text-[9px] uppercase font-normal tracking-wider ${mutedCls}`}>proj</span>
+                      <span className={`fr-text-9 uppercase font-normal fr-tracking-wider ${mutedCls}`}>proj</span>
                       <span className="font-mono">{opponentProjection.toFixed(1)}</span>
                     </div>
                   </div>
@@ -444,9 +443,9 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
         </div>
 
         {/* Right: countdown + lineup state */}
-        <div style={{ flex: '2 1 0' }} className="flex flex-col gap-3 min-w-0">
+        <div className="fr-home-right">
           <div className={`rounded-2xl border p-5 ${panelCls}`}>
-            <div className={`flex items-center gap-2 text-[10px] uppercase tracking-wider font-bold mb-2 ${mutedCls}`}>
+            <div className={`flex items-center gap-2 fr-text-10 uppercase fr-tracking-wider font-bold mb-2 ${mutedCls}`}>
               First Kickoff
               {countdown && !countdown.done && (
                 <span className="text-amber-500">● Lineup locks in</span>
@@ -457,11 +456,11 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                 <div className={`font-mono font-bold text-lg ${textCls}`}>Games live</div>
               ) : (
                 <div className={`flex items-baseline gap-1 font-bold ${textCls}`}>
-                  <span className="font-mono text-3xl tracking-tight">{String(countdown.d).padStart(2, '0')}</span>
+                  <span className="font-mono text-3xl">{String(countdown.d).padStart(2, '0')}</span>
                   <span className={`text-xs font-medium mr-1 ${mutedCls}`}>d</span>
-                  <span className="font-mono text-3xl tracking-tight">{String(countdown.h).padStart(2, '0')}</span>
+                  <span className="font-mono text-3xl">{String(countdown.h).padStart(2, '0')}</span>
                   <span className={`text-xs font-medium mr-1 ${mutedCls}`}>h</span>
-                  <span className="font-mono text-3xl tracking-tight">{String(countdown.m).padStart(2, '0')}</span>
+                  <span className="font-mono text-3xl">{String(countdown.m).padStart(2, '0')}</span>
                   <span className={`text-xs font-medium ${mutedCls}`}>m</span>
                 </div>
               )
@@ -480,7 +479,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
             )}
           </div>
 
-          <div className={`flex-1 rounded-2xl border p-5 flex flex-col gap-3 ${panelCls}`}>
+          <div className={`fr-fill rounded-2xl border p-5 flex flex-col gap-3 ${panelCls}`}>
             <div className="flex items-start justify-between gap-3">
               <h3 className={`text-base font-bold leading-tight ${textCls}`}>
                 {lineupIssues > 0
@@ -491,12 +490,12 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
               </h3>
               {userTeam && (
                 lineupIssues > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-500 fr-text-10 font-bold uppercase fr-tracking-wider whitespace-nowrap">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
                     Action needed
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-500 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-500 fr-text-10 font-bold uppercase fr-tracking-wider whitespace-nowrap">
                     <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
                     All clear
                   </span>
@@ -505,20 +504,20 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
             </div>
             <div className="space-y-2 flex-1">
               {injuredStarters.slice(0, 2).map((p) => (
-                <div key={`inj-${p.id}`} className="flex items-center gap-2 text-[12.5px] text-amber-500">
-                  <span className="inline-grid place-items-center w-4 h-4 rounded-full bg-amber-500 text-black text-[9px] font-black">!</span>
+                <div key={`inj-${p.id}`} className="flex items-center gap-2 text-xs text-amber-500">
+                  <span className="inline-grid place-items-center w-4 h-4 rounded-full bg-amber-500 text-black fr-text-9 font-black">!</span>
                   {p.name} is {p.status === 'out' ? 'Out' : p.status === 'doubtful' ? 'Doubtful' : 'Questionable'}
                 </div>
               ))}
               {starterOnBye.slice(0, 2).map((p) => (
-                <div key={`bye-${p.id}`} className="flex items-center gap-2 text-[12.5px] text-amber-500">
-                  <span className="inline-grid place-items-center w-4 h-4 rounded-full bg-amber-500 text-black text-[9px] font-black">!</span>
+                <div key={`bye-${p.id}`} className="flex items-center gap-2 text-xs text-amber-500">
+                  <span className="inline-grid place-items-center w-4 h-4 rounded-full bg-amber-500 text-black fr-text-9 font-black">!</span>
                   {p.name} is on bye this week
                 </div>
               ))}
               {lineupIssues === 0 && userTeam && (
-                <div className="flex items-center gap-2 text-[12.5px] text-emerald-500">
-                  <span className="inline-grid place-items-center w-4 h-4 rounded-full bg-emerald-500 text-black text-[9px] font-bold">✓</span>
+                <div className="flex items-center gap-2 text-xs text-emerald-500">
+                  <span className="inline-grid place-items-center w-4 h-4 rounded-full bg-emerald-500 text-black fr-text-9 font-bold">✓</span>
                   All starters cleared to play
                 </div>
               )}
@@ -526,7 +525,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
             <button
               type="button"
               onClick={() => onViewChange('Team')}
-              className="mt-auto text-center py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold transition-colors"
+              className="mt-auto text-center py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white fr-text-13 font-semibold transition-colors"
             >
               {lineupIssues > 0 ? 'Review & fix →' : 'Review lineup →'}
             </button>
@@ -566,7 +565,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
             <div className={`text-sm font-semibold flex items-center gap-2 ${textCls}`}>
               Waivers
               {trending.length > 0 && (
-                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-500 font-bold">
+                <span className="font-mono fr-text-10 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-500 font-bold">
                   {trending.length} new
                 </span>
               )}
@@ -589,7 +588,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
             <div className={`text-sm font-semibold flex items-center gap-2 ${textCls}`}>
               Rankings
               {(trending.length + trendingDown.length) > 0 && (
-                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 font-bold">
+                <span className="font-mono fr-text-10 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 font-bold">
                   {trending.length + trendingDown.length} moved
                 </span>
               )}
@@ -601,14 +600,14 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
       </div>
 
       {/* Row 1: Waivers table + Injuries */}
-      <div className="flex flex-col lg:flex-row gap-3 items-stretch">
+      <div className="fr-home-row">
         {/* Waivers table */}
-        <div style={{ flex: '8 1 0' }} className={`${panelCls} min-w-0`}>
+        <div className={panelCls}>
           <div className={panelHeadCls}>
             <h3 className={`text-sm font-bold flex items-center gap-2 ${textCls}`}>
               Top Waiver Pickups
               {league && (
-                <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                <span className={`font-mono fr-text-10 px-1.5 py-0.5 rounded font-semibold ${
                   isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
                 }`}>
                   WEEK {league.currentWeek}
@@ -636,7 +635,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           ) : (
             <>
               <div
-                className={`grid items-center gap-3 px-4 py-2 border-b text-[10px] uppercase tracking-wider font-bold ${mutedCls} ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-200 bg-slate-50'}`}
+                className={`grid items-center gap-3 px-4 py-2 border-b fr-text-10 uppercase fr-tracking-wider font-bold ${mutedCls} ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-200 bg-slate-50'}`}
                 style={{ gridTemplateColumns: '26px 1fr 80px 80px 100px' }}
               >
                 <div />
@@ -662,33 +661,33 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                   }`}
                   style={{ gridTemplateColumns: '26px 1fr 80px 80px 100px' }}
                 >
-                  <div className={`font-mono text-[11px] font-bold ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                  <div className={`font-mono fr-text-11 font-bold ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                     {String(i + 1).padStart(2, '0')}
                   </div>
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 border ${
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center fr-text-10 font-bold flex-shrink-0 border ${
                       isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-slate-100 border-slate-200 text-slate-700'
                     }`}>
                       {getInitials(p.name)}
                     </div>
                     <div className="min-w-0">
-                      <div className={`text-[13px] font-semibold truncate ${textCls}`}>{p.name}</div>
-                      <div className={`text-[11px] mt-0.5 flex items-center gap-1.5 ${mutedCls}`}>
-                        <span className={`font-mono text-[9px] font-bold px-1 py-0.5 rounded ${posClasses(p.position)}`}>
+                      <div className={`fr-text-13 font-semibold truncate ${textCls}`}>{p.name}</div>
+                      <div className={`fr-text-11 mt-0.5 flex items-center gap-1.5 ${mutedCls}`}>
+                        <span className={`font-mono fr-text-9 font-bold px-1 py-0.5 rounded ${posClasses(p.position)}`}>
                           {p.position}
                         </span>
                         {p.team}
                       </div>
                     </div>
                   </div>
-                  <div className="font-mono text-emerald-500 font-bold text-[13px]">
+                  <div className="font-mono text-emerald-500 font-bold fr-text-13">
                     +{p.trendValue ?? 0}
                   </div>
-                  <div className={`font-mono text-[12px] font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                  <div className={`font-mono text-xs font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
                     {typeof p.ownedPct === 'number' ? `${p.ownedPct}%` : '—'}
                   </div>
                   <div>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-500 text-[10px] font-bold uppercase tracking-wider">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-500 fr-text-10 font-bold uppercase fr-tracking-wider">
                       <TrendingUp className="w-3 h-3" aria-hidden="true" /> Trending
                     </span>
                   </div>
@@ -708,14 +707,14 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
         </div>
 
         {/* Injuries */}
-        <div style={{ flex: '5 1 0' }} className={`${panelCls} min-w-0`}>
+        <div className={panelCls}>
           <div className={panelHeadCls}>
             <h3 className={`text-sm font-bold flex items-center gap-2 ${textCls}`}>
               <AlertCircle className="w-4 h-4 text-red-500" aria-hidden="true" />
               Injury Alerts
             </h3>
             {roster.length > 0 && (
-              <span className={`ml-auto text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+              <span className={`ml-auto fr-text-10 font-bold uppercase fr-tracking-wider px-2 py-0.5 rounded-full ${
                 injuredRosterPlayers.length > 0
                   ? 'bg-red-500/15 text-red-500'
                   : 'bg-emerald-500/15 text-emerald-500'
@@ -756,8 +755,8 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                     <div className={`w-1 self-stretch rounded ${sevBar}`} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className={`text-[13.5px] font-semibold ${textCls}`}>{p.name}</span>
-                        <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${tagCls}`}>
+                        <span className={`text-sm font-semibold ${textCls}`}>{p.name}</span>
+                        <span className={`fr-text-9 font-bold px-1.5 py-0.5 rounded uppercase fr-tracking-wider ${tagCls}`}>
                           {tagLabel}
                         </span>
                       </div>
@@ -771,7 +770,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                         {p.injuryNote || `${p.position} · ${p.team}`}
                       </div>
                     </div>
-                    <span className="text-[11px] font-semibold text-blue-500 flex-shrink-0">Details →</span>
+                    <span className="fr-text-11 font-semibold text-blue-500 flex-shrink-0">Details →</span>
                   </div>
                 );
               })
@@ -781,13 +780,13 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
       </div>
 
       {/* Row 2: News + Rankings Movers */}
-      <div className="flex flex-col lg:flex-row gap-3 items-stretch">
+      <div className="fr-home-row">
         {/* News */}
-        <div style={{ flex: '8 1 0' }} className={`${panelCls} min-w-0`}>
+        <div className={panelCls}>
           <div className={panelHeadCls}>
             <h3 className={`text-sm font-bold ${textCls}`}>Important Updates</h3>
             {myTeamNews.length > 0 && (
-              <span className="ml-auto text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-500">
+              <span className="ml-auto fr-text-10 font-bold uppercase fr-tracking-wider px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-500">
                 {myTeamNews.length} on your roster
               </span>
             )}
@@ -825,20 +824,20 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${impact.bg} ${impact.text}`}>
+                      <span className={`fr-text-9 font-bold px-1.5 py-0.5 rounded uppercase fr-tracking-wider ${impact.bg} ${impact.text}`}>
                         {impact.label}
                       </span>
-                      <span className={`text-[11px] ${mutedCls}`}>{timeAgo(item.publishedAt)}</span>
-                      {item.source && <span className={`text-[11px] ${mutedCls}`}>· {item.source}</span>}
+                      <span className={`fr-text-11 ${mutedCls}`}>{timeAgo(item.publishedAt)}</span>
+                      {item.source && <span className={`fr-text-11 ${mutedCls}`}>· {item.source}</span>}
                     </div>
-                    <div className={`text-[13.5px] font-semibold leading-snug ${textCls}`}>
+                    <div className={`text-sm font-semibold leading-snug ${textCls}`}>
                       {item.headline}
                     </div>
-                    <div className={`text-[12px] mt-1 leading-relaxed ${mutedCls}`}>
+                    <div className={`text-xs mt-1 leading-relaxed ${mutedCls}`}>
                       <NewsSnippet item={item} />
                     </div>
                     {item.player && (
-                      <div className={`text-[11px] mt-1.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      <div className={`fr-text-11 mt-1.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                         {item.player.name} · {item.player.position} · {item.player.team}
                       </div>
                     )}
@@ -850,11 +849,11 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
         </div>
 
         {/* Rankings Movers */}
-        <div style={{ flex: '5 1 0' }} className={`${panelCls} min-w-0`}>
+        <div className={panelCls}>
           <div className={panelHeadCls}>
             <h3 className={`text-sm font-bold flex items-center gap-2 ${textCls}`}>
               Rankings Shifts
-              <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+              <span className={`font-mono fr-text-10 px-1.5 py-0.5 rounded font-semibold ${
                 isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
               }`}>24H</span>
             </h3>
@@ -870,7 +869,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           </div>
           <div className="grid grid-cols-2">
             <div className={`p-4 border-r ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-emerald-500 mb-3">
+              <div className="flex items-center gap-1.5 fr-text-10 uppercase fr-tracking-wider font-bold text-emerald-500 mb-3">
                 <ChevronUp className="w-3 h-3" aria-hidden="true" />
                 Rising
               </div>
@@ -883,13 +882,13 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                     isDarkMode ? 'border-slate-800' : 'border-slate-200'
                   }`}
                 >
-                  <span className={`font-mono text-[9px] font-bold px-1 py-0.5 rounded ${posClasses(p.position)}`}>
+                  <span className={`font-mono fr-text-9 font-bold px-1 py-0.5 rounded ${posClasses(p.position)}`}>
                     {p.position}
                   </span>
-                  <span className={`flex-1 min-w-0 text-[12.5px] font-medium truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                  <span className={`flex-1 min-w-0 text-xs font-medium truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
                     {p.name}
                   </span>
-                  <span className="font-mono text-[11.5px] font-bold text-emerald-500">
+                  <span className="font-mono fr-text-11 font-bold text-emerald-500">
                     +{p.trendValue ?? 0}
                   </span>
                 </button>
@@ -898,7 +897,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
               )}
             </div>
             <div className="p-4">
-              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-red-500 mb-3">
+              <div className="flex items-center gap-1.5 fr-text-10 uppercase fr-tracking-wider font-bold text-red-500 mb-3">
                 <ChevronDown className="w-3 h-3" aria-hidden="true" />
                 Falling
               </div>
@@ -911,13 +910,13 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                     isDarkMode ? 'border-slate-800' : 'border-slate-200'
                   }`}
                 >
-                  <span className={`font-mono text-[9px] font-bold px-1 py-0.5 rounded ${posClasses(p.position)}`}>
+                  <span className={`font-mono fr-text-9 font-bold px-1 py-0.5 rounded ${posClasses(p.position)}`}>
                     {p.position}
                   </span>
-                  <span className={`flex-1 min-w-0 text-[12.5px] font-medium truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                  <span className={`flex-1 min-w-0 text-xs font-medium truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
                     {p.name}
                   </span>
-                  <span className="font-mono text-[11.5px] font-bold text-red-500">
+                  <span className="font-mono fr-text-11 font-bold text-red-500">
                     -{p.trendValue ?? 0}
                   </span>
                 </button>

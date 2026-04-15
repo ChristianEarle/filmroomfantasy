@@ -265,7 +265,7 @@ function PlayerSearchInput({
               }`}
             >
               <span
-                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                className={`fr-text-10 font-bold px-1.5 py-0.5 rounded ${
                   r.position === 'QB'
                     ? 'bg-red-500/20 text-red-400'
                     : r.position === 'RB'
@@ -394,7 +394,8 @@ function AssetChip({
       }`}
     >
       <span
-        className={`inline-flex items-center justify-center min-w-[34px] px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${badgeClasses}`}
+        style={{ minWidth: '34px' }}
+        className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded fr-text-10 font-bold ${badgeClasses}`}
       >
         {badgeLabel}
       </span>
@@ -407,7 +408,7 @@ function AssetChip({
           {asset.name}
         </p>
         {asset.team && !isPick && (
-          <p className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          <p className={`fr-text-10 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             {asset.team}
           </p>
         )}
@@ -518,7 +519,7 @@ function TradeTeamCard({
 
       {/* Summary line */}
       <div
-        className={`flex items-center justify-between text-[11px] font-medium mb-2 ${
+        className={`flex items-center justify-between fr-text-11 font-medium mb-2 ${
           isDarkMode ? 'text-slate-500' : 'text-slate-500'
         }`}
       >
@@ -581,7 +582,7 @@ function TradeTeamCard({
           <button
             type="button"
             onClick={() => setShowPickInput(true)}
-            className={`flex items-center gap-1 text-[11px] font-medium transition-colors ${
+            className={`flex items-center gap-1 fr-text-11 font-medium transition-colors ${
               isDarkMode
                 ? 'text-slate-400 hover:text-blue-400'
                 : 'text-slate-500 hover:text-blue-600'
@@ -678,7 +679,7 @@ function FairnessMeter({
           </h4>
         </div>
         <span
-          className={`text-[11px] font-bold px-2.5 py-1 rounded ${tagClasses}`}
+          className={`fr-text-11 font-bold px-2.5 py-1 rounded ${tagClasses}`}
         >
           {Math.round(score)} · {diff < 5 ? 'Even' : `Favors ${favored}`}
         </span>
@@ -693,10 +694,13 @@ function FairnessMeter({
       />
       <div className="relative h-0">
         <div
-          className={`absolute -top-[18px] w-5 h-5 rounded-full border-[3px] shadow transition-all duration-500 ${markerBorder} ${
+          className={`absolute w-5 h-5 rounded-full shadow transition-all duration-500 ${markerBorder} ${
             isDarkMode ? 'bg-white' : 'bg-slate-900'
           }`}
           style={{
+            top: '-18px',
+            borderWidth: '3px',
+            borderStyle: 'solid',
             left: `calc(${leftPct}% - 10px)`,
             boxShadow: isDarkMode
               ? '0 0 0 3px rgba(2,6,23,1)'
@@ -706,7 +710,7 @@ function FairnessMeter({
         />
       </div>
       <div
-        className={`flex justify-between text-[10px] font-semibold mt-4 ${
+        className={`flex justify-between fr-text-10 font-semibold mt-4 ${
           isDarkMode ? 'text-slate-500' : 'text-slate-400'
         }`}
       >
@@ -793,7 +797,7 @@ function FollowUpChat({
                 type="button"
                 onClick={() => handleSend(chip)}
                 disabled={isSending}
-                className={`px-2.5 py-1 rounded-full border text-[11px] font-medium whitespace-nowrap transition-colors ${
+                className={`px-2.5 py-1 rounded-full border fr-text-11 font-medium whitespace-nowrap transition-colors ${
                   isDarkMode
                     ? 'bg-slate-950 border-slate-700 text-slate-300 hover:border-blue-500 hover:text-blue-300'
                     : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-700'
@@ -830,7 +834,7 @@ function FollowUpChat({
 
         {!isAllowed && (
           <span
-            className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${
+            className={`inline-flex items-center gap-1 fr-text-10 font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${
               isDarkMode
                 ? 'bg-amber-500/20 text-amber-300'
                 : 'bg-amber-100 text-amber-700'
@@ -932,7 +936,7 @@ function TradeResultsCard({
             Analysis
           </h2>
         </div>
-        <span className={`text-[11px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+        <span className={`fr-text-11 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
           Analyzed just now
         </span>
       </div>
@@ -954,7 +958,7 @@ function TradeResultsCard({
                 </span>
               )}
               <span
-                className={`text-[10px] font-bold uppercase tracking-wider ${
+                className={`fr-text-10 font-bold uppercase fr-tracking-wider ${
                   isDarkMode ? 'text-slate-500' : 'text-slate-500'
                 }`}
               >
@@ -963,14 +967,14 @@ function TradeResultsCard({
               {team.sends.map((a) => (
                 <span
                   key={a.id}
-                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-semibold ${
+                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded border fr-text-11 font-semibold ${
                     isDarkMode
                       ? 'bg-slate-900 border-slate-700 text-slate-200'
                       : 'bg-slate-50 border-slate-200 text-slate-700'
                   }`}
                 >
                   <span
-                    className={`px-1 py-0.5 rounded text-[9px] font-bold ${positionBadgeClasses(
+                    className={`px-1 py-0.5 rounded fr-text-9 font-bold ${positionBadgeClasses(
                       a.type === 'pick' ? undefined : a.position,
                       isDarkMode,
                     )}`}
@@ -993,7 +997,7 @@ function TradeResultsCard({
             : 'bg-gradient-to-br from-white to-emerald-50/50 border-emerald-200'
         }`}
       >
-        <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
+        <div className="fr-verdict-grid">
           <div
             className={`flex items-center justify-center w-12 h-12 rounded-xl border flex-shrink-0 ${
               isDarkMode
@@ -1005,7 +1009,7 @@ function TradeResultsCard({
           </div>
           <div className="min-w-0 flex-1">
             <p
-              className={`text-[11px] font-bold uppercase tracking-wider mb-1 ${
+              className={`fr-text-11 font-bold uppercase fr-tracking-wider mb-1 ${
                 isDarkMode ? 'text-emerald-400' : 'text-emerald-700'
               }`}
             >
@@ -1029,12 +1033,12 @@ function TradeResultsCard({
               }`}
             >
               <div
-                className={`text-4xl md:text-5xl font-black leading-none tracking-tight ${winnerGradeColor}`}
+                className={`fr-text-5xl font-black leading-none ${winnerGradeColor}`}
               >
                 {winnerGrade}
               </div>
               <div
-                className={`text-[10px] font-bold uppercase tracking-wider mt-2 ${
+                className={`fr-text-10 font-bold uppercase fr-tracking-wider mt-2 ${
                   isDarkMode ? 'text-slate-500' : 'text-slate-400'
                 }`}
               >
@@ -1112,7 +1116,7 @@ function TradeResultsCard({
                 0,
               );
 
-          const statLabelCls = `text-[10px] uppercase tracking-wider font-bold mt-1 ${
+          const statLabelCls = `fr-text-10 uppercase fr-tracking-wider font-bold mt-1 ${
             isDarkMode ? 'text-slate-500' : 'text-slate-500'
           }`;
           const statValueCls = `text-lg font-extrabold leading-none ${
@@ -1141,7 +1145,7 @@ function TradeResultsCard({
                       {tg.team}
                     </p>
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${badgeClasses}`}
+                      className={`fr-text-10 font-bold px-2 py-0.5 rounded ${badgeClasses}`}
                     >
                       {isWinner ? 'Wins' : 'Loses'}
                     </span>
@@ -1209,7 +1213,7 @@ function TradeResultsCard({
                 }`}
               >
                 <div
-                  className={`flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold flex-shrink-0 ${
+                  className={`flex items-center justify-center w-6 h-6 rounded-full fr-text-11 font-bold flex-shrink-0 ${
                     isDarkMode
                       ? 'bg-blue-500/15 text-blue-400'
                       : 'bg-blue-50 text-blue-600'
@@ -1763,7 +1767,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
           </div>
           <div>
             <h1
-              className={`text-2xl font-extrabold tracking-tight ${
+              className={`text-2xl font-extrabold ${
                 isDarkMode ? 'text-white' : 'text-slate-900'
               }`}
             >
@@ -1798,7 +1802,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         {user && (
           <div className="flex items-center gap-2.5">
             <span
-              className={`text-[10px] uppercase tracking-wider font-bold ${
+              className={`fr-text-10 uppercase fr-tracking-wider font-bold ${
                 isDarkMode ? 'text-slate-500' : 'text-slate-500'
               }`}
             >
@@ -1811,7 +1815,8 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                   setSelectedLeagueId(e.target.value);
                   setResult(null);
                 }}
-                className={`appearance-none pr-8 pl-3 py-1.5 text-xs font-semibold rounded-md border transition-colors cursor-pointer max-w-[220px] truncate ${
+                style={{ maxWidth: '220px' }}
+                className={`appearance-none pr-8 pl-3 py-1.5 text-xs font-semibold rounded-md border transition-colors cursor-pointer truncate ${
                   isDarkMode
                     ? 'bg-slate-950 border-slate-800 text-white hover:border-slate-600'
                     : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
@@ -1836,7 +1841,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
 
         <div className="flex items-center gap-2.5">
           <span
-            className={`text-[10px] uppercase tracking-wider font-bold ${
+            className={`fr-text-10 uppercase fr-tracking-wider font-bold ${
               isDarkMode ? 'text-slate-500' : 'text-slate-500'
             }`}
           >
@@ -1853,7 +1858,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
 
         <div className="flex items-center gap-2.5">
           <span
-            className={`text-[10px] uppercase tracking-wider font-bold ${
+            className={`fr-text-10 uppercase fr-tracking-wider font-bold ${
               isDarkMode ? 'text-slate-500' : 'text-slate-500'
             }`}
           >
@@ -1890,7 +1895,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         {leagueType !== 'redraft' && (
           <div className="flex items-center gap-2.5">
             <span
-              className={`text-[10px] uppercase tracking-wider font-bold ${
+              className={`fr-text-10 uppercase fr-tracking-wider font-bold ${
                 isDarkMode ? 'text-slate-500' : 'text-slate-500'
               }`}
             >
@@ -1953,7 +1958,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         >
           <div>
             <label
-              className={`block text-[10px] uppercase tracking-wider font-bold mb-2 ${
+              className={`block fr-text-10 uppercase fr-tracking-wider font-bold mb-2 ${
                 isDarkMode ? 'text-slate-500' : 'text-slate-500'
               }`}
             >
@@ -2098,7 +2103,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                   {myRoster.roster.starters.length > 0 && (
                     <div>
                       <p
-                        className={`text-[10px] font-bold uppercase mb-1 ${
+                        className={`fr-text-10 font-bold uppercase mb-1 ${
                           isDarkMode ? 'text-slate-400' : 'text-slate-500'
                         }`}
                       >
@@ -2114,7 +2119,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                                 : 'bg-blue-50 text-blue-700 border border-blue-200'
                             }`}
                           >
-                            <span className="text-[9px] opacity-70">
+                            <span className="fr-text-9 opacity-70">
                               {p.slot}
                             </span>
                             {p.name}
@@ -2126,7 +2131,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                   {myRoster.roster.bench.length > 0 && (
                     <div>
                       <p
-                        className={`text-[10px] font-bold uppercase mb-1 ${
+                        className={`fr-text-10 font-bold uppercase mb-1 ${
                           isDarkMode ? 'text-slate-400' : 'text-slate-500'
                         }`}
                       >
@@ -2142,7 +2147,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                                 : 'bg-slate-100 text-slate-700'
                             }`}
                           >
-                            <span className="text-[9px] opacity-70">
+                            <span className="fr-text-9 opacity-70">
                               {p.position}
                             </span>
                             {p.name}
@@ -2186,7 +2191,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
             </h3>
           </div>
           <span
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold ${
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border fr-text-11 font-semibold ${
               isDarkMode
                 ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
                 : 'bg-blue-50 border-blue-200 text-blue-700'
@@ -2202,22 +2207,20 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         </div>
 
         {teamCount === 2 ? (
-          <div className="flex flex-col md:flex-row gap-3 items-stretch">
-            <div className="flex-1 min-w-0 flex">
-              <TradeTeamCard
-                key={teams[0].id}
-                team={teams[0]}
-                teamIndex={0}
-                isDarkMode={isDarkMode}
-                allTeams={teams}
-                isMultiTeam={isMultiTeam}
-                onAddAsset={handleAddAsset}
-                onRemoveAsset={handleRemoveAsset}
-                onLabelChange={handleLabelChange}
-                onAssetDestinationChange={handleAssetDestinationChange}
-              />
-            </div>
-            <div className="flex items-center justify-center py-1 md:py-0 flex-shrink-0">
+          <div className="fr-grid-teams">
+            <TradeTeamCard
+              key={teams[0].id}
+              team={teams[0]}
+              teamIndex={0}
+              isDarkMode={isDarkMode}
+              allTeams={teams}
+              isMultiTeam={isMultiTeam}
+              onAddAsset={handleAddAsset}
+              onRemoveAsset={handleRemoveAsset}
+              onLabelChange={handleLabelChange}
+              onAssetDestinationChange={handleAssetDestinationChange}
+            />
+            <div className="flex items-center justify-center flex-shrink-0">
               <div
                 className={`w-10 h-10 rounded-full border flex items-center justify-center ${
                   isDarkMode
@@ -2228,20 +2231,18 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                 <ArrowRightLeft className="w-4 h-4" />
               </div>
             </div>
-            <div className="flex-1 min-w-0 flex">
-              <TradeTeamCard
-                key={teams[1].id}
-                team={teams[1]}
-                teamIndex={1}
-                isDarkMode={isDarkMode}
-                allTeams={teams}
-                isMultiTeam={isMultiTeam}
-                onAddAsset={handleAddAsset}
-                onRemoveAsset={handleRemoveAsset}
-                onLabelChange={handleLabelChange}
-                onAssetDestinationChange={handleAssetDestinationChange}
-              />
-            </div>
+            <TradeTeamCard
+              key={teams[1].id}
+              team={teams[1]}
+              teamIndex={1}
+              isDarkMode={isDarkMode}
+              allTeams={teams}
+              isMultiTeam={isMultiTeam}
+              onAddAsset={handleAddAsset}
+              onRemoveAsset={handleRemoveAsset}
+              onLabelChange={handleLabelChange}
+              onAssetDestinationChange={handleAssetDestinationChange}
+            />
           </div>
         ) : (
           <div
@@ -2278,7 +2279,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
             >
               <div className="flex items-center justify-between mb-2">
                 <label
-                  className={`text-[10px] uppercase tracking-wider font-bold ${
+                  className={`fr-text-10 uppercase fr-tracking-wider font-bold ${
                     isDarkMode ? 'text-slate-500' : 'text-slate-500'
                   }`}
                 >
@@ -2286,7 +2287,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                 </label>
                 <div className="flex items-center gap-3">
                   <span
-                    className={`text-[10px] font-semibold ${
+                    className={`fr-text-10 font-semibold ${
                       charCount >= MAX_CONTEXT_CHARS
                         ? isDarkMode
                           ? 'text-amber-400'
@@ -2301,7 +2302,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                   <button
                     type="button"
                     onClick={() => setShowContext(false)}
-                    className={`text-[10px] font-semibold uppercase tracking-wider ${
+                    className={`fr-text-10 font-semibold uppercase fr-tracking-wider ${
                       isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
@@ -2383,7 +2384,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         <div className="flex items-center justify-between flex-wrap gap-2">
           {usage ? (
             <p
-              className={`text-[11px] ${
+              className={`fr-text-11 ${
                 !hasUsesLeft
                   ? isDarkMode
                     ? 'text-amber-400'
@@ -2414,7 +2415,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
           )}
           {validationMessage && (
             <p
-              className={`text-[11px] ${
+              className={`fr-text-11 ${
                 isDarkMode ? 'text-slate-500' : 'text-slate-400'
               }`}
             >
