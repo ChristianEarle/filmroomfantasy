@@ -14,7 +14,7 @@
  * calls generateDraftRankings() and results are served from the DB.
  */
 
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, gte } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
@@ -119,12 +119,14 @@ async function buildPlayerContexts(
     statsByPlayer.set(row.playerId, entry);
   }
 
-  // Get recent news (last 30 days worth)
+  // Get recent news (last 30 days, capped to 1000 rows to avoid memory blowup)
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const newsRows = await db.query.playerNews.findMany({
     columns: { playerId: true, headline: true, aiSummary: true },
+    where: gte(schema.playerNews.publishedAt, thirtyDaysAgo),
     orderBy: desc(schema.playerNews.publishedAt),
+    limit: 1000,
   });
   const newsByPlayer = new Map<string, string[]>();
   for (const n of newsRows) {
@@ -284,6 +286,21 @@ export interface GenerateRankingsResult {
 }
 
 export async function generateDraftRankings(
+  args: GenerateRankingsArgs,
+): Promise<GenerateRankingsResult> {
+  try {
+    return await generateDraftRankingsInner(args);
+  } catch (err) {
+    console.error('[draftRankings] unexpected error:', err);
+    return {
+      ok: false,
+      count: 0,
+      error: err instanceof Error ? `${err.message}` : 'Unknown error',
+    };
+  }
+}
+
+async function generateDraftRankingsInner(
   args: GenerateRankingsArgs,
 ): Promise<GenerateRankingsResult> {
   const { db, anthropicKey, rankingType, scoringFormat, superflex, seasonYear } = args;
