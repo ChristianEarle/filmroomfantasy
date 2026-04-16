@@ -1399,7 +1399,7 @@ function createInitialTeams(count: number): TradeTeam[] {
 
 export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const { user } = useAuth();
-  const { leagues } = useLeaguesContext();
+  const { leagues, refetch: refetchLeagues } = useLeaguesContext();
   const [teamCount, setTeamCount] = useState<2 | 3 | 4>(2);
   const [teams, setTeams] = useState<TradeTeam[]>(createInitialTeams(2));
   const [leagueType, setLeagueType] = useState<LeagueType>('redraft');
@@ -1503,21 +1503,64 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     () => leagues.find((l) => l.id === selectedLeagueId) || null,
     [leagues, selectedLeagueId]
   );
+
+  // Track the last leagueId we auto-synced so we can re-run whenever
+  // the user actually picks a different league (but not on every
+  // leagues-array mutation, which could otherwise clobber a manual
+  // override right after a context refetch).
+  const lastAutoSyncedLeagueId = useRef<string | null>(null);
   useEffect(() => {
-    if (!selectedLeague) return;
+    if (!selectedLeagueId) {
+      lastAutoSyncedLeagueId.current = null;
+      return;
+    }
+    const current = leagues.find((l) => l.id === selectedLeagueId);
+    if (!current) return;
+    // Only auto-sync when the user actually switches leagues. Context
+    // refetches that return the same league shouldn't overwrite any
+    // manual override the user just made.
+    if (lastAutoSyncedLeagueId.current === selectedLeagueId) return;
+    lastAutoSyncedLeagueId.current = selectedLeagueId;
+
     setAdvanced((prev) => ({
       ...prev,
       scoringFormat:
-        (selectedLeague.scoringFormat as ScoringFormat) || prev.scoringFormat,
-      teamCount: selectedLeague.teamCount || prev.teamCount,
-      superflex: selectedLeague.hasSuperflex ?? prev.superflex,
-      tePremium: selectedLeague.hasTePremium ?? prev.tePremium,
+        (current.scoringFormat as ScoringFormat) || prev.scoringFormat,
+      teamCount: current.teamCount || prev.teamCount,
+      superflex: current.hasSuperflex ?? prev.superflex,
+      tePremium: current.hasTePremium ?? prev.tePremium,
     }));
-    if (selectedLeague.leagueType) {
-      setLeagueType(selectedLeague.leagueType);
+    // leagueType column has a NOT NULL default of 'redraft' in the DB,
+    // so this is always present. Set unconditionally so switching to a
+    // dynasty/keeper league always flips the Format pill.
+    if (
+      current.leagueType === 'redraft' ||
+      current.leagueType === 'dynasty' ||
+      current.leagueType === 'keeper'
+    ) {
+      setLeagueType(current.leagueType);
     }
     setResult(null);
-  }, [selectedLeague]);
+
+    // Kick off a background re-sync so a stale stored leagueType (e.g.,
+    // league connected before derived-type detection landed) gets
+    // corrected. When it finishes, refetch the leagues context; the
+    // effect's lastAutoSyncedLeagueId guard prevents it from clobbering
+    // a manual override the user may have made in the meantime.
+    (async () => {
+      try {
+        await api.post(`/leagues/${selectedLeagueId}/sync`);
+        await refetchLeagues();
+        // Reset the guard for this one league so the effect re-runs
+        // once against the refreshed data.
+        if (lastAutoSyncedLeagueId.current === selectedLeagueId) {
+          lastAutoSyncedLeagueId.current = null;
+        }
+      } catch {
+        // Silent — fallback to whatever leagueType we already have.
+      }
+    })();
+  }, [selectedLeagueId, leagues, refetchLeagues]);
 
   // Fetch my roster whenever selectedLeagueId changes
   useEffect(() => {
