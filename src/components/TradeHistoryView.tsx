@@ -352,91 +352,232 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
     return impacts.filter((im) => im.seasonYear === selectedSeason);
   }, [impacts, selectedSeason]);
 
-  return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div
-          className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-            isDarkMode ? 'bg-blue-600/20' : 'bg-blue-50'
-          }`}
-        >
-          <History
-            className={`w-5 h-5 ${
-              isDarkMode ? 'text-blue-400' : 'text-blue-600'
-            }`}
-          />
-        </div>
-        <div>
-          <h1
-            className={`text-xl font-bold ${
-              isDarkMode ? 'text-white' : 'text-slate-900'
-            }`}
-          >
-            Your Trade History
-          </h1>
-          <p
-            className={`text-sm ${
-              isDarkMode ? 'text-slate-400' : 'text-slate-500'
-            }`}
-          >
-            Every trade {callerTeamName ? `${callerTeamName} made` : 'you made'} in this
-            league, with the actual outcome and optional AI post-mortem.
-            Points alone don't tell the whole story — use the AI grade for
-            context.
-          </p>
-        </div>
-      </div>
+  // ── Computed stats for the summary strip ────────────────────────
+  const tradeStats = useMemo(() => {
+    if (trades.length === 0) return null;
 
-      {/* League selector */}
-      <div
-        className={`rounded-xl border p-4 space-y-3 ${
-          isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
-        }`}
-      >
-        <label
-          htmlFor="trade-history-league-select"
-          className={`block text-xs font-semibold uppercase tracking-wide ${
-            isDarkMode ? 'text-slate-400' : 'text-slate-500'
-          }`}
-        >
-          League
-        </label>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="relative flex-1">
+    const total = trades.length;
+
+    // Win/loss uses the caller's outcome differential
+    let wins = 0;
+    let losses = 0;
+    const tradePartners = new Set<string>();
+
+    // Grade distribution
+    const gradeLetters: string[] = [];
+    let bestTrade: { label: string; pts: number } | null = null;
+    let worstTrade: { label: string; pts: number } | null = null;
+
+    for (const t of trades) {
+      // Find the caller's outcome side
+      const callerSide = t.outcome?.sides.find((s) => s.teamId === callerTeamId);
+      if (callerSide) {
+        const diff = callerSide.differential;
+        if (diff > 0) wins++;
+        else if (diff < 0) losses++;
+
+        // Best & worst by points
+        const label =
+          callerSide.sent.length > 0
+            ? `Gave ${callerSide.sent[0].playerName}`
+            : callerSide.received.length > 0
+            ? `Got ${callerSide.received[0].playerName}`
+            : `Trade`;
+        if (!bestTrade || diff > bestTrade.pts) bestTrade = { label, pts: diff };
+        if (!worstTrade || diff < worstTrade.pts) worstTrade = { label, pts: diff };
+      }
+
+      // Trade partners
+      for (const side of t.sides) {
+        if (side.teamId !== callerTeamId) tradePartners.add(side.teamName);
+      }
+
+      // Grades
+      if (t.aiGrade) gradeLetters.push(t.aiGrade);
+    }
+
+    const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+
+    // Average grade (convert to numeric, average, convert back)
+    const gradeMap: Record<string, number> = {
+      'A+': 12, A: 11, 'A-': 10, 'B+': 9, B: 8, 'B-': 7,
+      'C+': 6, C: 5, 'C-': 4, 'D+': 3, D: 2, 'D-': 1, F: 0,
+    };
+    const reverseGrade = ['F', 'D-', 'D', 'D+', 'C-', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+'];
+    let avgGrade: string | null = null;
+    if (gradeLetters.length > 0) {
+      const sum = gradeLetters.reduce((s, g) => s + (gradeMap[g] ?? 5), 0);
+      const avg = Math.round(sum / gradeLetters.length);
+      avgGrade = reverseGrade[Math.min(avg, 12)] ?? 'C';
+    }
+    const aTier = gradeLetters.filter((g) => g.startsWith('A')).length;
+    const cTier = gradeLetters.filter((g) => g.startsWith('C') || g.startsWith('D') || g === 'F').length;
+
+    return {
+      total,
+      partners: tradePartners.size,
+      wins,
+      losses,
+      winRate,
+      avgGrade,
+      aTier,
+      cTier,
+      bestTrade,
+      worstTrade,
+    };
+  }, [trades, callerTeamId]);
+
+  // ── Search + filter for trades ──────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const [tradeFilter, setTradeFilter] = useState<'all' | 'wins' | 'losses' | string>('all');
+  const [tradeSort, setTradeSort] = useState<'recent' | 'oldest' | 'impact'>('recent');
+
+  const filteredTrades = useMemo(() => {
+    let result = [...trades];
+
+    // Search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((t) =>
+        t.sides.some((s) =>
+          s.sent.some((p) => p.name.toLowerCase().includes(q)) ||
+          s.teamName.toLowerCase().includes(q)
+        ) ||
+        (t.weekExecuted != null && `week ${t.weekExecuted}`.includes(q)) ||
+        (t.weekExecuted != null && `wk ${t.weekExecuted}`.includes(q))
+      );
+    }
+
+    // Filter
+    if (tradeFilter === 'wins') {
+      result = result.filter((t) => {
+        const side = t.outcome?.sides.find((s) => s.teamId === callerTeamId);
+        return side && side.differential > 0;
+      });
+    } else if (tradeFilter === 'losses') {
+      result = result.filter((t) => {
+        const side = t.outcome?.sides.find((s) => s.teamId === callerTeamId);
+        return side && side.differential < 0;
+      });
+    } else if (tradeFilter.endsWith('-tier')) {
+      const letter = tradeFilter.replace('-tier', '').toUpperCase();
+      result = result.filter((t) => t.aiGrade?.startsWith(letter));
+    }
+
+    // Sort
+    if (tradeSort === 'oldest') {
+      result.sort((a, b) => new Date(a.executedAt ?? '').getTime() - new Date(b.executedAt ?? '').getTime());
+    } else if (tradeSort === 'impact') {
+      result.sort((a, b) => {
+        const aDiff = Math.abs(a.outcome?.sides.find((s) => s.teamId === callerTeamId)?.differential ?? 0);
+        const bDiff = Math.abs(b.outcome?.sides.find((s) => s.teamId === callerTeamId)?.differential ?? 0);
+        return bDiff - aDiff;
+      });
+    } else {
+      result.sort((a, b) => new Date(b.executedAt ?? '').getTime() - new Date(a.executedAt ?? '').getTime());
+    }
+
+    return result;
+  }, [trades, searchQuery, tradeFilter, tradeSort, callerTeamId]);
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-4">
+      {/* Header + league/season selectors (compact row) */}
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+              isDarkMode ? 'bg-blue-600/20' : 'bg-blue-50'
+            }`}
+          >
+            <History
+              className={`w-5 h-5 ${
+                isDarkMode ? 'text-blue-400' : 'text-blue-600'
+              }`}
+            />
+          </div>
+          <div>
+            <h1
+              className={`text-xl font-bold ${
+                isDarkMode ? 'text-white' : 'text-slate-900'
+              }`}
+            >
+              Your Trade History
+            </h1>
+            <p
+              className={`text-sm ${
+                isDarkMode ? 'text-slate-400' : 'text-slate-500'
+              }`}
+            >
+              Every trade {callerTeamName ? <><b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{callerTeamName}</b> made</> : 'you made'} this
+              season — with real outcomes and AI post-mortems.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* League selector pill */}
+          <div className="relative">
             <select
               id="trade-history-league-select"
               value={selectedLeagueId}
               onChange={(e) => setSelectedLeagueId(e.target.value)}
-              className={`w-full appearance-none pr-9 pl-3 py-2 text-sm rounded-lg border transition-colors ${
+              className={`appearance-none pr-8 pl-3 py-2 text-sm font-semibold rounded-lg border transition-colors cursor-pointer ${
                 isDarkMode
-                  ? 'bg-slate-800 border-slate-600 text-white'
-                  : 'bg-white border-slate-300 text-slate-900'
+                  ? 'bg-slate-900 border-slate-700 text-white hover:border-slate-600'
+                  : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
               } outline-none`}
             >
               <option value="">Select a league...</option>
               {leagues.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
-                  {l.platform ? ` (${l.platform})` : ''}
+                  {l.platform ? ` · ${l.platform}` : ''}
                 </option>
               ))}
             </select>
             <ChevronDown
-              className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${
+              className={`absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${
                 isDarkMode ? 'text-slate-400' : 'text-slate-500'
               }`}
             />
           </div>
+
+          {/* Season selector pill */}
+          {seasons.length > 1 && (
+            <div className="relative">
+              <select
+                value={selectedSeason ?? ''}
+                onChange={(e) => setSelectedSeason(e.target.value ? Number(e.target.value) : null)}
+                className={`appearance-none pr-8 pl-3 py-2 text-sm font-semibold rounded-lg border transition-colors cursor-pointer ${
+                  isDarkMode
+                    ? 'bg-slate-900 border-slate-700 text-white hover:border-slate-600'
+                    : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
+                } outline-none`}
+              >
+                <option value="">All Seasons</option>
+                {seasons.map((s) => (
+                  <option key={s} value={s}>{s} Season</option>
+                ))}
+              </select>
+              <ChevronDown
+                className={`absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${
+                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              />
+            </div>
+          )}
+
+          {/* Re-sync button */}
           {selectedLeagueId && (
             <button
               type="button"
               onClick={handleIngest}
               disabled={isIngesting}
-              className={`inline-flex items-center justify-center gap-2 px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
+              className={`inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg font-semibold transition-colors ${
                 isDarkMode
-                  ? 'bg-slate-800 hover:bg-slate-700 text-white'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  ? 'bg-slate-900 border border-slate-700 text-white hover:border-slate-600'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:border-slate-300'
               } ${isIngesting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isIngesting ? (
@@ -489,187 +630,33 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         </div>
       )}
 
-      {/* Season tabs (show only if user has trades in 2+ seasons).
-          These behave as a group of toggle buttons, so we use
-          aria-pressed rather than a full tablist pattern (which
-          would require arrow-key navigation we don't implement). */}
-      {seasons.length > 1 && (
-        <div
-          role="group"
-          aria-label="Filter trades by season"
-          className={`rounded-xl border p-2 flex items-center gap-1 overflow-x-auto ${
-            isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
-          }`}
-        >
-          <button
-            type="button"
-            onClick={() => setSelectedSeason(null)}
-            aria-pressed={selectedSeason == null}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
-              selectedSeason == null
-                ? 'bg-blue-600 text-white'
-                : isDarkMode
-                ? 'text-slate-300 hover:bg-slate-800'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            All Seasons
-          </button>
-          {seasons.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setSelectedSeason(s)}
-              aria-pressed={selectedSeason === s}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
-                selectedSeason === s
-                  ? 'bg-blue-600 text-white'
-                  : isDarkMode
-                  ? 'text-slate-300 hover:bg-slate-800'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Per-season impact cards (one per season the user has trades in) */}
-      {visibleImpacts.length > 0 && (
-        <div className="space-y-3">
-          {visibleImpacts.map((im) => (
+      {/* Stats strip (5 cards) */}
+      {tradeStats && trades.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {[
+            { label: 'Total Trades', value: String(tradeStats.total), sub: `${tradeStats.partners} trade partner${tradeStats.partners === 1 ? '' : 's'}` },
+            { label: 'Trade Win Rate', value: `${tradeStats.winRate}%`, sub: `${tradeStats.wins}W · ${tradeStats.losses}L` },
+            { label: 'Avg AI Grade', value: tradeStats.avgGrade ?? '—', sub: tradeStats.avgGrade ? `${tradeStats.aTier} A-tier · ${tradeStats.cTier} C-tier` : 'No grades yet' },
+            { label: 'Best Trade', value: tradeStats.bestTrade?.label ?? '—', sub: tradeStats.bestTrade ? `${tradeStats.bestTrade.pts > 0 ? '+' : ''}${tradeStats.bestTrade.pts.toFixed(1)} pts` : '', color: 'text-emerald-500' },
+            { label: 'Worst Trade', value: tradeStats.worstTrade?.label ?? '—', sub: tradeStats.worstTrade ? `${tradeStats.worstTrade.pts > 0 ? '+' : ''}${tradeStats.worstTrade.pts.toFixed(1)} pts` : '', color: 'text-red-500' },
+          ].map((stat) => (
             <div
-              key={im.seasonYear}
-              className={`rounded-xl border p-6 ${
-                isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
+              key={stat.label}
+              className={`rounded-xl border p-4 ${
+                isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
               }`}
             >
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkles
-                  className={`w-4 h-4 ${
-                    isDarkMode ? 'text-blue-400' : 'text-blue-600'
-                  }`}
-                />
-                <p
-                  className={`text-sm font-semibold ${
-                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                  }`}
-                >
-                  Season Impact ({im.seasonYear})
-                </p>
+              <div className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-2 ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-500'
+              }`}>
+                {stat.label}
               </div>
-              <p
-                className={`text-lg font-bold mb-4 ${
-                  isDarkMode ? 'text-white' : 'text-slate-900'
-                }`}
-              >
-                {headlineFor(im)}
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <div
-                  className={`p-3 rounded-lg ${
-                    isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
-                  }`}
-                >
-                  <p
-                    className={`text-[10px] font-bold uppercase mb-1 ${
-                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                    }`}
-                  >
-                    Actual Record
-                  </p>
-                  <p
-                    className={`text-2xl font-bold ${
-                      isDarkMode ? 'text-white' : 'text-slate-900'
-                    }`}
-                  >
-                    {im.actualRecord.wins}-{im.actualRecord.losses}
-                    {im.actualRecord.ties > 0 ? `-${im.actualRecord.ties}` : ''}
-                  </p>
-                </div>
-                <div
-                  className={`p-3 rounded-lg ${
-                    isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
-                  }`}
-                >
-                  <p
-                    className={`text-[10px] font-bold uppercase mb-1 ${
-                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                    }`}
-                  >
-                    If you never traded
-                  </p>
-                  <p
-                    className={`text-2xl font-bold ${
-                      isDarkMode ? 'text-white' : 'text-slate-900'
-                    }`}
-                  >
-                    {im.hypotheticalRecord.wins}-
-                    {im.hypotheticalRecord.losses}
-                    {im.hypotheticalRecord.ties > 0
-                      ? `-${im.hypotheticalRecord.ties}`
-                      : ''}
-                  </p>
-                </div>
+              <div className={`text-2xl font-extrabold leading-none ${stat.color ?? (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                {stat.value}
               </div>
-              <div
-                className={`mt-3 text-xs ${
-                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                }`}
-              >
-                Net points from trading:{' '}
-                <span
-                  className={
-                    im.totalPointDifferential < 0
-                      ? 'text-emerald-500 font-semibold'
-                      : im.totalPointDifferential > 0
-                      ? 'text-red-500 font-semibold'
-                      : isDarkMode ? 'text-slate-300 font-semibold' : 'text-slate-600 font-semibold'
-                  }
-                >
-                  {im.totalPointDifferential <= 0 ? '+' : ''}
-                  {Math.round(-im.totalPointDifferential * 10) / 10}
-                </span>
-                <span className="ml-2 opacity-70">
-                  — points alone don't tell the whole story. Open a trade
-                  below for the full AI post-mortem.
-                </span>
-              </div>
-              {im.flippedWeeks.length > 0 && (
-                <div className="mt-4">
-                  <p
-                    className={`text-[10px] font-bold uppercase mb-2 ${
-                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                    }`}
-                  >
-                    Flipped Weeks
-                  </p>
-                  <div className="space-y-1">
-                    {im.flippedWeeks.map((fw) => (
-                      <div
-                        key={fw.week}
-                        className={`text-xs flex items-center gap-2 ${
-                          isDarkMode ? 'text-slate-300' : 'text-slate-600'
-                        }`}
-                      >
-                        <span className="font-semibold">Week {fw.week}</span>
-                        <span
-                          className={
-                            fw.actualResult === 'W' || (fw.actualResult === 'T' && fw.hypotheticalResult === 'L')
-                              ? 'text-emerald-500'
-                              : 'text-red-500'
-                          }
-                        >
-                          {fw.actualResult} → {fw.hypotheticalResult}
-                        </span>
-                        <span className="opacity-70">
-                          ({fw.actualScore} vs {fw.opponentScore} → hypothetical{' '}
-                          {fw.hypotheticalScore})
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              {stat.sub && (
+                <div className={`fr-text-11 mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {stat.sub}
                 </div>
               )}
             </div>
@@ -677,7 +664,221 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         </div>
       )}
 
-      {/* Trades table */}
+      {/* Per-season impact: 2-panel (left=headline+bars, right=flipped weeks) */}
+      {visibleImpacts.length > 0 && (
+        <div className="space-y-3">
+          {visibleImpacts.map((im) => {
+            const actualW = im.actualRecord.wins;
+            const actualL = im.actualRecord.losses;
+            const hypoW = im.hypotheticalRecord.wins;
+            const hypoL = im.hypotheticalRecord.losses;
+            const totalGames = Math.max(actualW + actualL, hypoW + hypoL, 1);
+            const netPts = -im.totalPointDifferential;
+            const netPtsLabel = `${netPts >= 0 ? '+' : ''}${(Math.round(netPts * 10) / 10).toFixed(1)} pts`;
+
+            return (
+              <div key={im.seasonYear} className="fr-home-row">
+                {/* LEFT: Season Impact */}
+                <div
+                  className={`rounded-xl border p-6 ${
+                    isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <div className={`fr-text-11 uppercase fr-tracking-wider font-bold mb-2 ${
+                    isDarkMode ? 'text-blue-400' : 'text-blue-600'
+                  }`}>
+                    <Sparkles className="w-3 h-3 inline mr-1" style={{ verticalAlign: '-1px' }} />
+                    Season Impact · {im.seasonYear}
+                  </div>
+                  <h2 className={`text-xl font-extrabold leading-tight mb-2 ${
+                    isDarkMode ? 'text-white' : 'text-slate-900'
+                  }`}>
+                    {headlineFor(im)}
+                  </h2>
+                  <p className={`text-sm mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    You went {actualW}-{actualL}, but had you stood pat you'd have finished {hypoW}-{hypoL}. Points alone don't tell the whole story — open any trade for the AI post-mortem.
+                  </p>
+
+                  {/* Record comparison bars */}
+                  <div className="space-y-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <span className={`fr-text-10 uppercase fr-tracking-wider font-bold w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Actual</span>
+                      <div className="flex-1 h-6 rounded-full overflow-hidden" style={{ background: isDarkMode ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)' }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.max((actualW / totalGames) * 100, 2)}%`,
+                            background: 'rgb(239,68,68)',
+                          }}
+                        />
+                      </div>
+                      <span className={`text-sm font-bold w-10 text-right ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        {actualW}-{actualL}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`fr-text-10 uppercase fr-tracking-wider font-bold w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>If never traded</span>
+                      <div className="flex-1 h-6 rounded-full overflow-hidden" style={{ background: isDarkMode ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)' }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.max((hypoW / totalGames) * 100, 2)}%`,
+                            background: 'rgb(34,197,94)',
+                          }}
+                        />
+                      </div>
+                      <span className={`text-sm font-bold w-10 text-right ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        {hypoW}-{hypoL}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Net points from trading:{' '}
+                    <span className={`font-bold ${netPts >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                      {netPtsLabel}
+                    </span>
+                  </div>
+                </div>
+
+                {/* RIGHT: Flipped Weeks */}
+                <div
+                  className={`rounded-xl border p-6 ${
+                    isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className={`w-4 h-4 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                      <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        Flipped Weeks
+                      </span>
+                    </div>
+                    <span className={`fr-text-11 font-semibold px-2 py-0.5 rounded ${
+                      isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {im.flippedWeeks.length} this season
+                    </span>
+                  </div>
+
+                  {im.flippedWeeks.length === 0 ? (
+                    <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      No weeks where trading flipped the outcome.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {im.flippedWeeks.map((fw) => {
+                        const flippedGood =
+                          fw.actualResult === 'W' ||
+                          (fw.actualResult === 'T' && fw.hypotheticalResult === 'L');
+                        return (
+                          <div
+                            key={fw.week}
+                            className={`rounded-lg border p-3 ${
+                              isDarkMode
+                                ? flippedGood
+                                  ? 'bg-emerald-500/5 border-emerald-500/20'
+                                  : 'bg-red-500/10 border-red-500/20'
+                                : flippedGood
+                                ? 'bg-emerald-50 border-emerald-200'
+                                : 'bg-red-50 border-red-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                Week {fw.week}{' '}
+                                <span className={flippedGood ? 'text-emerald-500' : 'text-red-500'}>
+                                  {fw.hypotheticalResult} → {fw.actualResult}
+                                </span>
+                              </span>
+                            </div>
+                            <div className={`fr-text-11 mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                              Actual: <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.actualScore.toFixed(1)}</b>
+                              {' · '}Hypothetical: <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.hypotheticalScore.toFixed(1)}</b>
+                              {' → '}<b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.opponentScore.toFixed(1)}</b>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Search + filter bar */}
+      {trades.length > 0 && !isLoading && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {/* Search */}
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by player name, opponent, or week..."
+              className={`w-full pl-8 pr-3 py-2 text-sm rounded-lg border transition-colors outline-none ${
+                isDarkMode
+                  ? 'bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500'
+                  : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-blue-500'
+              }`}
+            />
+            <svg className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.35-4.35" />
+            </svg>
+          </div>
+
+          {/* Filter pills */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {[
+              { key: 'all', label: `All ${trades.length}` },
+              { key: 'wins', label: `Wins ${tradeStats?.wins ?? 0}` },
+              { key: 'losses', label: `Losses ${tradeStats?.losses ?? 0}` },
+              { key: 'a-tier', label: 'A-tier' },
+              { key: 'b-tier', label: 'B-tier' },
+              { key: 'c-tier', label: 'C-tier' },
+              { key: 'd-tier', label: 'D-tier' },
+            ].map((pill) => (
+              <button
+                key={pill.key}
+                type="button"
+                onClick={() => setTradeFilter(pill.key)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                  tradeFilter === pill.key
+                    ? 'bg-blue-600 text-white'
+                    : isDarkMode
+                    ? 'bg-slate-900 border border-slate-700 text-slate-300 hover:border-slate-600'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Sort */}
+          <div className="relative flex-shrink-0">
+            <select
+              value={tradeSort}
+              onChange={(e) => setTradeSort(e.target.value as 'recent' | 'oldest' | 'impact')}
+              className={`appearance-none pr-7 pl-2 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+                isDarkMode
+                  ? 'bg-slate-900 border-slate-700 text-white'
+                  : 'bg-white border-slate-200 text-slate-900'
+              } outline-none`}
+            >
+              <option value="recent">Most Recent</option>
+              <option value="oldest">Oldest First</option>
+              <option value="impact">Biggest Impact</option>
+            </select>
+            <ChevronDown className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+          </div>
+        </div>
+      )}
+
+      {/* Trades list */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2
@@ -703,7 +904,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         </div>
       ) : (
         <div className="space-y-3">
-          {trades.map((t) => {
+          {filteredTrades.map((t) => {
             const isOpen = expanded.has(t.id);
             const dateStr = t.executedAt
               ? new Date(t.executedAt).toLocaleDateString()
@@ -764,73 +965,105 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                 >
                   {/* Win/Loss badge */}
                   {callerOutcome ? (
-                    <div className={`flex-shrink-0 w-12 h-12 rounded-lg flex flex-col items-center justify-center ${
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex flex-col items-center justify-center ${
                       callerDiff > 0
                         ? isDarkMode ? 'bg-emerald-500/15' : 'bg-emerald-50'
                         : callerDiff < 0
                         ? isDarkMode ? 'bg-red-500/15' : 'bg-red-50'
                         : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
                     }`}>
-                      <span className={`text-base font-black leading-none ${
-                        callerDiff > 0
-                          ? 'text-emerald-500'
-                          : callerDiff < 0
-                          ? 'text-red-500'
-                          : isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                      <span className={`text-sm font-black leading-none ${
+                        callerDiff > 0 ? 'text-emerald-500' : callerDiff < 0 ? 'text-red-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'
                       }`}>
                         {verdict}
                       </span>
-                      <span className={`text-[9px] font-bold leading-tight mt-0.5 ${
-                        callerDiff > 0
-                          ? 'text-emerald-500'
-                          : callerDiff < 0
-                          ? 'text-red-500'
-                          : isDarkMode ? 'text-slate-500' : 'text-slate-400'
+                      <span className={`fr-text-9 font-bold leading-tight mt-0.5 ${
+                        callerDiff > 0 ? 'text-emerald-500' : callerDiff < 0 ? 'text-red-500' : isDarkMode ? 'text-slate-500' : 'text-slate-400'
                       }`}>
-                        {callerDiff > 0 ? '+' : ''}{callerDiff}
+                        {callerDiff > 0 ? '+' : ''}{Math.round(callerDiff * 10) / 10}
                       </span>
                     </div>
                   ) : (
-                    <div className={`flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center ${
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${
                       isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
                     }`}>
-                      <ArrowRightLeft className={`w-5 h-5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+                      <ArrowRightLeft className={`w-4 h-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
                     </div>
                   )}
 
-                  {/* Trade summary */}
+                  {/* Trade summary — chip style */}
                   <div className="flex-1 min-w-0">
-                    {/* "You gave X for Y" */}
-                    <p className={`text-sm leading-snug ${
-                      isDarkMode ? 'text-slate-200' : 'text-slate-800'
-                    }`}>
-                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Gave </span>
-                      <span className="font-semibold">
-                        {youSent.map(p => p.name || `${p.pickYear} R${p.pickRound}`).join(', ') || '—'}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className={`fr-text-10 uppercase fr-tracking-wider font-bold flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                        You gave
                       </span>
-                    </p>
-                    <p className={`text-sm leading-snug ${
-                      isDarkMode ? 'text-slate-200' : 'text-slate-800'
-                    }`}>
-                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Got{'  '}</span>
-                      <span className="font-semibold">
-                        {youGot.map(p => p.name || `${p.pickYear} R${p.pickRound}`).join(', ') || '—'}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {youSent.map((p, pi) => (
+                          <span key={pi} className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold ${
+                            isDarkMode ? 'bg-slate-800 text-slate-200 border border-slate-700' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}>
+                            {p.position && !p.pickYear && (
+                              <span className={`fr-text-9 font-bold px-1 py-0.5 rounded ${
+                                p.position === 'QB' ? 'bg-red-500/15 text-red-400' :
+                                p.position === 'RB' ? 'bg-green-500/15 text-green-400' :
+                                p.position === 'WR' ? 'bg-blue-500/15 text-blue-400' :
+                                p.position === 'TE' ? 'bg-amber-500/15 text-amber-400' :
+                                'bg-amber-500/15 text-amber-400'
+                              }`}>{p.pickYear ? 'PICK' : p.position}</span>
+                            )}
+                            {p.pickYear && (
+                              <span className={`fr-text-9 font-bold px-1 py-0.5 rounded ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700'}`}>PICK</span>
+                            )}
+                            {p.name || `${p.pickYear} ${p.pickRound === 1 ? '1st' : p.pickRound === 2 ? '2nd' : p.pickRound === 3 ? '3rd' : `${p.pickRound}th`}`}
+                          </span>
+                        ))}
+                      </div>
+
+                      <span className={`fr-text-10 uppercase fr-tracking-wider font-bold flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                        You got
                       </span>
-                    </p>
-                    {/* Meta row: date, week, badges */}
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className={`text-[11px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                        {dateStr}{t.weekExecuted ? ` · Wk ${t.weekExecuted}` : ''}
-                        {otherSides.length > 0 ? ` · vs ${otherSides.map(s => s.teamName).join(', ')}` : ''}
-                      </span>
-                      {t.aiGrade && (
-                        <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                          isDarkMode ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-50 text-blue-700'
-                        }`}>
-                          AI: {t.aiGrade}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {youGot.map((p, pi) => (
+                          <span key={pi} className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold ${
+                            isDarkMode ? 'bg-slate-800 text-slate-200 border border-slate-700' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}>
+                            {p.position && !p.pickYear && (
+                              <span className={`fr-text-9 font-bold px-1 py-0.5 rounded ${
+                                p.position === 'QB' ? 'bg-red-500/15 text-red-400' :
+                                p.position === 'RB' ? 'bg-green-500/15 text-green-400' :
+                                p.position === 'WR' ? 'bg-blue-500/15 text-blue-400' :
+                                p.position === 'TE' ? 'bg-amber-500/15 text-amber-400' :
+                                'bg-amber-500/15 text-amber-400'
+                              }`}>{p.position}</span>
+                            )}
+                            {p.pickYear && (
+                              <span className={`fr-text-9 font-bold px-1 py-0.5 rounded ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700'}`}>PICK</span>
+                            )}
+                            {p.name || `${p.pickYear} ${p.pickRound === 1 ? '1st' : p.pickRound === 2 ? '2nd' : p.pickRound === 3 ? '3rd' : `${p.pickRound}th`}`}
+                          </span>
+                        ))}
+                      </div>
                     </div>
+                  </div>
+
+                  {/* Grade badge */}
+                  {t.aiGrade && (
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-black ${
+                      t.aiGrade.startsWith('A') ? isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-700' :
+                      t.aiGrade.startsWith('B') ? isDarkMode ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-700' :
+                      t.aiGrade.startsWith('C') ? isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700' :
+                      isDarkMode ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-700'
+                    }`}>
+                      {t.aiGrade}
+                    </div>
+                  )}
+
+                  {/* Date + opponent */}
+                  <div className={`flex-shrink-0 text-right fr-text-11 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <div className="font-semibold">{dateStr}{t.weekExecuted ? ` · Wk ${t.weekExecuted}` : ''}</div>
+                    {otherSides.length > 0 && (
+                      <div>vs {otherSides.map(s => s.teamName).join(', ')}</div>
+                    )}
                   </div>
 
                   {isOpen ? (
