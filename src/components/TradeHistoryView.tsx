@@ -813,9 +813,14 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                               )}
                             </div>
                             <div className={`fr-text-11 mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                              Actual: <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.actualScore.toFixed(1)}</b>
-                              {' · '}Hypothetical: <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.hypotheticalScore.toFixed(1)}</b>
-                              {' → '}<b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.opponentScore.toFixed(1)}</b>
+                              <div>
+                                You: <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.actualScore.toFixed(1)}</b> actual
+                                {' · '}
+                                <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.hypotheticalScore.toFixed(1)}</b> without the trade
+                              </div>
+                              <div>
+                                Opp: <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.opponentScore.toFixed(1)}</b>
+                              </div>
                             </div>
                           </div>
                         );
