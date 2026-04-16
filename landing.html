@@ -189,6 +189,29 @@
     </div>
 </nav>
 
+<!-- Promo Banner -->
+<div id="promo-banner" style="display:none; background: linear-gradient(90deg, #92400e 0%, #b45309 50%, #92400e 100%); text-align:center; padding:12px 16px; font-size:15px; font-weight:600; color:#fef3c7; position:relative; z-index:99;">
+    Sign up now for <span style="color:#fff; text-decoration:underline;">free Elite access</span> — offer ends in <span id="promo-countdown" style="font-family:monospace; color:#fff;"></span>
+</div>
+<script>
+(function(){
+  var deadline = new Date('2026-04-17T00:00:00Z').getTime();
+  var banner = document.getElementById('promo-banner');
+  var span = document.getElementById('promo-countdown');
+  function tick(){
+    var diff = deadline - Date.now();
+    if(diff <= 0){ banner.style.display='none'; return; }
+    var h = Math.floor(diff/3600000);
+    var m = Math.floor((diff%3600000)/60000);
+    var s = Math.floor((diff%60000)/1000);
+    span.textContent = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+    banner.style.display='block';
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+</script>
+
 <!-- Hero -->
 <section class="hero">
     <div class="hero-label"><span class="dot"></span> 2026 NFL Season — Data Updated Every 4 Hours</div>

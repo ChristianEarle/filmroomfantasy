@@ -176,8 +176,8 @@ authRoutes.post('/register', authRateLimit, async (c) => {
     const passwordHash = await hashPassword(password);
 
     // Create user
-    // Promo: grant elite (forever) to all signups through April 1, 2026
-    const isPromoActive = new Date() < new Date('2026-04-01T00:00:00Z');
+    // Promo: grant elite (forever) to all signups within 24h (through April 17, 2026)
+    const isPromoActive = new Date() < new Date('2026-04-17T00:00:00Z');
 
     const userId = generateId();
     await db.insert(schema.users).values({
@@ -535,8 +535,8 @@ authRoutes.post('/google', authRateLimit, async (c) => {
 
         const userId = generateId();
 
-        // Promo: grant elite (forever) to all signups through April 1, 2026
-        const isPromoActive = new Date() < new Date('2026-04-01T00:00:00Z');
+        // Promo: grant elite (forever) to all signups within 24h (through April 17, 2026)
+        const isPromoActive = new Date() < new Date('2026-04-17T00:00:00Z');
 
         await db.insert(schema.users).values({
           id: userId,
