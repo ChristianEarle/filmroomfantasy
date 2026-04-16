@@ -426,6 +426,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
       avgGrade,
       aTier,
       cTier,
+      gradedCount: gradeLetters.length,
       bestTrade,
       worstTrade,
     };
@@ -643,7 +644,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
           {[
             { label: 'Total Trades', value: String(tradeStats.total), sub: `${tradeStats.partners} trade partner${tradeStats.partners === 1 ? '' : 's'}` },
             { label: 'Trade Win Rate', value: `${tradeStats.winRate}%`, sub: `${tradeStats.wins}W · ${tradeStats.losses}L` },
-            { label: 'Avg AI Grade', value: tradeStats.avgGrade ?? '—', sub: tradeStats.avgGrade ? `${tradeStats.aTier} A-tier · ${tradeStats.cTier} C-tier` : 'No grades yet' },
+            { label: 'Avg AI Grade', value: tradeStats.avgGrade ?? '—', sub: tradeStats.avgGrade ? `${tradeStats.gradedCount} of ${tradeStats.total} graded` : `0 of ${tradeStats.total} graded` },
             { label: 'Best Trade', value: tradeStats.bestTrade?.label ?? '—', sub: tradeStats.bestTrade ? `${tradeStats.bestTrade.pts > 0 ? '+' : ''}${tradeStats.bestTrade.pts.toFixed(1)} pts` : '', color: 'text-emerald-500' },
             { label: 'Worst Trade', value: tradeStats.worstTrade?.label ?? '—', sub: tradeStats.worstTrade ? `${tradeStats.worstTrade.pts > 0 ? '+' : ''}${tradeStats.worstTrade.pts.toFixed(1)} pts` : '', color: 'text-red-500' },
           ].map((stat) => (
@@ -998,12 +999,19 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                 }`}
               >
                 {/* ── Collapsed header ── */}
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => toggleExpand(t.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleExpand(t.id);
+                    }
+                  }}
                   aria-expanded={isOpen}
                   aria-label={`Trade from ${dateStr}. ${isOpen ? 'Collapse' : 'Expand'} details.`}
-                  className={`w-full flex items-center gap-3 p-4 text-left transition-colors ${
+                  className={`w-full flex items-center gap-3 p-4 text-left transition-colors cursor-pointer ${
                     isDarkMode ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50'
                   }`}
                 >
@@ -1090,8 +1098,8 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                     </div>
                   </div>
 
-                  {/* Grade badge */}
-                  {t.aiGrade && (
+                  {/* Grade badge — either the grade itself or a "Grade" button */}
+                  {t.aiGrade ? (
                     <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-black ${
                       t.aiGrade.startsWith('A') ? isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-700' :
                       t.aiGrade.startsWith('B') ? isDarkMode ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-700' :
@@ -1100,6 +1108,37 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                     }`}>
                       {t.aiGrade}
                     </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleGrade(t.id);
+                      }}
+                      disabled={!gradingAllowed || gradingId === t.id}
+                      className={`flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full fr-text-11 font-semibold transition-colors ${
+                        !gradingAllowed
+                          ? isDarkMode
+                            ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          : gradingId === t.id
+                          ? isDarkMode
+                            ? 'bg-blue-500/15 text-blue-300 cursor-wait'
+                            : 'bg-blue-50 text-blue-700 cursor-wait'
+                          : isDarkMode
+                          ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25'
+                          : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                      }`}
+                      aria-label="Grade this trade with AI"
+                    >
+                      {gradingId === t.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" />
+                      )}
+                      {gradingId === t.id ? 'Grading…' : 'Grade'}
+                      {!gradingAllowed && <Crown className="w-3 h-3 text-amber-500" />}
+                    </button>
                   )}
 
                   {/* Date + opponent */}
@@ -1115,7 +1154,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                   ) : (
                     <ChevronRight className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
                   )}
-                </button>
+                </div>
 
                 {/* ── Expanded details ── */}
                 {isOpen && (
