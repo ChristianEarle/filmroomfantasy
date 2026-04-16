@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { openCookiePreferences } from './CookieConsentBanner';
 
 interface LandingPageProps {
   onNavigate: (view: string) => void;
@@ -144,7 +145,11 @@ const LANDING_CSS = `
 .lp .bottom-cta{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:48px;text-align:center;margin:0 0 40px}
 .lp .bottom-cta h2{font-size:28px;margin:0 0 8px;font-weight:800;color:var(--text-bright);letter-spacing:-.02em}
 .lp .bottom-cta p{color:var(--muted);margin:0 0 20px;font-size:14px}
-.lp footer{border-top:1px solid var(--border);padding:24px 0;color:var(--muted);font-size:12px;text-align:center}
+.lp footer{border-top:1px solid var(--border);padding:28px 0;color:var(--muted);font-size:12px;text-align:center}
+.lp .footer-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 16px;margin-bottom:12px}
+.lp .footer-links a,.lp .footer-links button{color:var(--muted);cursor:pointer;font-size:12px;transition:color .12s;background:none;border:none;padding:0;font-family:inherit}
+.lp .footer-links a:hover,.lp .footer-links button:hover{color:var(--text)}
+.lp .footer-copy{color:var(--muted);font-size:12px}
 .lp .finder-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
 .lp .finder-row:hover{border-color:var(--blue-border)}
 .lp .finder-players{display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap}
@@ -549,7 +554,21 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
       </section>
 
       <footer>
-        <div className="container">&copy; 2026 FilmRoom &mdash; Film-based fantasy football analysis &amp; management.</div>
+        <div className="container">
+          <nav className="footer-links" aria-label="Footer">
+            <a onClick={nav('Privacy')}>Privacy Policy</a>
+            <a onClick={nav('Terms')}>Terms of Service</a>
+            <a onClick={nav('CookiePolicy')}>Cookie Policy</a>
+            <a onClick={nav('AcceptableUse')}>Acceptable Use</a>
+            <a onClick={nav('Disclaimer')}>Disclaimer</a>
+            <a onClick={nav('Refunds')}>Refunds</a>
+            <a onClick={nav('DMCA')}>DMCA</a>
+            <a onClick={nav('Accessibility')}>Accessibility</a>
+            <a onClick={nav('DoNotSell')}>Do Not Sell / Share</a>
+            <button type="button" onClick={() => openCookiePreferences()}>Cookie preferences</button>
+          </nav>
+          <div className="footer-copy">&copy; {new Date().getFullYear()} FilmRoom &mdash; Fantasy football analysis &amp; management. Not affiliated with the NFL or any fantasy platform.</div>
+        </div>
       </footer>
     </div>
   );

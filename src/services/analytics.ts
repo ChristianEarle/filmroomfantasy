@@ -1,4 +1,5 @@
 import { api } from './api';
+import { isAllowed } from './consent';
 
 // Generate or retrieve a persistent anonymous session ID
 function getSessionId(): string {
@@ -31,6 +32,9 @@ function getBrowser(): string {
 let lastTrackedPath = '';
 
 export function trackPageView(path: string): void {
+  // Respect user consent — skip analytics entirely if not granted
+  if (!isAllowed('analytics')) return;
+
   // Deduplicate rapid-fire calls for the same path
   if (path === lastTrackedPath) return;
   lastTrackedPath = path;

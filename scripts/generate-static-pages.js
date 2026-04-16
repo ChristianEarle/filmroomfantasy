@@ -188,6 +188,97 @@ const ROUTES = [
       ],
     },
   },
+  {
+    path: '/cookies',
+    title: 'Cookie Policy | FilmRoom',
+    description: 'Learn about the cookies FilmRoom Fantasy uses, how we use them, and how to control your preferences.',
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Cookie Policy', 'item': `${BASE_URL}/cookies` },
+      ],
+    },
+  },
+  {
+    path: '/dmca',
+    title: 'DMCA & Copyright Policy | FilmRoom',
+    description: 'How to report copyright infringement on FilmRoom Fantasy and our process for handling DMCA takedown notices.',
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'DMCA', 'item': `${BASE_URL}/dmca` },
+      ],
+    },
+  },
+  {
+    path: '/refunds',
+    title: 'Refund & Cancellation Policy | FilmRoom',
+    description: 'How FilmRoom Fantasy subscription billing, cancellations, and refunds work.',
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Refunds', 'item': `${BASE_URL}/refunds` },
+      ],
+    },
+  },
+  {
+    path: '/do-not-sell',
+    title: 'Do Not Sell or Share My Personal Information | FilmRoom',
+    description: 'California and state privacy rights. Opt out of the sale or sharing of your personal information on FilmRoom Fantasy.',
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Do Not Sell or Share', 'item': `${BASE_URL}/do-not-sell` },
+      ],
+    },
+  },
+  {
+    path: '/disclaimer',
+    title: 'Disclaimer | FilmRoom',
+    description: 'FilmRoom Fantasy disclaimer. Our rankings, projections, and analysis are for informational purposes only.',
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Disclaimer', 'item': `${BASE_URL}/disclaimer` },
+      ],
+    },
+  },
+  {
+    path: '/accessibility',
+    title: 'Accessibility Statement | FilmRoom',
+    description: "FilmRoom Fantasy's commitment to accessibility and our progress toward WCAG 2.1 AA conformance.",
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Accessibility', 'item': `${BASE_URL}/accessibility` },
+      ],
+    },
+  },
+  {
+    path: '/acceptable-use',
+    title: 'Acceptable Use Policy | FilmRoom',
+    description: 'The rules for using FilmRoom Fantasy. Prohibited activities and enforcement.',
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      'itemListElement': [
+        { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+        { '@type': 'ListItem', 'position': 2, 'name': 'Acceptable Use', 'item': `${BASE_URL}/acceptable-use` },
+      ],
+    },
+  },
 ];
 
 // Individual article pages — hardcoded from src/data/articles.ts

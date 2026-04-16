@@ -47,6 +47,13 @@ const ArticlesView = lazyWithReload(() => import('./components/ArticlesView').th
 const ArticleDetailView = lazyWithReload(() => import('./components/ArticleDetailView').then(m => ({ default: m.ArticleDetailView })));
 const PrivacyPolicyView = lazyWithReload(() => import('./components/PrivacyPolicyView').then(m => ({ default: m.PrivacyPolicyView })));
 const TermsOfServiceView = lazyWithReload(() => import('./components/TermsOfServiceView').then(m => ({ default: m.TermsOfServiceView })));
+const CookiePolicyView = lazyWithReload(() => import('./components/CookiePolicyView').then(m => ({ default: m.CookiePolicyView })));
+const DMCAView = lazyWithReload(() => import('./components/DMCAView').then(m => ({ default: m.DMCAView })));
+const RefundPolicyView = lazyWithReload(() => import('./components/RefundPolicyView').then(m => ({ default: m.RefundPolicyView })));
+const DoNotSellView = lazyWithReload(() => import('./components/DoNotSellView').then(m => ({ default: m.DoNotSellView })));
+const DisclaimerView = lazyWithReload(() => import('./components/DisclaimerView').then(m => ({ default: m.DisclaimerView })));
+const AccessibilityView = lazyWithReload(() => import('./components/AccessibilityView').then(m => ({ default: m.AccessibilityView })));
+const AcceptableUseView = lazyWithReload(() => import('./components/AcceptableUseView').then(m => ({ default: m.AcceptableUseView })));
 const DraftRankingsView = lazyWithReload(() => import('./components/DraftRankingsView').then(m => ({ default: m.DraftRankingsView })));
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
@@ -54,6 +61,8 @@ import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswo
 import { ComingSoonView } from './components/ComingSoonView';
 import { LandingPage } from './components/LandingPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { CookieConsentBanner } from './components/CookieConsentBanner';
+import { AppFooter } from './components/AppFooter';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LeagueProvider, useLeagueContext } from './context/LeagueContext';
 import { LeaguesProvider, useLeaguesContext } from './context/LeaguesContext';
@@ -201,6 +210,13 @@ const VIEW_TO_PATH: Record<string, string> = {
   ArticleDetail: '/articles', // handled with slug in URL
   Privacy: '/privacy',
   Terms: '/terms',
+  CookiePolicy: '/cookies',
+  DMCA: '/dmca',
+  Refunds: '/refunds',
+  DoNotSell: '/do-not-sell',
+  Disclaimer: '/disclaimer',
+  Accessibility: '/accessibility',
+  AcceptableUse: '/acceptable-use',
 };
 
 const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
@@ -251,7 +267,7 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works
-  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'Privacy' | 'Terms'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'Privacy' | 'Terms' | 'CookiePolicy' | 'DMCA' | 'Refunds' | 'DoNotSell' | 'Disclaimer' | 'Accessibility' | 'AcceptableUse'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [articleSlug, setArticleSlug] = useState<string | null>(() => getArticleSlugFromURL());
   // Local dark mode state for unauthenticated users (initialized from localStorage)
@@ -438,6 +454,10 @@ function AppContent() {
       <>
         <SEO {...seoProps} />
         <LandingPage onNavigate={(view) => setActiveView(view as any)} />
+        <CookieConsentBanner
+          isDarkMode={isDarkMode}
+          onNavigate={(view) => setActiveView(view as any)}
+        />
       </>
     );
   }
@@ -685,6 +705,20 @@ function AppContent() {
               <Suspense fallback={suspenseFallback}><PrivacyPolicyView isDarkMode={isDarkMode} /></Suspense>
             ) : activeView === 'Terms' ? (
               <Suspense fallback={suspenseFallback}><TermsOfServiceView isDarkMode={isDarkMode} /></Suspense>
+            ) : activeView === 'CookiePolicy' ? (
+              <Suspense fallback={suspenseFallback}><CookiePolicyView isDarkMode={isDarkMode} /></Suspense>
+            ) : activeView === 'DMCA' ? (
+              <Suspense fallback={suspenseFallback}><DMCAView isDarkMode={isDarkMode} /></Suspense>
+            ) : activeView === 'Refunds' ? (
+              <Suspense fallback={suspenseFallback}><RefundPolicyView isDarkMode={isDarkMode} /></Suspense>
+            ) : activeView === 'DoNotSell' ? (
+              <Suspense fallback={suspenseFallback}><DoNotSellView isDarkMode={isDarkMode} /></Suspense>
+            ) : activeView === 'Disclaimer' ? (
+              <Suspense fallback={suspenseFallback}><DisclaimerView isDarkMode={isDarkMode} /></Suspense>
+            ) : activeView === 'Accessibility' ? (
+              <Suspense fallback={suspenseFallback}><AccessibilityView isDarkMode={isDarkMode} /></Suspense>
+            ) : activeView === 'AcceptableUse' ? (
+              <Suspense fallback={suspenseFallback}><AcceptableUseView isDarkMode={isDarkMode} /></Suspense>
             ) : (
               <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
                 <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Page Not Found</h2>
@@ -695,8 +729,15 @@ function AppContent() {
               </div>
             )}
           </PageTransition>
+          <AppFooter isDarkMode={isDarkMode} onNavigate={(view) => setActiveView(view as any)} />
         </main>
       </div>
+
+      {/* Cookie consent banner — shown on first visit until user chooses */}
+      <CookieConsentBanner
+        isDarkMode={isDarkMode}
+        onNavigate={(view) => setActiveView(view as any)}
+      />
 
       {/* Player Card Modal */}
       {selectedPlayer && (
