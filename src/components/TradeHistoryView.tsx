@@ -369,10 +369,12 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
     let worstTrade: { label: string; pts: number } | null = null;
 
     for (const t of trades) {
-      // Find the caller's outcome side
-      const callerSide = t.outcome?.sides.find((s) => s.teamId === callerTeamId);
+      // Find the caller's outcome side (same fallback as card rendering)
+      const callerSide = t.outcome?.sides.find((s) => s.teamId === callerTeamId)
+        ?? t.outcome?.sides.find((s) => callerTeamName != null && s.teamName === callerTeamName)
+        ?? null;
       if (callerSide) {
-        const diff = callerSide.differential;
+        const diff = callerSide.lineupDifferential ?? callerSide.differential;
         if (diff > 0) wins++;
         else if (diff < 0) losses++;
 
@@ -448,17 +450,24 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
       );
     }
 
+    // Helper: find the caller's outcome side using the same
+    // ID-then-name fallback as the card rendering so the filter
+    // matches what's displayed.
+    const findCallerSide = (t: HistoricalTrade) => {
+      return t.outcome?.sides.find((s) => s.teamId === callerTeamId)
+        ?? t.outcome?.sides.find((s) => callerTeamName != null && s.teamName === callerTeamName)
+        ?? null;
+    };
+    const callerDiffFor = (t: HistoricalTrade) => {
+      const side = findCallerSide(t);
+      return side ? (side.lineupDifferential ?? side.differential) : 0;
+    };
+
     // Filter
     if (tradeFilter === 'wins') {
-      result = result.filter((t) => {
-        const side = t.outcome?.sides.find((s) => s.teamId === callerTeamId);
-        return side && side.differential > 0;
-      });
+      result = result.filter((t) => callerDiffFor(t) > 0);
     } else if (tradeFilter === 'losses') {
-      result = result.filter((t) => {
-        const side = t.outcome?.sides.find((s) => s.teamId === callerTeamId);
-        return side && side.differential < 0;
-      });
+      result = result.filter((t) => callerDiffFor(t) < 0);
     } else if (tradeFilter.endsWith('-tier')) {
       const letter = tradeFilter.replace('-tier', '').toUpperCase();
       result = result.filter((t) => t.aiGrade?.startsWith(letter));
@@ -468,11 +477,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
     if (tradeSort === 'oldest') {
       result.sort((a, b) => new Date(a.executedAt ?? '').getTime() - new Date(b.executedAt ?? '').getTime());
     } else if (tradeSort === 'impact') {
-      result.sort((a, b) => {
-        const aDiff = Math.abs(a.outcome?.sides.find((s) => s.teamId === callerTeamId)?.differential ?? 0);
-        const bDiff = Math.abs(b.outcome?.sides.find((s) => s.teamId === callerTeamId)?.differential ?? 0);
-        return bDiff - aDiff;
-      });
+      result.sort((a, b) => Math.abs(callerDiffFor(b)) - Math.abs(callerDiffFor(a)));
     } else {
       result.sort((a, b) => new Date(b.executedAt ?? '').getTime() - new Date(a.executedAt ?? '').getTime());
     }
@@ -932,7 +937,32 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
             const callerSideId = callerSide?.teamId;
             const otherSides = t.sides.filter(s => s.teamId !== callerSideId);
             const youSent = callerSide?.sent || [];
-            const youGot = otherSides.flatMap(s => s.sent);
+
+            // "You got": what the caller actually received.
+            // For 2-team trades, otherSides[0].sent is correct.
+            // For 3+ team trades, that would include items going to
+            // third parties. Use callerOutcome.received (authoritative)
+            // for the player list, plus any picks from other sides
+            // (picks aren't tracked in outcome since they don't score).
+            let youGot: TradeSidePlayer[];
+            if (callerOutcome && t.sides.length > 2) {
+              const gotPlayers: TradeSidePlayer[] = callerOutcome.received.map((r) => ({
+                playerId: r.playerId,
+                name: r.playerName,
+                position: r.position,
+                nflTeam: '',
+                pickYear: null,
+                pickRound: null,
+              }));
+              // Picks: best-effort from other sides (destination not
+              // tracked per asset in the sides model)
+              const gotPicks = otherSides.flatMap((s) =>
+                s.sent.filter((p) => p.pickYear != null)
+              );
+              youGot = [...gotPlayers, ...gotPicks];
+            } else {
+              youGot = otherSides.flatMap((s) => s.sent);
+            }
 
             // Win / Loss / Even label
             const verdict = callerDiff > 0 ? 'W' : callerDiff < 0 ? 'L' : 'E';
