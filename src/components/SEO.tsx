@@ -102,6 +102,34 @@ const ROUTE_SEO: Record<string, { title: string; description: string }> = {
     title: 'Terms of Service | FilmRoom',
     description: 'FilmRoom Fantasy terms of service. Read the terms and conditions governing your use of our fantasy football analysis platform.',
   },
+  CookiePolicy: {
+    title: 'Cookie Policy | FilmRoom',
+    description: 'Learn about the cookies FilmRoom Fantasy uses, how we use them, and how to control your preferences.',
+  },
+  DMCA: {
+    title: 'DMCA & Copyright Policy | FilmRoom',
+    description: 'How to report copyright infringement on FilmRoom Fantasy and our process for handling DMCA takedown notices.',
+  },
+  Refunds: {
+    title: 'Refund & Cancellation Policy | FilmRoom',
+    description: 'How FilmRoom Fantasy subscription billing, cancellations, and refunds work.',
+  },
+  DoNotSell: {
+    title: 'Do Not Sell or Share My Personal Information | FilmRoom',
+    description: 'California and state privacy rights. Opt out of the sale or sharing of your personal information on FilmRoom Fantasy.',
+  },
+  Disclaimer: {
+    title: 'Disclaimer | FilmRoom',
+    description: 'FilmRoom Fantasy disclaimer. Our rankings, projections, and analysis are for informational purposes only.',
+  },
+  Accessibility: {
+    title: 'Accessibility Statement | FilmRoom',
+    description: "FilmRoom Fantasy's commitment to accessibility and our progress toward WCAG 2.1 AA conformance.",
+  },
+  AcceptableUse: {
+    title: 'Acceptable Use Policy | FilmRoom',
+    description: 'The rules for using FilmRoom Fantasy. Prohibited activities and enforcement.',
+  },
 };
 
 // View name to URL path mapping
@@ -129,6 +157,13 @@ const VIEW_TO_PATH: Record<string, string> = {
   Admin: '/admin',
   Privacy: '/privacy',
   Terms: '/terms',
+  CookiePolicy: '/cookies',
+  DMCA: '/dmca',
+  Refunds: '/refunds',
+  DoNotSell: '/do-not-sell',
+  Disclaimer: '/disclaimer',
+  Accessibility: '/accessibility',
+  AcceptableUse: '/acceptable-use',
 };
 
 export function SEO({ title, description, path, type = 'website', image, noindex, jsonLd }: SEOProps) {

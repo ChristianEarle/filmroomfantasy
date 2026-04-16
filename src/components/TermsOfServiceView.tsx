@@ -80,7 +80,16 @@ export function TermsOfServiceView({ isDarkMode }: TermsOfServiceViewProps) {
 
         <section>
           <h2 className={`text-xl font-semibold mb-3 ${h}`}>6. Acceptable Use</h2>
-          <p className="mb-3">You agree not to:</p>
+          <p className="mb-3">
+            Your use of FilmRoom is governed by our{' '}
+            <a
+              href="/acceptable-use"
+              className={`underline ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}
+            >
+              Acceptable Use Policy
+            </a>
+            , which is incorporated into these Terms. In summary, you agree not to:
+          </p>
           <ul className="list-disc list-inside space-y-2">
             <li>Use FilmRoom for any unlawful purpose or in violation of any applicable laws</li>
             <li>Attempt to gain unauthorized access to our systems, other accounts, or data</li>
@@ -89,6 +98,9 @@ export function TermsOfServiceView({ isDarkMode }: TermsOfServiceViewProps) {
             <li>Resell, redistribute, or commercially exploit our content, projections, or analysis without written consent</li>
             <li>Upload malicious code, viruses, or any harmful content</li>
           </ul>
+          <p className="mt-3">
+            See the full <a href="/acceptable-use" className={`underline ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>Acceptable Use Policy</a> for the complete list of prohibited activities and enforcement details.
+          </p>
         </section>
 
         <section>
