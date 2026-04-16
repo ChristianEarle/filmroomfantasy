@@ -317,6 +317,8 @@ export interface RecordImpact {
     actualScore: number;
     hypotheticalScore: number;
     opponentScore: number;
+    isPlayoff: boolean;
+    opponentName: string | null;
   }>;
   totalPointDifferential: number;
 }
@@ -364,6 +366,12 @@ export async function computeRecordImpact(
   // The full set of team ids that represent this user in this league.
   // Always includes the primary team; may include duplicates.
   const callerTeamIdSet = new Set<string>([teamId, ...extraTeamIds]);
+
+  // Team name lookup for opponent labels in flipped weeks
+  const allTeams = await db.query.teams.findMany({
+    where: eq(schema.teams.leagueId, leagueId),
+  });
+  const teamNameMap = new Map(allTeams.map((t) => [t.id, t.name]));
 
   const seasonYear = seasonYearOverride ?? league.seasonYear;
 
@@ -572,6 +580,7 @@ export async function computeRecordImpact(
     else hypoTies++;
 
     if (actualResult !== hypoResult) {
+      const oppTeamId = isHome ? m.awayTeamId : m.homeTeamId;
       flippedWeeks.push({
         week: m.week,
         actualResult,
@@ -579,6 +588,8 @@ export async function computeRecordImpact(
         actualScore: Math.round(myScore * 10) / 10,
         hypotheticalScore: Math.round(hypoScore * 10) / 10,
         opponentScore: Math.round(oppScore * 10) / 10,
+        isPlayoff: m.isPlayoff ?? false,
+        opponentName: teamNameMap.get(oppTeamId) ?? null,
       });
     }
   }
