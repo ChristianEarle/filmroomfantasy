@@ -390,6 +390,24 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
       });
     }
 
+    // Re-derive the grade from the stored analysis in case older
+    // graded rows cached the winner's grade instead of the caller's.
+    const analysis = t.aiAnalysisJson
+      ? (safeJsonParse(t.aiAnalysisJson) as {
+          teamGrades?: Array<{ team: string; grade: string; summary: string }>;
+        } | null)
+      : null;
+    const callerNames = new Set(
+      Array.from(callerTeamIds)
+        .map((id) => leagueTeams.find((lt) => lt.id === id)?.name)
+        .filter((n): n is string => !!n)
+    );
+    const derivedGrade =
+      analysis?.teamGrades?.find((g) => callerNames.has(g.team))?.grade
+      ?? analysis?.teamGrades?.find((g) => g.team === callerTeam.name)?.grade
+      ?? t.aiGrade
+      ?? null;
+
     return {
       id: t.id,
       source: t.source,
@@ -397,10 +415,10 @@ tradeHistoryRoutes.get('/history', authMiddleware, async (c) => {
       executedAt: t.executedAt ? t.executedAt.toISOString() : null,
       seasonYear: t.seasonYear,
       weekExecuted: t.weekExecuted,
-      aiGrade: t.aiGrade,
+      aiGrade: derivedGrade,
       aiFairnessScore: t.aiFairnessScore,
       aiGradedAt: t.aiGradedAt ? t.aiGradedAt.toISOString() : null,
-      aiAnalysis: t.aiAnalysisJson ? safeJsonParse(t.aiAnalysisJson) : null,
+      aiAnalysis: analysis,
       sides: Array.from(sides.values()),
       outcome: outcomes[idx],
     };
@@ -873,12 +891,49 @@ tradeHistoryRoutes.post('/grade/:tradeId', authMiddleware, async (c) => {
   });
   if (!membership) return c.json({ error: 'Not a member of this league' }, 403);
 
-  // Reuse existing grade if already cached (idempotent)
+  // Reuse existing grade if already cached (idempotent). Re-derive
+  // the caller's grade from the stored analysis on every cached
+  // read — trade.aiGrade may be stale (older versions stored the
+  // winner's grade instead of the caller's). We also write the
+  // corrected value back so future reads are cheap.
   if (trade.aiAnalysisJson && trade.aiGradedAt) {
+    const cachedAnalysis = safeJsonParse(trade.aiAnalysisJson) as {
+      teamGrades?: Array<{ team: string; grade: string; summary: string }>;
+    } | null;
+    const cachedTeamGrades = cachedAnalysis?.teamGrades ?? [];
+
+    const cachedLeagueTeams = await db.query.teams.findMany({
+      where: eq(schema.teams.leagueId, trade.leagueId),
+    });
+    const cachedResolution = resolveCallerTeam(cachedLeagueTeams, membership, user.id);
+    const cachedCallerIds = cachedResolution.teamIds;
+    const cachedCallerNames = new Set(
+      Array.from(cachedCallerIds)
+        .map((id) => cachedLeagueTeams.find((t) => t.id === id)?.name)
+        .filter((n): n is string => !!n)
+    );
+    const correctedGrade =
+      cachedTeamGrades.find((g) => cachedCallerNames.has(g.team))?.grade
+      ?? cachedTeamGrades.find((g) => g.team === cachedResolution.team?.name)?.grade
+      ?? trade.aiGrade;
+
+    // Heal the stored aiGrade if it differs — this is a one-time
+    // self-correction for old rows graded before this fix landed.
+    if (correctedGrade && correctedGrade !== trade.aiGrade) {
+      try {
+        await db
+          .update(schema.trades)
+          .set({ aiGrade: correctedGrade })
+          .where(eq(schema.trades.id, tradeId));
+      } catch {
+        // non-critical; just return the fresh value
+      }
+    }
+
     return c.json({
       cached: true,
-      analysis: safeJsonParse(trade.aiAnalysisJson),
-      grade: trade.aiGrade,
+      analysis: cachedAnalysis,
+      grade: correctedGrade,
       fairnessScore: trade.aiFairnessScore,
     });
   }
@@ -1102,15 +1157,30 @@ Provide your JSON analysis. Weight the ACTUAL OUTCOME block more heavily than th
       return c.json({ error: 'AI returned invalid response.' }, 502);
     }
 
-    // Determine the "winner's" team grade to cache at the top level
-    const winnerGrade = parsed.teamGrades.find((g) => g.team === parsed.winner);
+    // Determine which team belongs to the calling user so we cache
+    // *their* grade at the top level — not the trade winner's. That
+    // way the Trade History view and the Avg AI Grade stat reflect
+    // the user's trade performance, not some abstract winner.
+    const leagueTeams = await db.query.teams.findMany({
+      where: eq(schema.teams.leagueId, trade.leagueId),
+    });
+    const callerResolution = resolveCallerTeam(leagueTeams, membership, user.id);
+    const callerTeamIds = callerResolution.teamIds;
+    const callerTeamNames = new Set(
+      Array.from(callerTeamIds)
+        .map((id) => teamById.get(id)?.name)
+        .filter((n): n is string => !!n)
+    );
+    const callerGrade = parsed.teamGrades.find((g) => callerTeamNames.has(g.team))
+      ?? parsed.teamGrades.find((g) => g.team === callerResolution.team?.name)
+      ?? null;
 
     // Persist the cached analysis
     await db
       .update(schema.trades)
       .set({
         aiAnalysisJson: JSON.stringify(parsed),
-        aiGrade: winnerGrade?.grade || null,
+        aiGrade: callerGrade?.grade || null,
         aiFairnessScore: parsed.fairnessScore?.score ?? null,
         aiGradedAt: new Date(),
         tradeContextSnapshotJson: JSON.stringify({
@@ -1135,7 +1205,7 @@ Provide your JSON analysis. Weight the ACTUAL OUTCOME block more heavily than th
       }
     }
 
-    return c.json({ cached: false, analysis: parsed, grade: winnerGrade?.grade });
+    return c.json({ cached: false, analysis: parsed, grade: callerGrade?.grade });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       return c.json({ error: 'Grading timed out.' }, 504);
