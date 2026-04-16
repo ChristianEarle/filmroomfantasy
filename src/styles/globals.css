@@ -638,3 +638,326 @@ html {
 
 /* Width helpers */
 .fr-min-w-0 { min-width: 0; }
+
+/* -- Missing standard Tailwind utilities --
+ * The pre-compiled src/index.css was generated from an older
+ * source tree and is missing many common utilities used by the
+ * redesign. Rather than route around every one, re-assert the
+ * standard Tailwind v4 values here so className strings keep
+ * working as written.
+ */
+
+/* Text transforms */
+.uppercase { text-transform: uppercase; }
+.capitalize { text-transform: capitalize; }
+.lowercase { text-transform: lowercase; }
+.normal-case { text-transform: none; }
+
+/* Sizing — half-step widths/heights */
+.w-1\.5 { width: 0.375rem; }
+.h-1\.5 { height: 0.375rem; }
+.w-2\.5 { width: 0.625rem; }
+.h-2\.5 { height: 0.625rem; }
+.w-3\.5 { width: 0.875rem; }
+.h-3\.5 { height: 0.875rem; }
+.w-7 { width: 1.75rem; }
+.h-7 { height: 1.75rem; }
+.w-11 { width: 2.75rem; }
+.h-11 { height: 2.75rem; }
+.w-14 { width: 3.5rem; }
+.h-14 { height: 3.5rem; }
+
+/* Alignment / flex */
+.items-stretch { align-items: stretch; }
+.self-stretch { align-self: stretch; }
+.flex-row { flex-direction: row; }
+.flex-row-reverse { flex-direction: row-reverse; }
+.flex-none { flex: none; }
+.flex-grow { flex-grow: 1; }
+
+/* Opacity */
+.opacity-0  { opacity: 0; }
+.opacity-20 { opacity: 0.2; }
+.opacity-30 { opacity: 0.3; }
+.opacity-40 { opacity: 0.4; }
+.opacity-50 { opacity: 0.5; }
+.opacity-60 { opacity: 0.6; }
+.opacity-70 { opacity: 0.7; }
+.opacity-75 { opacity: 0.75; }
+.opacity-80 { opacity: 0.8; }
+.opacity-90 { opacity: 0.9; }
+
+/* Cursor helpers */
+.cursor-pointer { cursor: pointer; }
+.cursor-not-allowed { cursor: not-allowed; }
+.disabled\:cursor-not-allowed:disabled { cursor: not-allowed; }
+.disabled\:opacity-50:disabled { opacity: 0.5; }
+
+/* Hover translate + opacity (used by Home quick-action cards) */
+.hover\:-translate-y-0\.5:hover { transform: translateY(-0.125rem); }
+.hover\:opacity-80:hover { opacity: 0.8; }
+.hover\:underline:hover { text-decoration-line: underline; }
+
+/* md: responsive helpers used by the hero verdict and others */
+@media (min-width: 768px) {
+  .md\:flex { display: flex; }
+  .md\:block { display: block; }
+  .md\:text-center { text-align: center; }
+  .md\:border-l { border-left-width: 1px; border-left-style: solid; }
+  .md\:pl-6 { padding-left: 1.5rem; }
+}
+
+/* Whitespace helpers */
+.whitespace-nowrap { white-space: nowrap; }
+
+/* Truncation + text overflow (some already exist but be safe) */
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Min-width 0 for flex children that should shrink */
+.min-w-0 { min-width: 0; }
+
+/* -- Missing Tailwind color palette classes --
+ * The pre-compiled bundle only has a subset of color shades. Add
+ * the specific emerald/amber/lime/orange shades and opacity
+ * variants used by the redesign so the verdict card, team grade
+ * cards, fairness meter markers, and alerts render with their
+ * intended colors.
+ */
+
+/* Emerald */
+.text-emerald-300 { color: #6ee7b7; }
+.text-emerald-400 { color: #34d399; }
+.text-emerald-500 { color: #10b981; }
+.text-emerald-600 { color: #059669; }
+.text-emerald-700 { color: #047857; }
+.bg-emerald-50   { background-color: #ecfdf5; }
+.bg-emerald-500  { background-color: #10b981; }
+.bg-emerald-500\/5  { background-color: rgba(16,185,129,0.05); }
+.bg-emerald-500\/10 { background-color: rgba(16,185,129,0.10); }
+.bg-emerald-500\/15 { background-color: rgba(16,185,129,0.15); }
+.bg-emerald-500\/20 { background-color: rgba(16,185,129,0.20); }
+.border-emerald-200  { border-color: #a7f3d0; }
+.border-emerald-500  { border-color: #10b981; }
+.border-emerald-500\/20 { border-color: rgba(16,185,129,0.20); }
+.border-emerald-500\/30 { border-color: rgba(16,185,129,0.30); }
+
+/* Amber — extend shades */
+.text-amber-300 { color: #fcd34d; }
+.text-amber-600 { color: #d97706; }
+.text-amber-700 { color: #b45309; }
+.bg-amber-50    { background-color: #fffbeb; }
+.bg-amber-100   { background-color: #fef3c7; }
+.bg-amber-500\/5  { background-color: rgba(245,158,11,0.05); }
+.bg-amber-500\/15 { background-color: rgba(245,158,11,0.15); }
+.bg-amber-500\/20 { background-color: rgba(245,158,11,0.20); }
+.bg-amber-500\/30 { background-color: rgba(245,158,11,0.30); }
+.border-amber-200 { border-color: #fde68a; }
+.border-amber-300 { border-color: #fcd34d; }
+.border-amber-500 { border-color: #f59e0b; }
+.border-amber-500\/30 { border-color: rgba(245,158,11,0.30); }
+.border-amber-500\/50 { border-color: rgba(245,158,11,0.50); }
+
+/* Lime */
+.text-lime-300 { color: #bef264; }
+.text-lime-500 { color: #84cc16; }
+.text-lime-700 { color: #4d7c0f; }
+.bg-lime-50    { background-color: #f7fee7; }
+.bg-lime-500   { background-color: #84cc16; }
+.bg-lime-500\/15 { background-color: rgba(132,204,22,0.15); }
+.border-lime-500 { border-color: #84cc16; }
+
+/* Orange — extend */
+.text-orange-300 { color: #fdba74; }
+.text-orange-400 { color: #fb923c; }
+.text-orange-500 { color: #f97316; }
+.text-orange-600 { color: #ea580c; }
+.text-orange-700 { color: #c2410c; }
+.bg-orange-50    { background-color: #fff7ed; }
+.bg-orange-500   { background-color: #f97316; }
+.bg-orange-500\/10 { background-color: rgba(249,115,22,0.10); }
+.bg-orange-500\/15 { background-color: rgba(249,115,22,0.15); }
+.bg-orange-500\/20 { background-color: rgba(249,115,22,0.20); }
+.border-orange-200 { border-color: #fed7aa; }
+.border-orange-500 { border-color: #f97316; }
+.border-orange-500\/20 { border-color: rgba(249,115,22,0.20); }
+.border-orange-500\/30 { border-color: rgba(249,115,22,0.30); }
+
+/* Red — extended shades used by redesign */
+.text-red-500 { color: #ef4444; }
+.bg-red-500\/15 { background-color: rgba(239,68,68,0.15); }
+.border-red-500 { border-color: #ef4444; }
+
+/* Blue — missing shades */
+.bg-blue-500\/15 { background-color: rgba(59,130,246,0.15); }
+.border-blue-400 { border-color: #60a5fa; }
+.border-blue-500\/30 { border-color: rgba(59,130,246,0.30); }
+.bg-blue-50 { background-color: #eff6ff; }
+.text-blue-500 { color: #3b82f6; }
+.text-blue-700 { color: #1d4ed8; }
+.border-blue-200 { border-color: #bfdbfe; }
+
+/* Slate — missing shades */
+.border-slate-300 { border-color: #cbd5e1; }
+.border-slate-500 { border-color: #64748b; }
+
+/* Animation */
+@keyframes fr-pulse { 50% { opacity: 0.5; } }
+.animate-pulse { animation: fr-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+
+/* -- Comprehensive Tailwind utility patch --
+ * Yet more standard utilities missing from the pre-compiled bundle.
+ * Kept together so future audits know where to look.
+ */
+
+/* Display */
+.hidden      { display: none; }
+.block       { display: block; }
+.inline      { display: inline; }
+.inline-block { display: inline-block; }
+.inline-grid { display: inline-grid; }
+.inline-flex { display: inline-flex; }
+.contents    { display: contents; }
+
+/* Position */
+.sticky    { position: sticky; }
+.absolute  { position: absolute; }
+.relative  { position: relative; }
+.fixed     { position: fixed; }
+
+/* z-index */
+.z-0  { z-index: 0; }
+.z-10 { z-index: 10; }
+.z-20 { z-index: 20; }
+.z-30 { z-index: 30; }
+.z-40 { z-index: 40; }
+.z-50 { z-index: 50; }
+
+/* Top / Right / Bottom / Left */
+.top-0     { top: 0; }
+.top-1\/2  { top: 50%; }
+.top-2     { top: 0.5rem; }
+.right-0   { right: 0; }
+.right-1   { right: 0.25rem; }
+.right-2   { right: 0.5rem; }
+.right-3   { right: 0.75rem; }
+.bottom-0  { bottom: 0; }
+.bottom-4  { bottom: 1rem; }
+.left-0    { left: 0; }
+.left-1\/2 { left: 50%; }
+.-right-20 { right: -5rem; }
+.-top-20   { top: -5rem; }
+
+/* Translate (for absolutely-positioned helpers) */
+.-translate-y-1\/2 { --tw-translate-y: -50%; transform: translateY(-50%); }
+.-translate-x-1\/2 { --tw-translate-x: -50%; transform: translateX(-50%); }
+.translate-y-0     { transform: translateY(0); }
+.translate-y-4     { transform: translateY(1rem); }
+
+/* Additional sizing */
+.w-60  { width: 15rem; }
+.h-60  { height: 15rem; }
+.w-80  { width: 20rem; }
+.h-80  { height: 20rem; }
+.max-h-48 { max-height: 12rem; }
+.max-h-60 { max-height: 15rem; }
+.max-w-lg { max-width: 32rem; }
+
+/* Padding */
+.p-5   { padding: 1.25rem; }
+.px-1  { padding-left: 0.25rem; padding-right: 0.25rem; }
+.px-1\.5 { padding-left: 0.375rem; padding-right: 0.375rem; }
+.px-5  { padding-left: 1.25rem; padding-right: 1.25rem; }
+.pl-2  { padding-left: 0.5rem; }
+.pl-3  { padding-left: 0.75rem; }
+.pr-6  { padding-right: 1.5rem; }
+.pr-8  { padding-right: 2rem; }
+.pt-2  { padding-top: 0.5rem; }
+.py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+
+/* Margin */
+.mb-5     { margin-bottom: 1.25rem; }
+.mt-0\.5  { margin-top: 0.125rem; }
+.mt-1\.5  { margin-top: 0.375rem; }
+.mt-4     { margin-top: 1rem; }
+.ml-0\.5  { margin-left: 0.125rem; }
+.ml-auto  { margin-left: auto; }
+.mr-auto  { margin-right: auto; }
+.mt-auto  { margin-top: auto; }
+.mr-1     { margin-right: 0.25rem; }
+
+/* Gap */
+.gap-2\.5 { gap: 0.625rem; }
+.gap-5    { gap: 1.25rem; }
+
+/* Font weight */
+.font-normal    { font-weight: 400; }
+.font-semibold  { font-weight: 600; }
+.font-extrabold { font-weight: 800; }
+.font-black     { font-weight: 900; }
+
+/* Line height */
+.leading-none    { line-height: 1; }
+.leading-tight   { line-height: 1.25; }
+.leading-snug    { line-height: 1.375; }
+.leading-normal  { line-height: 1.5; }
+
+/* Align items / content */
+.items-baseline { align-items: baseline; }
+.items-end      { align-items: flex-end; }
+.content-center { align-content: center; }
+.place-items-center { place-items: center; }
+
+/* Border */
+.border-0      { border-width: 0; }
+.border-dashed { border-style: dashed; }
+.border-none   { border-style: none; }
+
+/* Background */
+.bg-transparent { background-color: transparent; }
+
+/* Colors */
+.text-black { color: #000000; }
+
+/* Filters / effects */
+.blur-3xl { filter: blur(64px); }
+.shadow        { box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1); }
+.shadow-sm     { box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); }
+.shadow-lg     { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1); }
+
+/* Pointer events */
+.pointer-events-none { pointer-events: none; }
+.pointer-events-auto { pointer-events: auto; }
+
+/* Transitions */
+.transition-opacity  { transition-property: opacity; transition-duration: 150ms; transition-timing-function: cubic-bezier(0.4,0,0.2,1); }
+.duration-200 { transition-duration: 200ms; }
+.duration-300 { transition-duration: 300ms; }
+.duration-500 { transition-duration: 500ms; }
+.ease-out     { transition-timing-function: cubic-bezier(0, 0, 0.2, 1); }
+.ease-in-out  { transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* Animations */
+@keyframes fr-spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: fr-spin 1s linear infinite; }
+
+/* Forms */
+.outline-none    { outline: none; outline-offset: 0; }
+.appearance-none { appearance: none; -webkit-appearance: none; }
+.resize-none     { resize: none; }
+
+/* Backdrop */
+.backdrop-blur   { -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+
+/* sm: responsive variants for the CTA row + mobile adjustments */
+@media (min-width: 640px) {
+  .sm\:flex-row     { flex-direction: row; }
+  .sm\:items-center { align-items: center; }
+  .sm\:w-auto       { width: auto; }
+}
+
+/* Override: some patterns use accent-blue-600 on checkboxes/radios */
+.accent-blue-600 { accent-color: #2563eb; }
+
+/* Disabled cursor helpers used on buttons */
+.disabled\:cursor-not-allowed:disabled { cursor: not-allowed; }
+.disabled\:opacity-50:disabled         { opacity: 0.5; }

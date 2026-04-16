@@ -337,10 +337,13 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
       <div className="fr-home-hero">
         {/* Main hero (matchup) */}
         <div
+          style={{
+            backgroundImage: isDarkMode
+              ? 'linear-gradient(135deg, rgb(15,23,42) 0%, rgb(15,23,42) 50%, rgba(23,37,84,0.4) 100%)'
+              : 'linear-gradient(135deg, #ffffff, rgba(239,246,255,0.4))',
+          }}
           className={`relative overflow-hidden rounded-2xl border p-6 ${
-          isDarkMode
-            ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950/40 border-slate-700'
-            : 'bg-gradient-to-br from-white to-blue-50/40 border-slate-200'
+          isDarkMode ? 'border-slate-700' : 'border-slate-200'
         }`}>
           <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" aria-hidden="true" />
           <div className="relative">
@@ -377,7 +380,10 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
                 isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
                 <div className="flex items-center gap-3 fr-min-w-0">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                  <div
+                    style={{ backgroundImage: 'linear-gradient(135deg, #3b82f6, #a855f7)' }}
+                    className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
+                  >
                     {getInitials(userTeam?.name || 'You')}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -543,7 +549,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           }`}
         >
           <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center flex-shrink-0">
-            <ArrowLeftRight className="w-[18px] h-[18px] text-blue-500" aria-hidden="true" />
+            <ArrowLeftRight style={{ width: '18px', height: '18px' }} className="text-blue-500" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <div className={`text-sm font-semibold ${textCls}`}>Trade Analyzer</div>
@@ -559,7 +565,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           }`}
         >
           <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
-            <Plus className="w-[18px] h-[18px] text-emerald-500" aria-hidden="true" />
+            <Plus style={{ width: '18px', height: '18px' }} className="text-emerald-500" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <div className={`text-sm font-semibold flex items-center gap-2 ${textCls}`}>
@@ -582,7 +588,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
           }`}
         >
           <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-            <BarChart3 className="w-[18px] h-[18px] text-amber-500" aria-hidden="true" />
+            <BarChart3 style={{ width: '18px', height: '18px' }} className="text-amber-500" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <div className={`text-sm font-semibold flex items-center gap-2 ${textCls}`}>

@@ -991,10 +991,15 @@ function TradeResultsCard({
 
       {/* Hero verdict */}
       <div
+        style={{
+          backgroundImage: isDarkMode
+            ? 'linear-gradient(135deg, rgb(15,23,42), rgba(16,185,129,0.05))'
+            : 'linear-gradient(135deg, #ffffff, rgba(236,253,245,0.5))',
+        }}
         className={`rounded-2xl border p-6 ${
           isDarkMode
-            ? 'bg-gradient-to-br from-slate-900 to-emerald-500/5 border-emerald-500/30'
-            : 'bg-gradient-to-br from-white to-emerald-50/50 border-emerald-200'
+            ? 'border-emerald-500/30'
+            : 'border-emerald-200'
         }`}
       >
         <div className="fr-verdict-grid">
@@ -1068,13 +1073,16 @@ function TradeResultsCard({
       >
         {result.teamGrades.map((tg, i) => {
           const isWinner = tg.team.toLowerCase() === result.winner.toLowerCase();
-          const cardClasses = isWinner
+          const cardBorderClass = isWinner
+            ? isDarkMode ? 'border-emerald-500/30' : 'border-emerald-200'
+            : isDarkMode ? 'border-amber-500/30' : 'border-amber-200';
+          const cardBgImage = isWinner
             ? isDarkMode
-              ? 'bg-gradient-to-br from-slate-900 to-emerald-500/5 border-emerald-500/30'
-              : 'bg-gradient-to-br from-white to-emerald-50/60 border-emerald-200'
+              ? 'linear-gradient(135deg, rgb(15,23,42), rgba(16,185,129,0.05))'
+              : 'linear-gradient(135deg, #ffffff, rgba(236,253,245,0.6))'
             : isDarkMode
-            ? 'bg-gradient-to-br from-slate-900 to-amber-500/5 border-amber-500/30'
-            : 'bg-gradient-to-br from-white to-amber-50/60 border-amber-200';
+              ? 'linear-gradient(135deg, rgb(15,23,42), rgba(245,158,11,0.05))'
+              : 'linear-gradient(135deg, #ffffff, rgba(255,251,235,0.6))';
           const badgeClasses = isWinner
             ? isDarkMode
               ? 'bg-emerald-500/15 text-emerald-400'
@@ -1126,8 +1134,9 @@ function TradeResultsCard({
           return (
             <div
               key={i}
-              className={`rounded-xl border p-5 transition-all duration-300 ${cardClasses}`}
+              className={`rounded-xl border p-5 transition-all duration-300 ${cardBorderClass}`}
               style={{
+                backgroundImage: cardBgImage,
                 transitionDelay: `${(i + 1) * 100}ms`,
                 opacity: visible ? 1 : 0,
                 transform: visible ? 'translateY(0)' : 'translateY(8px)',
@@ -1185,10 +1194,13 @@ function TradeResultsCard({
       {/* Balance suggestions */}
       {result.improvements.length > 0 && (
         <div
+          style={{
+            backgroundImage: isDarkMode
+              ? 'linear-gradient(135deg, rgb(15,23,42), rgba(59,130,246,0.05))'
+              : 'linear-gradient(135deg, #ffffff, rgba(239,246,255,0.6))',
+          }}
           className={`rounded-xl border p-5 ${
-            isDarkMode
-              ? 'bg-gradient-to-br from-slate-900 to-blue-500/5 border-blue-500/30'
-              : 'bg-gradient-to-br from-white to-blue-50/60 border-blue-200'
+            isDarkMode ? 'border-blue-500/30' : 'border-blue-200'
           }`}
         >
           <div className="flex items-center gap-2 mb-4">
