@@ -737,6 +737,7 @@ function AppContent() {
       <CookieConsentBanner
         isDarkMode={isDarkMode}
         onNavigate={(view) => setActiveView(view as any)}
+        offsetForSidebar
       />
 
       {/* Player Card Modal */}

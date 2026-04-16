@@ -4,6 +4,11 @@ import { acceptAll, rejectAll, setConsent, getConsent, hasDecided } from '../ser
 interface CookieConsentBannerProps {
   isDarkMode: boolean;
   onNavigate?: (view: string) => void;
+  /**
+   * When true, offset the banner's left edge by the desktop sidebar width
+   * (16rem / w-64) so it doesn't overlap the sidebar on md+ screens.
+   */
+  offsetForSidebar?: boolean;
 }
 
 /**
@@ -19,7 +24,7 @@ interface CookieConsentBannerProps {
  * The banner listens for a global `fr:open-cookie-preferences` event so
  * footer links can re-open it after the user has dismissed it.
  */
-export function CookieConsentBanner({ isDarkMode, onNavigate }: CookieConsentBannerProps) {
+export function CookieConsentBanner({ isDarkMode, onNavigate, offsetForSidebar = false }: CookieConsentBannerProps) {
   const [visible, setVisible] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
   const [analyticsOn, setAnalyticsOn] = useState(true);
@@ -86,7 +91,7 @@ export function CookieConsentBanner({ isDarkMode, onNavigate }: CookieConsentBan
       role="dialog"
       aria-labelledby="cookie-banner-title"
       aria-describedby="cookie-banner-description"
-      className={`fixed inset-x-0 bottom-0 z-[70] ${bg} border-t ${border} shadow-2xl`}
+      className={`fixed right-0 bottom-0 left-0 z-[70] ${offsetForSidebar ? 'md:left-64' : ''} ${bg} border-t ${border} shadow-2xl`}
     >
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
         {!showPreferences ? (
