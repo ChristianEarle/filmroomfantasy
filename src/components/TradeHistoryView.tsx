@@ -95,6 +95,8 @@ interface RecordImpact {
     actualScore: number;
     hypotheticalScore: number;
     opponentScore: number;
+    isPlayoff?: boolean;
+    opponentName?: string | null;
   }>;
   totalPointDifferential: number;
 }
@@ -427,7 +429,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
       bestTrade,
       worstTrade,
     };
-  }, [trades, callerTeamId]);
+  }, [trades, callerTeamId, callerTeamName]);
 
   // ── Search + filter for trades ──────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
@@ -483,7 +485,7 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
     }
 
     return result;
-  }, [trades, searchQuery, tradeFilter, tradeSort, callerTeamId]);
+  }, [trades, searchQuery, tradeFilter, tradeSort, callerTeamId, callerTeamName]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
@@ -789,13 +791,25 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                                 : 'bg-red-50 border-red-200'
                             }`}
                           >
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between flex-wrap gap-1">
                               <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                                 Week {fw.week}{' '}
                                 <span className={flippedGood ? 'text-emerald-500' : 'text-red-500'}>
                                   {fw.hypotheticalResult} → {fw.actualResult}
                                 </span>
+                                {fw.isPlayoff && (
+                                  <span className={`ml-1 fr-text-9 font-bold uppercase px-1.5 py-0.5 rounded ${
+                                    isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700'
+                                  }`}>
+                                    Playoff
+                                  </span>
+                                )}
                               </span>
+                              {fw.opponentName && (
+                                <span className={`fr-text-11 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                                  vs {fw.opponentName}
+                                </span>
+                              )}
                             </div>
                             <div className={`fr-text-11 mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                               Actual: <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.actualScore.toFixed(1)}</b>
