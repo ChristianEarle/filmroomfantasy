@@ -965,73 +965,105 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
                 >
                   {/* Win/Loss badge */}
                   {callerOutcome ? (
-                    <div className={`flex-shrink-0 w-12 h-12 rounded-lg flex flex-col items-center justify-center ${
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex flex-col items-center justify-center ${
                       callerDiff > 0
                         ? isDarkMode ? 'bg-emerald-500/15' : 'bg-emerald-50'
                         : callerDiff < 0
                         ? isDarkMode ? 'bg-red-500/15' : 'bg-red-50'
                         : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
                     }`}>
-                      <span className={`text-base font-black leading-none ${
-                        callerDiff > 0
-                          ? 'text-emerald-500'
-                          : callerDiff < 0
-                          ? 'text-red-500'
-                          : isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                      <span className={`text-sm font-black leading-none ${
+                        callerDiff > 0 ? 'text-emerald-500' : callerDiff < 0 ? 'text-red-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'
                       }`}>
                         {verdict}
                       </span>
-                      <span className={`text-[9px] font-bold leading-tight mt-0.5 ${
-                        callerDiff > 0
-                          ? 'text-emerald-500'
-                          : callerDiff < 0
-                          ? 'text-red-500'
-                          : isDarkMode ? 'text-slate-500' : 'text-slate-400'
+                      <span className={`fr-text-9 font-bold leading-tight mt-0.5 ${
+                        callerDiff > 0 ? 'text-emerald-500' : callerDiff < 0 ? 'text-red-500' : isDarkMode ? 'text-slate-500' : 'text-slate-400'
                       }`}>
-                        {callerDiff > 0 ? '+' : ''}{callerDiff}
+                        {callerDiff > 0 ? '+' : ''}{Math.round(callerDiff * 10) / 10}
                       </span>
                     </div>
                   ) : (
-                    <div className={`flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center ${
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${
                       isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
                     }`}>
-                      <ArrowRightLeft className={`w-5 h-5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+                      <ArrowRightLeft className={`w-4 h-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
                     </div>
                   )}
 
-                  {/* Trade summary */}
+                  {/* Trade summary — chip style */}
                   <div className="flex-1 min-w-0">
-                    {/* "You gave X for Y" */}
-                    <p className={`text-sm leading-snug ${
-                      isDarkMode ? 'text-slate-200' : 'text-slate-800'
-                    }`}>
-                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Gave </span>
-                      <span className="font-semibold">
-                        {youSent.map(p => p.name || `${p.pickYear} R${p.pickRound}`).join(', ') || '—'}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className={`fr-text-10 uppercase fr-tracking-wider font-bold flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                        You gave
                       </span>
-                    </p>
-                    <p className={`text-sm leading-snug ${
-                      isDarkMode ? 'text-slate-200' : 'text-slate-800'
-                    }`}>
-                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Got{'  '}</span>
-                      <span className="font-semibold">
-                        {youGot.map(p => p.name || `${p.pickYear} R${p.pickRound}`).join(', ') || '—'}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {youSent.map((p, pi) => (
+                          <span key={pi} className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold ${
+                            isDarkMode ? 'bg-slate-800 text-slate-200 border border-slate-700' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}>
+                            {p.position && !p.pickYear && (
+                              <span className={`fr-text-9 font-bold px-1 py-0.5 rounded ${
+                                p.position === 'QB' ? 'bg-red-500/15 text-red-400' :
+                                p.position === 'RB' ? 'bg-green-500/15 text-green-400' :
+                                p.position === 'WR' ? 'bg-blue-500/15 text-blue-400' :
+                                p.position === 'TE' ? 'bg-amber-500/15 text-amber-400' :
+                                'bg-amber-500/15 text-amber-400'
+                              }`}>{p.pickYear ? 'PICK' : p.position}</span>
+                            )}
+                            {p.pickYear && (
+                              <span className={`fr-text-9 font-bold px-1 py-0.5 rounded ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700'}`}>PICK</span>
+                            )}
+                            {p.name || `${p.pickYear} ${p.pickRound === 1 ? '1st' : p.pickRound === 2 ? '2nd' : p.pickRound === 3 ? '3rd' : `${p.pickRound}th`}`}
+                          </span>
+                        ))}
+                      </div>
+
+                      <span className={`fr-text-10 uppercase fr-tracking-wider font-bold flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                        You got
                       </span>
-                    </p>
-                    {/* Meta row: date, week, badges */}
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className={`text-[11px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                        {dateStr}{t.weekExecuted ? ` · Wk ${t.weekExecuted}` : ''}
-                        {otherSides.length > 0 ? ` · vs ${otherSides.map(s => s.teamName).join(', ')}` : ''}
-                      </span>
-                      {t.aiGrade && (
-                        <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                          isDarkMode ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-50 text-blue-700'
-                        }`}>
-                          AI: {t.aiGrade}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {youGot.map((p, pi) => (
+                          <span key={pi} className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold ${
+                            isDarkMode ? 'bg-slate-800 text-slate-200 border border-slate-700' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}>
+                            {p.position && !p.pickYear && (
+                              <span className={`fr-text-9 font-bold px-1 py-0.5 rounded ${
+                                p.position === 'QB' ? 'bg-red-500/15 text-red-400' :
+                                p.position === 'RB' ? 'bg-green-500/15 text-green-400' :
+                                p.position === 'WR' ? 'bg-blue-500/15 text-blue-400' :
+                                p.position === 'TE' ? 'bg-amber-500/15 text-amber-400' :
+                                'bg-amber-500/15 text-amber-400'
+                              }`}>{p.position}</span>
+                            )}
+                            {p.pickYear && (
+                              <span className={`fr-text-9 font-bold px-1 py-0.5 rounded ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700'}`}>PICK</span>
+                            )}
+                            {p.name || `${p.pickYear} ${p.pickRound === 1 ? '1st' : p.pickRound === 2 ? '2nd' : p.pickRound === 3 ? '3rd' : `${p.pickRound}th`}`}
+                          </span>
+                        ))}
+                      </div>
                     </div>
+                  </div>
+
+                  {/* Grade badge */}
+                  {t.aiGrade && (
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-black ${
+                      t.aiGrade.startsWith('A') ? isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-700' :
+                      t.aiGrade.startsWith('B') ? isDarkMode ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-700' :
+                      t.aiGrade.startsWith('C') ? isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-700' :
+                      isDarkMode ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-700'
+                    }`}>
+                      {t.aiGrade}
+                    </div>
+                  )}
+
+                  {/* Date + opponent */}
+                  <div className={`flex-shrink-0 text-right fr-text-11 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <div className="font-semibold">{dateStr}{t.weekExecuted ? ` · Wk ${t.weekExecuted}` : ''}</div>
+                    {otherSides.length > 0 && (
+                      <div>vs {otherSides.map(s => s.teamName).join(', ')}</div>
+                    )}
                   </div>
 
                   {isOpen ? (
