@@ -732,7 +732,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
             )}
           </div>
           <div>
-            {roster.length === 0 ? (
+            {roster.length === 0 && !league ? (
               <div className={`p-6 text-center text-sm ${mutedCls}`}>Sync a league to see alerts</div>
             ) : injuredRosterPlayers.length === 0 ? (
               <div className={`p-6 text-center text-sm ${mutedCls}`}>No injuries on your roster</div>
