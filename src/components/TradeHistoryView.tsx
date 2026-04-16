@@ -664,145 +664,148 @@ export function TradeHistoryView({ isDarkMode }: TradeHistoryViewProps) {
         </div>
       )}
 
-      {/* Per-season impact cards (one per season the user has trades in) */}
+      {/* Per-season impact: 2-panel (left=headline+bars, right=flipped weeks) */}
       {visibleImpacts.length > 0 && (
         <div className="space-y-3">
-          {visibleImpacts.map((im) => (
-            <div
-              key={im.seasonYear}
-              className={`rounded-xl border p-6 ${
-                isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkles
-                  className={`w-4 h-4 ${
+          {visibleImpacts.map((im) => {
+            const actualW = im.actualRecord.wins;
+            const actualL = im.actualRecord.losses;
+            const hypoW = im.hypotheticalRecord.wins;
+            const hypoL = im.hypotheticalRecord.losses;
+            const totalGames = Math.max(actualW + actualL, hypoW + hypoL, 1);
+            const netPts = -im.totalPointDifferential;
+            const netPtsLabel = `${netPts >= 0 ? '+' : ''}${(Math.round(netPts * 10) / 10).toFixed(1)} pts`;
+
+            return (
+              <div key={im.seasonYear} className="fr-home-row">
+                {/* LEFT: Season Impact */}
+                <div
+                  className={`rounded-xl border p-6 ${
+                    isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <div className={`fr-text-11 uppercase fr-tracking-wider font-bold mb-2 ${
                     isDarkMode ? 'text-blue-400' : 'text-blue-600'
-                  }`}
-                />
-                <p
-                  className={`text-sm font-semibold ${
-                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                  }`}
-                >
-                  Season Impact ({im.seasonYear})
-                </p>
-              </div>
-              <p
-                className={`text-lg font-bold mb-4 ${
-                  isDarkMode ? 'text-white' : 'text-slate-900'
-                }`}
-              >
-                {headlineFor(im)}
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <div
-                  className={`p-3 rounded-lg ${
-                    isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
-                  }`}
-                >
-                  <p
-                    className={`text-[10px] font-bold uppercase mb-1 ${
-                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                    }`}
-                  >
-                    Actual Record
+                  }`}>
+                    <Sparkles className="w-3 h-3 inline mr-1" style={{ verticalAlign: '-1px' }} />
+                    Season Impact · {im.seasonYear}
+                  </div>
+                  <h2 className={`text-xl font-extrabold leading-tight mb-2 ${
+                    isDarkMode ? 'text-white' : 'text-slate-900'
+                  }`}>
+                    {headlineFor(im)}
+                  </h2>
+                  <p className={`text-sm mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    You went {actualW}-{actualL}, but had you stood pat you'd have finished {hypoW}-{hypoL}. Points alone don't tell the whole story — open any trade for the AI post-mortem.
                   </p>
-                  <p
-                    className={`text-2xl font-bold ${
-                      isDarkMode ? 'text-white' : 'text-slate-900'
-                    }`}
-                  >
-                    {im.actualRecord.wins}-{im.actualRecord.losses}
-                    {im.actualRecord.ties > 0 ? `-${im.actualRecord.ties}` : ''}
-                  </p>
-                </div>
-                <div
-                  className={`p-3 rounded-lg ${
-                    isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'
-                  }`}
-                >
-                  <p
-                    className={`text-[10px] font-bold uppercase mb-1 ${
-                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                    }`}
-                  >
-                    If you never traded
-                  </p>
-                  <p
-                    className={`text-2xl font-bold ${
-                      isDarkMode ? 'text-white' : 'text-slate-900'
-                    }`}
-                  >
-                    {im.hypotheticalRecord.wins}-
-                    {im.hypotheticalRecord.losses}
-                    {im.hypotheticalRecord.ties > 0
-                      ? `-${im.hypotheticalRecord.ties}`
-                      : ''}
-                  </p>
-                </div>
-              </div>
-              <div
-                className={`mt-3 text-xs ${
-                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                }`}
-              >
-                Net points from trading:{' '}
-                <span
-                  className={
-                    im.totalPointDifferential < 0
-                      ? 'text-emerald-500 font-semibold'
-                      : im.totalPointDifferential > 0
-                      ? 'text-red-500 font-semibold'
-                      : isDarkMode ? 'text-slate-300 font-semibold' : 'text-slate-600 font-semibold'
-                  }
-                >
-                  {im.totalPointDifferential <= 0 ? '+' : ''}
-                  {Math.round(-im.totalPointDifferential * 10) / 10}
-                </span>
-                <span className="ml-2 opacity-70">
-                  — points alone don't tell the whole story. Open a trade
-                  below for the full AI post-mortem.
-                </span>
-              </div>
-              {im.flippedWeeks.length > 0 && (
-                <div className="mt-4">
-                  <p
-                    className={`text-[10px] font-bold uppercase mb-2 ${
-                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
-                    }`}
-                  >
-                    Flipped Weeks
-                  </p>
-                  <div className="space-y-1">
-                    {im.flippedWeeks.map((fw) => (
-                      <div
-                        key={fw.week}
-                        className={`text-xs flex items-center gap-2 ${
-                          isDarkMode ? 'text-slate-300' : 'text-slate-600'
-                        }`}
-                      >
-                        <span className="font-semibold">Week {fw.week}</span>
-                        <span
-                          className={
-                            fw.actualResult === 'W' || (fw.actualResult === 'T' && fw.hypotheticalResult === 'L')
-                              ? 'text-emerald-500'
-                              : 'text-red-500'
-                          }
-                        >
-                          {fw.actualResult} → {fw.hypotheticalResult}
-                        </span>
-                        <span className="opacity-70">
-                          ({fw.actualScore} vs {fw.opponentScore} → hypothetical{' '}
-                          {fw.hypotheticalScore})
-                        </span>
+
+                  {/* Record comparison bars */}
+                  <div className="space-y-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <span className={`fr-text-10 uppercase fr-tracking-wider font-bold w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Actual</span>
+                      <div className="flex-1 h-6 rounded-full overflow-hidden" style={{ background: isDarkMode ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)' }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.max((actualW / totalGames) * 100, 2)}%`,
+                            background: 'rgb(239,68,68)',
+                          }}
+                        />
                       </div>
-                    ))}
+                      <span className={`text-sm font-bold w-10 text-right ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        {actualW}-{actualL}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`fr-text-10 uppercase fr-tracking-wider font-bold w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>If never traded</span>
+                      <div className="flex-1 h-6 rounded-full overflow-hidden" style={{ background: isDarkMode ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)' }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.max((hypoW / totalGames) * 100, 2)}%`,
+                            background: 'rgb(34,197,94)',
+                          }}
+                        />
+                      </div>
+                      <span className={`text-sm font-bold w-10 text-right ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        {hypoW}-{hypoL}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Net points from trading:{' '}
+                    <span className={`font-bold ${netPts >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                      {netPtsLabel}
+                    </span>
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* RIGHT: Flipped Weeks */}
+                <div
+                  className={`rounded-xl border p-6 ${
+                    isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className={`w-4 h-4 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                      <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        Flipped Weeks
+                      </span>
+                    </div>
+                    <span className={`fr-text-11 font-semibold px-2 py-0.5 rounded ${
+                      isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {im.flippedWeeks.length} this season
+                    </span>
+                  </div>
+
+                  {im.flippedWeeks.length === 0 ? (
+                    <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      No weeks where trading flipped the outcome.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {im.flippedWeeks.map((fw) => {
+                        const flippedGood =
+                          fw.actualResult === 'W' ||
+                          (fw.actualResult === 'T' && fw.hypotheticalResult === 'L');
+                        return (
+                          <div
+                            key={fw.week}
+                            className={`rounded-lg border p-3 ${
+                              isDarkMode
+                                ? flippedGood
+                                  ? 'bg-emerald-500/5 border-emerald-500/20'
+                                  : 'bg-red-500/10 border-red-500/20'
+                                : flippedGood
+                                ? 'bg-emerald-50 border-emerald-200'
+                                : 'bg-red-50 border-red-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                Week {fw.week}{' '}
+                                <span className={flippedGood ? 'text-emerald-500' : 'text-red-500'}>
+                                  {fw.hypotheticalResult} → {fw.actualResult}
+                                </span>
+                              </span>
+                            </div>
+                            <div className={`fr-text-11 mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                              Actual: <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.actualScore.toFixed(1)}</b>
+                              {' · '}Hypothetical: <b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.hypotheticalScore.toFixed(1)}</b>
+                              {' → '}<b className={isDarkMode ? 'text-white' : 'text-slate-900'}>{fw.opponentScore.toFixed(1)}</b>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
