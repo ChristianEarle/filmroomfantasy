@@ -287,8 +287,20 @@ KEY FACTORS RULES:
 - Do NOT just restate the facts. Explain your reasoning.
 
 IMPROVEMENTS RULES:
-- 2-4 concrete suggestions for sweetening the deal for the losing team.
-- Be specific: "Add a 2026 2nd", "Include a FLEX-tier WR like ..." — not vague.
+- 2-4 concrete suggestions for how to make this trade MORE FAIR. Every suggestion MUST move the fairness score CLOSER to 50 — never further away.
+- Direction is fixed and non-negotiable:
+  * The LOSING team must RECEIVE additional value, OR
+  * The WINNING team must SEND additional value.
+  These are two ways of describing the same balancing move.
+- NEVER suggest that the losing team send MORE assets.
+- NEVER suggest that the winning team receive MORE assets.
+- NEVER suggest a 1-for-1 swap where the losing team downgrades (e.g., swapping their 1st for a 2nd). That makes the trade WORSE for the loser, not better.
+- Before writing each suggestion, ask yourself: "Does this move the fairness score closer to 50?" If no, throw it out.
+- Good formats (use these as templates):
+  * "Team [winner] should also include a 2026 2nd round pick to offset the gap."
+  * "Upgrade the pick Team [loser] receives from a 2027 2nd to a 2026 1st."
+  * "Team [winner] should add a FLEX-tier WR like [name] to compensate for [loser]'s loss of [player]."
+- Be specific (name the round/pick/position tier/player) — not vague.
 - If the trade is already fair (diff < 10), return an empty array.
 
 HARD RULES:

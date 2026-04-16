@@ -465,6 +465,8 @@ function TradeTeamCard({
   isDarkMode,
   allTeams,
   isMultiTeam,
+  isUserTeam,
+  opponentOptions,
   onAddAsset,
   onRemoveAsset,
   onLabelChange,
@@ -475,6 +477,13 @@ function TradeTeamCard({
   isDarkMode: boolean;
   allTeams: TradeTeam[];
   isMultiTeam: boolean;
+  /** True when this card represents the logged-in user's team. */
+  isUserTeam?: boolean;
+  /**
+   * League opponent teams the user can pick from. Only passed for
+   * non-user cards when a league is selected.
+   */
+  opponentOptions?: Array<{ teamId: string; teamName: string }>;
   onAddAsset: (teamId: number, asset: TradeAsset) => void;
   onRemoveAsset: (teamId: number, assetId: string) => void;
   onLabelChange: (teamId: number, label: string) => void;
@@ -488,6 +497,18 @@ function TradeTeamCard({
 
   const assetCount = team.sends.length;
 
+  const defaultLabel = `Team ${teamIndex + 1}`;
+  // Controlled input would lose focus if we nulled empty strings, so
+  // we restore the default on blur instead. That keeps editing fluid
+  // (you can clear and retype) but guarantees a non-empty final value.
+  const handleLabelBlur = (value: string) => {
+    if (!value.trim()) {
+      onLabelChange(team.id, defaultLabel);
+    }
+  };
+
+  const matchedOpponentId = opponentOptions?.find((o) => o.teamName === team.label)?.teamId ?? '';
+
   return (
     <div
       style={{ minHeight: '260px' }}
@@ -497,6 +518,45 @@ function TradeTeamCard({
           : 'bg-slate-50 border-slate-200'
       }`}
     >
+      {/* Opponent picker (only for non-user cards when in a league) */}
+      {opponentOptions && opponentOptions.length > 0 && (
+        <div className="mb-2">
+          <label
+            className={`block fr-text-10 uppercase fr-tracking-wider font-bold mb-1 ${
+              isDarkMode ? 'text-slate-500' : 'text-slate-500'
+            }`}
+          >
+            Pick opponent from league
+          </label>
+          <div className="relative">
+            <select
+              value={matchedOpponentId}
+              onChange={(e) => {
+                const picked = opponentOptions.find((o) => o.teamId === e.target.value);
+                if (picked) onLabelChange(team.id, picked.teamName);
+              }}
+              className={`appearance-none w-full pr-8 pl-2 py-1.5 text-xs font-semibold rounded border transition-colors cursor-pointer ${
+                isDarkMode
+                  ? 'bg-slate-900 border-slate-800 text-white hover:border-slate-600'
+                  : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
+              } outline-none`}
+            >
+              <option value="">Custom team…</option>
+              {opponentOptions.map((o) => (
+                <option key={o.teamId} value={o.teamId}>
+                  {o.teamName}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className={`absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none ${
+                isDarkMode ? 'text-slate-500' : 'text-slate-400'
+              }`}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -509,11 +569,21 @@ function TradeTeamCard({
             type="text"
             value={team.label}
             onChange={(e) => onLabelChange(team.id, e.target.value)}
-            placeholder={`Team ${teamIndex + 1}`}
+            onBlur={(e) => handleLabelBlur(e.target.value)}
+            placeholder={defaultLabel}
             className={`text-sm font-bold bg-transparent border-none outline-none w-full truncate ${
               isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
             }`}
           />
+          {isUserTeam && (
+            <span
+              className={`flex-shrink-0 fr-text-10 font-bold uppercase fr-tracking-wider px-1.5 py-0.5 rounded ${
+                isDarkMode ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-700'
+              }`}
+            >
+              You
+            </span>
+          )}
         </div>
       </div>
 
@@ -1391,6 +1461,32 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   const [isLoadingRoster, setIsLoadingRoster] = useState(false);
   const [showMyRoster, setShowMyRoster] = useState(false);
 
+  // All teams in the selected league — used to let users pick real
+  // opponent teams for teams 2+ in the trade. Null when no league
+  // is selected.
+  const [allLeagueTeams, setAllLeagueTeams] = useState<MyRoster[] | null>(null);
+
+  // Opponent options = every league team that isn't the user's own.
+  // Used for the per-card "Pick opponent" dropdown on slots 2+.
+  const opponentLeagueTeams = useMemo(() => {
+    if (!allLeagueTeams || !myRoster) return [] as MyRoster[];
+    return allLeagueTeams.filter((t) => t.teamId !== myRoster.teamId);
+  }, [allLeagueTeams, myRoster]);
+
+  // When the user's roster loads and Team 1 still has its placeholder
+  // label ("Team 1"), auto-fill it with the real team name from the
+  // league. This is a one-time sync; the user can edit the label and
+  // we'll leave their custom value alone.
+  useEffect(() => {
+    if (!myRoster) return;
+    setTeams((prev) => {
+      if (prev.length === 0) return prev;
+      const first = prev[0];
+      if (first.label !== 'Team 1') return prev;
+      return prev.map((t, i) => (i === 0 ? { ...t, label: myRoster.teamName } : t));
+    });
+  }, [myRoster]);
+
   // Follow-up chat
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
   const [isSendingFollowUp, setIsSendingFollowUp] = useState(false);
@@ -1427,17 +1523,29 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
   useEffect(() => {
     if (!selectedLeagueId) {
       setMyRoster(null);
+      setAllLeagueTeams(null);
       return;
     }
     let cancelled = false;
     setIsLoadingRoster(true);
-    api
-      .get<{ team: MyRoster }>(`/rosters/${selectedLeagueId}/mine`)
-      .then((data) => {
-        if (!cancelled) setMyRoster(data.team);
+    // Fetch both the user's roster and the full set of league teams
+    // in parallel. The "all teams" call powers the opponent picker on
+    // trade slots 2+; we fall through silently if it fails so the rest
+    // of the analyzer still works.
+    Promise.all([
+      api.get<{ team: MyRoster }>(`/rosters/${selectedLeagueId}/mine`),
+      api.get<{ teams: MyRoster[] }>(`/rosters/${selectedLeagueId}/all`).catch(() => ({ teams: [] as MyRoster[] })),
+    ])
+      .then(([mine, all]) => {
+        if (cancelled) return;
+        setMyRoster(mine.team);
+        setAllLeagueTeams(all.teams ?? []);
       })
       .catch(() => {
-        if (!cancelled) setMyRoster(null);
+        if (!cancelled) {
+          setMyRoster(null);
+          setAllLeagueTeams(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setIsLoadingRoster(false);
@@ -2218,66 +2326,87 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
           </span>
         </div>
 
-        {teamCount === 2 ? (
-          <div className="fr-grid-teams">
-            <TradeTeamCard
-              key={teams[0].id}
-              team={teams[0]}
-              teamIndex={0}
-              isDarkMode={isDarkMode}
-              allTeams={teams}
-              isMultiTeam={isMultiTeam}
-              onAddAsset={handleAddAsset}
-              onRemoveAsset={handleRemoveAsset}
-              onLabelChange={handleLabelChange}
-              onAssetDestinationChange={handleAssetDestinationChange}
-            />
-            <div className="flex items-center justify-center flex-shrink-0">
-              <div
-                className={`w-10 h-10 rounded-full border flex items-center justify-center ${
-                  isDarkMode
-                    ? 'bg-slate-900 border-slate-700 text-slate-400'
-                    : 'bg-slate-100 border-slate-200 text-slate-500'
-                }`}
-              >
-                <ArrowRightLeft className="w-4 h-4" />
+        {(() => {
+          // Options passed to each non-user card so the user can pick
+          // a real league opponent instead of typing a label by hand.
+          const opponentOptions = opponentLeagueTeams.map((t) => ({
+            teamId: t.teamId,
+            teamName: t.teamName,
+          }));
+          const opponentPickerProps = (i: number) =>
+            i === 0 || opponentOptions.length === 0
+              ? undefined
+              : opponentOptions;
+
+          if (teamCount === 2) {
+            return (
+              <div className="fr-grid-teams">
+                <TradeTeamCard
+                  key={teams[0].id}
+                  team={teams[0]}
+                  teamIndex={0}
+                  isDarkMode={isDarkMode}
+                  allTeams={teams}
+                  isMultiTeam={isMultiTeam}
+                  isUserTeam
+                  onAddAsset={handleAddAsset}
+                  onRemoveAsset={handleRemoveAsset}
+                  onLabelChange={handleLabelChange}
+                  onAssetDestinationChange={handleAssetDestinationChange}
+                />
+                <div className="flex items-center justify-center flex-shrink-0">
+                  <div
+                    className={`w-10 h-10 rounded-full border flex items-center justify-center ${
+                      isDarkMode
+                        ? 'bg-slate-900 border-slate-700 text-slate-400'
+                        : 'bg-slate-100 border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    <ArrowRightLeft className="w-4 h-4" />
+                  </div>
+                </div>
+                <TradeTeamCard
+                  key={teams[1].id}
+                  team={teams[1]}
+                  teamIndex={1}
+                  isDarkMode={isDarkMode}
+                  allTeams={teams}
+                  isMultiTeam={isMultiTeam}
+                  opponentOptions={opponentPickerProps(1)}
+                  onAddAsset={handleAddAsset}
+                  onRemoveAsset={handleRemoveAsset}
+                  onLabelChange={handleLabelChange}
+                  onAssetDestinationChange={handleAssetDestinationChange}
+                />
               </div>
+            );
+          }
+
+          return (
+            <div
+              className={`grid gap-3 ${
+                teamCount === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'
+              }`}
+            >
+              {teams.map((team, i) => (
+                <TradeTeamCard
+                  key={team.id}
+                  team={team}
+                  teamIndex={i}
+                  isDarkMode={isDarkMode}
+                  allTeams={teams}
+                  isMultiTeam={isMultiTeam}
+                  isUserTeam={i === 0}
+                  opponentOptions={opponentPickerProps(i)}
+                  onAddAsset={handleAddAsset}
+                  onRemoveAsset={handleRemoveAsset}
+                  onLabelChange={handleLabelChange}
+                  onAssetDestinationChange={handleAssetDestinationChange}
+                />
+              ))}
             </div>
-            <TradeTeamCard
-              key={teams[1].id}
-              team={teams[1]}
-              teamIndex={1}
-              isDarkMode={isDarkMode}
-              allTeams={teams}
-              isMultiTeam={isMultiTeam}
-              onAddAsset={handleAddAsset}
-              onRemoveAsset={handleRemoveAsset}
-              onLabelChange={handleLabelChange}
-              onAssetDestinationChange={handleAssetDestinationChange}
-            />
-          </div>
-        ) : (
-          <div
-            className={`grid gap-3 ${
-              teamCount === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'
-            }`}
-          >
-            {teams.map((team, i) => (
-              <TradeTeamCard
-                key={team.id}
-                team={team}
-                teamIndex={i}
-                isDarkMode={isDarkMode}
-                allTeams={teams}
-                isMultiTeam={isMultiTeam}
-                onAddAsset={handleAddAsset}
-                onRemoveAsset={handleRemoveAsset}
-                onLabelChange={handleLabelChange}
-                onAssetDestinationChange={handleAssetDestinationChange}
-              />
-            ))}
-          </div>
-        )}
+          );
+        })()}
 
         {/* Context (subtle collapsible) */}
         <div>
