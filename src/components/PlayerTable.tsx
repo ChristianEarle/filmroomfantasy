@@ -11,15 +11,30 @@ import { AdUnit } from './AdUnit';
 // Memoized table row component to prevent unnecessary re-renders
 interface PlayerRowProps {
   player: Player;
-  onClick: (player: Player) => void;
+  onToggleExpand: (id: string) => void;
+  onOpenCard: (player: Player) => void;
   isDarkMode: boolean;
   oddsData?: { homeTeam: string; awayTeam: string; homeSpread: number | null; total: number | null } | null;
   pointsType?: 'actual' | 'projected';
   propLine?: string | null;
   isOwned?: boolean;
+  isExpanded?: boolean;
+  /** Raw API seasonStats (week-scoped when the API returns week-specific stats) */
+  seasonStats?: {
+    passYards?: number;
+    passTDs?: number;
+    rushYards?: number;
+    rushTDs?: number;
+    receptions?: number;
+    receivingYards?: number;
+    receivingTDs?: number;
+    fantasyPointsPPR?: number;
+    gamesPlayed?: number;
+  } | null;
+  currentWeek: number;
 }
 
-const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData, pointsType = 'projected', propLine, isOwned = false }: PlayerRowProps) {
+const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, isDarkMode, oddsData, pointsType = 'projected', propLine, isOwned = false, isExpanded = false, seasonStats, currentWeek }: PlayerRowProps) {
   // Format odds display for this player's game
   const formatOdds = () => {
     if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
@@ -34,14 +49,16 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
   const oddsDisplay = formatOdds();
 
   return (
+    <>
     <tr
       tabIndex={0}
       role="button"
-      onClick={() => onClick(player)}
+      aria-expanded={isExpanded}
+      onClick={() => onToggleExpand(player.id)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onClick(player);
+          onToggleExpand(player.id);
         }
       }}
       className={`border-b transition-colors cursor-pointer group ${
@@ -184,11 +201,156 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
         })()}
       </td>
 
-      {/* Chevron */}
+      {/* Chevron (rotates when expanded) */}
       <td className="px-2 py-3 sm:py-4 w-8 text-right">
-        <ChevronRight className={`w-4 h-4 inline ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+        <ChevronRight
+          className={`w-4 h-4 inline transition-transform ${isExpanded ? 'rotate-90' : ''} ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+        />
       </td>
     </tr>
+
+    {isExpanded && (
+      <tr
+        className={`border-b ${
+          isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-50/70 border-slate-200'
+        }`}
+      >
+        <td colSpan={pointsType === 'actual' ? 8 : 7} className="px-2 sm:px-4 md:px-6 py-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Panel 1 — position-specific primary stats (PASSING / RUSHING / RECEIVING) */}
+            {(() => {
+              const pos = player.position;
+              let label = 'STATS';
+              let rows: Array<{ label: string; value: string }> = [];
+              if (pos === 'QB') {
+                label = 'PASSING';
+                rows = [
+                  { label: 'Pass Yds', value: String(seasonStats?.passYards ?? '—') },
+                  { label: 'Pass TDs', value: String(seasonStats?.passTDs ?? '—') },
+                  { label: 'Rush Yds', value: String(seasonStats?.rushYards ?? '—') },
+                ];
+              } else if (pos === 'RB') {
+                label = 'RUSHING';
+                rows = [
+                  { label: 'Rush Yds', value: String(seasonStats?.rushYards ?? '—') },
+                  { label: 'Rush TDs', value: String(seasonStats?.rushTDs ?? '—') },
+                  { label: 'Rec', value: String(seasonStats?.receptions ?? '—') },
+                ];
+              } else if (pos === 'WR' || pos === 'TE') {
+                label = 'RECEIVING';
+                rows = [
+                  { label: 'Rec', value: String(seasonStats?.receptions ?? '—') },
+                  { label: 'Rec Yds', value: String(seasonStats?.receivingYards ?? '—') },
+                  { label: 'Rec TDs', value: String(seasonStats?.receivingTDs ?? '—') },
+                ];
+              } else {
+                label = 'STATS';
+                rows = [{ label: 'FPts', value: seasonStats?.fantasyPointsPPR?.toFixed(1) ?? '—' }];
+              }
+              return (
+                <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}>
+                  <div className={`fr-text-10 font-bold uppercase fr-tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>{label}</div>
+                  {rows.map((r) => (
+                    <div key={r.label} className="flex justify-between items-baseline mb-1">
+                      <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{r.label}</span>
+                      <span className={`text-sm font-bold tabular-nums ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Panel 2 — secondary stats (varies by position) */}
+            {(() => {
+              const pos = player.position;
+              let label = 'SECONDARY';
+              let rows: Array<{ label: string; value: string }> = [];
+              if (pos === 'QB') {
+                label = 'RUSHING';
+                rows = [
+                  { label: 'Rush Yds', value: String(seasonStats?.rushYards ?? '—') },
+                  { label: 'Rush TDs', value: String(seasonStats?.rushTDs ?? '—') },
+                ];
+              } else if (pos === 'RB') {
+                label = 'RECEIVING';
+                rows = [
+                  { label: 'Rec Yds', value: String(seasonStats?.receivingYards ?? '—') },
+                  { label: 'Rec TDs', value: String(seasonStats?.receivingTDs ?? '—') },
+                ];
+              } else if (pos === 'WR' || pos === 'TE') {
+                label = 'EFFICIENCY';
+                const rec = seasonStats?.receptions ?? 0;
+                const yds = seasonStats?.receivingYards ?? 0;
+                const ypr = rec > 0 ? (yds / rec).toFixed(1) : '—';
+                rows = [
+                  { label: 'Y/Rec', value: ypr },
+                  { label: 'Total Yds', value: String(yds || '—') },
+                ];
+              } else {
+                rows = [{ label: 'Games', value: String(seasonStats?.gamesPlayed ?? '—') }];
+              }
+              return (
+                <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}>
+                  <div className={`fr-text-10 font-bold uppercase fr-tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>{label}</div>
+                  {rows.map((r) => (
+                    <div key={r.label} className="flex justify-between items-baseline mb-1">
+                      <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{r.label}</span>
+                      <span className={`text-sm font-bold tabular-nums ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Panel 3 — Week summary */}
+            <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <div className={`fr-text-10 font-bold uppercase fr-tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                {pointsType === 'actual' ? 'WEEK SUMMARY' : 'PROJECTION'}
+              </div>
+              <div className={`text-2xl font-extrabold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                {player.projectedPoints.toFixed(1)}
+              </div>
+              <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                {pointsType === 'actual' ? `${player.position} · Week ${currentWeek}` : `${player.position} · Proj Wk ${currentWeek}`}
+              </div>
+              {pointsType === 'actual' && player.weeklyProjectedPoints != null && (
+                <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  Proj was <b className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{player.weeklyProjectedPoints.toFixed(1)}</b>
+                </div>
+              )}
+            </div>
+
+            {/* Panel 4 — FilmRoom take + actions */}
+            <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <div className={`fr-text-10 font-bold uppercase fr-tracking-wider mb-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                ★ FILMROOM AI
+              </div>
+              <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                {player.keyLine || 'Tap "Full game log" for the full weekly breakdown and trends.'}
+                {propLine && <span className={`block mt-1 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{propLine}</span>}
+              </p>
+              <div className="flex items-center gap-2 mt-3">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenCard(player);
+                  }}
+                  className={`flex-1 text-xs font-semibold py-1.5 rounded-md border transition-colors ${
+                    isDarkMode
+                      ? 'bg-slate-900 border-slate-700 text-slate-200 hover:border-slate-600'
+                      : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  Full game log
+                </button>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    )}
+    </>
   );
 });
 
@@ -233,6 +395,18 @@ export function PlayerTable({
   const [error, setError] = useState<string | null>(null);
   const [totalPlayers, setTotalPlayers] = useState(0);
   const [pointsType, setPointsType] = useState<'actual' | 'projected'>('projected');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  }, []);
+
+  // Map converted Player.id -> raw APIPlayer.seasonStats for the expand panel
+  const apiPlayerById = useMemo(() => {
+    const m = new Map<string, APIPlayer>();
+    for (const p of players) m.set(p.id, p);
+    return m;
+  }, [players]);
   const weekDropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch odds and player props for the current week
@@ -758,12 +932,16 @@ export function PlayerTable({
                       <PlayerRow
                         key={player.id}
                         player={player}
-                        onClick={onPlayerClick}
+                        onToggleExpand={toggleExpand}
+                        onOpenCard={onPlayerClick}
                         isDarkMode={isDarkMode}
                         oddsData={getOddsForTeam(player.team)}
                         pointsType={pointsType}
                         propLine={propLine}
                         isOwned={ownedPlayerIds.has(player.id)}
+                        isExpanded={expandedId === player.id}
+                        seasonStats={apiPlayerById.get(player.id)?.seasonStats ?? null}
+                        currentWeek={currentWeek}
                       />
                     );
                   })
