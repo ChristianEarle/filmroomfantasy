@@ -3,7 +3,6 @@ import { Medal, Loader2, Search, ChevronDown, ChevronRight, TrendingUp, Trending
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
-import { PlayerAvatar } from './PlayerAvatar';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -206,6 +205,7 @@ function formatMovement(n: number): { text: string; className: string } {
   if (n > 0) return { text: `↑ ${n}`, className: 'text-emerald-500' };
   return { text: `↓ ${Math.abs(n)}`, className: 'text-red-500' };
 }
+
 
 // ── Component ───────────────────────────────────────────────────────
 
@@ -519,15 +519,14 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
             isDarkMode ? 'bg-slate-900/80 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-500'
           }`}>
             <span className="w-8 text-center">#</span>
-            <span style={{ width: '40px' }} />
             <span className="flex-1">Player</span>
-            <span className="hidden sm:block text-right" style={{ width: '80px' }}>Proj Pts</span>
-            <span className="hidden sm:block text-right" style={{ width: '50px' }}>ADP</span>
-            <span className="hidden sm:flex justify-center" style={{ width: '90px' }}>Value</span>
-            <span className="hidden lg:flex justify-center items-center gap-1" style={{ width: '80px' }}>
+            <span className="text-right" style={{ width: '80px' }}>Proj Pts</span>
+            <span className="text-right" style={{ width: '60px' }}>ADP</span>
+            <span className="flex justify-center" style={{ width: '90px' }}>Value</span>
+            <span className="flex justify-center items-center gap-1" style={{ width: '90px' }}>
               Trend <span className="fr-text-9 normal-case tracking-normal text-slate-500">(4wk)</span>
             </span>
-            <span className="hidden md:block text-center" style={{ width: '40px' }}>Age</span>
+            <span className="text-center" style={{ width: '40px' }}>Age</span>
             <span style={{ width: '16px' }} />
           </div>
 
@@ -686,13 +685,6 @@ function PlayerRow({
           {ranking.overallRank}
         </span>
 
-        {/* Avatar */}
-        <div
-          className={`w-10 h-10 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center ${isDarkMode ? 'bg-slate-700' : 'bg-slate-100'}`}
-          onClick={e => { e.stopPropagation(); onPlayerClick(); }}
-        >
-          <PlayerAvatar name={p.name} headshotUrl={p.headshotUrl} isDarkMode={isDarkMode} />
-        </div>
 
         {/* Name & Position */}
         <div className="flex-1 min-w-0" onClick={e => { e.stopPropagation(); onPlayerClick(); }}>
@@ -713,27 +705,27 @@ function PlayerRow({
         </div>
 
         {/* Projected Points */}
-        <div className="text-right hidden sm:block" style={{ width: '80px' }}>
+        <div className="text-right" style={{ width: '80px' }}>
           <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             {ranking.projectedPoints != null ? `${ranking.projectedPoints.toFixed(1)}` : '—'}
           </span>
-          <span className={`fr-text-10 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>pts</span>
+          <span className={`fr-text-10 ml-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>pts</span>
         </div>
 
         {/* ADP */}
-        <div className="text-right hidden sm:block" style={{ width: '50px' }}>
+        <div className="text-right" style={{ width: '60px' }}>
           <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
             {ranking.adp != null ? ranking.adp.toFixed(1) : '—'}
           </span>
         </div>
 
         {/* Value Badge */}
-        <div className="hidden sm:flex justify-center" style={{ width: '90px' }}>
+        <div className="flex justify-center" style={{ width: '90px' }}>
           {valueBadge}
         </div>
 
         {/* Trend sparkline */}
-        <div className="hidden lg:flex justify-center items-center" style={{ width: '80px' }}>
+        <div className="flex justify-center items-center" style={{ width: '90px' }}>
           <Sparkline
             points={trendPoints(ranking.id, ranking.adpDelta)}
             color={
@@ -747,7 +739,7 @@ function PlayerRow({
         </div>
 
         {/* Age */}
-        <div className="text-center hidden md:block" style={{ width: '40px' }}>
+        <div className="text-center" style={{ width: '40px' }}>
           <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
             {p.age ?? '—'}
           </span>
@@ -894,20 +886,6 @@ function PlayerRow({
             </div>
           </div>
 
-          {/* Mobile fallback stats */}
-          <div className="flex gap-4 mt-3 sm:hidden fr-text-11">
-            {ranking.projectedPoints != null && (
-              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
-                Proj: <b>{ranking.projectedPoints.toFixed(1)}</b> pts
-              </span>
-            )}
-            {ranking.adp != null && (
-              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
-                ADP: <b>{ranking.adp.toFixed(1)}</b>
-              </span>
-            )}
-            {valueBadge}
-          </div>
         </div>
       )}
     </div>
