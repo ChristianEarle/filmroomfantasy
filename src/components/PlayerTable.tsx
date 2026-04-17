@@ -112,6 +112,44 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
           </div>
         )}
       </td>
+      {/* OUTCOME badge — only visible for finalized weeks */}
+      {pointsType === 'actual' && (
+        <td className="px-2 sm:px-4 py-3 sm:py-4 text-center hidden md:table-cell">
+          {player.weeklyProjectedPoints !== undefined && player.weeklyProjectedPoints > 0 ? (
+            (() => {
+              const delta = player.projectedPoints - player.weeklyProjectedPoints;
+              const magnitude = Math.abs(delta);
+              const projected = player.weeklyProjectedPoints;
+              // BOOM: scored at least 40% more than projected, with min 3 point projection
+              if (delta > 0 && magnitude >= projected * 0.4 && projected >= 3) {
+                return (
+                  <span className="fr-text-10 font-bold uppercase fr-tracking-wider px-2 py-1 rounded bg-emerald-500/15 text-emerald-500">
+                    BOOM
+                  </span>
+                );
+              }
+              // BUST: scored at least 40% less than projected, with min 10 point projection
+              if (delta < 0 && magnitude >= projected * 0.4 && projected >= 10) {
+                return (
+                  <span className="fr-text-10 font-bold uppercase fr-tracking-wider px-2 py-1 rounded bg-red-500/15 text-red-500">
+                    BUST
+                  </span>
+                );
+              }
+              // MET: within 40% of projection
+              return (
+                <span className={`fr-text-10 font-bold uppercase fr-tracking-wider px-2 py-1 rounded ${
+                  isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  MET
+                </span>
+              );
+            })()
+          ) : (
+            <span className={`fr-text-10 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>—</span>
+          )}
+        </td>
+      )}
     </tr>
   );
 });
@@ -300,8 +338,125 @@ export function PlayerTable({
     return sorted.slice(0, 12);
   }, [players, selectedPosition, searchQuery, sortField, sortDirection]);
 
+  // ── Weekly callouts (BOOM / BUST / WK MVP) ──
+  // Only meaningful when viewing an actual (finalized) week — need
+  // both actual and projected points to compute over/under performance.
+  const callouts = useMemo(() => {
+    if (pointsType !== 'actual') return null;
+    const pool = players
+      .map((p, i) => convertAPIPlayerToPlayer(p, i))
+      .filter((p) => p.weeklyProjectedPoints !== undefined && p.weeklyProjectedPoints > 0);
+    if (pool.length === 0) return null;
+
+    // Delta = actual - projected (positive = overperformed)
+    const withDelta = pool.map((p) => ({
+      player: p,
+      delta: p.projectedPoints - (p.weeklyProjectedPoints ?? 0),
+    }));
+
+    // BOOM — biggest positive delta (with projection >= 5 to avoid 0-proj noise)
+    const boomPool = withDelta.filter((x) => (x.player.weeklyProjectedPoints ?? 0) >= 3);
+    const boom = boomPool.length > 0
+      ? boomPool.reduce((best, x) => (x.delta > best.delta ? x : best))
+      : null;
+
+    // BUST — biggest negative delta (only for players projected to score meaningfully)
+    const bustPool = withDelta.filter((x) => (x.player.weeklyProjectedPoints ?? 0) >= 10);
+    const bust = bustPool.length > 0
+      ? bustPool.reduce((worst, x) => (x.delta < worst.delta ? x : worst))
+      : null;
+
+    // WK MVP — highest actual score
+    const mvp = pool.reduce((best, p) =>
+      p.projectedPoints > best.projectedPoints ? p : best,
+    );
+
+    return { boom, bust, mvp };
+  }, [players, pointsType]);
+
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto space-y-4">
+      {/* Boom / Bust / MVP callouts — only shown for finalized weeks */}
+      {callouts && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {[
+            {
+              label: 'BOOM',
+              icon: '🔥',
+              color: 'text-emerald-500',
+              bgColor: isDarkMode ? 'bg-emerald-500/15' : 'bg-emerald-50',
+              borderColor: isDarkMode ? 'border-emerald-500/30' : 'border-emerald-200',
+              entry: callouts.boom,
+              deltaPrefix: '+',
+              deltaColor: 'text-emerald-500',
+            },
+            {
+              label: 'BUST',
+              icon: '🧊',
+              color: 'text-red-500',
+              bgColor: isDarkMode ? 'bg-red-500/15' : 'bg-red-50',
+              borderColor: isDarkMode ? 'border-red-500/30' : 'border-red-200',
+              entry: callouts.bust,
+              deltaPrefix: '',
+              deltaColor: 'text-red-500',
+            },
+            {
+              label: 'WK MVP',
+              icon: '👑',
+              color: 'text-amber-500',
+              bgColor: isDarkMode ? 'bg-amber-500/15' : 'bg-amber-50',
+              borderColor: isDarkMode ? 'border-amber-500/30' : 'border-amber-200',
+              entry: { player: callouts.mvp, delta: null as number | null },
+              deltaPrefix: '',
+              deltaColor: isDarkMode ? 'text-white' : 'text-slate-900',
+            },
+          ].map((c) =>
+            c.entry?.player ? (
+              <div
+                key={c.label}
+                onClick={() => onPlayerClick(c.entry!.player)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onPlayerClick(c.entry!.player);
+                  }
+                }}
+                className={`cursor-pointer rounded-xl border p-4 flex items-center gap-3 transition-colors ${
+                  isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-slate-600' : 'bg-white border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${c.bgColor} ${c.borderColor}`}>
+                  <span className="text-lg">{c.icon}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className={`fr-text-10 uppercase fr-tracking-wider font-bold ${c.color}`}>
+                    {c.label}
+                  </div>
+                  <div className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {c.entry.player.name}
+                  </div>
+                  <div className={`fr-text-11 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {c.entry.player.team} · {c.entry.player.position} · Proj {(c.entry.player.weeklyProjectedPoints ?? 0).toFixed(1)}
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className={`text-xl font-extrabold ${c.deltaColor}`}>
+                    {c.entry.player.projectedPoints.toFixed(1)}
+                  </div>
+                  {c.entry.delta !== null && (
+                    <div className={`fr-text-11 font-bold ${c.deltaColor}`}>
+                      {c.deltaPrefix}{c.entry.delta.toFixed(1)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null,
+          )}
+        </div>
+      )}
+
       {/* Table with Header */}
       <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
@@ -482,10 +637,19 @@ export function PlayerTable({
                     className={`text-right px-2 sm:px-4 md:px-6 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-28 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5 justify-end">
-                      TREND
+                      {pointsType === 'actual' ? '+/-' : 'TREND'}
                       {getSortIcon('weekChange')}
                     </div>
                   </th>
+                  {/* OUTCOME — only shown for finalized weeks */}
+                  {pointsType === 'actual' && (
+                    <th
+                      scope="col"
+                      className={`text-center px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                    >
+                      OUTCOME
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
