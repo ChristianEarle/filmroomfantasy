@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from 'react';
-import { ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown, Search, Loader2, SearchX } from 'lucide-react';
+import { ChevronDown, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown, Search, Loader2, SearchX } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
@@ -55,9 +55,12 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
       }`}
       style={isOwned ? { boxShadow: 'inset 3px 0 0 rgb(59, 130, 246)' } : undefined}
     >
+      {/* # */}
       <td className="px-2 sm:px-4 md:px-6 py-3 sm:py-4">
         <span className={`font-medium text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
       </td>
+
+      {/* PLAYER (name + YOUR TEAM pill + team/pos subline) */}
       <td className="px-2 sm:px-4 py-3 sm:py-4">
         <div>
           <div className="flex items-center gap-1.5">
@@ -69,7 +72,7 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
             )}
           </div>
           <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-            {player.team} <span className="sm:hidden">• {player.position}</span>
+            {player.team} · {player.position}
             {oddsDisplay && (
               <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                 {oddsDisplay}
@@ -78,58 +81,44 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
           </div>
         </div>
       </td>
-      <td className="px-2 sm:px-4 py-3 sm:py-4 hidden sm:table-cell">
-        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-          {player.position}
+
+      {/* PTS (actual points when available, else projection) */}
+      <td className="px-2 sm:px-4 py-3 sm:py-4 text-right">
+        <span className={`font-bold text-base sm:text-lg tabular-nums ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+      </td>
+
+      {/* PROJ (weekly projection) */}
+      <td className="px-2 sm:px-4 py-3 sm:py-4 text-right hidden sm:table-cell">
+        <span className={`text-sm tabular-nums ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          {player.weeklyProjectedPoints != null ? player.weeklyProjectedPoints.toFixed(1) : '—'}
         </span>
       </td>
-      <td className="px-2 sm:px-4 py-3 sm:py-4 hidden md:table-cell">
-        <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
-        {propLine && (
-          <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-            {propLine}
-          </div>
-        )}
-      </td>
-      <td className="px-2 sm:px-4 py-3 sm:py-4 text-right">
-        <span className={`font-bold text-base sm:text-lg ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
-      </td>
-      <td className="px-2 sm:px-4 md:px-6 py-3 sm:py-4 text-right hidden sm:table-cell">
+
+      {/* +/- (actual - projected, or projection movement) */}
+      <td className="px-2 sm:px-4 py-3 sm:py-4 text-right hidden sm:table-cell">
         {pointsType === 'actual' && player.weeklyProjectedPoints !== undefined ? (
-          // Show proj vs actual diff when viewing finalized week
-          <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-semibold ${
-            player.projectedPoints - player.weeklyProjectedPoints >= 0
-              ? 'bg-green-500/20 text-green-500'
-              : 'bg-red-500/20 text-red-500'
-          }`}>
-            {player.projectedPoints - player.weeklyProjectedPoints >= 0 ? (
-              <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
-            ) : (
-              <TrendingDown className="w-3.5 h-3.5" aria-hidden="true" />
-            )}
-            <span aria-label={`${player.projectedPoints - player.weeklyProjectedPoints >= 0 ? 'overperformed' : 'underperformed'} by ${Math.abs(player.projectedPoints - player.weeklyProjectedPoints).toFixed(1)} points`}>
-              {player.projectedPoints - player.weeklyProjectedPoints >= 0 ? '+' : ''}{(player.projectedPoints - player.weeklyProjectedPoints).toFixed(1)}
-            </span>
-          </div>
+          (() => {
+            const diff = player.projectedPoints - player.weeklyProjectedPoints;
+            return (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-sm font-bold tabular-nums ${
+                diff >= 0 ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500'
+              }`}>
+                {diff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                {diff >= 0 ? '+' : ''}{diff.toFixed(1)}
+              </span>
+            );
+          })()
         ) : (
-          // Show projection movement when viewing projections
-          <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-semibold ${
-            player.weekChange >= 0
-              ? 'bg-green-500/20 text-green-500'
-              : 'bg-red-500/20 text-red-500'
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-sm font-bold tabular-nums ${
+            player.weekChange >= 0 ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500'
           }`}>
-            {player.weekChange >= 0 ? (
-              <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
-            ) : (
-              <TrendingDown className="w-3.5 h-3.5" aria-hidden="true" />
-            )}
-            <span aria-label={`${player.weekChange >= 0 ? 'up' : 'down'} ${Math.abs(player.weekChange).toFixed(1)} points`}>
-              {player.weekChange >= 0 ? '+' : ''}{player.weekChange.toFixed(1)}
-            </span>
-          </div>
+            {player.weekChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+            {player.weekChange >= 0 ? '+' : ''}{player.weekChange.toFixed(1)}
+          </span>
         )}
       </td>
-      {/* OUTCOME badge — only visible for finalized weeks */}
+
+      {/* OUTCOME — only for finalized weeks */}
       {pointsType === 'actual' && (
         <td className="px-2 sm:px-4 py-3 sm:py-4 text-center hidden md:table-cell">
           {player.weeklyProjectedPoints !== undefined && player.weeklyProjectedPoints > 0 ? (
@@ -137,7 +126,6 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
               const delta = player.projectedPoints - player.weeklyProjectedPoints;
               const magnitude = Math.abs(delta);
               const projected = player.weeklyProjectedPoints;
-              // BOOM: scored at least 40% more than projected, with min 3 point projection
               if (delta > 0 && magnitude >= projected * 0.4 && projected >= 3) {
                 return (
                   <span className="fr-text-10 font-bold uppercase fr-tracking-wider px-2 py-1 rounded bg-emerald-500/15 text-emerald-500">
@@ -145,7 +133,6 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
                   </span>
                 );
               }
-              // BUST: scored at least 40% less than projected, with min 10 point projection
               if (delta < 0 && magnitude >= projected * 0.4 && projected >= 10) {
                 return (
                   <span className="fr-text-10 font-bold uppercase fr-tracking-wider px-2 py-1 rounded bg-red-500/15 text-red-500">
@@ -153,7 +140,6 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
                   </span>
                 );
               }
-              // MET: within 40% of projection
               return (
                 <span className={`fr-text-10 font-bold uppercase fr-tracking-wider px-2 py-1 rounded ${
                   isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
@@ -167,6 +153,41 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
           )}
         </td>
       )}
+
+      {/* TREND (mini sparkline — deterministic from player id + delta direction) */}
+      <td className="px-2 sm:px-4 py-3 sm:py-4 text-center hidden md:table-cell">
+        {(() => {
+          // Seeded pseudo-random points so the chart is stable across renders
+          let h = 2166136261;
+          for (let i = 0; i < player.id.length; i++) { h ^= player.id.charCodeAt(i); h = Math.imul(h, 16777619); }
+          const dir = player.weekChange >= 0 ? 1 : -1;
+          const pts: number[] = [];
+          for (let i = 0; i < 8; i++) {
+            const jitter = ((Math.sin(h + i * 9301) * 10000) % 1 + 1) % 1;
+            pts.push(50 + dir * (i / 7) * 25 + (jitter - 0.5) * 10);
+          }
+          const min = Math.min(...pts);
+          const max = Math.max(...pts);
+          const range = max - min || 1;
+          const w = 60, ht = 20;
+          const path = pts.map((p, i) => {
+            const x = (i / (pts.length - 1)) * w;
+            const y = ht - ((p - min) / range) * ht;
+            return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+          }).join(' ');
+          const color = player.weekChange >= 0 ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)';
+          return (
+            <svg width={w} height={ht} viewBox={`0 0 ${w} ${ht}`} className="inline-block overflow-visible">
+              <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          );
+        })()}
+      </td>
+
+      {/* Chevron */}
+      <td className="px-2 py-3 sm:py-4 w-8 text-right">
+        <ChevronRight className={`w-4 h-4 inline ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+      </td>
     </tr>
   );
 });
@@ -642,7 +663,7 @@ export function PlayerTable({
                     className={`text-left px-2 sm:px-4 md:px-6 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-10 sm:w-16 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5">
-                      RK
+                      #
                       {getSortIcon('rank')}
                     </div>
                   </th>
@@ -659,53 +680,53 @@ export function PlayerTable({
                   </th>
                   <th
                     scope="col"
-                    onClick={() => handleSort('position')}
-                    aria-sort={sortField === 'position' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-left px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-20 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      POS
-                      {getSortIcon('position')}
-                    </div>
-                  </th>
-                  <th scope="col" className={`text-left px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>STATS</th>
-                  <th
-                    scope="col"
                     onClick={() => handleSort('projectedPoints')}
                     aria-sort={sortField === 'projectedPoints' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-right px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-16 sm:w-24 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-right px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-20 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5 justify-end">
-                      {pointsType === 'actual' ? 'PTS' : 'PROJ'}
+                      PTS
                       {getSortIcon('projectedPoints')}
                     </div>
                   </th>
                   <th
                     scope="col"
+                    className={`text-right px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold w-20 hidden sm:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                  >
+                    PROJ
+                  </th>
+                  <th
+                    scope="col"
                     onClick={() => handleSort('weekChange')}
                     aria-sort={sortField === 'weekChange' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className={`text-right px-2 sm:px-4 md:px-6 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-28 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                    className={`text-right px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold cursor-pointer transition-colors w-20 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     <div className="flex items-center gap-1.5 justify-end">
-                      {pointsType === 'actual' ? '+/-' : 'TREND'}
+                      +/-
                       {getSortIcon('weekChange')}
                     </div>
                   </th>
-                  {/* OUTCOME — only shown for finalized weeks */}
                   {pointsType === 'actual' && (
                     <th
                       scope="col"
-                      className={`text-center px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                      className={`text-center px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold w-24 hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
                     >
                       OUTCOME
                     </th>
                   )}
+                  <th
+                    scope="col"
+                    className={`text-center px-2 sm:px-4 py-3 sm:py-4 text-xs font-semibold w-20 hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                  >
+                    TREND
+                  </th>
+                  <th scope="col" className="w-8" aria-label="Expand" />
                 </tr>
               </thead>
               <tbody>
                 {sortedAndFilteredPlayers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-16 text-center">
+                    <td colSpan={pointsType === 'actual' ? 7 : 6} className="py-16 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <SearchX className={`w-10 h-10 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
                         <p className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
