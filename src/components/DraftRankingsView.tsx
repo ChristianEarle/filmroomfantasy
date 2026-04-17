@@ -206,17 +206,6 @@ function formatMovement(n: number): { text: string; className: string } {
   return { text: `↓ ${Math.abs(n)}`, className: 'text-red-500' };
 }
 
-function getInitials(name: string): string {
-  if (!name || !name.trim()) return '?';
-  return name
-    .trim()
-    .split(' ')
-    .filter(Boolean)
-    .map(n => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-}
 
 // ── Component ───────────────────────────────────────────────────────
 
@@ -530,7 +519,6 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
             isDarkMode ? 'bg-slate-900/80 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-500'
           }`}>
             <span className="w-8 text-center">#</span>
-            <span style={{ width: '40px' }} />
             <span className="flex-1">Player</span>
             <span className="text-right" style={{ width: '80px' }}>Proj Pts</span>
             <span className="text-right" style={{ width: '60px' }}>ADP</span>
@@ -697,15 +685,6 @@ function PlayerRow({
           {ranking.overallRank}
         </span>
 
-        {/* Avatar — initials only, no headshot */}
-        <div
-          className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold tracking-wide ${
-            isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-100 text-slate-600 border border-slate-200'
-          }`}
-          onClick={e => { e.stopPropagation(); onPlayerClick(); }}
-        >
-          {getInitials(p.name)}
-        </div>
 
         {/* Name & Position */}
         <div className="flex-1 min-w-0" onClick={e => { e.stopPropagation(); onPlayerClick(); }}>
