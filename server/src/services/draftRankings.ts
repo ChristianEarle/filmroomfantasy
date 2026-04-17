@@ -33,30 +33,80 @@ const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 64000;
 const ANTHROPIC_BATCH_URL = 'https://api.anthropic.com/v1/messages/batches';
 
-// ── Sleeper ADP ─────────────────────────────────────────────────────
+// ── MyFantasyLeague ADP ─────────────────────────────────────────────
+// MFL exposes real community-draft ADP (averagePick from recent drafts) for
+// both redraft (IS_KEEPER=N) and dynasty rookie drafts (IS_KEEPER=R). Their
+// catalog uses MFL-specific player ids, so we fetch the player list too and
+// key the resulting ADP map by normalized name for cross-feed matching.
 
-async function fetchSleeperADP(
-  _scoringFormat: 'ppr' | 'half-ppr' | 'standard',
+/**
+ * Normalize a player name for cross-feed matching. Strips punctuation and
+ * generational suffixes (Jr./III/etc.) that vary between sources, so
+ * "A.J. Brown" matches "AJ Brown", and "Kenneth Walker III" matches
+ * "Kenneth Walker".
+ */
+function normalizePlayerName(name: string): string {
+  return name
+    .toLowerCase()
+    // Strip common punctuation (periods, apostrophes, hyphens, quotes).
+    .replace(/[.'`’‘"“”\-]/g, '')
+    // Drop generational suffixes.
+    .replace(/\s+(jr|sr|ii|iii|iv|v)\.?$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+type KeeperType = 'N' | 'R'; // N = redraft, R = rookie-only
+
+async function fetchMFLADP(
+  year: number,
+  scoringFormat: 'ppr' | 'half-ppr' | 'standard',
+  keeperType: KeeperType,
 ): Promise<Map<string, number>> {
-  // Sleeper's trending-add endpoint is the most reliable free proxy for ADP.
-  // The public Sleeper ADP endpoint is gated; this gives us a good enough
-  // ordinal ranking of "who everyone is drafting first" to feed the model.
-  const url = `https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=720&limit=200`;
+  const isPpr = scoringFormat === 'ppr' ? '1' : scoringFormat === 'half-ppr' ? '0.5' : '0';
+  const adpUrl = `https://api.myfantasyleague.com/${year}/export?TYPE=adp&IS_PPR=${isPpr}&IS_KEEPER=${keeperType}&IS_MOCK=-1&JSON=1`;
+  const playersUrl = `https://api.myfantasyleague.com/${year}/export?TYPE=players&DETAILS=0&JSON=1`;
 
   try {
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.warn(`[draftRankings] Sleeper trending API returned ${res.status}`);
+    const [adpRes, playersRes] = await Promise.all([
+      fetch(adpUrl),
+      fetch(playersUrl),
+    ]);
+
+    if (!adpRes.ok || !playersRes.ok) {
+      console.warn(`[draftRankings] MFL ADP ${adpRes.status} / players ${playersRes.status}`);
       return new Map();
     }
-    const data = (await res.json()) as { player_id: string; count: number }[];
-    const adpMap = new Map<string, number>();
-    data.forEach((entry, idx) => {
-      adpMap.set(entry.player_id, idx + 1);
-    });
-    return adpMap;
+
+    const adpData = (await adpRes.json()) as {
+      adp?: { player?: Array<{ id: string; averagePick: string }> };
+    };
+    const playersData = (await playersRes.json()) as {
+      players?: { player?: Array<{ id: string; name: string; position: string }> };
+    };
+
+    // MFL returns player names as "Last, First" — flip to "First Last".
+    const idToName = new Map<string, string>();
+    for (const p of playersData.players?.player ?? []) {
+      const match = p.name.match(/^(.+?),\s*(.+)$/);
+      const fullName = match ? `${match[2]} ${match[1]}` : p.name;
+      idToName.set(p.id, fullName);
+    }
+
+    const result = new Map<string, number>();
+    for (const entry of adpData.adp?.player ?? []) {
+      const name = idToName.get(entry.id);
+      if (!name) continue;
+      const adp = parseFloat(entry.averagePick);
+      if (Number.isFinite(adp)) {
+        result.set(normalizePlayerName(name), adp);
+      }
+    }
+
+    console.log(`[draftRankings] MFL ADP (${scoringFormat}, keeper=${keeperType}): ${result.size} entries`);
+    return result;
   } catch (err) {
-    console.error('[draftRankings] Failed to fetch Sleeper ADP:', err);
+    console.error('[draftRankings] MFL ADP fetch failed:', err);
     return new Map();
   }
 }
@@ -85,7 +135,7 @@ async function buildPlayerContexts(
   rankingType: 'redraft' | 'dynasty_rookie',
   scoringFormat: 'ppr' | 'half-ppr' | 'standard',
   seasonYear: number,
-  sleeperADP: Map<string, number>,
+  adpByNormalizedName: Map<string, number>,
 ): Promise<PlayerContext[]> {
   const posFilter = ['QB', 'RB', 'WR', 'TE'];
   const allPlayers = await db.query.nflPlayers.findMany({
@@ -148,7 +198,7 @@ async function buildPlayerContexts(
     lastSeasonPoints: statsByPlayer.get(p.id)?.totalPoints ?? null,
     lastSeasonGames: statsByPlayer.get(p.id)?.gamesPlayed ?? null,
     recentNews: newsByPlayer.get(p.id) || [],
-    adp: p.externalId ? (sleeperADP.get(p.externalId) ?? null) : null,
+    adp: adpByNormalizedName.get(normalizePlayerName(p.name)) ?? null,
   }));
 }
 
@@ -312,16 +362,16 @@ export async function submitDraftRankingsBatch(
     return { ok: false, error: 'No variants to submit' };
   }
 
-  // Fetch Sleeper ADP once (only needed by redraft variants, but reusing across
-  // formats is fine; the same ADP proxy powers all scoring formats).
-  const needsRedraft = variants.some(v => v.rankingType === 'redraft');
-  const sleeperADP = needsRedraft ? await fetchSleeperADP('ppr') : new Map<string, number>();
-
   const requests: Array<{ custom_id: string; params: unknown }> = [];
   const metas: BatchVariantMeta[] = [];
 
   for (const v of variants) {
-    const contexts = await buildPlayerContexts(db, v.rankingType, v.scoringFormat, seasonYear, sleeperADP);
+    // Pull real MFL ADP per variant: IS_KEEPER=R for dynasty rookie drafts,
+    // IS_KEEPER=N for redraft. The scoring flag (IS_PPR) drives which pricing
+    // format the community-drafted ADP reflects.
+    const keeperType: KeeperType = v.rankingType === 'dynasty_rookie' ? 'R' : 'N';
+    const adp = await fetchMFLADP(seasonYear, v.scoringFormat, keeperType);
+    const contexts = await buildPlayerContexts(db, v.rankingType, v.scoringFormat, seasonYear, adp);
     if (contexts.length === 0) {
       console.warn(`[draftRankings] No players found for ${v.rankingType}/${v.scoringFormat}; skipping`);
       continue;
@@ -654,14 +704,13 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
     return { ok: false, count: 0, error: 'AI returned empty rankings array' };
   }
 
-  // Need the player contexts again to resolve name → player id and ADP.
-  // Cheap: a single table scan plus the per-variant stats. Sleeper ADP is
-  // re-fetched too — harmless, tiny call, and it's fresh for adpDelta.
-  const sleeperADP = meta.rankingType === 'redraft'
-    ? await fetchSleeperADP(meta.scoringFormat)
-    : new Map<string, number>();
+  // Re-fetch the MFL ADP for this variant (tiny call) so adpDelta reflects
+  // current ADP at write time, not whatever was in effect when the batch
+  // was submitted hours ago.
+  const keeperType: KeeperType = meta.rankingType === 'dynasty_rookie' ? 'R' : 'N';
+  const adp = await fetchMFLADP(seasonYear, meta.scoringFormat, keeperType);
   const contexts = await buildPlayerContexts(
-    db, meta.rankingType, meta.scoringFormat, seasonYear, sleeperADP,
+    db, meta.rankingType, meta.scoringFormat, seasonYear, adp,
   );
 
   const playerByName = new Map<string, PlayerContext>();
