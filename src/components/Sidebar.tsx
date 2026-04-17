@@ -139,7 +139,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
       {/* Mobile backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          className="fixed inset-0 bg-black/50 z-mobile-backdrop md:hidden"
           onClick={onMobileClose}
         />
       )}

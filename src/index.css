@@ -2515,7 +2515,8 @@ html {
   top: 0;
   bottom: 0;
   left: 0;
-  z-index: 50;
+  /* Above the cookie consent banner (z-[70]) so it covers it on mobile. */
+  z-index: 80;
 }
 
 /* Mobile-only element (e.g., hamburger menu button) */
@@ -2526,4 +2527,25 @@ html {
   .mobile-only {
     display: none;
   }
+}
+
+/* Cookie banner: full width on mobile, offset by sidebar (w-64 = 16rem) on md+ */
+.cookie-banner-sidebar-offset {
+  left: 0;
+}
+@media (min-width: 768px) {
+  .cookie-banner-sidebar-offset {
+    left: 16rem;
+  }
+}
+
+/* Explicit z-index layers for the cookie banner, mobile backdrop, and the
+   mobile-open sidebar. Only .z-50 is present in the compiled Tailwind bundle,
+   so we define the other tiers here to keep stacking predictable:
+     banner   (70) < backdrop (75) < mobile-open sidebar (80). */
+.z-cookie-banner {
+  z-index: 70;
+}
+.z-mobile-backdrop {
+  z-index: 75;
 }
