@@ -288,12 +288,20 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-espn-news');
     await callSync('/api/admin/sync-rotowire-news');
   } else if (event.cron === '0 13 * * 1') {
-    // Weekly Monday 8 AM EST: regenerate AI draft rankings
-    // Generate PPR + Half PPR for both redraft and dynasty rookie
+    // Weekly Monday 8 AM EST (13:00 UTC): submit an Anthropic batch per
+    // variant. Each single-variant submission runs in its own worker
+    // invocation so it stays within CPU limits (building player contexts +
+    // a 20k-token prompt for 4 variants in one shot exceeds the 30s CPU
+    // cap). Batch pricing still applies (50% off) regardless of variant
+    // count per batch.
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'half-ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'half-ppr' });
+  } else if (event.cron === '15 * * * *') {
+    // Hourly: drain any ranking batches that have ended. Cheap no-op when
+    // there are no pending batches.
+    await callSync('/api/admin/process-ranking-batches');
   }
 }
 

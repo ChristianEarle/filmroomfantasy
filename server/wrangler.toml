@@ -70,7 +70,8 @@ crons = [
   "0 12 * * *",   # Daily 6 AM CT (12 PM UTC): sync players, injury news, games
   "0 */4 * * *",  # Every 4 hours: sync stats and projections
   "0 */6 * * *",  # Every 6 hours: sync RSS sports news
-  "0 13 * * 1",   # Weekly Monday 8 AM EST (13:00 UTC): regenerate AI draft rankings
+  "0 13 * * 1",   # Weekly Monday 8 AM EST (13:00 UTC): submit draft rankings batch
+  "15 * * * *",   # Hourly at :15: process any completed ranking batches
 ]
 
 # Local development

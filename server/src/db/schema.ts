@@ -719,6 +719,30 @@ export type DraftRanking = typeof draftRankings.$inferSelect;
 export type NewDraftRanking = typeof draftRankings.$inferInsert;
 
 // ============================================
+// RANKING BATCH JOBS
+// ============================================
+// Tracks Anthropic Batch API submissions for draft rankings. Each row
+// represents one batch containing 1..N variant requests. A poll cron
+// picks up non-terminal rows and writes results into draft_rankings
+// once the batch completes.
+
+export const rankingBatchJobs = sqliteTable('ranking_batch_jobs', {
+  id: text('id').primaryKey(),
+  anthropicBatchId: text('anthropic_batch_id').notNull().unique(),
+  status: text('status').notNull(), // 'submitted' | 'in_progress' | 'completed' | 'failed'
+  seasonYear: integer('season_year').notNull(),
+  variants: text('variants').notNull(), // JSON: { customId, rankingType, scoringFormat, superflex }[]
+  submittedAt: integer('submitted_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  errorMessage: text('error_message'),
+}, (table) => ({
+  statusIdx: index('idx_ranking_batch_jobs_status').on(table.status),
+}));
+
+export type RankingBatchJob = typeof rankingBatchJobs.$inferSelect;
+export type NewRankingBatchJob = typeof rankingBatchJobs.$inferInsert;
+
+// ============================================
 // TYPE EXPORTS
 // ============================================
 

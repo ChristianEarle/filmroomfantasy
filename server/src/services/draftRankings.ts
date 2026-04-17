@@ -1,43 +1,46 @@
 /**
- * draftRankings — generates AI-powered draft rankings.
+ * draftRankings — generates AI-powered draft rankings via the Anthropic Batch API.
  *
- * Two modes:
- *  1. Redraft: Pulls Sleeper ADP as a baseline, enriches with player context
- *     (age, stats, injury, depth chart, news), and asks Claude to generate
- *     tiers, rationale, and value flags where it disagrees with ADP.
- *  2. Dynasty Rookie: Filters to rookies (yearsExp === 0), and asks Claude
- *     to generate full rankings from player context since rookies lack
- *     extensive fantasy history.
+ * Why batch: these rankings are a pre-computed cron job, not a real-time request.
+ * The Batch API is 50% cheaper and lifts the 120s sync-fetch ceiling — ranking
+ * generation with full analysis for 200 players can legitimately take several
+ * minutes end-to-end.
  *
- * Rankings are pre-computed and stored in the draft_rankings table.
- * They are NOT generated per-request — an admin trigger or cron job
- * calls generateDraftRankings() and results are served from the DB.
+ * Flow:
+ *  1. Weekly cron calls submitDraftRankingsBatch({ variants: [...] }).
+ *  2. That builds one Claude request per variant (redraft-ppr, redraft-half-ppr,
+ *     dynasty-rookie-ppr, dynasty-rookie-half-ppr), wraps them in a single
+ *     POST /v1/messages/batches submission, records a row in ranking_batch_jobs,
+ *     and returns immediately.
+ *  3. An hourly cron calls processPendingBatches(), which polls
+ *     GET /v1/messages/batches/:id for each non-terminal row. When a batch ends,
+ *     it streams the .jsonl results, parses each variant's rankings, and writes
+ *     them into draft_rankings.
  */
 
-import { eq, and, desc, inArray, gte } from 'drizzle-orm';
+import { eq, and, desc, inArray, gte, or } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
+const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+// 200 redraft players × ~900 tokens each (rank + tier + projected points +
+// 1-sentence rationale + 3-5 sentence analysis + JSON scaffolding) easily
+// exceeds 32k, which silently truncates the model output mid-array. Sonnet
+// 4.6 supports up to 64k output tokens; use the full ceiling.
+const MAX_TOKENS = 64000;
+const ANTHROPIC_BATCH_URL = 'https://api.anthropic.com/v1/messages/batches';
+
 // ── Sleeper ADP ─────────────────────────────────────────────────────
 
-interface SleeperADPEntry {
-  player_id: string;
-  adp: number;
-}
-
-/**
- * Fetch ADP data from Sleeper's undocumented ADP endpoint.
- * Returns a map of sleeper_player_id → adp value.
- */
 async function fetchSleeperADP(
-  scoringFormat: 'ppr' | 'half-ppr' | 'standard',
+  _scoringFormat: 'ppr' | 'half-ppr' | 'standard',
 ): Promise<Map<string, number>> {
-  // Sleeper ADP endpoint: players/nfl/trending/add (past 24h activity as proxy)
-  // More reliable: use their draft ADP endpoint
-  const scoringParam = scoringFormat === 'ppr' ? 'ppr' : scoringFormat === 'half-ppr' ? 'half_ppr' : 'std';
+  // Sleeper's trending-add endpoint is the most reliable free proxy for ADP.
+  // The public Sleeper ADP endpoint is gated; this gives us a good enough
+  // ordinal ranking of "who everyone is drafting first" to feed the model.
   const url = `https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=720&limit=200`;
 
   try {
@@ -47,7 +50,6 @@ async function fetchSleeperADP(
       return new Map();
     }
     const data = (await res.json()) as { player_id: string; count: number }[];
-    // Use the ranking order as a rough ADP proxy (most-added = highest demand)
     const adpMap = new Map<string, number>();
     data.forEach((entry, idx) => {
       adpMap.set(entry.player_id, idx + 1);
@@ -85,18 +87,15 @@ async function buildPlayerContexts(
   seasonYear: number,
   sleeperADP: Map<string, number>,
 ): Promise<PlayerContext[]> {
-  // Fetch players
   const posFilter = ['QB', 'RB', 'WR', 'TE'];
   const allPlayers = await db.query.nflPlayers.findMany({
     where: inArray(schema.nflPlayers.position, posFilter),
   });
 
-  // Filter for dynasty rookie: only players with 0 years experience
   let players = rankingType === 'dynasty_rookie'
     ? allPlayers.filter(p => p.yearsExp === 0)
     : allPlayers.filter(p => p.status !== 'inactive' && p.team !== 'FA');
 
-  // Get last season stats for each player
   const prevSeason = seasonYear - 1;
   const pointsCol = scoringFormat === 'ppr'
     ? 'fantasyPointsPPR'
@@ -108,7 +107,6 @@ async function buildPlayerContexts(
     where: eq(schema.playerWeeklyStats.seasonYear, prevSeason),
   });
 
-  // Group stats by player
   const statsByPlayer = new Map<string, { totalPoints: number; gamesPlayed: number }>();
   for (const row of statsRows) {
     const pts = (row as any)[pointsCol] || 0;
@@ -119,7 +117,6 @@ async function buildPlayerContexts(
     statsByPlayer.set(row.playerId, entry);
   }
 
-  // Get recent news (last 30 days, capped to 1000 rows to avoid memory blowup)
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const newsRows = await db.query.playerNews.findMany({
@@ -131,7 +128,7 @@ async function buildPlayerContexts(
   const newsByPlayer = new Map<string, string[]>();
   for (const n of newsRows) {
     const list = newsByPlayer.get(n.playerId) || [];
-    if (list.length < 3) { // max 3 news items per player
+    if (list.length < 3) {
       list.push(n.aiSummary || n.headline);
     }
     newsByPlayer.set(n.playerId, list);
@@ -155,7 +152,7 @@ async function buildPlayerContexts(
   }));
 }
 
-// ── Claude prompt builders ──────────────────────────────────────────
+// ── Prompt builders ─────────────────────────────────────────────────
 
 function buildRedraftPrompt(
   players: PlayerContext[],
@@ -165,7 +162,7 @@ function buildRedraftPrompt(
   const playerLines = players
     .filter(p => p.lastSeasonPoints !== null || p.adp !== null)
     .sort((a, b) => (a.adp ?? 999) - (b.adp ?? 999))
-    .slice(0, 250) // cap to keep within token limits
+    .slice(0, 250)
     .map(p => {
       const ppg = p.lastSeasonPoints && p.lastSeasonGames
         ? (p.lastSeasonPoints / p.lastSeasonGames).toFixed(1)
@@ -221,7 +218,7 @@ function buildDynastyRookiePrompt(
   superflex: boolean,
 ): string {
   const playerLines = players
-    .slice(0, 100) // rookies list is smaller
+    .slice(0, 100)
     .map(p => {
       const newsStr = p.recentNews.length > 0 ? ` | News: ${p.recentNews.join('; ')}` : '';
       return `${p.name} (${p.position}, ${p.team}) | Age: ${p.age ?? '?'} | Status: ${p.status}${p.injuryNote ? ` (${p.injuryNote})` : ''} | Depth: ${p.depthChartOrder ?? '?'}${newsStr}`;
@@ -268,105 +265,373 @@ IMPORTANT:
 - Landing spot matters MORE than college tape for year-1 fantasy value`;
 }
 
-// ── Core generation function ────────────────────────────────────────
+// ── Batch submission ────────────────────────────────────────────────
 
-export interface GenerateRankingsArgs {
-  db: DB;
-  anthropicKey: string;
+export interface RankingVariant {
   rankingType: 'redraft' | 'dynasty_rookie';
   scoringFormat: 'ppr' | 'half-ppr' | 'standard';
   superflex: boolean;
+}
+
+export interface SubmitBatchArgs {
+  db: DB;
+  anthropicKey: string;
+  variants: RankingVariant[];
   seasonYear: number;
 }
 
-export interface GenerateRankingsResult {
+export interface SubmitBatchResult {
   ok: boolean;
-  count: number;
+  batchId?: string;
+  jobId?: string;
   error?: string;
 }
 
-export async function generateDraftRankings(
-  args: GenerateRankingsArgs,
-): Promise<GenerateRankingsResult> {
-  try {
-    return await generateDraftRankingsInner(args);
-  } catch (err) {
-    console.error('[draftRankings] unexpected error:', err);
-    return {
-      ok: false,
-      count: 0,
-      error: err instanceof Error ? `${err.message}` : 'Unknown error',
-    };
-  }
+interface BatchVariantMeta {
+  customId: string;
+  rankingType: 'redraft' | 'dynasty_rookie';
+  scoringFormat: 'ppr' | 'half-ppr' | 'standard';
+  superflex: boolean;
 }
 
-async function generateDraftRankingsInner(
-  args: GenerateRankingsArgs,
-): Promise<GenerateRankingsResult> {
-  const { db, anthropicKey, rankingType, scoringFormat, superflex, seasonYear } = args;
+function variantCustomId(v: RankingVariant): string {
+  return `${v.rankingType}-${v.scoringFormat}-${v.superflex ? 'sf' : 'std'}`;
+}
 
-  // 1. Fetch ADP data (for redraft only)
-  const sleeperADP = rankingType === 'redraft'
-    ? await fetchSleeperADP(scoringFormat)
-    : new Map<string, number>();
+/**
+ * Build prompts for every variant and submit them as a single Anthropic batch.
+ * Returns immediately with the batch id; use processPendingBatches() to ingest
+ * results once the batch ends.
+ */
+export async function submitDraftRankingsBatch(
+  args: SubmitBatchArgs,
+): Promise<SubmitBatchResult> {
+  const { db, anthropicKey, variants, seasonYear } = args;
 
-  // 2. Build player contexts
-  const playerContexts = await buildPlayerContexts(
-    db, rankingType, scoringFormat, seasonYear, sleeperADP,
-  );
-
-  if (playerContexts.length === 0) {
-    return { ok: false, count: 0, error: `No players found for ${rankingType}` };
+  if (variants.length === 0) {
+    return { ok: false, error: 'No variants to submit' };
   }
 
-  // 3. Build prompt and call Claude
-  const prompt = rankingType === 'redraft'
-    ? buildRedraftPrompt(playerContexts, scoringFormat, superflex)
-    : buildDynastyRookiePrompt(playerContexts, scoringFormat, superflex);
+  // Fetch Sleeper ADP once (only needed by redraft variants, but reusing across
+  // formats is fine; the same ADP proxy powers all scoring formats).
+  const needsRedraft = variants.some(v => v.rankingType === 'redraft');
+  const sleeperADP = needsRedraft ? await fetchSleeperADP('ppr') : new Map<string, number>();
+
+  const requests: Array<{ custom_id: string; params: unknown }> = [];
+  const metas: BatchVariantMeta[] = [];
+
+  for (const v of variants) {
+    const contexts = await buildPlayerContexts(db, v.rankingType, v.scoringFormat, seasonYear, sleeperADP);
+    if (contexts.length === 0) {
+      console.warn(`[draftRankings] No players found for ${v.rankingType}/${v.scoringFormat}; skipping`);
+      continue;
+    }
+    const prompt = v.rankingType === 'redraft'
+      ? buildRedraftPrompt(contexts, v.scoringFormat, v.superflex)
+      : buildDynastyRookiePrompt(contexts, v.scoringFormat, v.superflex);
+
+    const customId = variantCustomId(v);
+    requests.push({
+      custom_id: customId,
+      params: {
+        model: ANTHROPIC_MODEL,
+        max_tokens: MAX_TOKENS,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+      },
+    });
+    metas.push({
+      customId,
+      rankingType: v.rankingType,
+      scoringFormat: v.scoringFormat,
+      superflex: v.superflex,
+    });
+  }
+
+  if (requests.length === 0) {
+    return { ok: false, error: 'All variants had zero eligible players' };
+  }
 
   let res: Response;
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch(ANTHROPIC_BATCH_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': anthropicKey,
         'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'message-batches-2024-09-24',
       },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 16000,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-      }),
-      signal: AbortSignal.timeout(120000), // 2 min timeout for large ranking generation
+      body: JSON.stringify({ requests }),
     });
   } catch (err) {
-    console.error('[draftRankings] Claude API fetch failed:', err);
-    return { ok: false, count: 0, error: 'AI ranking generation network failure' };
+    console.error('[draftRankings] Batch submit network error:', err);
+    return { ok: false, error: 'Batch submission network failure' };
   }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    console.error('[draftRankings] Claude API error:', res.status, errText);
-    return { ok: false, count: 0, error: `AI API error: ${res.status}` };
+    console.error('[draftRankings] Batch submit error:', res.status, errText);
+    return { ok: false, error: `Batch submission failed: ${res.status}` };
   }
 
-  let data: { content?: { type: string; text?: string }[] };
+  let batch: { id: string; processing_status?: string };
   try {
-    data = (await res.json()) as { content?: { type: string; text?: string }[] };
+    batch = (await res.json()) as { id: string; processing_status?: string };
   } catch {
-    return { ok: false, count: 0, error: 'AI returned malformed response' };
+    return { ok: false, error: 'Batch API returned malformed response' };
   }
 
-  const textBlock = data.content?.find(b => b.type === 'text');
-  const rawText = textBlock?.text?.trim();
-  if (!rawText) {
-    return { ok: false, count: 0, error: 'AI returned empty response' };
+  if (!batch.id) {
+    return { ok: false, error: 'Batch API returned no id' };
   }
 
-  // Parse JSON (strip markdown fences if present)
-  const jsonStr = rawText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+  const jobId = generateId();
+  await db.insert(schema.rankingBatchJobs).values({
+    id: jobId,
+    anthropicBatchId: batch.id,
+    status: 'submitted',
+    seasonYear,
+    variants: JSON.stringify(metas),
+    submittedAt: new Date(),
+  });
+
+  console.log(`[draftRankings] Submitted batch ${batch.id} with ${requests.length} variants`);
+  return { ok: true, batchId: batch.id, jobId };
+}
+
+// ── Batch processing ────────────────────────────────────────────────
+
+interface BatchStatus {
+  id: string;
+  processing_status?: string; // 'in_progress' | 'canceling' | 'ended'
+  results_url?: string | null;
+  ended_at?: string | null;
+}
+
+interface BatchResultLine {
+  custom_id: string;
+  result:
+    | { type: 'succeeded'; message: { content: Array<{ type: string; text?: string }> } }
+    | { type: 'errored'; error: { message?: string } }
+    | { type: 'canceled' | 'expired' };
+}
+
+export interface ProcessBatchesResult {
+  checked: number;
+  completedJobs: number;
+  failedJobs: number;
+  totalRankingsInserted: number;
+}
+
+export async function processPendingBatches(
+  db: DB,
+  anthropicKey: string,
+): Promise<ProcessBatchesResult> {
+  const pending = await db.query.rankingBatchJobs.findMany({
+    where: or(
+      eq(schema.rankingBatchJobs.status, 'submitted'),
+      eq(schema.rankingBatchJobs.status, 'in_progress'),
+    ),
+  });
+
+  let completedJobs = 0;
+  let failedJobs = 0;
+  let totalRankingsInserted = 0;
+
+  // Process at most one ENDED batch per invocation. Writing a variant
+  // rebuilds player contexts (a few hundred KB of string work) and runs a
+  // ~201-statement atomic D1 batch, which is heavy enough that draining
+  // multiple batches in one worker invocation trips the 30s CPU cap. Poll
+  // the rest cheaply (status check only) so the job-state row stays fresh,
+  // and pick them up on subsequent hourly ticks.
+  let processedOneEnded = false;
+
+  for (const job of pending) {
+    let statusRes: Response;
+    try {
+      statusRes = await fetch(`${ANTHROPIC_BATCH_URL}/${job.anthropicBatchId}`, {
+        headers: {
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'message-batches-2024-09-24',
+        },
+      });
+    } catch (err) {
+      console.error(`[draftRankings] Poll error for ${job.anthropicBatchId}:`, err);
+      continue;
+    }
+
+    if (!statusRes.ok) {
+      console.error(`[draftRankings] Poll ${job.anthropicBatchId} HTTP ${statusRes.status}`);
+      continue;
+    }
+
+    const status = (await statusRes.json()) as BatchStatus;
+
+    if (status.processing_status !== 'ended') {
+      // Still running; flip the row from submitted→in_progress for visibility.
+      if (job.status === 'submitted' && status.processing_status === 'in_progress') {
+        await db.update(schema.rankingBatchJobs)
+          .set({ status: 'in_progress' })
+          .where(eq(schema.rankingBatchJobs.id, job.id));
+      }
+      continue;
+    }
+
+    // Already processed one ended batch this invocation — skip heavy work and
+    // let the next hourly tick handle remaining ended batches.
+    if (processedOneEnded) {
+      continue;
+    }
+
+    if (!status.results_url) {
+      await db.update(schema.rankingBatchJobs)
+        .set({
+          status: 'failed',
+          completedAt: new Date(),
+          errorMessage: 'Batch ended but no results_url',
+        })
+        .where(eq(schema.rankingBatchJobs.id, job.id));
+      failedJobs += 1;
+      continue;
+    }
+
+    let resultsRes: Response;
+    try {
+      resultsRes = await fetch(status.results_url, {
+        headers: {
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'message-batches-2024-09-24',
+        },
+      });
+    } catch (err) {
+      console.error(`[draftRankings] Results fetch error:`, err);
+      continue;
+    }
+
+    if (!resultsRes.ok) {
+      console.error(`[draftRankings] Results ${job.anthropicBatchId} HTTP ${resultsRes.status}`);
+      continue;
+    }
+
+    const bodyText = await resultsRes.text();
+    const variantMetas = JSON.parse(job.variants) as BatchVariantMeta[];
+
+    let inserted = 0;
+    let jobErrored = false;
+
+    for (const rawLine of bodyText.split('\n')) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      let parsed: BatchResultLine;
+      try {
+        parsed = JSON.parse(line) as BatchResultLine;
+      } catch {
+        console.warn(`[draftRankings] Skipping unparseable line in ${job.anthropicBatchId}`);
+        continue;
+      }
+
+      const meta = variantMetas.find(m => m.customId === parsed.custom_id);
+      if (!meta) {
+        console.warn(`[draftRankings] Unknown custom_id ${parsed.custom_id}`);
+        continue;
+      }
+
+      if (parsed.result.type !== 'succeeded') {
+        console.error(`[draftRankings] Variant ${parsed.custom_id} ${parsed.result.type}`);
+        jobErrored = true;
+        continue;
+      }
+
+      const textBlock = parsed.result.message.content?.find(b => b.type === 'text');
+      const rawText = textBlock?.text?.trim();
+      if (!rawText) {
+        console.error(`[draftRankings] Variant ${parsed.custom_id} returned empty text`);
+        jobErrored = true;
+        continue;
+      }
+
+      const writeResult = await writeVariantRankings({
+        db,
+        anthropicKey,
+        meta,
+        rawText,
+        seasonYear: job.seasonYear,
+      });
+
+      if (!writeResult.ok) {
+        console.error(`[draftRankings] Failed to write ${parsed.custom_id}: ${writeResult.error}`);
+        jobErrored = true;
+        continue;
+      }
+      inserted += writeResult.count;
+    }
+
+    await db.update(schema.rankingBatchJobs)
+      .set({
+        status: jobErrored ? 'failed' : 'completed',
+        completedAt: new Date(),
+        errorMessage: jobErrored ? 'One or more variants failed to parse or write' : null,
+      })
+      .where(eq(schema.rankingBatchJobs.id, job.id));
+
+    if (jobErrored) failedJobs += 1;
+    else completedJobs += 1;
+    totalRankingsInserted += inserted;
+    processedOneEnded = true;
+
+    console.log(`[draftRankings] Batch ${job.anthropicBatchId} ${jobErrored ? 'partially failed' : 'completed'}; inserted ${inserted} rows`);
+  }
+
+  return {
+    checked: pending.length,
+    completedJobs,
+    failedJobs,
+    totalRankingsInserted,
+  };
+}
+
+interface WriteVariantArgs {
+  db: DB;
+  anthropicKey: string;
+  meta: BatchVariantMeta;
+  rawText: string;
+  seasonYear: number;
+}
+
+interface WriteVariantResult {
+  ok: boolean;
+  count: number;
+  error?: string;
+}
+
+async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVariantResult> {
+  const { db, meta, rawText, seasonYear } = args;
+
+  // Models sometimes wrap the JSON in ```json fences, add preamble text, hit
+  // their max_tokens ceiling mid-object, or all three. Start at the first '['
+  // to drop any preamble, then walk forward to find the last top-level '}'
+  // followed by ',' or ']' so we salvage every complete object even when the
+  // array was truncated.
+  const firstBracket = rawText.indexOf('[');
+  let jsonStr: string;
+  if (firstBracket < 0) {
+    jsonStr = rawText;
+  } else {
+    const body = rawText.slice(firstBracket);
+    const lastClosingBracket = body.lastIndexOf(']');
+    if (lastClosingBracket > 0) {
+      jsonStr = body.slice(0, lastClosingBracket + 1);
+    } else {
+      // Truncated mid-array: close at the last complete object boundary.
+      const lastObjectEnd = Math.max(body.lastIndexOf('},'), body.lastIndexOf('}\n'));
+      jsonStr = lastObjectEnd > 0 ? body.slice(0, lastObjectEnd + 1) + ']' : body;
+    }
+  }
+
   let rankings: Array<{
     name: string;
     position: string;
@@ -389,47 +654,49 @@ async function generateDraftRankingsInner(
     return { ok: false, count: 0, error: 'AI returned empty rankings array' };
   }
 
-  // 4. Match AI output back to player IDs
-  // Build name→player lookup (case-insensitive)
+  // Need the player contexts again to resolve name → player id and ADP.
+  // Cheap: a single table scan plus the per-variant stats. Sleeper ADP is
+  // re-fetched too — harmless, tiny call, and it's fresh for adpDelta.
+  const sleeperADP = meta.rankingType === 'redraft'
+    ? await fetchSleeperADP(meta.scoringFormat)
+    : new Map<string, number>();
+  const contexts = await buildPlayerContexts(
+    db, meta.rankingType, meta.scoringFormat, seasonYear, sleeperADP,
+  );
+
   const playerByName = new Map<string, PlayerContext>();
-  for (const p of playerContexts) {
+  for (const p of contexts) {
     playerByName.set(p.name.toLowerCase(), p);
   }
 
   const now = new Date();
-  const superflexInt = superflex ? 1 : 0;
 
-  // 5. Delete old rankings for this combination
-  await db.delete(schema.draftRankings).where(
-    and(
-      eq(schema.draftRankings.rankingType, rankingType),
-      eq(schema.draftRankings.scoringFormat, scoringFormat),
-      eq(schema.draftRankings.superflex, superflex),
-      eq(schema.draftRankings.seasonYear, seasonYear),
-    ),
-  );
-
-  // 6. Insert new rankings in batches
-  const BATCH_SIZE = 50;
-  let inserted = 0;
-
+  // Dedupe by playerId — occasionally the model lists the same player twice
+  // or two distinct name strings collapse to the same DB player after
+  // lowercasing (e.g. "Patrick Mahomes II" vs "Patrick Mahomes"). Keep the
+  // first occurrence (best rank) to respect the unique index on the table.
+  const seenPlayerIds = new Set<string>();
   const rows: schema.NewDraftRanking[] = [];
   for (const r of rankings) {
     const player = playerByName.get(r.name?.toLowerCase());
     if (!player) {
-      console.warn(`[draftRankings] Could not match AI player "${r.name}" to DB`);
+      console.warn(`[draftRankings] Could not match AI player "${r.name}" (${meta.customId})`);
       continue;
     }
-
+    if (seenPlayerIds.has(player.id)) {
+      console.warn(`[draftRankings] Duplicate player "${r.name}" in ${meta.customId}; skipping lower rank`);
+      continue;
+    }
+    seenPlayerIds.add(player.id);
     rows.push({
       id: generateId(),
       playerId: player.id,
-      rankingType,
-      scoringFormat,
-      superflex,
+      rankingType: meta.rankingType,
+      scoringFormat: meta.scoringFormat,
+      superflex: meta.superflex,
       overallRank: r.overallRank,
       positionRank: r.positionRank,
-      tier: Math.min(Math.max(r.tier, 1), 8), // clamp 1-8
+      tier: Math.min(Math.max(r.tier, 1), 8),
       projectedPoints: r.projectedPoints,
       adp: player.adp,
       adpDelta: player.adp != null ? r.overallRank - player.adp : null,
@@ -440,12 +707,45 @@ async function generateDraftRankingsInner(
     });
   }
 
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    await db.insert(schema.draftRankings).values(batch);
-    inserted += batch.length;
+  // Atomically wipe old rows + insert new rows in one D1 batch. Either every
+  // statement lands or none do — no partial-list window where users see
+  // rank 1-50 of a 200-row variant because the worker died mid-loop.
+  const deleteStmt = db.delete(schema.draftRankings).where(
+    and(
+      eq(schema.draftRankings.rankingType, meta.rankingType),
+      eq(schema.draftRankings.scoringFormat, meta.scoringFormat),
+      eq(schema.draftRankings.superflex, meta.superflex),
+      eq(schema.draftRankings.seasonYear, seasonYear),
+    ),
+  );
+
+  // D1 enforces a tight bound on SQL variables (~100 total). With 16 columns
+  // per draft_rankings row, even a 5-row multi-insert hits the ceiling once
+  // combined with DELETE bindings in the same batch — so insert one row per
+  // statement. The batch is still a single atomic unit; ~201 statements per
+  // variant is well within D1's batch-size limit.
+  const statements: unknown[] = [deleteStmt];
+  for (const row of rows) {
+    statements.push(db.insert(schema.draftRankings).values(row));
   }
 
-  console.log(`[draftRankings] Generated ${inserted} ${rankingType} rankings (${scoringFormat}, sf=${superflex})`);
-  return { ok: true, count: inserted };
+  if (statements.length === 1) {
+    // No rows to insert — just run the delete on its own.
+    await deleteStmt;
+    return { ok: true, count: 0 };
+  }
+
+  await db.batch(statements as any);
+
+  console.log(`[draftRankings] Wrote ${rows.length} rows for ${meta.customId}`);
+  return { ok: true, count: rows.length };
 }
+
+// ── Default variants helper ─────────────────────────────────────────
+
+export const DEFAULT_VARIANTS: RankingVariant[] = [
+  { rankingType: 'redraft', scoringFormat: 'ppr', superflex: false },
+  { rankingType: 'redraft', scoringFormat: 'half-ppr', superflex: false },
+  { rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: false },
+  { rankingType: 'dynasty_rookie', scoringFormat: 'half-ppr', superflex: false },
+];

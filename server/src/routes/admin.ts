@@ -8,7 +8,10 @@ import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
 import { generateProjectionsFromProps } from '../services/projections';
-import { generateDraftRankings } from '../services/draftRankings';
+import {
+  submitDraftRankingsBatch,
+  processPendingBatches,
+} from '../services/draftRankings';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
 import type { Env, Variables } from '../index';
 
@@ -1931,7 +1934,12 @@ adminRoutes.post('/bulk-set-tier', async (c) => {
 /**
  * POST /api/admin/generate-draft-rankings
  *
- * Triggers AI draft ranking generation. Body:
+ * Submits a single-variant draft ranking request as an Anthropic batch and
+ * returns immediately with the batch id. Rankings land in the DB once
+ * /api/admin/process-ranking-batches picks up the completed batch (cron
+ * runs that hourly).
+ *
+ * Body:
  *  - type: 'redraft' | 'dynasty_rookie' (default: 'redraft')
  *  - scoring: 'ppr' | 'half-ppr' | 'standard' (default: 'ppr')
  *  - superflex: boolean (default: false)
@@ -1965,30 +1973,63 @@ adminRoutes.post('/generate-draft-rankings', async (c) => {
       return c.json({ error: 'Invalid scoring — use "ppr", "half-ppr", or "standard"' }, 400);
     }
 
-    const result = await generateDraftRankings({
+    const result = await submitDraftRankingsBatch({
       db,
       anthropicKey,
-      rankingType,
-      scoringFormat,
-      superflex,
+      variants: [{ rankingType, scoringFormat, superflex }],
       seasonYear,
     });
 
-    // Invalidate cache for this combination
-    invalidateCache('draft-rankings:', true);
-
     if (!result.ok) {
-      return c.json({ error: result.error, count: 0 }, 500);
+      return c.json({ error: result.error }, 500);
     }
 
     return c.json({
-      message: `Generated ${result.count} ${rankingType} rankings (${scoringFormat}, superflex=${superflex})`,
-      count: result.count,
+      message: `Submitted ranking batch (${rankingType}/${scoringFormat}, superflex=${superflex})`,
+      batchId: result.batchId,
+      jobId: result.jobId,
+      status: 'submitted',
     });
   } catch (err) {
     console.error('[admin] generate-draft-rankings error:', err);
     return c.json({
-      error: 'Failed to generate draft rankings',
+      error: 'Failed to submit draft rankings batch',
+      message: err instanceof Error ? err.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+
+/**
+ * POST /api/admin/process-ranking-batches
+ *
+ * Polls every non-terminal row in ranking_batch_jobs against the Anthropic
+ * Batch API; for each batch that has ended, parses the JSONL results and
+ * writes the per-variant rankings into draft_rankings. Called hourly by cron.
+ */
+adminRoutes.post('/process-ranking-batches', async (c) => {
+  const db = c.get('db');
+  const anthropicKey = c.env.ANTHROPIC_API_KEY;
+
+  if (!anthropicKey) {
+    return c.json({ error: 'ANTHROPIC_API_KEY not configured' }, 500);
+  }
+
+  try {
+    const result = await processPendingBatches(db, anthropicKey);
+
+    if (result.totalRankingsInserted > 0) {
+      invalidateCache('draft-rankings:', true);
+    }
+
+    return c.json({
+      message: `Checked ${result.checked} pending batch(es); completed ${result.completedJobs}, failed ${result.failedJobs}`,
+      ...result,
+    });
+  } catch (err) {
+    console.error('[admin] process-ranking-batches error:', err);
+    return c.json({
+      error: 'Failed to process ranking batches',
       message: err instanceof Error ? err.message : 'Unknown error',
     }, 500);
   }
