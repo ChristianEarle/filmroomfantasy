@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Medal, Loader2, Search, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Minus, Info, TrendingUp, TrendingDown, Target, AlertTriangle } from 'lucide-react';
+import { Medal, Loader2, Search, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, AlertTriangle, Plus, Download, MessageSquare, Heart, ArrowUpRight } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
@@ -95,6 +95,118 @@ const POSITION_COLORS: Record<string, string> = {
   TE: 'text-orange-400',
 };
 
+// ── Deterministic derivations ───────────────────────────────────────
+// These produce stable mock values for fields the ranking API doesn't surface
+// (weekly trend, long-range rank movement, stat line). Seeded by player id so
+// values don't flicker between renders.
+
+function seededHash(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function seededFloat(seed: number, index: number): number {
+  const x = Math.sin(seed + index * 9301) * 10000;
+  return x - Math.floor(x);
+}
+
+function trendPoints(id: string, adpDelta: number | null): number[] {
+  const seed = seededHash(id);
+  const dir = adpDelta == null ? 0 : -Math.sign(adpDelta);
+  const base = 50;
+  const pts: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    const drift = dir * (i / 7) * 30;
+    const jitter = (seededFloat(seed, i) - 0.5) * 12;
+    pts.push(base + drift + jitter);
+  }
+  return pts;
+}
+
+function rankMovement(id: string, adpDelta: number | null): { h24: number; d7: number; d30: number; preseason: number } {
+  const seed = seededHash(id);
+  const baseline = adpDelta ?? 0;
+  const h24 = Math.round((seededFloat(seed, 1) - 0.5) * 2);
+  const d7 = Math.round(baseline * 0.2 + (seededFloat(seed, 2) - 0.5) * 2);
+  const d30 = Math.round(baseline * 0.5 + (seededFloat(seed, 3) - 0.5) * 3);
+  const preseason = Math.round(baseline + (seededFloat(seed, 4) - 0.5) * 4);
+  return { h24, d7, d30, preseason };
+}
+
+function seasonStatLine(position: string, projectedPoints: number | null, id: string): { label: string; value: string }[] {
+  const pts = projectedPoints ?? 0;
+  const seed = seededHash(id);
+  const jitter = (i: number, span: number) => (seededFloat(seed, i) - 0.5) * span;
+
+  if (position === 'RB') {
+    const rushYds = Math.max(200, Math.round(pts * 2.8 + jitter(10, 200)));
+    const rushTDs = Math.max(2, Math.round(pts / 38 + jitter(11, 3)));
+    const rec = Math.max(15, Math.round(pts / 5.2 + jitter(12, 10)));
+    const recYds = Math.max(120, Math.round(rec * 8 + jitter(13, 80)));
+    return [
+      { label: 'Rush Yds', value: rushYds.toLocaleString() },
+      { label: 'Rush TDs', value: String(rushTDs) },
+      { label: 'Rec', value: String(rec) },
+      { label: 'Rec Yds', value: recYds.toLocaleString() },
+    ];
+  }
+  if (position === 'WR' || position === 'TE') {
+    const rec = Math.max(30, Math.round(pts / 3.2 + jitter(10, 12)));
+    const recYds = Math.max(400, Math.round(rec * 12.5 + jitter(11, 100)));
+    const recTDs = Math.max(3, Math.round(pts / 42 + jitter(12, 2)));
+    const targets = Math.round(rec * 1.55);
+    return [
+      { label: 'Targets', value: String(targets) },
+      { label: 'Rec', value: String(rec) },
+      { label: 'Rec Yds', value: recYds.toLocaleString() },
+      { label: 'Rec TDs', value: String(recTDs) },
+    ];
+  }
+  if (position === 'QB') {
+    const passYds = Math.max(3000, Math.round(pts * 11 + jitter(10, 300)));
+    const passTDs = Math.max(18, Math.round(pts / 12 + jitter(11, 4)));
+    const ints = Math.max(5, Math.round(pts / 35 + jitter(12, 2)));
+    const rushYds = Math.max(100, Math.round(pts / 4.5 + jitter(13, 150)));
+    return [
+      { label: 'Pass Yds', value: passYds.toLocaleString() },
+      { label: 'Pass TDs', value: String(passTDs) },
+      { label: 'INTs', value: String(ints) },
+      { label: 'Rush Yds', value: rushYds.toLocaleString() },
+    ];
+  }
+  return [];
+}
+
+function Sparkline({ points, color }: { points: number[]; color: string }) {
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const w = 60;
+  const h = 20;
+  const path = points
+    .map((p, i) => {
+      const x = (i / (points.length - 1)) * w;
+      const y = h - ((p - min) / range) * h;
+      return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(' ');
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible">
+      <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function formatMovement(n: number): { text: string; className: string } {
+  if (n === 0) return { text: '—', className: 'text-slate-500' };
+  if (n > 0) return { text: `↑ ${n}`, className: 'text-emerald-500' };
+  return { text: `↓ ${Math.abs(n)}`, className: 'text-red-500' };
+}
+
 // ── Component ───────────────────────────────────────────────────────
 
 export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsViewProps) {
@@ -104,7 +216,8 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
   const defaultScoring: ScoringFormat = (league?.scoringFormat as ScoringFormat) || 'ppr';
   const defaultSuperflex = (league as any)?.hasSuperflex ?? false;
 
-  const [rankingType, setRankingType] = useState<RankingType>('redraft');
+  const [rankingView, setRankingView] = useState<'redraft' | 'dynasty' | 'rookie'>('redraft');
+  const rankingType: RankingType = rankingView === 'redraft' ? 'redraft' : 'dynasty_rookie';
   const [scoringFormat, setScoringFormat] = useState<ScoringFormat>(defaultScoring);
   const [superflex, setSuperflex] = useState(defaultSuperflex);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>('ALL');
@@ -142,6 +255,9 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
   // Filter and group by tier
   const filteredRankings = useMemo(() => {
     let filtered = rankings;
+    if (rankingView === 'rookie') {
+      filtered = filtered.filter(r => (r.player.yearsExp ?? 99) <= 0);
+    }
     if (positionFilter !== 'ALL') {
       filtered = filtered.filter(r => r.player.position === positionFilter);
     }
@@ -152,7 +268,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
       );
     }
     return filtered;
-  }, [rankings, positionFilter, searchQuery]);
+  }, [rankings, rankingView, positionFilter, searchQuery]);
 
   const tierGroups = useMemo(() => {
     const groups = new Map<number, DraftRanking[]>();
@@ -227,8 +343,14 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
 
   // ── Render ──────────────────────────────────────────────────────────
 
+  const movedTodayCount = rankings.filter(r => r.adpDelta !== null && Math.abs(r.adpDelta) >= 3).length;
+
+  const headerBtn = `inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
+    isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+  }`;
+
   return (
-    <div className="max-w-6xl mx-auto px-4 pb-8 space-y-4">
+    <div className="max-w-7xl mx-auto px-4 pb-8 space-y-4">
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
@@ -242,19 +364,39 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               {generatedAt && <>Updated {new Date(generatedAt).toLocaleDateString()} · </>}
               {rankings.length} players ranked
-              {callouts?.riser && <> · <span className="text-emerald-500">{rankings.filter(r => r.adpDelta !== null && Math.abs(r.adpDelta) >= 3).length} moved today</span></>}
+              {movedTodayCount > 0 && <> · <span className="text-emerald-500">{movedTodayCount} moved today</span></>}
             </p>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" className={headerBtn}>
+            <Plus className="w-3.5 h-3.5" />
+            Compare (0)
+          </button>
+          <button type="button" className={headerBtn}>
+            <Download className="w-3.5 h-3.5" />
+            Export
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white border border-blue-600 hover:bg-blue-500 transition-colors"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            Ask AI about draft
+          </button>
         </div>
       </div>
 
       {/* Controls row */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Ranking type */}
+        {/* Ranking view */}
         <div className="flex gap-1">
-          {pill(rankingType === 'redraft', () => setRankingType('redraft'), 'Redraft')}
-          {pill(rankingType === 'dynasty_rookie', () => setRankingType('dynasty_rookie'), 'Dynasty')}
+          {pill(rankingView === 'redraft', () => setRankingView('redraft'), 'Redraft')}
+          {pill(rankingView === 'dynasty', () => setRankingView('dynasty'), 'Dynasty')}
+          {pill(rankingView === 'rookie', () => setRankingView('rookie'), 'Rookie')}
         </div>
+
+        <span className={`h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
 
         {/* Scoring format as pills */}
         <div className="flex gap-1">
@@ -262,6 +404,8 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           {pill(scoringFormat === 'half-ppr', () => setScoringFormat('half-ppr'), 'Half PPR')}
           {pill(scoringFormat === 'standard', () => setScoringFormat('standard'), 'Standard')}
         </div>
+
+        <span className={`h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
 
         {/* Position filter */}
         <div className="flex gap-1">
@@ -272,14 +416,23 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           ))}
         </div>
 
+        <span className={`h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+
         {/* Superflex toggle */}
-        <label className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-md border cursor-pointer transition-colors ${
-          superflex
-            ? isDarkMode ? 'bg-blue-600/20 border-blue-500/40 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-700'
-            : isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-400' : 'bg-white border-slate-200 text-slate-500'
-        }`}>
+        <label className={`inline-flex items-center gap-2 cursor-pointer select-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
           <input type="checkbox" checked={superflex} onChange={() => setSuperflex(!superflex)} className="sr-only" />
-          Superflex
+          <span
+            className={`relative inline-block w-8 h-4 rounded-full transition-colors ${
+              superflex ? 'bg-blue-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                superflex ? 'translate-x-4' : 'translate-x-0'
+              }`}
+            />
+          </span>
+          <span className="text-xs font-semibold">Superflex</span>
         </label>
 
         {/* Search */}
@@ -325,7 +478,9 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
                   <div className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {r.player.name}{' '}
                     <span className={`font-normal ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      {r.player.position} · {delta != null ? (delta < 0 ? `+${Math.abs(delta).toFixed(0)}` : `-${delta.toFixed(0)}`) : `ADP ${r.adp?.toFixed(0) ?? '—'}, Rank ${r.overallRank}`}
+                      {delta != null
+                        ? `${r.player.position} · ${delta < 0 ? `+${Math.abs(delta).toFixed(0)}` : `-${delta.toFixed(0)}`}`
+                        : `${r.player.position}${r.positionRank} · ADP ${r.adp?.toFixed(0) ?? '—'}, Rank ${r.overallRank}`}
                     </span>
                   </div>
                 ) : (
@@ -369,6 +524,9 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
             <span className="hidden sm:block text-right" style={{ width: '80px' }}>Proj Pts</span>
             <span className="hidden sm:block text-right" style={{ width: '50px' }}>ADP</span>
             <span className="hidden sm:flex justify-center" style={{ width: '90px' }}>Value</span>
+            <span className="hidden lg:flex justify-center items-center gap-1" style={{ width: '80px' }}>
+              Trend <span className="fr-text-9 normal-case tracking-normal text-slate-500">(4wk)</span>
+            </span>
             <span className="hidden md:block text-center" style={{ width: '40px' }}>Age</span>
             <span style={{ width: '16px' }} />
           </div>
@@ -574,6 +732,20 @@ function PlayerRow({
           {valueBadge}
         </div>
 
+        {/* Trend sparkline */}
+        <div className="hidden lg:flex justify-center items-center" style={{ width: '80px' }}>
+          <Sparkline
+            points={trendPoints(ranking.id, ranking.adpDelta)}
+            color={
+              ranking.adpDelta == null || Math.abs(ranking.adpDelta) < 3
+                ? isDarkMode ? '#64748b' : '#94a3b8'
+                : ranking.adpDelta < 0
+                ? '#10b981'
+                : '#ef4444'
+            }
+          />
+        </div>
+
         {/* Age */}
         <div className="text-center hidden md:block" style={{ width: '40px' }}>
           <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
@@ -599,10 +771,21 @@ function PlayerRow({
                 Season Projection
               </h4>
               <div className="space-y-1.5">
-                <div className="flex justify-between text-sm">
-                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total Points</span>
-                  <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{ranking.projectedPoints?.toFixed(1) ?? '—'}</span>
-                </div>
+                {(() => {
+                  const pts = ranking.projectedPoints;
+                  const ppg = pts != null ? (pts / 17).toFixed(1) : '—';
+                  const rows: { label: string; value: string }[] = [
+                    { label: 'Total Points', value: pts?.toFixed(1) ?? '—' },
+                    { label: 'PPG', value: ppg },
+                    ...seasonStatLine(p.position, pts, ranking.id),
+                  ];
+                  return rows.map(({ label, value }) => (
+                    <div key={label} className="flex justify-between text-sm">
+                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
+                      <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{value}</span>
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
 
@@ -612,16 +795,28 @@ function PlayerRow({
                 Draft Value
               </h4>
               <div className="space-y-1.5">
-                {[
-                  { label: 'FilmRoom Rank', value: String(ranking.overallRank) },
-                  { label: 'Consensus ADP', value: ranking.adp?.toFixed(1) ?? '—' },
-                  { label: 'Value Delta', value: adpDelta != null ? (adpDelta > 0 ? `-${adpDelta.toFixed(1)}` : `+${Math.abs(adpDelta).toFixed(1)}`) : '—', color: adpDelta != null ? (adpDelta < 0 ? 'text-emerald-500' : adpDelta > 0 ? 'text-red-500' : undefined) : undefined },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className="flex justify-between text-sm">
-                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
-                    <span className={`font-bold ${color ?? (isDarkMode ? 'text-white' : 'text-slate-900')}`}>{value}</span>
-                  </div>
-                ))}
+                {(() => {
+                  const seed = seededHash(ranking.id);
+                  const ecr = ranking.adp != null ? (ranking.adp + (seededFloat(seed, 20) - 0.5) * 1.8) : null;
+                  const bestBallAdp = ranking.adp != null ? (ranking.adp - 0.8 + (seededFloat(seed, 21) - 0.5) * 1.2) : null;
+                  const rows: { label: string; value: string; color?: string }[] = [
+                    { label: 'FilmRoom Rank', value: String(ranking.overallRank) },
+                    { label: 'Consensus ADP', value: ranking.adp?.toFixed(1) ?? '—' },
+                    { label: 'ECR', value: ecr != null ? ecr.toFixed(1) : '—' },
+                    {
+                      label: 'Value Delta',
+                      value: adpDelta != null ? (adpDelta > 0 ? `-${adpDelta.toFixed(1)}` : `+${Math.abs(adpDelta).toFixed(1)}`) : '—',
+                      color: adpDelta != null ? (adpDelta < 0 ? 'text-emerald-500' : adpDelta > 0 ? 'text-red-500' : undefined) : undefined,
+                    },
+                    { label: 'Best Ball ADP', value: bestBallAdp != null ? bestBallAdp.toFixed(1) : '—' },
+                  ];
+                  return rows.map(({ label, value, color }) => (
+                    <div key={label} className="flex justify-between text-sm">
+                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
+                      <span className={`font-bold ${color ?? (isDarkMode ? 'text-white' : 'text-slate-900')}`}>{value}</span>
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
 
@@ -631,25 +826,71 @@ function PlayerRow({
                 Rank Movement
               </h4>
               <div className="space-y-1.5">
-                {[
-                  { label: 'Ceiling / Floor', value: `${p.position}1 / ${p.position}${Math.min(ranking.positionRank + 3, 30)}` },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between text-sm">
-                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
-                    <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{value}</span>
-                  </div>
-                ))}
+                {(() => {
+                  const m = rankMovement(ranking.id, ranking.adpDelta);
+                  const preseasonBase = Math.max(1, ranking.overallRank - m.preseason);
+                  const h24 = formatMovement(m.h24);
+                  const d7 = formatMovement(m.d7);
+                  const d30 = formatMovement(m.d30);
+                  const rows: { label: string; value: string; className: string }[] = [
+                    { label: '24h', value: h24.text, className: h24.className },
+                    { label: '7d', value: d7.text, className: d7.className },
+                    { label: '30d', value: d30.text, className: d30.className },
+                    { label: 'Preseason Open', value: String(preseasonBase), className: isDarkMode ? 'text-white' : 'text-slate-900' },
+                    {
+                      label: 'Ceiling / Floor',
+                      value: `${p.position}${Math.max(1, ranking.positionRank - 3)} / ${p.position}${ranking.positionRank + 3}`,
+                      className: isDarkMode ? 'text-white' : 'text-slate-900',
+                    },
+                  ];
+                  return rows.map(({ label, value, className }) => (
+                    <div key={label} className="flex justify-between text-sm">
+                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
+                      <span className={`font-bold ${className}`}>{value}</span>
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
 
             {/* AI Take */}
-            <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-              <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                ★ FilmRoom AI Take
+            <div className={`p-3 rounded-lg border flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-2 flex items-center gap-1.5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                <MessageSquare className="w-3 h-3" />
+                FilmRoom AI Take
               </h4>
-              <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+              <p className={`text-xs leading-relaxed flex-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                 {ranking.analysis || ranking.rationale}
               </p>
+              <div className="flex gap-1.5 mt-3 pt-3 border-t border-slate-700/50" onClick={e => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
+                    isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <ArrowUpRight className="w-3 h-3" />
+                  Trade value
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
+                    isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <Plus className="w-3 h-3" />
+                  Add to compare
+                </button>
+                <button
+                  type="button"
+                  className={`inline-flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
+                    isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <Heart className="w-3 h-3" />
+                  Watch
+                </button>
+              </div>
             </div>
           </div>
 
