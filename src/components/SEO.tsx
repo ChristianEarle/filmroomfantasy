@@ -223,6 +223,7 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
     'Home', 'Team', 'Matchup', 'Settings', 'Profile', 'Admin', 'AllPlayers', // private
     'Login', 'Register',                                                       // utility screens
     'Research', 'LeagueAnalyzer',                                               // Coming Soon placeholders
+    'NotFound',                                                                 // 404 page
   ];
   if (noindexViews.includes(effectiveView)) {
     props.noindex = true;

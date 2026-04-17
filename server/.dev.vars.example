@@ -3,9 +3,12 @@
 #
 # JWT_SECRET=your-jwt-secret-at-least-32-chars
 # SYNC_SECRET=your-admin-sync-key
-# OPENAI_API_KEY=sk-...          # optional: AI news filtering
+# ANTHROPIC_API_KEY=sk-ant-...   # AI trade analysis & news filtering
 # GOOGLE_CLIENT_ID=...           # optional: Google OAuth
 # YAHOO_CLIENT_ID=...            # optional: Yahoo Fantasy
 # YAHOO_CLIENT_SECRET=...        # optional: Yahoo Fantasy
-# RESEND_API_KEY=re_...          # optional: password reset & feedback emails
+# RESEND_API_KEY=re_...          # password reset & feedback emails
+# APP_URL=http://localhost:5173  # frontend URL used in password reset links
 # FEEDBACK_EMAIL=you@example.com # optional: where feedback notifications are sent
+# STRIPE_SECRET_KEY=sk_test_...  # required for paid plans (test key for dev)
+# STRIPE_WEBHOOK_SECRET=whsec_...# required so checkout webhook can settle subscriptions

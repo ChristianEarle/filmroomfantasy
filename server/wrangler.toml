@@ -28,10 +28,22 @@ database_id = "6acfacc9-ccdd-46bd-9cea-8693306ed524"
 #     → Yahoo OAuth from https://developer.yahoo.com/apps/
 #
 #   wrangler secret put RESEND_API_KEY --env production
-#     → Optional: enables password reset & feedback notification emails
+#     → REQUIRED for password reset emails. Without it, /api/auth/forgot-password
+#       returns 503 to users. Get from https://resend.com/api-keys
+#
+#   wrangler secret put APP_URL --env production
+#     → REQUIRED for password reset link to point at your real site.
+#       Example: https://filmroomfantasy.com
 #
 #   wrangler secret put FEEDBACK_EMAIL --env production
 #     → Optional: email address that receives feedback submissions
+#
+#   wrangler secret put STRIPE_SECRET_KEY --env production
+#     → REQUIRED for paid plans. Use the live key (sk_live_...), not test.
+#
+#   wrangler secret put STRIPE_WEBHOOK_SECRET --env production
+#     → REQUIRED for subscriptions to settle. Get from
+#       https://dashboard.stripe.com/webhooks → your endpoint → Signing secret.
 #
 # For local dev, these are set in server/.dev.vars (gitignored)
 

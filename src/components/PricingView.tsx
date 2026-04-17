@@ -1,6 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
 import { CreditCard, Check, AlertCircle, Clock } from 'lucide-react';
 import { api } from '../services/api';
+import { trackBeginCheckout, trackPurchase } from '../services/tracking';
+
+// Public pricing — kept in sync with server/src/routes/billing.ts price IDs.
+// Used to populate ad-platform conversion `value` so ROAS reports are accurate.
+const TIER_VALUES: Record<'pro' | 'elite', { month: number; year: number }> = {
+  pro: { month: 4.99, year: 49.99 },
+  elite: { month: 9.99, year: 99.99 },
+};
 
 interface PricingViewProps {
   isDarkMode: boolean;
@@ -53,6 +61,15 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         ? (interval === 'year' ? 'elite_yearly' : 'elite_monthly')
         : (interval === 'year' ? 'pro_yearly' : 'pro_monthly');
 
+      // Fire begin_checkout BEFORE the redirect so the pixel has a chance to send.
+      // Stash tier+interval so the success page can fire the matching purchase event.
+      try {
+        trackBeginCheckout(tier, interval, TIER_VALUES[tier][interval]);
+        sessionStorage.setItem('fr_pending_checkout', JSON.stringify({ tier, interval }));
+      } catch {
+        // sessionStorage may be unavailable in private mode — non-fatal
+      }
+
       const data = await api.post<{ url: string }>('/billing/create-checkout', {
         priceId,
         successUrl: `${window.location.origin}/pricing?billing=success`,
@@ -70,6 +87,31 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
       setLoading(null);
     }
   }, [isAuthenticated, isAnnual]);
+
+  // Detect Stripe checkout success redirect and fire the purchase conversion.
+  // Stripe webhook still settles the subscription server-side; this is purely
+  // for ad-platform attribution. Removes the query param + session marker on
+  // first run so the event can't fire twice from a refresh.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('billing') !== 'success') return;
+    try {
+      const raw = sessionStorage.getItem('fr_pending_checkout');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { tier: 'pro' | 'elite'; interval: 'month' | 'year' };
+        if ((parsed.tier === 'pro' || parsed.tier === 'elite') && (parsed.interval === 'month' || parsed.interval === 'year')) {
+          trackPurchase(parsed.tier, parsed.interval, TIER_VALUES[parsed.tier][parsed.interval]);
+        }
+        sessionStorage.removeItem('fr_pending_checkout');
+      }
+    } catch {
+      // ignore — never block UI on a tracking failure
+    }
+    params.delete('billing');
+    const next = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (next ? `?${next}` : ''));
+  }, []);
 
   const savings = {
     pro: '17%',

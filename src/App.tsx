@@ -67,6 +67,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { LeagueProvider, useLeagueContext } from './context/LeagueContext';
 import { LeaguesProvider, useLeaguesContext } from './context/LeaguesContext';
 import { trackPageView } from './services/analytics';
+import { trackSignUp } from './services/tracking';
 
 // Page transition wrapper component
 function PageTransition({ children, viewKey }: { children: React.ReactNode; viewKey: string }) {
@@ -234,7 +235,7 @@ function getViewFromURL(): string {
   if (path.startsWith('/articles/') && path.length > '/articles/'.length) return 'ArticleDetail';
   if (path === '/articles') return 'Articles';
 
-  const view = PATH_TO_VIEW[path] ?? 'Board';
+  const view = PATH_TO_VIEW[path] ?? 'NotFound';
   // /register is handled within the Login view via authView state
   if (view === 'Register') return 'Login';
   return view;
@@ -267,7 +268,7 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works
-  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'Privacy' | 'Terms' | 'CookiePolicy' | 'DMCA' | 'Refunds' | 'DoNotSell' | 'Disclaimer' | 'Accessibility' | 'AcceptableUse'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'Privacy' | 'Terms' | 'CookiePolicy' | 'DMCA' | 'Refunds' | 'DoNotSell' | 'Disclaimer' | 'Accessibility' | 'AcceptableUse' | 'NotFound'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [articleSlug, setArticleSlug] = useState<string | null>(() => getArticleSlugFromURL());
   // Local dark mode state for unauthenticated users (initialized from localStorage)
@@ -301,6 +302,11 @@ function AppContent() {
 
   // Sync URL when activeView changes (BUG-001 fix: URL now updates on sidebar nav)
   useEffect(() => {
+    // Keep the user's typo'd URL visible when they hit a 404 — don't rewrite it.
+    if (activeView === 'NotFound') {
+      trackPageView(window.location.pathname);
+      return;
+    }
     let targetPath: string;
     if (activeView === 'ArticleDetail' && articleSlug) {
       targetPath = `/articles/${articleSlug}`;
@@ -396,6 +402,7 @@ function AppContent() {
     try {
       setRegisterError(null);
       await register(email, password, username);
+      trackSignUp('email');
       setActiveView('Home');
     } catch (error) {
       setRegisterError(error instanceof Error ? error.message : 'Registration failed');
