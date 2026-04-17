@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Medal, Loader2, Search, ChevronDown, ArrowUp, ArrowDown, Minus, Info } from 'lucide-react';
+import { Medal, Loader2, Search, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Minus, Info, TrendingUp, TrendingDown, Target, AlertTriangle } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
@@ -182,92 +182,105 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
 
   const tierLabels = TIER_LABELS[rankingType] || TIER_LABELS.redraft;
 
+  // ── Callout stats (computed from rankings data) ─────────────────
+  const callouts = useMemo(() => {
+    if (rankings.length === 0) return null;
+    // Biggest riser = most negative adpDelta (ranked much higher than ADP)
+    const withDelta = rankings.filter(r => r.adpDelta !== null);
+    const riser = withDelta.length > 0
+      ? withDelta.reduce((best, r) => (r.adpDelta! < best.adpDelta! ? r : best))
+      : null;
+    // Biggest faller = most positive adpDelta (ranked much lower than ADP)
+    const faller = withDelta.length > 0
+      ? withDelta.reduce((best, r) => (r.adpDelta! > best.adpDelta! ? r : best))
+      : null;
+    // Best value = lowest adpDelta with high rank (biggest steal in top half)
+    const topHalf = withDelta.filter(r => r.overallRank <= rankings.length / 2);
+    const bestValue = topHalf.length > 0
+      ? topHalf.reduce((best, r) => (r.adpDelta! < best.adpDelta! ? r : best))
+      : riser;
+    // Biggest reach = highest adpDelta with good ADP (lowest ADP going higher)
+    const reachable = withDelta.filter(r => r.adp != null && r.adpDelta! > 0);
+    const biggestReach = reachable.length > 0
+      ? reachable.reduce((best, r) => (r.adpDelta! > best.adpDelta! ? r : best))
+      : faller;
+    return { riser, faller, bestValue, biggestReach };
+  }, [rankings]);
+
+  const pill = (active: boolean, onClick: () => void, label: string) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${
+        active
+          ? 'bg-blue-600 text-white border-blue-600'
+          : isDarkMode
+          ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600'
+          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const panelCls = `rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`;
+
   // ── Render ──────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-5xl mx-auto px-4 pb-8">
+    <div className="max-w-6xl mx-auto px-4 pb-8 space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-blue-600/20' : 'bg-blue-50'}`}>
-          <Medal className={`w-5 h-5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-        </div>
-        <div>
-          <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-            Draft Rankings
-          </h1>
-          {generatedAt && (
-            <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-              Updated {new Date(generatedAt).toLocaleDateString()}
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-blue-600/20' : 'bg-blue-50'}`}>
+            <Medal className={`w-5 h-5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+          </div>
+          <div>
+            <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              Draft Rankings
+            </h1>
+            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              {generatedAt && <>Updated {new Date(generatedAt).toLocaleDateString()} · </>}
+              {rankings.length} players ranked
+              {callouts?.riser && <> · <span className="text-emerald-500">{rankings.filter(r => r.adpDelta !== null && Math.abs(r.adpDelta) >= 3).length} moved today</span></>}
             </p>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        {/* Ranking Type Tabs */}
-        <div className={`inline-flex rounded-lg p-0.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-          {(['redraft', 'dynasty_rookie'] as RankingType[]).map(type => (
-            <button
-              key={type}
-              onClick={() => setRankingType(type)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                rankingType === type
-                  ? isDarkMode ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 shadow-sm'
-                  : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              {type === 'redraft' ? 'Redraft' : 'Dynasty Rookie'}
-            </button>
-          ))}
+      {/* Controls row */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Ranking type */}
+        <div className="flex gap-1">
+          {pill(rankingType === 'redraft', () => setRankingType('redraft'), 'Redraft')}
+          {pill(rankingType === 'dynasty_rookie', () => setRankingType('dynasty_rookie'), 'Dynasty')}
         </div>
 
-        {/* Scoring Format */}
-        <div className="relative">
-          <select
-            value={scoringFormat}
-            onChange={e => setScoringFormat(e.target.value as ScoringFormat)}
-            className={`appearance-none pl-3 pr-8 py-1.5 text-sm font-medium rounded-lg border cursor-pointer ${
-              isDarkMode
-                ? 'bg-slate-800 border-slate-700 text-slate-200'
-                : 'bg-white border-slate-200 text-slate-700'
-            }`}
-          >
-            <option value="ppr">PPR</option>
-            <option value="half-ppr">Half PPR</option>
-            <option value="standard">Standard</option>
-          </select>
-          <ChevronDown className={`absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+        {/* Scoring format as pills */}
+        <div className="flex gap-1">
+          {pill(scoringFormat === 'ppr', () => setScoringFormat('ppr'), 'PPR')}
+          {pill(scoringFormat === 'half-ppr', () => setScoringFormat('half-ppr'), 'Half PPR')}
+          {pill(scoringFormat === 'standard', () => setScoringFormat('standard'), 'Standard')}
         </div>
 
-        {/* Superflex Toggle */}
-        <button
-          onClick={() => setSuperflex(!superflex)}
-          className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-            superflex
-              ? isDarkMode ? 'bg-blue-600/20 border-blue-500/40 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-700'
-              : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-white border-slate-200 text-slate-500'
-          }`}
-        >
-          Superflex {superflex ? 'ON' : 'OFF'}
-        </button>
-
-        {/* Position Filter */}
-        <div className={`inline-flex rounded-lg p-0.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+        {/* Position filter */}
+        <div className="flex gap-1">
           {(['ALL', 'QB', 'RB', 'WR', 'TE'] as PositionFilter[]).map(pos => (
-            <button
-              key={pos}
-              onClick={() => setPositionFilter(pos)}
-              className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                positionFilter === pos
-                  ? isDarkMode ? 'bg-slate-600 text-white' : 'bg-white text-slate-900 shadow-sm'
-                  : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              {pos}
-            </button>
+            <span key={pos}>
+              {pill(positionFilter === pos, () => setPositionFilter(pos), pos)}
+            </span>
           ))}
         </div>
+
+        {/* Superflex toggle */}
+        <label className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-md border cursor-pointer transition-colors ${
+          superflex
+            ? isDarkMode ? 'bg-blue-600/20 border-blue-500/40 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-700'
+            : isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-400' : 'bg-white border-slate-200 text-slate-500'
+        }`}>
+          <input type="checkbox" checked={superflex} onChange={() => setSuperflex(!superflex)} className="sr-only" />
+          Superflex
+        </label>
 
         {/* Search */}
         <div className="relative ml-auto">
@@ -277,14 +290,52 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
             placeholder="Search player..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className={`pl-8 pr-3 py-1.5 text-sm rounded-lg border w-48 ${
+            className={`pl-8 pr-3 py-1.5 text-sm rounded-lg border w-48 outline-none ${
               isDarkMode
-                ? 'bg-slate-800 border-slate-700 text-slate-200 placeholder:text-slate-500'
-                : 'bg-white border-slate-200 text-slate-700 placeholder:text-slate-400'
+                ? 'bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-500 focus:border-blue-500'
+                : 'bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-blue-500'
             }`}
           />
         </div>
       </div>
+
+      {/* Callout cards */}
+      {callouts && !loading && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { label: 'Biggest Riser', icon: TrendingUp, color: 'text-emerald-500', bgColor: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', r: callouts.riser, delta: callouts.riser?.adpDelta },
+            { label: 'Biggest Faller', icon: TrendingDown, color: 'text-red-500', bgColor: isDarkMode ? 'bg-red-500/10' : 'bg-red-50', r: callouts.faller, delta: callouts.faller?.adpDelta },
+            { label: 'Best Value Pick', icon: Target, color: 'text-blue-500', bgColor: isDarkMode ? 'bg-blue-500/10' : 'bg-blue-50', r: callouts.bestValue, delta: null },
+            { label: 'Biggest Reach Alert', icon: AlertTriangle, color: 'text-amber-500', bgColor: isDarkMode ? 'bg-amber-500/10' : 'bg-amber-50', r: callouts.biggestReach, delta: null },
+          ].map(({ label, icon: Icon, color, bgColor, r, delta }) => (
+            <div
+              key={label}
+              className={`rounded-xl border p-4 flex items-center gap-3 ${
+                isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${bgColor}`}>
+                <Icon className={`w-5 h-5 ${color}`} />
+              </div>
+              <div className="min-w-0">
+                <div className={`fr-text-10 uppercase fr-tracking-wider font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                  {label}
+                </div>
+                {r ? (
+                  <div className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {r.player.name}{' '}
+                    <span className={`font-normal ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      {r.player.position} · {delta != null ? (delta < 0 ? `+${Math.abs(delta).toFixed(0)}` : `-${delta.toFixed(0)}`) : `ADP ${r.adp?.toFixed(0) ?? '—'}, Rank ${r.overallRank}`}
+                    </span>
+                  </div>
+                ) : (
+                  <div className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>—</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Content */}
       {loading ? (
@@ -307,7 +358,22 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           </p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className={`${panelCls} overflow-hidden`}>
+          {/* Table header */}
+          <div className={`flex items-center gap-3 px-4 py-2 border-b fr-text-10 uppercase fr-tracking-wider font-bold ${
+            isDarkMode ? 'bg-slate-900/80 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-500'
+          }`}>
+            <span className="w-8 text-center">#</span>
+            <span style={{ width: '40px' }} />
+            <span className="flex-1">Player</span>
+            <span className="hidden sm:block text-right" style={{ width: '80px' }}>Proj Pts</span>
+            <span className="hidden sm:block text-right" style={{ width: '50px' }}>ADP</span>
+            <span className="hidden sm:flex justify-center" style={{ width: '90px' }}>Value</span>
+            <span className="hidden md:block text-center" style={{ width: '40px' }}>Age</span>
+            <span style={{ width: '16px' }} />
+          </div>
+
+          <div className="space-y-0">
           {tierGroups.map(([tier, players]) => (
             <TierGroup
               key={tier}
@@ -321,6 +387,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
               onPlayerClick={handlePlayerClick}
             />
           ))}
+          </div>
         </div>
       )}
     </div>
@@ -381,7 +448,7 @@ function TierGroup({
       </div>
 
       {/* Player Rows */}
-      <div className="space-y-1">
+      <div>
         {rankings.map(ranking => (
           <PlayerRow
             key={ranking.id}
@@ -416,160 +483,189 @@ function PlayerRow({
   const p = ranking.player;
   const posColor = POSITION_COLORS[p.position] || 'text-slate-400';
 
-  // ADP value indicator
+  // Value badge
   const adpDelta = ranking.adpDelta;
-  let valueIndicator: React.ReactNode = null;
-  if (adpDelta !== null && Math.abs(adpDelta) >= 3) {
-    if (adpDelta < 0) {
-      // Ranked HIGHER than ADP = value (they go before ADP says)
-      valueIndicator = (
-        <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-400" title={`Ranked ${Math.abs(adpDelta).toFixed(0)} spots above ADP — value pick`}>
-          <ArrowUp className="w-3 h-3" />
-          {Math.abs(adpDelta).toFixed(0)}
+  let valueBadge: React.ReactNode = null;
+  if (adpDelta !== null) {
+    if (Math.abs(adpDelta) < 3) {
+      valueBadge = (
+        <span className={`fr-text-10 font-bold px-2 py-0.5 rounded ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+          FAIR
+        </span>
+      );
+    } else if (adpDelta < 0) {
+      valueBadge = (
+        <span className="fr-text-10 font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-500">
+          +{Math.abs(adpDelta).toFixed(0)} STEAL
         </span>
       );
     } else {
-      // Ranked LOWER than ADP = reach
-      valueIndicator = (
-        <span className="inline-flex items-center gap-0.5 text-xs font-medium text-red-400" title={`Ranked ${adpDelta.toFixed(0)} spots below ADP — potential reach`}>
-          <ArrowDown className="w-3 h-3" />
-          {adpDelta.toFixed(0)}
+      valueBadge = (
+        <span className="fr-text-10 font-bold px-2 py-0.5 rounded bg-red-500/15 text-red-500">
+          -{adpDelta.toFixed(0)} REACH
         </span>
       );
     }
-  } else if (adpDelta !== null) {
-    valueIndicator = (
-      <span className="inline-flex items-center text-xs text-slate-500" title="Ranked near ADP">
-        <Minus className="w-3 h-3" />
-      </span>
-    );
   }
 
   return (
     <div
-      className={`group rounded-lg border transition-colors ${
+      className={`border-b transition-colors ${
         isDarkMode
-          ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800'
-          : 'bg-white border-slate-200 hover:bg-slate-50'
+          ? 'border-slate-800 hover:bg-slate-800/50'
+          : 'border-slate-100 hover:bg-slate-50'
       }`}
     >
       <div
-        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer"
-        onClick={onPlayerClick}
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+        onClick={onToggleRationale}
         role="button"
         tabIndex={0}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPlayerClick(); } }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleRationale(); } }}
       >
         {/* Rank */}
-        <span className={`w-8 text-center text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+        <span className={`w-8 text-center text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
           {ranking.overallRank}
         </span>
 
         {/* Avatar */}
-        <div className={`w-9 h-9 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center ${isDarkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
+        <div
+          className={`w-10 h-10 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center ${isDarkMode ? 'bg-slate-700' : 'bg-slate-100'}`}
+          onClick={e => { e.stopPropagation(); onPlayerClick(); }}
+        >
           <PlayerAvatar name={p.name} headshotUrl={p.headshotUrl} isDarkMode={isDarkMode} />
         </div>
 
         {/* Name & Position */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0" onClick={e => { e.stopPropagation(); onPlayerClick(); }}>
           <div className="flex items-center gap-1.5">
             <span className={`text-sm font-semibold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               {p.name}
             </span>
             {p.status !== 'active' && (
-              <span className="text-[10px] px-1 py-0.5 rounded bg-red-500/20 text-red-400 font-medium uppercase">
+              <span className="fr-text-9 px-1 py-0.5 rounded bg-red-500/15 text-red-500 font-bold uppercase">
                 {p.status === 'injured_reserve' ? 'IR' : p.status === 'questionable' ? 'Q' : p.status === 'doubtful' ? 'D' : 'OUT'}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className={`font-medium ${posColor}`}>{p.position}{ranking.positionRank}</span>
-            <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>{p.team}</span>
-            {p.age && (
-              <span className={isDarkMode ? 'text-slate-600' : 'text-slate-300'}>
-                Age {p.age}
-              </span>
-            )}
+          <div className="flex items-center gap-1.5 fr-text-11">
+            <span className={`font-bold ${posColor}`}>{p.position}{ranking.positionRank}</span>
+            <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>{p.team} · Age {p.age ?? '—'}</span>
           </div>
         </div>
 
         {/* Projected Points */}
-        {ranking.projectedPoints != null && (
-          <div className="text-right hidden sm:block">
-            <div className={`text-sm font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-              {ranking.projectedPoints.toFixed(1)}
-            </div>
-            <div className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-              proj pts
-            </div>
-          </div>
-        )}
-
-        {/* ADP */}
-        {ranking.adp != null && (
-          <div className="text-right hidden sm:block">
-            <div className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-              {ranking.adp.toFixed(1)}
-            </div>
-            <div className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-              ADP
-            </div>
-          </div>
-        )}
-
-        {/* Value Indicator */}
-        <div className="w-10 text-center hidden sm:block">
-          {valueIndicator}
+        <div className="text-right hidden sm:block" style={{ width: '80px' }}>
+          <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            {ranking.projectedPoints != null ? `${ranking.projectedPoints.toFixed(1)}` : '—'}
+          </span>
+          <span className={`fr-text-10 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>pts</span>
         </div>
 
-        {/* Rationale toggle */}
-        <button
-          onClick={e => { e.stopPropagation(); onToggleRationale(); }}
-          className={`p-1 rounded-md transition-colors ${
-            isDarkMode
-              ? 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
-              : 'hover:bg-slate-100 text-slate-400 hover:text-slate-600'
-          }`}
-          title="View AI analysis"
-        >
-          <Info className="w-3.5 h-3.5" />
-        </button>
+        {/* ADP */}
+        <div className="text-right hidden sm:block" style={{ width: '50px' }}>
+          <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+            {ranking.adp != null ? ranking.adp.toFixed(1) : '—'}
+          </span>
+        </div>
+
+        {/* Value Badge */}
+        <div className="hidden sm:flex justify-center" style={{ width: '90px' }}>
+          {valueBadge}
+        </div>
+
+        {/* Age */}
+        <div className="text-center hidden md:block" style={{ width: '40px' }}>
+          <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+            {p.age ?? '—'}
+          </span>
+        </div>
+
+        {/* Expand chevron */}
+        {isExpanded ? (
+          <ChevronDown className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+        ) : (
+          <ChevronRight className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+        )}
       </div>
 
-      {/* Expanded Analysis */}
-      {isExpanded && (ranking.analysis || ranking.rationale) && (
-        <div className={`px-3 pb-3 pt-0 ml-11`}>
-          {ranking.analysis ? (
-            <div className="space-y-1.5">
-              <p className={`text-xs font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                AI Analysis
-              </p>
-              <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {ranking.analysis}
+      {/* Expanded detail — 4-column grid */}
+      {isExpanded && (
+        <div className={`px-4 pb-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+            {/* Season Projection */}
+            <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Season Projection
+              </h4>
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-sm">
+                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total Points</span>
+                  <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{ranking.projectedPoints?.toFixed(1) ?? '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Draft Value */}
+            <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Draft Value
+              </h4>
+              <div className="space-y-1.5">
+                {[
+                  { label: 'FilmRoom Rank', value: String(ranking.overallRank) },
+                  { label: 'Consensus ADP', value: ranking.adp?.toFixed(1) ?? '—' },
+                  { label: 'Value Delta', value: adpDelta != null ? (adpDelta > 0 ? `-${adpDelta.toFixed(1)}` : `+${Math.abs(adpDelta).toFixed(1)}`) : '—', color: adpDelta != null ? (adpDelta < 0 ? 'text-emerald-500' : adpDelta > 0 ? 'text-red-500' : undefined) : undefined },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="flex justify-between text-sm">
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
+                    <span className={`font-bold ${color ?? (isDarkMode ? 'text-white' : 'text-slate-900')}`}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Rank Movement */}
+            <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Rank Movement
+              </h4>
+              <div className="space-y-1.5">
+                {[
+                  { label: 'Ceiling / Floor', value: `${p.position}1 / ${p.position}${Math.min(ranking.positionRank + 3, 30)}` },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex justify-between text-sm">
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
+                    <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* AI Take */}
+            <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                ★ FilmRoom AI Take
+              </h4>
+              <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                {ranking.analysis || ranking.rationale}
               </p>
             </div>
-          ) : (
-            <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              {ranking.rationale}
-            </p>
-          )}
-          {/* Mobile-only: show projected points and ADP */}
-          <div className="flex gap-4 mt-2 sm:hidden">
+          </div>
+
+          {/* Mobile fallback stats */}
+          <div className="flex gap-4 mt-3 sm:hidden fr-text-11">
             {ranking.projectedPoints != null && (
-              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                Proj: {ranking.projectedPoints.toFixed(1)} pts
+              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
+                Proj: <b>{ranking.projectedPoints.toFixed(1)}</b> pts
               </span>
             )}
             {ranking.adp != null && (
-              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                ADP: {ranking.adp.toFixed(1)}
+              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
+                ADP: <b>{ranking.adp.toFixed(1)}</b>
               </span>
             )}
-            {valueIndicator && (
-              <span className="text-xs">
-                {valueIndicator}
-              </span>
-            )}
+            {valueBadge}
           </div>
         </div>
       )}
