@@ -124,12 +124,12 @@ app.use('*', async (c, next) => {
   const nonce = crypto.randomUUID().replace(/-/g, '');
   const cspDirectives = [
     "default-src 'self'",
-    `script-src 'self' https://pagead2.googlesyndication.com 'nonce-${nonce}'`,
+    `script-src 'self' https://pagead2.googlesyndication.com https://www.googletagmanager.com https://www.google-analytics.com https://connect.facebook.net https://analytics.tiktok.com 'nonce-${nonce}'`,
     "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'",
     "font-src https://fonts.gstatic.com",
-    "connect-src 'self' https://filmroom-api.earle2001.workers.dev",
+    "connect-src 'self' https://filmroom-api.earle2001.workers.dev https://www.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://www.facebook.com https://analytics.tiktok.com",
     "img-src 'self' data: https:",
-    "frame-src https://googleads.g.doubleclick.net",
+    "frame-src https://googleads.g.doubleclick.net https://td.doubleclick.net",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

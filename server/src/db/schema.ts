@@ -23,6 +23,7 @@ export const users = sqliteTable('users', {
   stripeSubscriptionId: text('stripe_subscription_id'),
   subscriptionExpiresAt: text('subscription_expires_at'),
   role: text('role').notNull().default('user'), // 'user' | 'admin'
+  emailVerifiedAt: integer('email_verified_at', { mode: 'timestamp' }), // null = unverified
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
@@ -592,6 +593,19 @@ export const passwordResetTokens = sqliteTable('password_reset_tokens', {
 });
 
 // ============================================
+// EMAIL VERIFICATION TOKENS
+// ============================================
+
+export const emailVerificationTokens = sqliteTable('email_verification_tokens', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(), // SHA-256 hash of the token (never store raw)
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  usedAt: integer('used_at', { mode: 'timestamp' }), // null until used
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// ============================================
 // USER FEEDBACK
 // ============================================
 
@@ -726,6 +740,7 @@ export type PlayerNews = typeof playerNews.$inferSelect;
 export type UserFeedback = typeof userFeedback.$inferSelect;
 export type NewUserFeedback = typeof userFeedback.$inferInsert;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
 export type GameOdds = typeof gameOdds.$inferSelect;
 export type NewGameOdds = typeof gameOdds.$inferInsert;
 export type PlayerProps = typeof playerProps.$inferSelect;

@@ -1,5 +1,6 @@
 import { api } from './api';
 import { isAllowed } from './consent';
+import { trackPageView as trackPixelPageView } from './tracking';
 
 // Generate or retrieve a persistent anonymous session ID
 function getSessionId(): string {
@@ -54,5 +55,12 @@ export function trackPageView(path: string): void {
     });
   } catch {
     // Never break the app over analytics
+  }
+
+  // Mirror the pageview to GA4/Meta/TikTok (no-ops if those pixels aren't configured/loaded).
+  try {
+    trackPixelPageView(path);
+  } catch {
+    // ignore
   }
 }

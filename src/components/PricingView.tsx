@@ -1,6 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
-import { CreditCard, Check, AlertCircle, Clock } from 'lucide-react';
+import { CreditCard, Check, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
+import { trackBeginCheckout, trackPurchase } from '../services/tracking';
+
+// Public pricing — kept in sync with server/src/routes/billing.ts price IDs.
+// Used to populate ad-platform conversion `value` so ROAS reports are accurate.
+const TIER_VALUES: Record<'pro' | 'elite', { month: number; year: number }> = {
+  pro: { month: 4.99, year: 49.99 },
+  elite: { month: 9.99, year: 99.99 },
+};
 
 interface PricingViewProps {
   isDarkMode: boolean;
@@ -9,30 +17,11 @@ interface PricingViewProps {
   onNavigate?: (view: string) => void;
 }
 
-const PROMO_DEADLINE = new Date('2026-04-17T00:00:00Z');
-
-function useCountdown(deadline: Date) {
-  const [timeLeft, setTimeLeft] = useState(() => Math.max(0, deadline.getTime() - Date.now()));
-  useEffect(() => {
-    if (timeLeft <= 0) return;
-    const id = setInterval(() => {
-      setTimeLeft(Math.max(0, deadline.getTime() - Date.now()));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [deadline, timeLeft]);
-  const hours = Math.floor(timeLeft / (1000 * 60 * 60));
-  const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
-  return { hours, minutes, seconds, expired: timeLeft <= 0 };
-}
-
 export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = false, onNavigate }: PricingViewProps) {
   const [isAnnual, setIsAnnual] = useState(false);
   const [loading, setLoading] = useState<'pro' | 'elite' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hoveredTier, setHoveredTier] = useState<string | null>(null);
-  const countdown = useCountdown(PROMO_DEADLINE);
-  const showPromo = !countdown.expired && !isAuthenticated;
 
   const handleUpgrade = useCallback(async (tier: 'pro' | 'elite') => {
     if (!isAuthenticated) {
@@ -53,6 +42,15 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         ? (interval === 'year' ? 'elite_yearly' : 'elite_monthly')
         : (interval === 'year' ? 'pro_yearly' : 'pro_monthly');
 
+      // Fire begin_checkout BEFORE the redirect so the pixel has a chance to send.
+      // Stash tier+interval so the success page can fire the matching purchase event.
+      try {
+        trackBeginCheckout(tier, interval, TIER_VALUES[tier][interval]);
+        sessionStorage.setItem('fr_pending_checkout', JSON.stringify({ tier, interval }));
+      } catch {
+        // sessionStorage may be unavailable in private mode — non-fatal
+      }
+
       const data = await api.post<{ url: string }>('/billing/create-checkout', {
         priceId,
         successUrl: `${window.location.origin}/pricing?billing=success`,
@@ -70,6 +68,31 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
       setLoading(null);
     }
   }, [isAuthenticated, isAnnual]);
+
+  // Detect Stripe checkout success redirect and fire the purchase conversion.
+  // Stripe webhook still settles the subscription server-side; this is purely
+  // for ad-platform attribution. Removes the query param + session marker on
+  // first run so the event can't fire twice from a refresh.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('billing') !== 'success') return;
+    try {
+      const raw = sessionStorage.getItem('fr_pending_checkout');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { tier: 'pro' | 'elite'; interval: 'month' | 'year' };
+        if ((parsed.tier === 'pro' || parsed.tier === 'elite') && (parsed.interval === 'month' || parsed.interval === 'year')) {
+          trackPurchase(parsed.tier, parsed.interval, TIER_VALUES[parsed.tier][parsed.interval]);
+        }
+        sessionStorage.removeItem('fr_pending_checkout');
+      }
+    } catch {
+      // ignore — never block UI on a tracking failure
+    }
+    params.delete('billing');
+    const next = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (next ? `?${next}` : ''));
+  }, []);
 
   const savings = {
     pro: '17%',
@@ -135,28 +158,6 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
   return (
     <div className={`min-h-screen py-12 px-4 sm:px-6 lg:px-8 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
       <div className="max-w-7xl mx-auto">
-        {/* Promo Banner */}
-        {showPromo && (
-          <div className={`mb-8 p-4 rounded-xl text-center border ${isDarkMode ? 'bg-amber-900/20 border-amber-700/50' : 'bg-amber-50 border-amber-200'}`}>
-            <div className="flex items-center justify-center gap-2 mb-1">
-              <Clock className={`w-5 h-5 ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`} />
-              <span className={`font-bold text-lg ${isDarkMode ? 'text-amber-300' : 'text-amber-800'}`}>
-                Limited Time: Free Elite Access
-              </span>
-            </div>
-            <p className={`text-sm mb-2 ${isDarkMode ? 'text-amber-400/80' : 'text-amber-700'}`}>
-              Sign up now and get Elite features completely free — no credit card required.
-            </p>
-            <div className={`inline-flex items-center gap-1 font-mono text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-              <span className={`px-2 py-1 rounded ${isDarkMode ? 'bg-slate-800' : 'bg-white'}`}>{String(countdown.hours).padStart(2, '0')}</span>
-              <span>:</span>
-              <span className={`px-2 py-1 rounded ${isDarkMode ? 'bg-slate-800' : 'bg-white'}`}>{String(countdown.minutes).padStart(2, '0')}</span>
-              <span>:</span>
-              <span className={`px-2 py-1 rounded ${isDarkMode ? 'bg-slate-800' : 'bg-white'}`}>{String(countdown.seconds).padStart(2, '0')}</span>
-            </div>
-          </div>
-        )}
-
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className={`text-4xl sm:text-5xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
