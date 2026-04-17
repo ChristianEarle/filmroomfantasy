@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { SignJWT, jwtVerify, createRemoteJWKSet } from 'jose';
 import { eq, and, isNull, gt } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
@@ -101,6 +102,65 @@ async function sendPasswordResetEmail(
   });
 }
 
+// Send email-verification email via Resend (or log to console if no API key).
+async function sendVerificationEmail(
+  to: string,
+  verifyUrl: string,
+  resendApiKey?: string
+): Promise<void> {
+  if (!resendApiKey) {
+    console.warn('[Email Verification] No RESEND_API_KEY configured — email not sent.');
+    return;
+  }
+
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${resendApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: 'FilmRoom <noreply@filmroomfantasy.com>',
+      to: [to],
+      subject: 'Verify your FilmRoom email',
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+          <h2 style="color: #1e293b; margin-bottom: 16px;">Welcome to FilmRoom</h2>
+          <p style="color: #475569; line-height: 1.6;">
+            Confirm your email so we can send you password resets, billing receipts, and important account updates.
+          </p>
+          <a href="${verifyUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 24px 0;">
+            Verify Email
+          </a>
+          <p style="color: #94a3b8; font-size: 14px; line-height: 1.5;">
+            This link expires in 24 hours. If you didn't create a FilmRoom account, you can safely ignore this email.
+          </p>
+        </div>
+      `,
+    }),
+  });
+}
+
+// Generate a verification token, store its hash, and email the link.
+// Safe to call multiple times — old tokens stay valid until used or expired.
+async function issueVerificationToken(
+  db: ReturnType<typeof drizzle<typeof schema>>,
+  user: { id: string; email: string },
+  appUrl: string,
+  resendApiKey: string | undefined,
+): Promise<void> {
+  const rawToken = crypto.randomUUID() + '-' + crypto.randomUUID();
+  const tokenHash = await sha256(rawToken);
+  await db.insert(schema.emailVerificationTokens).values({
+    id: generateId(),
+    userId: user.id,
+    tokenHash,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
+  });
+  const verifyUrl = `${appUrl}/#verify_token=${encodeURIComponent(rawToken)}`;
+  await sendVerificationEmail(user.email, verifyUrl, resendApiKey);
+}
+
 // Google OAuth: JWKS endpoint for verifying Google ID tokens
 const GOOGLE_JWKS = createRemoteJWKSet(
   new URL('https://www.googleapis.com/oauth2/v3/certs')
@@ -175,17 +235,12 @@ authRoutes.post('/register', authRateLimit, async (c) => {
     // Hash password using Workers-compatible PBKDF2
     const passwordHash = await hashPassword(password);
 
-    // Create user
-    // Promo: grant elite (forever) to all signups within 24h (through April 17, 2026)
-    const isPromoActive = new Date() < new Date('2026-04-17T00:00:00Z');
-
     const userId = generateId();
     await db.insert(schema.users).values({
       id: userId,
       email: email.toLowerCase(),
       passwordHash,
       username,
-      ...(isPromoActive ? { subscriptionTier: 'elite' } : {}),
     });
 
     // Generate token
@@ -204,12 +259,22 @@ authRoutes.post('/register', authRateLimit, async (c) => {
     // browsers that block cross-origin cookies)
     setAuthCookie(c, token);
 
+    // Send the email-verification link. We swallow email failures so a transient
+    // Resend outage can't block signup — the user can re-trigger it from the UI.
+    try {
+      const appUrl = c.env.APP_URL || 'http://localhost:5173';
+      await issueVerificationToken(db, { id: userId, email: email.toLowerCase() }, appUrl, c.env.RESEND_API_KEY);
+    } catch (err) {
+      console.error('[Registration] Failed to send verification email:', err);
+    }
+
     return c.json({
       token,
       user: {
         id: userId,
         email: email.toLowerCase(),
         username,
+        emailVerifiedAt: null,
       },
     }, 201);
   } catch (error) {
@@ -273,6 +338,7 @@ authRoutes.post('/login', authRateLimit, async (c) => {
         email: user.email,
         username: user.username,
         avatarUrl: user.avatarUrl,
+        emailVerifiedAt: user.emailVerifiedAt,
       },
     });
   } catch (error) {
@@ -313,6 +379,7 @@ authRoutes.get('/me', authMiddleware, async (c) => {
       subscriptionTier: user.subscriptionTier ?? 'free',
       subscriptionExpiresAt: user.subscriptionExpiresAt ?? null,
       role: user.role ?? 'user',
+      emailVerifiedAt: user.emailVerifiedAt ?? null,
     },
     leagues: memberships.map(m => ({
       ...m.league,
@@ -535,9 +602,6 @@ authRoutes.post('/google', authRateLimit, async (c) => {
 
         const userId = generateId();
 
-        // Promo: grant elite (forever) to all signups within 24h (through April 17, 2026)
-        const isPromoActive = new Date() < new Date('2026-04-17T00:00:00Z');
-
         await db.insert(schema.users).values({
           id: userId,
           email: email,
@@ -545,7 +609,9 @@ authRoutes.post('/google', authRateLimit, async (c) => {
           username: username,
           googleId: googleId,
           avatarUrl: googlePayload.picture || null,
-          ...(isPromoActive ? { subscriptionTier: 'elite' } : {}),
+          // Google asserts email_verified upstream (we already check it above),
+          // so we trust it and skip our own verification round-trip.
+          emailVerifiedAt: new Date(),
         });
 
         user = await db.query.users.findFirst({
@@ -581,6 +647,7 @@ authRoutes.post('/google', authRateLimit, async (c) => {
         email: user.email,
         username: user.username,
         avatarUrl: user.avatarUrl,
+        emailVerifiedAt: user.emailVerifiedAt,
       },
     });
   } catch (error) {
@@ -762,3 +829,61 @@ authRoutes.post('/reset-password', passwordResetRateLimit, async (c) => {
   }
 });
 
+// Verify an email address using a token from the verification email.
+// Public (token is the auth) — single-use, expires in 24h.
+authRoutes.post('/verify-email', passwordResetRateLimit, async (c) => {
+  try {
+    const { token } = await c.req.json();
+    if (!token || typeof token !== 'string') {
+      return c.json({ error: 'Token is required' }, 400);
+    }
+
+    const db = c.get('db');
+    const tokenHash = await sha256(token);
+
+    const verifyToken = await db.query.emailVerificationTokens.findFirst({
+      where: and(
+        eq(schema.emailVerificationTokens.tokenHash, tokenHash),
+        isNull(schema.emailVerificationTokens.usedAt),
+        gt(schema.emailVerificationTokens.expiresAt, new Date()),
+      ),
+    });
+
+    if (!verifyToken) {
+      return c.json({ error: 'Invalid or expired verification link. Request a new one from your account.' }, 400);
+    }
+
+    const now = new Date();
+    await db.update(schema.users)
+      .set({ emailVerifiedAt: now, updatedAt: now })
+      .where(eq(schema.users.id, verifyToken.userId));
+
+    await db.update(schema.emailVerificationTokens)
+      .set({ usedAt: now })
+      .where(eq(schema.emailVerificationTokens.id, verifyToken.id));
+
+    return c.json({ message: 'Email verified successfully.' });
+  } catch (error) {
+    console.error('Verify email error:', error);
+    return c.json({ error: 'Email verification failed' }, 500);
+  }
+});
+
+// Resend the verification email for the currently authenticated user.
+// No-op (still 200) if the email is already verified, so the UI can be naive.
+authRoutes.post('/resend-verification', passwordResetRateLimit, authMiddleware, async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user) return c.json({ error: 'Not authenticated' }, 401);
+    if (user.emailVerifiedAt) {
+      return c.json({ message: 'Email is already verified.', alreadyVerified: true });
+    }
+    const db = c.get('db');
+    const appUrl = c.env.APP_URL || 'http://localhost:5173';
+    await issueVerificationToken(db, { id: user.id, email: user.email }, appUrl, c.env.RESEND_API_KEY);
+    return c.json({ message: 'Verification email sent.' });
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    return c.json({ error: 'Could not send verification email' }, 500);
+  }
+});

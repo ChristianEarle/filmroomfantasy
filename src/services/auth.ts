@@ -18,6 +18,8 @@ export interface User {
   subscriptionTier?: 'free' | 'pro' | 'elite';
   subscriptionExpiresAt?: string;
   role?: 'user' | 'admin';
+  /** ISO timestamp; null/undefined means email not yet verified. */
+  emailVerifiedAt?: string | null;
 }
 
 export interface UpdateProfileData {
@@ -132,6 +134,16 @@ export const authService = {
   // Reset password — use token from email to set new password
   resetPassword: async (token: string, newPassword: string): Promise<{ message: string }> => {
     return api.post<{ message: string }>('/auth/reset-password', { token, newPassword });
+  },
+
+  // Verify an email address with a token from the verification email.
+  verifyEmail: async (token: string): Promise<{ message: string }> => {
+    return api.post<{ message: string }>('/auth/verify-email', { token });
+  },
+
+  // Resend the verification email to the currently signed-in user.
+  resendVerification: async (): Promise<{ message: string; alreadyVerified?: boolean }> => {
+    return api.post<{ message: string; alreadyVerified?: boolean }>('/auth/resend-verification', {});
   },
 };
 

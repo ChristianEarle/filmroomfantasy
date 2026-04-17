@@ -58,6 +58,7 @@ const DraftRankingsView = lazyWithReload(() => import('./components/DraftRanking
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
 import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswordView';
+import { EmailVerificationBanner } from './components/EmailVerificationBanner';
 import { ComingSoonView } from './components/ComingSoonView';
 import { LandingPage } from './components/LandingPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -68,6 +69,7 @@ import { LeagueProvider, useLeagueContext } from './context/LeagueContext';
 import { LeaguesProvider, useLeaguesContext } from './context/LeaguesContext';
 import { trackPageView } from './services/analytics';
 import { trackSignUp } from './services/tracking';
+import { authService } from './services/auth';
 
 // Page transition wrapper component
 function PageTransition({ children, viewKey }: { children: React.ReactNode; viewKey: string }) {
@@ -252,7 +254,7 @@ function getArticleSlugFromURL(): string | null {
 
 // Main App content component that uses auth context
 function AppContent() {
-  const { user, isLoading, isAuthenticated, login, register, logout, updateProfile } = useAuth();
+  const { user, isLoading, isAuthenticated, login, register, logout, updateProfile, refreshUser } = useAuth();
   const { selectedLeagueId, setSelectedLeagueId, league, refreshAll } = useLeagueContext();
   const { leagues, isLoading: leaguesLoading } = useLeaguesContext();
 
@@ -346,6 +348,34 @@ function AppContent() {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
+
+  // Email verification: redeem #verify_token=... on mount.
+  // Shows a one-shot status banner above the app shell. If the user is signed
+  // in we refresh /me so the unverified-email banner disappears immediately.
+  const [verifyStatus, setVerifyStatus] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const token = hashParams.get('verify_token');
+    if (!token) return;
+    // Strip the token from the URL immediately so a refresh can't replay it
+    window.history.replaceState({}, '', window.location.pathname);
+    (async () => {
+      try {
+        await authService.verifyEmail(token);
+        setVerifyStatus({ kind: 'success', message: 'Email verified — thanks!' });
+        try {
+          await refreshUser();
+        } catch {
+          // Not signed in — that's fine, the verify call still worked
+        }
+      } catch (err) {
+        setVerifyStatus({
+          kind: 'error',
+          message: err instanceof Error ? err.message : 'Verification link is invalid or expired.',
+        });
+      }
+    })();
+  }, [refreshUser]);
 
   // Handle /register URL — set activeView to Login and authView to register
   useEffect(() => {
@@ -502,6 +532,28 @@ function AppContent() {
           }}
           onMenuToggle={() => setSidebarOpen(prev => !prev)}
         />
+
+        {verifyStatus && (
+          <div
+            className={`flex items-center justify-between gap-3 px-4 py-3 border-b text-sm ${
+              verifyStatus.kind === 'success'
+                ? (isDarkMode ? 'bg-emerald-950/40 border-emerald-800/40 text-emerald-100' : 'bg-emerald-50 border-emerald-200 text-emerald-900')
+                : (isDarkMode ? 'bg-red-950/40 border-red-800/40 text-red-100' : 'bg-red-50 border-red-200 text-red-900')
+            }`}
+          >
+            <span>{verifyStatus.message}</span>
+            <button
+              type="button"
+              onClick={() => setVerifyStatus(null)}
+              className="text-xs underline opacity-80 hover:opacity-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        {isAuthenticated && user && !user.emailVerifiedAt && (
+          <EmailVerificationBanner email={user.email} isDarkMode={isDarkMode} />
+        )}
 
         <main className={`flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
           <PageTransition viewKey={activeView}>
