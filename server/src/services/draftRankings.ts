@@ -33,11 +33,18 @@ const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 64000;
 const ANTHROPIC_BATCH_URL = 'https://api.anthropic.com/v1/messages/batches';
 
-// ── MyFantasyLeague ADP ─────────────────────────────────────────────
-// MFL exposes real community-draft ADP (averagePick from recent drafts) for
-// both redraft (IS_KEEPER=N) and dynasty rookie drafts (IS_KEEPER=R). Their
-// catalog uses MFL-specific player ids, so we fetch the player list too and
-// key the resulting ADP map by normalized name for cross-feed matching.
+// ── ADP sources ─────────────────────────────────────────────────────
+// Redraft ADP comes from FantasyPros — their public page defaults to 1-QB
+// PPR/Half/Standard, which is what most fantasy users actually play. MFL's
+// JSON endpoint is free and JSON but their pool is dominated by superflex
+// drafts (Josh Allen @ ADP 2.21 instead of ~20), which pollutes 1-QB
+// rankings badly.
+//
+// Dynasty rookie ADP still uses MFL's IS_KEEPER=R endpoint — it's the only
+// free JSON source for rookie-draft ADP. Current matching is thin because
+// Sleeper's player catalog doesn't yet have the 2026 NFL draft class;
+// expected to self-correct once the NFL draft lands and sync-players picks
+// up the new rookies.
 
 /**
  * Normalize a player name for cross-feed matching. Strips punctuation and
@@ -54,6 +61,72 @@ function normalizePlayerName(name: string): string {
     .replace(/\s+(jr|sr|ii|iii|iv|v)\.?$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Fetch FantasyPros 1-QB redraft ADP for the given scoring format. Returns
+ * Map<normalizedName, adpRank>. We use table position (1, 2, 3, ...) as the
+ * ADP value rather than parsing the avg-pick column — it's cleaner signal
+ * for the model and robust to FantasyPros layout tweaks.
+ */
+async function fetchFantasyProsADP(
+  scoringFormat: 'ppr' | 'half-ppr' | 'standard',
+): Promise<Map<string, number>> {
+  const url = scoringFormat === 'ppr'
+    ? 'https://www.fantasypros.com/nfl/adp/ppr-overall.php'
+    : scoringFormat === 'half-ppr'
+    ? 'https://www.fantasypros.com/nfl/adp/half-point-ppr-overall.php'
+    : 'https://www.fantasypros.com/nfl/adp/overall.php';
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        // FantasyPros 403s on bare fetches — a normal UA string unblocks it.
+        'User-Agent': 'Mozilla/5.0 (compatible; FilmRoomFantasy/1.0)',
+      },
+    });
+    if (!res.ok) {
+      console.warn(`[draftRankings] FantasyPros ADP ${scoringFormat} HTTP ${res.status}`);
+      return new Map();
+    }
+
+    const fullHtml = await res.text();
+    // FantasyPros's main ADP table has id="data". Scope extraction to just
+    // that <table>…</table> block so the regex doesn't scan sidebar widgets
+    // and inline scripts (which pushes the worker over the CPU limit and
+    // pollutes ranks with non-ADP players).
+    const tableStart = fullHtml.indexOf('<table') !== -1
+      ? fullHtml.indexOf('id="data"')
+      : -1;
+    let html: string;
+    if (tableStart > 0) {
+      const tableEnd = fullHtml.indexOf('</table>', tableStart);
+      html = tableEnd > 0 ? fullHtml.slice(tableStart, tableEnd) : fullHtml.slice(tableStart, tableStart + 200_000);
+    } else {
+      // Fallback: bound the scan to a prefix if the id= attribute moves.
+      html = fullHtml.slice(0, 200_000);
+    }
+
+    // Match anchors in the ADP table: each player row has
+    //   <a class="player-name fp-player-link fp-id-XXXX" ... >Full Name</a>
+    // Document order within the main table corresponds to ADP rank.
+    const nameRegex = /<a class="player-name[^"]*"[^>]*>([^<]+)<\/a>/g;
+    const result = new Map<string, number>();
+    let match: RegExpExecArray | null;
+    let rank = 0;
+    while ((match = nameRegex.exec(html)) !== null) {
+      const normalized = normalizePlayerName(match[1].trim());
+      if (result.has(normalized)) continue;
+      rank += 1;
+      result.set(normalized, rank);
+    }
+
+    console.log(`[draftRankings] FantasyPros ADP (${scoringFormat}): ${result.size} entries`);
+    return result;
+  } catch (err) {
+    console.error('[draftRankings] FantasyPros ADP fetch failed:', err);
+    return new Map();
+  }
 }
 
 type KeeperType = 'N' | 'R'; // N = redraft, R = rookie-only
@@ -366,11 +439,13 @@ export async function submitDraftRankingsBatch(
   const metas: BatchVariantMeta[] = [];
 
   for (const v of variants) {
-    // Pull real MFL ADP per variant: IS_KEEPER=R for dynasty rookie drafts,
-    // IS_KEEPER=N for redraft. The scoring flag (IS_PPR) drives which pricing
-    // format the community-drafted ADP reflects.
-    const keeperType: KeeperType = v.rankingType === 'dynasty_rookie' ? 'R' : 'N';
-    const adp = await fetchMFLADP(seasonYear, v.scoringFormat, keeperType);
+    // Redraft → FantasyPros 1-QB ADP (MFL's ADP pool is dominated by
+    // superflex drafts, which ranks QBs way too high for 1-QB leagues).
+    // Dynasty rookie → MFL rookie-only ADP (FantasyPros doesn't expose
+    // rookie ADP cleanly; MFL's is the only free structured source).
+    const adp = v.rankingType === 'dynasty_rookie'
+      ? await fetchMFLADP(seasonYear, v.scoringFormat, 'R')
+      : await fetchFantasyProsADP(v.scoringFormat);
     const contexts = await buildPlayerContexts(db, v.rankingType, v.scoringFormat, seasonYear, adp);
     if (contexts.length === 0) {
       console.warn(`[draftRankings] No players found for ${v.rankingType}/${v.scoringFormat}; skipping`);
@@ -704,11 +779,12 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
     return { ok: false, count: 0, error: 'AI returned empty rankings array' };
   }
 
-  // Re-fetch the MFL ADP for this variant (tiny call) so adpDelta reflects
-  // current ADP at write time, not whatever was in effect when the batch
-  // was submitted hours ago.
-  const keeperType: KeeperType = meta.rankingType === 'dynasty_rookie' ? 'R' : 'N';
-  const adp = await fetchMFLADP(seasonYear, meta.scoringFormat, keeperType);
+  // Re-fetch ADP for adpDelta so it reflects current ADP at write time
+  // rather than what was in effect hours ago when the batch was submitted.
+  // Same source routing as the submit path.
+  const adp = meta.rankingType === 'dynasty_rookie'
+    ? await fetchMFLADP(seasonYear, meta.scoringFormat, 'R')
+    : await fetchFantasyProsADP(meta.scoringFormat);
   const contexts = await buildPlayerContexts(
     db, meta.rankingType, meta.scoringFormat, seasonYear, adp,
   );
