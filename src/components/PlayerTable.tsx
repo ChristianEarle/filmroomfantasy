@@ -16,9 +16,10 @@ interface PlayerRowProps {
   oddsData?: { homeTeam: string; awayTeam: string; homeSpread: number | null; total: number | null } | null;
   pointsType?: 'actual' | 'projected';
   propLine?: string | null;
+  isOwned?: boolean;
 }
 
-const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData, pointsType = 'projected', propLine }: PlayerRowProps) {
+const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData, pointsType = 'projected', propLine, isOwned = false }: PlayerRowProps) {
   // Format odds display for this player's game
   const formatOdds = () => {
     if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
@@ -43,14 +44,30 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
           onClick(player);
         }
       }}
-      className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
+      className={`border-b transition-colors cursor-pointer group ${
+        isOwned
+          ? isDarkMode
+            ? 'border-slate-800 bg-blue-500/10 hover:bg-blue-500/15'
+            : 'border-slate-100 bg-blue-50 hover:bg-blue-100'
+          : isDarkMode
+          ? 'border-slate-800 hover:bg-slate-800'
+          : 'border-slate-100 hover:bg-slate-50'
+      }`}
+      style={isOwned ? { boxShadow: 'inset 3px 0 0 rgb(59, 130, 246)' } : undefined}
     >
       <td className="px-2 sm:px-4 md:px-6 py-3 sm:py-4">
         <span className={`font-medium text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
       </td>
       <td className="px-2 sm:px-4 py-3 sm:py-4">
         <div>
-          <div className={`font-bold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
+          <div className="flex items-center gap-1.5">
+            <span className={`font-bold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</span>
+            {isOwned && (
+              <span className="fr-text-9 font-bold uppercase fr-tracking-wider px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-500">
+                YOUR TEAM
+              </span>
+            )}
+          </div>
           <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             {player.team} <span className="sm:hidden">• {player.position}</span>
             {oddsDisplay && (
@@ -180,7 +197,9 @@ export function PlayerTable({
   onViewAll,
   isDarkMode,
 }: PlayerTableProps) {
-  const { league } = useLeagueContext();
+  const { league, roster } = useLeagueContext();
+  // Owned-player ids — used to highlight rows the current user rosters.
+  const ownedPlayerIds = useMemo(() => new Set((roster ?? []).map((r) => r.id)), [roster]);
   const scoringOptions: Array<'PPR' | 'Half PPR' | 'Standard'> = ['PPR', 'Half PPR', 'Standard'];
   const positions = ['ALL', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'K', 'DEF'];
 
@@ -374,8 +393,144 @@ export function PlayerTable({
     return { boom, bust, mvp };
   }, [players, pointsType]);
 
+  const pill = (active: boolean, onClick: () => void, label: string) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${
+        active
+          ? 'bg-blue-600 text-white border-blue-600'
+          : isDarkMode
+          ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600'
+          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div className="max-w-6xl mx-auto space-y-4">
+      {/* Page header */}
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-blue-600/20' : 'bg-blue-50'}`}>
+            <svg className={`w-5 h-5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="20" x2="12" y2="10" />
+              <line x1="18" y1="20" x2="18" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="16" />
+            </svg>
+          </div>
+          <div>
+            <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              Player Rankings
+            </h1>
+            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              {seasonYear} Season · Week {currentWeek} {pointsType === 'actual' ? '(Final)' : '(Projections)'} · {pointsType === 'actual' ? 'Actual points scored' : 'Projected points'}
+              {totalPlayers > 0 && <> · {totalPlayers} players</>}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              // CSV export of currently-loaded players
+              const rows = [
+                ['Rank', 'Player', 'Pos', 'Team', 'Pts', 'Proj', '+/-'],
+                ...sortedAndFilteredPlayers.map(p => [
+                  String(p.rank),
+                  p.name,
+                  p.position,
+                  p.team,
+                  p.projectedPoints.toFixed(1),
+                  (p.weeklyProjectedPoints ?? 0).toFixed(1),
+                  (p.projectedPoints - (p.weeklyProjectedPoints ?? 0)).toFixed(1),
+                ]),
+              ];
+              const csv = rows.map(r => r.map(c => /[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c).join(',')).join('\n');
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `player-rankings-week${currentWeek}-${seasonYear}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold transition-colors ${
+              isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-200 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+            Export
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
+            title="Ask AI about rankings (coming soon)"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" /></svg>
+            Ask AI
+          </button>
+        </div>
+      </div>
+
+      {/* Controls row */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Scoring */}
+        <div className="flex gap-1">
+          {scoringOptions.map(opt => (
+            <span key={opt}>{pill(selectedScoring === opt, () => onScoringChange(opt), opt)}</span>
+          ))}
+        </div>
+
+        {/* Position */}
+        <div className="flex gap-1 flex-wrap">
+          {positions.map(pos => (
+            <span key={pos}>{pill(selectedPosition === pos, () => onPositionChange(pos), pos)}</span>
+          ))}
+        </div>
+
+        {/* Search (inline) */}
+        <div className={`ml-auto flex items-center rounded-md border px-2 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <Search className={`w-3.5 h-3.5 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+          <input
+            id="player-search"
+            type="text"
+            placeholder="Player or team..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={`py-1.5 px-2 bg-transparent text-xs focus:outline-none w-32 sm:w-40 ${isDarkMode ? 'text-white placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'}`}
+          />
+        </div>
+
+        {/* Week nav: prev / label / next + Full Season */}
+        <div className={`inline-flex items-center rounded-md border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <button
+            type="button"
+            onClick={() => onWeekChange(Math.max(1, currentWeek - 1))}
+            disabled={currentWeek <= 1}
+            aria-label="Previous week"
+            className={`px-2 py-1.5 disabled:opacity-40 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+          <span className={`px-3 py-1.5 text-xs font-semibold border-x ${isDarkMode ? 'border-slate-700 text-white' : 'border-slate-200 text-slate-900'}`}>
+            Week {currentWeek}
+          </span>
+          <button
+            type="button"
+            onClick={() => onWeekChange(Math.min(18, currentWeek + 1))}
+            disabled={currentWeek >= 18}
+            aria-label="Next week"
+            className={`px-2 py-1.5 disabled:opacity-40 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
+          </button>
+        </div>
+      </div>
+
       {/* Boom / Bust / MVP callouts — only shown for finalized weeks */}
       {callouts && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -457,113 +612,8 @@ export function PlayerTable({
         </div>
       )}
 
-      {/* Table with Header */}
+      {/* Table */}
       <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-        {/* Header */}
-        <div className={`p-3 sm:p-4 md:p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-          <h1 className={`font-bold mb-1 text-sm sm:text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-            {seasonYear} Fantasy Football Player Rankings — Week {currentWeek} {pointsType === 'actual' ? '(Final)' : '(Projections)'}
-          </h1>
-          <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            {pointsType === 'actual' ? 'Actual points scored' : 'Top players based on season stats and projections'}
-          </p>
-
-          {/* Filters */}
-          <div className="flex items-center gap-2 sm:gap-3 mt-3 sm:mt-4 flex-wrap">
-            {/* Search */}
-            <div className="flex items-center gap-2">
-              <label htmlFor="player-search" className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Search:</label>
-              <div className={`flex items-center rounded-lg px-3 gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-                <Search className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} aria-hidden="true" />
-                <input
-                  id="player-search"
-                  type="text"
-                  placeholder="Player or team..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`py-1.5 bg-transparent text-sm focus:outline-none w-28 sm:w-36 ${isDarkMode ? 'text-white placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'}`}
-                />
-              </div>
-            </div>
-
-            <div className={`w-px h-6 hidden sm:block ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
-
-            {/* Scoring Type */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <span className={`text-sm flex-shrink-0 hidden sm:inline ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Score:</span>
-              {scoringOptions.map((option) => (
-                <button
-                  key={option}
-                  onClick={() => onScoringChange(option)}
-                  className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm rounded-lg transition-colors flex-shrink-0 ${
-                    selectedScoring === option
-                      ? 'bg-blue-600 text-white'
-                      : isDarkMode
-                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-800'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-
-            <div className={`w-px h-6 hidden sm:block ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
-
-            {/* Position Filter */}
-            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto">
-              <span className={`text-sm flex-shrink-0 hidden sm:inline ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Position:</span>
-              {positions.map((position) => (
-                <button
-                  key={position}
-                  onClick={() => onPositionChange(position)}
-                  className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm rounded-lg transition-colors flex-shrink-0 ${
-                    selectedPosition === position
-                      ? 'bg-blue-600 text-white'
-                      : isDarkMode
-                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-800'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {position}
-                </button>
-              ))}
-            </div>
-
-            <div className={`w-px h-6 hidden sm:block ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
-
-            {/* Week Selector — BUG-006 fix: ref + click-outside + always show all 18 weeks */}
-            <div className="relative" ref={weekDropdownRef}>
-              <button
-                onClick={() => setShowWeekDropdown(!showWeekDropdown)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >
-                <span className="text-sm">Week {currentWeek}</span>
-                <ChevronDown className={`w-4 h-4 transition-transform ${showWeekDropdown ? 'rotate-180' : ''}`} />
-              </button>
-              {showWeekDropdown && (
-                <div className={`absolute top-10 left-0 w-28 rounded-lg border shadow-xl z-50 overflow-hidden max-h-80 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map(week => (
-                    <button
-                      key={week}
-                      onClick={() => { onWeekChange(week); setShowWeekDropdown(false); }}
-                      className={`w-full px-4 py-2 text-sm text-left transition-colors ${
-                        currentWeek === week
-                          ? 'bg-blue-600 text-white'
-                          : isDarkMode
-                            ? 'text-slate-300 hover:bg-slate-800'
-                            : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      Week {week}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
         {/* Table */}
         <div className="overflow-x-auto">
           {error ? (
@@ -692,6 +742,7 @@ export function PlayerTable({
                         oddsData={getOddsForTeam(player.team)}
                         pointsType={pointsType}
                         propLine={propLine}
+                        isOwned={ownedPlayerIds.has(player.id)}
                       />
                     );
                   })

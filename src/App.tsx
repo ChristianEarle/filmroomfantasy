@@ -4,6 +4,7 @@ import { Header } from './components/Header';
 import { PlayerTable } from './components/PlayerTable';
 import { NewsPanel } from './components/NewsPanel';
 import { BiggestMovers } from './components/BiggestMovers';
+import { RosterBoardPanel } from './components/RosterBoardPanel';
 import { PlayerCard } from './components/PlayerCard';
 import type { Game } from './types/game';
 import { GameDetailModal } from './components/GameDetailModal';
@@ -602,6 +603,11 @@ function AppContent() {
 
                   {/* Right Sidebar - 1/3 width */}
                   <div className="space-y-6">
+                    <RosterBoardPanel
+                      currentWeek={currentWeek}
+                      onViewTeam={() => setActiveView('Team')}
+                      isDarkMode={isDarkMode}
+                    />
                     <NewsPanel isDarkMode={isDarkMode} />
                     <BiggestMovers currentWeek={currentWeek} isDarkMode={isDarkMode} />
                   </div>
