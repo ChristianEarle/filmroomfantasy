@@ -16,9 +16,10 @@ interface PlayerRowProps {
   oddsData?: { homeTeam: string; awayTeam: string; homeSpread: number | null; total: number | null } | null;
   pointsType?: 'actual' | 'projected';
   propLine?: string | null;
+  isOwned?: boolean;
 }
 
-const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData, pointsType = 'projected', propLine }: PlayerRowProps) {
+const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsData, pointsType = 'projected', propLine, isOwned = false }: PlayerRowProps) {
   // Format odds display for this player's game
   const formatOdds = () => {
     if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
@@ -43,14 +44,30 @@ const PlayerRow = memo(function PlayerRow({ player, onClick, isDarkMode, oddsDat
           onClick(player);
         }
       }}
-      className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
+      className={`border-b transition-colors cursor-pointer group ${
+        isOwned
+          ? isDarkMode
+            ? 'border-slate-800 bg-blue-500/10 hover:bg-blue-500/15'
+            : 'border-slate-100 bg-blue-50 hover:bg-blue-100'
+          : isDarkMode
+          ? 'border-slate-800 hover:bg-slate-800'
+          : 'border-slate-100 hover:bg-slate-50'
+      }`}
+      style={isOwned ? { boxShadow: 'inset 3px 0 0 rgb(59, 130, 246)' } : undefined}
     >
       <td className="px-2 sm:px-4 md:px-6 py-3 sm:py-4">
         <span className={`font-medium text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
       </td>
       <td className="px-2 sm:px-4 py-3 sm:py-4">
         <div>
-          <div className={`font-bold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</div>
+          <div className="flex items-center gap-1.5">
+            <span className={`font-bold group-hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</span>
+            {isOwned && (
+              <span className="fr-text-9 font-bold uppercase fr-tracking-wider px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-500">
+                YOUR TEAM
+              </span>
+            )}
+          </div>
           <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             {player.team} <span className="sm:hidden">• {player.position}</span>
             {oddsDisplay && (
@@ -180,7 +197,9 @@ export function PlayerTable({
   onViewAll,
   isDarkMode,
 }: PlayerTableProps) {
-  const { league } = useLeagueContext();
+  const { league, roster } = useLeagueContext();
+  // Owned-player ids — used to highlight rows the current user rosters.
+  const ownedPlayerIds = useMemo(() => new Set((roster ?? []).map((r) => r.id)), [roster]);
   const scoringOptions: Array<'PPR' | 'Half PPR' | 'Standard'> = ['PPR', 'Half PPR', 'Standard'];
   const positions = ['ALL', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'K', 'DEF'];
 
@@ -723,6 +742,7 @@ export function PlayerTable({
                         oddsData={getOddsForTeam(player.team)}
                         pointsType={pointsType}
                         propLine={propLine}
+                        isOwned={ownedPlayerIds.has(player.id)}
                       />
                     );
                   })
