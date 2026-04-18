@@ -4,7 +4,7 @@ import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
-import { type APIPlayer, convertAPIPlayerToPlayer, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 
 const ALL_PLAYERS_PAGE_SIZE = 350;
 
