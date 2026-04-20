@@ -57,7 +57,7 @@ export function AppFooter({ isDarkMode, onNavigate }: AppFooterProps) {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
         <nav
           aria-label="Footer"
-          className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs"
+          className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-xs"
         >
           {LEGAL_LINKS.map((link) => (
             <a
