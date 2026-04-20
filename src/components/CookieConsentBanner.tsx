@@ -91,7 +91,7 @@ export function CookieConsentBanner({ isDarkMode, onNavigate, offsetForSidebar =
       role="dialog"
       aria-labelledby="cookie-banner-title"
       aria-describedby="cookie-banner-description"
-      className={`fixed right-0 bottom-0 left-0 z-[70] ${offsetForSidebar ? 'md:left-64' : ''} ${bg} border-t ${border} shadow-2xl`}
+      className={`fixed right-0 bottom-0 z-cookie-banner ${offsetForSidebar ? 'cookie-banner-sidebar-offset' : 'left-0'} ${bg} border-t ${border} shadow-2xl`}
     >
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
         {!showPreferences ? (
