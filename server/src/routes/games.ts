@@ -66,7 +66,11 @@ function normalizeTeam(abbrev: string): string {
 function dbGameToSlateGame(g: any) {
   let weather = g.weather ? (JSON.parse(g.weather) as { displayValue: string; temperature?: number }) : null;
   const gameTime = new Date(g.gameTime);
-  const isFinalOrPast = g.isComplete || gameTime.getTime() < Date.now() - 4 * 3600000;
+  const nowMs = Date.now();
+  const kickoffMs = gameTime.getTime();
+  const isFinalOrPast = g.isComplete || kickoffMs < nowMs - 4 * 3600000;
+  // A game has kicked off but is not yet stale/complete → treat as in-progress
+  const isLive = !g.isComplete && kickoffMs <= nowMs && !isFinalOrPast;
 
   // Fallback: if no weather data stored, infer from home team's stadium
   if (!weather) {
@@ -97,7 +101,7 @@ function dbGameToSlateGame(g: any) {
     weather,
     homeScore: g.homeScore ?? undefined,
     awayScore: g.awayScore ?? undefined,
-    status: g.isComplete ? 'final' : isFinalOrPast ? 'final' : 'scheduled',
+    status: g.isComplete || isFinalOrPast ? 'final' : isLive ? 'in_progress' : 'scheduled',
   };
 }
 
