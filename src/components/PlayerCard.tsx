@@ -484,10 +484,23 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                 const actual = propsData?.actual || {};
                 const markets = Object.keys(props);
 
+                const isFallback = Boolean(propsData?.isFallback);
+                const effectiveSeason = propsData?.season;
+
                 return (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Vegas Prop Lines</h3>
+                  <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Vegas Prop Lines</h3>
+                      {isFallback && effectiveSeason && (
+                        <span
+                          className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${isDarkMode ? 'bg-amber-900/40 text-amber-300 border border-amber-700/50' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}
+                          title={`Showing ${effectiveSeason} data — no ${effectiveSeason + 1} lines are posted yet`}
+                        >
+                          {effectiveSeason} season
+                        </span>
+                      )}
+                    </div>
                     <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>FanDuel • Week {selectedWeek}</span>
                   </div>
                   {propsLoading ? (

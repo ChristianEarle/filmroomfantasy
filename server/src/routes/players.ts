@@ -1254,23 +1254,48 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
       return c.json({ error: 'Player not found' }, 404);
     }
 
-    // Get player's weekly stats for actual values
+    // Try the requested season first. If no props exist for that season
+    // (e.g. we're in the 2026 offseason and no 2026 lines have been posted
+    // yet), fall back to the most recent season that DOES have props for
+    // this player. The UI shows a "last season" badge via isFallback so
+    // the user knows these are historical.
+    let effectiveSeason = season;
+    let isFallback = false;
+
+    const findProps = async (s: number) =>
+      db.query.playerProps.findMany({
+        where: and(
+          eq(schema.playerProps.playerName, player.name),
+          eq(schema.playerProps.week, week),
+          eq(schema.playerProps.season, s)
+        ),
+        orderBy: asc(schema.playerProps.market),
+      });
+
+    let props = await findProps(season);
+    if (props.length === 0) {
+      // Find the most recent season with any props for this player and use
+      // that season's data (props + stats) so the card reads coherently.
+      const latestRow = await db.query.playerProps.findFirst({
+        where: eq(schema.playerProps.playerName, player.name),
+        orderBy: desc(schema.playerProps.season),
+        columns: { season: true },
+      });
+      if (latestRow && latestRow.season !== season) {
+        effectiveSeason = latestRow.season;
+        isFallback = true;
+        props = await findProps(effectiveSeason);
+      }
+    }
+
+    // Weekly stats are fetched for the EFFECTIVE season so "actual vs line"
+    // comparisons line up with whichever season's props we're showing.
     const weeklyStats = await db.query.playerWeeklyStats.findFirst({
       where: and(
         eq(schema.playerWeeklyStats.playerId, playerId),
         eq(schema.playerWeeklyStats.week, week),
-        eq(schema.playerWeeklyStats.seasonYear, season)
+        eq(schema.playerWeeklyStats.seasonYear, effectiveSeason)
       ),
-    });
-
-    // Get player props for this week
-    const props = await db.query.playerProps.findMany({
-      where: and(
-        eq(schema.playerProps.playerName, player.name),
-        eq(schema.playerProps.week, week),
-        eq(schema.playerProps.season, season)
-      ),
-      orderBy: asc(schema.playerProps.market),
     });
 
     // Transform to more readable format
@@ -1310,7 +1335,9 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
       props: propsByMarket,
       actual,
       week,
-      season,
+      season: effectiveSeason,
+      requestedSeason: season,
+      isFallback,
     });
   } catch (error) {
     console.error('Get player props error:', error);
