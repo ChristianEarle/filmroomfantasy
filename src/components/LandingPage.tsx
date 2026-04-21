@@ -145,11 +145,15 @@ const LANDING_CSS = `
 .lp .bottom-cta{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:48px;text-align:center;margin:0 0 40px}
 .lp .bottom-cta h2{font-size:28px;margin:0 0 8px;font-weight:800;color:var(--text-bright);letter-spacing:-.02em}
 .lp .bottom-cta p{color:var(--muted);margin:0 0 20px;font-size:14px}
-.lp footer{border-top:1px solid var(--border);padding:28px 0;color:var(--muted);font-size:12px;text-align:center}
-.lp .footer-links{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;margin-bottom:16px}
+.lp footer{border-top:1px solid var(--border);padding:48px 0 32px;color:var(--muted);font-size:12px;text-align:center}
+.lp .footer-socials{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;margin-bottom:20px}
+.lp .footer-socials a,.lp .footer-socials button{color:var(--muted);cursor:pointer;font-size:12px;transition:color .12s;background:none;border:none;padding:0;font-family:inherit;text-decoration:none}
+.lp .footer-socials a:hover,.lp .footer-socials button:hover{color:var(--text)}
+.lp .footer-links{display:flex;flex-wrap:wrap;justify-content:center;gap:16px 28px;margin-bottom:24px}
 .lp .footer-links a,.lp .footer-links button{color:var(--muted);cursor:pointer;font-size:12px;transition:color .12s;background:none;border:none;padding:0;font-family:inherit}
 .lp .footer-links a:hover,.lp .footer-links button:hover{color:var(--text)}
-.lp .footer-copy{color:var(--muted);font-size:12px}
+.lp .footer-copy{color:var(--muted);font-size:12px;line-height:1.6}
+.lp .footer-disclaimer{color:var(--muted);font-size:11px;margin-top:8px}
 .lp .finder-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
 .lp .finder-row:hover{border-color:var(--blue-border)}
 .lp .finder-players{display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap}
@@ -191,6 +195,14 @@ interface ChipData {
   name: string;
   val: number;
 }
+
+// Fill href values to enable. Empty entries are skipped.
+const LANDING_SOCIALS: { label: string; href: string }[] = [
+  { label: 'X', href: '' },
+  { label: 'Discord', href: '' },
+  { label: 'Instagram', href: '' },
+  { label: 'TikTok', href: '' },
+];
 
 const ALL_TEAMS: ChipData[][] = [
   [ { pos: 'WR', name: 'CeeDee Lamb', val: 24.1 }, { pos: 'RB', name: 'Javonte Williams', val: 11.3 } ],
@@ -555,6 +567,14 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
 
       <footer>
         <div className="container">
+          <div className="footer-socials">
+            {LANDING_SOCIALS.filter((s) => s.href).map((s) => (
+              <a key={s.label} href={s.href} target="_blank" rel="noopener noreferrer">
+                {s.label}
+              </a>
+            ))}
+            <a href="mailto:support@filmroomfantasy.com">Contact</a>
+          </div>
           <nav className="footer-links" aria-label="Footer">
             <a onClick={nav('Privacy')}>Privacy Policy</a>
             <a onClick={nav('Terms')}>Terms of Service</a>
@@ -568,6 +588,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <button type="button" onClick={() => openCookiePreferences()}>Cookie preferences</button>
           </nav>
           <div className="footer-copy">&copy; {new Date().getFullYear()} FilmRoom &mdash; Fantasy football analysis &amp; management. Not affiliated with the NFL or any fantasy platform.</div>
+          <div className="footer-disclaimer">For entertainment purposes only. Users must be 18+ where applicable.</div>
         </div>
       </footer>
     </div>
