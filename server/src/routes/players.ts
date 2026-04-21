@@ -5,6 +5,7 @@ import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
 import { cached } from '../utils/cache';
+import { normalizePlayerName } from '../utils/playerNames';
 import { buildProjectionsFromProps } from '../services/projections';
 import type { Env, Variables } from '../index';
 
@@ -1254,37 +1255,43 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
       return c.json({ error: 'Player not found' }, 404);
     }
 
-    // Try the requested season first. If no props exist for that season
-    // (e.g. we're in the 2026 offseason and no 2026 lines have been posted
-    // yet), fall back to the most recent season that DOES have props for
-    // this player. The UI shows a "last season" badge via isFallback so
-    // the user knows these are historical.
-    let effectiveSeason = season;
-    let isFallback = false;
+    // Name matching between Sleeper and The Odds API is inconsistent —
+    // Sleeper strips "Jr." suffixes and some punctuation, sportsbooks don't.
+    // Fetch all props for the requested week/season, then filter client-side
+    // by normalized name so variants collapse to the same player.
+    const targetNormalized = normalizePlayerName(player.name);
 
-    const findProps = async (s: number) =>
-      db.query.playerProps.findMany({
+    const findProps = async (s: number) => {
+      const rows = await db.query.playerProps.findMany({
         where: and(
-          eq(schema.playerProps.playerName, player.name),
           eq(schema.playerProps.week, week),
           eq(schema.playerProps.season, s)
         ),
         orderBy: asc(schema.playerProps.market),
       });
+      return rows.filter(r => normalizePlayerName(r.playerName) === targetNormalized);
+    };
 
+    // Try the requested season first. If no props exist (e.g. we're in the
+    // 2026 offseason and no 2026 lines have been posted yet), fall back to
+    // the most recent season that has props for this player. The UI shows a
+    // "last season" badge via isFallback so users know it's historical.
+    let effectiveSeason = season;
+    let isFallback = false;
     let props = await findProps(season);
+
     if (props.length === 0) {
-      // Find the most recent season with any props for this player and use
-      // that season's data (props + stats) so the card reads coherently.
-      const latestRow = await db.query.playerProps.findFirst({
-        where: eq(schema.playerProps.playerName, player.name),
-        orderBy: desc(schema.playerProps.season),
-        columns: { season: true },
-      });
-      if (latestRow && latestRow.season !== season) {
-        effectiveSeason = latestRow.season;
-        isFallback = true;
-        props = await findProps(effectiveSeason);
+      // Walk back up to 3 prior seasons looking for props for this player.
+      // Each findProps call is already scoped to a single week+season so
+      // the loop stays cheap and bounded.
+      for (let s = season - 1; s >= season - 3; s--) {
+        const found = await findProps(s);
+        if (found.length > 0) {
+          effectiveSeason = s;
+          isFallback = true;
+          props = found;
+          break;
+        }
       }
     }
 
