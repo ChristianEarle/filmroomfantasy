@@ -102,6 +102,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [news, setNews] = useState<PlayerNews[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
   const [matchupData, setMatchupData] = useState<MatchupGradeResponse | null>(null);
+  const [matchupLoading, setMatchupLoading] = useState(true);
   const [propsData, setPropsData] = useState<any>(null);
   const [propsLoading, setPropsLoading] = useState(true);
   const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || 1);
@@ -164,6 +165,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   useEffect(() => {
     if (!player?.id) return;
     let cancelled = false;
+    setMatchupLoading(true);
     playerService.getMatchupGrade(player.id, {
       season: propsSeasonYear,
       week: selectedWeek,
@@ -171,6 +173,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
       if (!cancelled) setMatchupData(res);
     }).catch(() => {
       if (!cancelled) setMatchupData(null);
+    }).finally(() => {
+      if (!cancelled) setMatchupLoading(false);
     });
     return () => { cancelled = true; };
   }, [player.id, propsSeasonYear, selectedWeek]);
@@ -1229,7 +1233,9 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   <div className="flex items-start gap-2">
                     <Target className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
                     <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      {matchupData === null ? 'No matchup data available.' : 'Loading matchup analysis...'}
+                      {matchupLoading
+                        ? 'Loading matchup analysis...'
+                        : matchupData?.message || 'No matchup data available.'}
                     </p>
                   </div>
                 )}
