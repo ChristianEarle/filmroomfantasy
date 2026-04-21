@@ -1169,9 +1169,17 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           <div className="space-y-4 sm:space-y-6">
             {/* FilmRoom Insights */}
             <div className={`rounded-lg border p-4 sm:p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
                 <Zap className="w-4 h-4 text-yellow-500" />
                 <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom Insights</h3>
+                {(matchupData as any)?.isFallback && (matchupData as any)?.season && (
+                  <span
+                    className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${isDarkMode ? 'bg-amber-900/40 text-amber-300 border border-amber-700/50' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}
+                    title={`Showing ${(matchupData as any).season} data — the ${(matchupData as any).season + 1} schedule hasn't been posted yet`}
+                  >
+                    {(matchupData as any).season} season
+                  </span>
+                )}
               </div>
               <div className="space-y-3 mb-6">
                 {matchupData?.grade ? (

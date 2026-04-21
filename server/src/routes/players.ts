@@ -6,6 +6,7 @@ import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
 import { cached } from '../utils/cache';
 import { normalizePlayerName } from '../utils/playerNames';
+import { resolveDisplaySeason } from '../utils/seasons';
 import { buildProjectionsFromProps } from '../services/projections';
 import type { Env, Variables } from '../index';
 
@@ -1512,17 +1513,20 @@ playerRoutes.get('/:id/matchup-grade', optionalAuthMiddleware, async (c) => {
     const position = player.position; // QB, RB, WR, TE, K, DEF
     const playerTeam = player.team;
 
-    // Determine season
-    let season: number;
+    // Determine season, transparently falling back to the most recent season
+    // with games when the requested one has no data (e.g. 2026 pre-kickoff).
+    let requestedSeason: number;
     if (seasonParam) {
-      season = parseInt(seasonParam);
-      if (isNaN(season)) season = new Date().getFullYear();
+      const parsed = parseInt(seasonParam);
+      requestedSeason = isNaN(parsed) ? new Date().getFullYear() : parsed;
     } else {
       const maxResult = await db
         .select({ maxYear: sql<number>`max(${schema.playerWeeklyStats.seasonYear})` })
         .from(schema.playerWeeklyStats);
-      season = maxResult[0]?.maxYear ?? new Date().getFullYear();
+      requestedSeason = maxResult[0]?.maxYear ?? new Date().getFullYear();
     }
+    const resolved = await resolveDisplaySeason(db, requestedSeason);
+    const season = resolved.season;
 
     // 2. Find the opponent for this player's upcoming/current week
     //    Strategy: look at nfl_games for the player's team, find the next incomplete game,
@@ -1593,7 +1597,11 @@ playerRoutes.get('/:id/matchup-grade', optionalAuthMiddleware, async (c) => {
     }
 
     // 3. Get the opponent defense's last 5 completed games (not bye weeks)
-    //    A "completed game" for the defense = a game in nfl_games where that team played and isComplete
+    //    A "completed game" for the defense = a game in nfl_games where that team played and isComplete.
+    //    When we fell back to a prior season (offseason), ignore the matchupWeek
+    //    cutoff — there's no "before-week-1" sample in the fallback season, so
+    //    instead we use the whole completed season as the defense's context.
+    const defWeekCutoff = resolved.isFallback ? null : matchupWeek;
     const defGames = await db
       .select({
         week: schema.nflGames.week,
@@ -1607,7 +1615,7 @@ playerRoutes.get('/:id/matchup-grade', optionalAuthMiddleware, async (c) => {
           eq(schema.nflGames.seasonType, 'regular'),
           eq(schema.nflGames.isComplete, true),
           sql`(${schema.nflGames.homeTeam} = ${opponentTeam} OR ${schema.nflGames.awayTeam} = ${opponentTeam})`,
-          matchupWeek ? sql`${schema.nflGames.week} < ${matchupWeek}` : sql`1=1`
+          defWeekCutoff ? sql`${schema.nflGames.week} < ${defWeekCutoff}` : sql`1=1`
         )
       )
       .orderBy(desc(schema.nflGames.week))
@@ -1786,6 +1794,8 @@ playerRoutes.get('/:id/matchup-grade', optionalAuthMiddleware, async (c) => {
       opponent: opponentTeam,
       week: matchupWeek,
       season,
+      requestedSeason: resolved.requested,
+      isFallback: resolved.isFallback,
       position,
       format: formatParam,
       gamesAnalyzed: weeksWithData.length,
