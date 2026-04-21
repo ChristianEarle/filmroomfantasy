@@ -158,34 +158,51 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
     return () => clearInterval(id);
   }, []);
 
-  // Locate the first game of the week
-  const firstGame = useMemo(() => {
-    if (!espnGames || espnGames.length === 0) return null;
-    const sorted = [...espnGames].sort((a, b) =>
-      new Date(a.gameTime).getTime() - new Date(b.gameTime).getTime()
-    );
-    const first = sorted[0];
-    if (!first?.gameTime) return null;
-    const t = new Date(first.gameTime).getTime();
-    if (isNaN(t)) return null;
-    return { game: first, timestamp: t };
-  }, [espnGames]);
+  // Categorize this week's games by status so we can distinguish
+  // live / upcoming / complete instead of just "has the first kickoff passed".
+  const weekGameState = useMemo(() => {
+    if (!espnGames || espnGames.length === 0) {
+      return { liveCount: 0, nextUpcoming: null as null | { game: typeof espnGames[number]; timestamp: number }, allComplete: false, hasAnyGames: false };
+    }
+    let liveCount = 0;
+    let completeCount = 0;
+    let nextUpcoming: { game: typeof espnGames[number]; timestamp: number } | null = null;
+    for (const g of espnGames) {
+      const t = g.gameTime ? new Date(g.gameTime).getTime() : NaN;
+      if (g.status === 'in_progress') {
+        liveCount += 1;
+      } else if (g.status === 'final') {
+        completeCount += 1;
+      } else if (!isNaN(t) && t > now) {
+        if (!nextUpcoming || t < nextUpcoming.timestamp) {
+          nextUpcoming = { game: g, timestamp: t };
+        }
+      }
+    }
+    return {
+      liveCount,
+      nextUpcoming,
+      allComplete: completeCount === espnGames.length,
+      hasAnyGames: true,
+    };
+  }, [espnGames, now]);
 
-  // Live countdown to first game
+  // Countdown to the next scheduled kickoff (not a game that already started/ended)
   const countdown = useMemo(() => {
-    if (!firstGame) return null;
-    return formatCountdown(firstGame.timestamp, now);
-  }, [firstGame, now]);
+    if (!weekGameState.nextUpcoming) return null;
+    return formatCountdown(weekGameState.nextUpcoming.timestamp, now);
+  }, [weekGameState.nextUpcoming, now]);
 
-  // Short label (e.g. "Sat 3:30 PM") for greeting subline
+  // Short label (e.g. "Sat 3:30 PM") for greeting subline — always the next upcoming kickoff
   const firstGameShortLabel = useMemo(() => {
     if (espnUnavailable) return null;
-    if (!firstGame) return null;
-    const d = new Date(firstGame.timestamp);
+    const upcoming = weekGameState.nextUpcoming;
+    if (!upcoming) return null;
+    const d = new Date(upcoming.timestamp);
     const day = d.toLocaleDateString('en-US', { weekday: 'short' });
     const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     return `${day} ${time}`;
-  }, [firstGame, espnUnavailable]);
+  }, [weekGameState.nextUpcoming, espnUnavailable]);
 
   // Filter roster for injured/questionable players on the user's team
   const injuredRosterPlayers = useMemo(
@@ -300,7 +317,13 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
             {league?.name ?? 'No league connected'}
             {league && <> · Week {league.currentWeek}</>}
-            {firstGameShortLabel && <> · {firstGameShortLabel} kickoff</>}
+            {weekGameState.liveCount > 0
+              ? <> · <span className="text-red-500 font-semibold">{weekGameState.liveCount} game{weekGameState.liveCount === 1 ? '' : 's'} live</span></>
+              : firstGameShortLabel
+              ? <> · {firstGameShortLabel} kickoff</>
+              : weekGameState.allComplete
+              ? <> · week complete</>
+              : null}
             {myTeamNews.length > 0 && (
               <>
                 {' '}· {myTeamNews.length} player{myTeamNews.length === 1 ? '' : 's'} with news
@@ -351,12 +374,21 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
               <span className="fr-text-11 font-bold uppercase fr-tracking-wider text-blue-500">
                 {league ? `Week ${league.currentWeek} · This Week` : 'This Week'}
               </span>
-              {firstGame && countdown && !countdown.done && (
+              {weekGameState.liveCount > 0 ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/15 text-red-500 fr-text-10 font-bold fr-tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" aria-hidden="true" />
+                  LIVE
+                </span>
+              ) : countdown && !countdown.done ? (
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 fr-text-10 font-bold fr-tracking-wider">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" aria-hidden="true" />
                   UPCOMING
                 </span>
-              )}
+              ) : weekGameState.allComplete ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-400 fr-text-10 font-bold fr-tracking-wider">
+                  COMPLETE
+                </span>
+              ) : null}
             </div>
             <h2 className={`text-2xl font-bold mb-2 leading-tight ${textCls}`}>
               {hasMatchup
@@ -452,34 +484,43 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
         <div className="fr-home-right">
           <div className={`rounded-2xl border p-5 ${panelCls}`}>
             <div className={`flex items-center gap-2 fr-text-10 uppercase fr-tracking-wider font-bold mb-2 ${mutedCls}`}>
-              First Kickoff
-              {countdown && !countdown.done && (
+              {weekGameState.liveCount > 0
+                ? 'Games In Progress'
+                : weekGameState.allComplete
+                ? 'Week Complete'
+                : 'Next Kickoff'}
+              {countdown && !countdown.done && weekGameState.liveCount === 0 && (
                 <span className="text-amber-500">● Lineup locks in</span>
               )}
             </div>
-            {countdown ? (
-              countdown.done ? (
-                <div className={`font-mono font-bold text-lg ${textCls}`}>Games live</div>
-              ) : (
-                <div className={`flex items-baseline gap-1 font-bold ${textCls}`}>
-                  <span className="font-mono text-3xl">{String(countdown.d).padStart(2, '0')}</span>
-                  <span className={`text-xs font-medium mr-1 ${mutedCls}`}>d</span>
-                  <span className="font-mono text-3xl">{String(countdown.h).padStart(2, '0')}</span>
-                  <span className={`text-xs font-medium mr-1 ${mutedCls}`}>h</span>
-                  <span className="font-mono text-3xl">{String(countdown.m).padStart(2, '0')}</span>
-                  <span className={`text-xs font-medium ${mutedCls}`}>m</span>
-                </div>
-              )
+            {weekGameState.liveCount > 0 ? (
+              <div className={`flex items-baseline gap-2 font-bold ${textCls}`}>
+                <span className="font-mono text-3xl text-red-500">{weekGameState.liveCount}</span>
+                <span className={`text-sm font-medium ${mutedCls}`}>
+                  {weekGameState.liveCount === 1 ? 'game live' : 'games live'}
+                </span>
+              </div>
+            ) : weekGameState.allComplete ? (
+              <div className={`font-mono font-bold text-lg ${textCls}`}>All games final</div>
+            ) : countdown ? (
+              <div className={`flex items-baseline gap-1 font-bold ${textCls}`}>
+                <span className="font-mono text-3xl">{String(countdown.d).padStart(2, '0')}</span>
+                <span className={`text-xs font-medium mr-1 ${mutedCls}`}>d</span>
+                <span className="font-mono text-3xl">{String(countdown.h).padStart(2, '0')}</span>
+                <span className={`text-xs font-medium mr-1 ${mutedCls}`}>h</span>
+                <span className="font-mono text-3xl">{String(countdown.m).padStart(2, '0')}</span>
+                <span className={`text-xs font-medium ${mutedCls}`}>m</span>
+              </div>
             ) : (
               <div className={`text-sm ${mutedCls}`}>No upcoming games</div>
             )}
-            {firstGame && (
+            {weekGameState.nextUpcoming && weekGameState.liveCount === 0 && !weekGameState.allComplete && (
               <div className={`text-xs mt-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                {new Date(firstGame.timestamp).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                {new Date(weekGameState.nextUpcoming.timestamp).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                 {' · '}
-                {new Date(firstGame.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                {firstGame.game.awayTeam && firstGame.game.homeTeam && (
-                  <> · <span className="text-blue-500">{firstGame.game.awayTeam} @ {firstGame.game.homeTeam}</span></>
+                {new Date(weekGameState.nextUpcoming.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                {weekGameState.nextUpcoming.game.awayTeam && weekGameState.nextUpcoming.game.homeTeam && (
+                  <> · <span className="text-blue-500">{weekGameState.nextUpcoming.game.awayTeam} @ {weekGameState.nextUpcoming.game.homeTeam}</span></>
                 )}
               </div>
             )}
