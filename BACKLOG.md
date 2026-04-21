@@ -300,3 +300,19 @@
 - [ ] Restore Membership section in ProfileView — removed entire card and `membershipPlan` state from `ProfileView.tsx` for beta. Re-add between password section and logout button with Upgrade/Manage plan buttons wired to Stripe.
 - [ ] Build upgrade/downgrade/cancellation flow
 - [ ] Add billing webhook handlers (Stripe events)
+
+---
+
+## SEO & Organic Growth
+
+### Dedicated player pages (biggest SEO lever)
+- [ ] **Add `/players/:slug-:externalId` route with a full SSR-able page** — every skill player gets a unique indexable URL. Currently clicking a player only opens a modal at the current URL, so Google sees zero per-player documents. ESPN/Yahoo/Rotoworld/FantasyPros all do this.
+- [ ] **Extend `scripts/generate-static-pages.js`** to emit one static HTML per rostered skill player (~300-400) at build time, seeded from `nfl_players` + recent stats/projections. Keeps Cloudflare Pages fast and makes every page instantly indexable (no JS render wait).
+- [ ] **Keep the modal for in-app clicks** but add a "View full profile →" link to the modal that routes to `/players/:slug-:id`. Modal stays for speed; page is what Google indexes and what users share externally.
+- [ ] **Semantic markup on the player page**: `<h1>{name}</h1>`, `<h2>` section headers (Projections, Matchup, Recent News, Season Stats, Props History), proper `<table>` / `<th scope="col">` for stat rows.
+- [ ] **`schema.org` JSON-LD** on each page: `Person` + `Athlete` with `name`, `affiliation` (team), `jobTitle` (position), `memberOf` (NFL league). Enables rich snippets in SERPs.
+- [ ] **Per-page `<title>` and meta description** templated like `{Name} Fantasy Stats, Projections & News | FilmRoom Fantasy` and a 150-char summary pulling top stat + team + position.
+- [ ] **Open Graph + Twitter card** tags per player so shared links render as rich previews (name, headshot, recent stat line).
+- [ ] **Canonical URL** `/players/josh-allen-6802` (slug + sleeper-id) so the same player can't be duplicated under multiple slugs.
+- [ ] **Add player URLs to `public/sitemap.xml`** (or generate dynamically) so Google can discover them without crawling the app.
+- [ ] **`<link rel="alternate">`** to the player page from the modal's URL bar state so in-app navigation preserves SEO intent.
