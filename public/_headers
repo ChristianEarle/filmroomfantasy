@@ -15,4 +15,11 @@
   X-Frame-Options: DENY
   X-XSS-Protection: 1; mode=block
   Referrer-Policy: strict-origin-when-cross-origin
+  # HSTS rollout plan: max-age=300 -> 86400 -> 31536000, then add
+  # includeSubDomains, then preload. Do NOT jump straight to one year
+  # or add includeSubDomains/preload without verifying every subdomain
+  # serves HTTPS correctly first.
+  Strict-Transport-Security: max-age=300
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; connect-src 'self' https://filmroom-api.earle2001.workers.dev; img-src 'self' data: https:; frame-src https://googleads.g.doubleclick.net
   Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; connect-src 'self' https://filmroom-api.earle2001.workers.dev; img-src 'self' data: https:; frame-src https://googleads.g.doubleclick.net
