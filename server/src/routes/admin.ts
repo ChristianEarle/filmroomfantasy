@@ -1591,6 +1591,15 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
 
     invalidateCache('game-odds:', true);
 
+    // Surface the event list + snapshot timestamp so backfill scripts can
+    // iterate per-event without re-paying for another historical-odds call.
+    const events = historicalOdds.games.map((g) => ({
+      id: g.id,
+      home_team: g.home_team,
+      away_team: g.away_team,
+      commence_time: g.commence_time,
+    }));
+
     return c.json({
       success: true,
       message: 'Historical odds sync completed',
@@ -1599,6 +1608,8 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
       inserted,
       skipped,
       total: parsed.length,
+      events,
+      snapshotTime: historicalOdds.timestamp,
     });
   } catch (err) {
     console.error('Sync historical odds error:', err);
@@ -1626,9 +1637,10 @@ adminRoutes.post('/sync-player-props', async (c) => {
     return c.json({ error: 'Odds API not configured' }, 500);
   }
 
-  const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string; season?: number }>();
+  const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string; season?: number; snapshotTime?: string; skipProjections?: boolean }>();
   const { week, date, gameIndex, eventId } = body;
   const seasonYear = body.season || 2025;
+  const providedSnapshotTime = body.snapshotTime;
 
   if (!week || week < 1 || week > 18) {
     return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
@@ -1638,7 +1650,7 @@ adminRoutes.post('/sync-player-props', async (c) => {
     c.header('Content-Type', 'application/json');
 
     let gamesToProcess: any[] = [];
-    let snapshotTime = new Date().toISOString();
+    let snapshotTime = providedSnapshotTime || new Date().toISOString();
 
     // If eventId is provided directly, fetch props for that event only
     if (eventId) {
@@ -1646,8 +1658,10 @@ adminRoutes.post('/sync-player-props', async (c) => {
       const propsGame = await fetchPlayerProps(apiKey, eventId, date);
       if (propsGame) {
         gamesToProcess = [propsGame];
-        // Use event data if available
-        if (date) {
+        // Only re-fetch odds for the snapshot timestamp when one wasn't
+        // provided — backfill scripts pass snapshotTime to skip this extra
+        // (paid) historical-odds call.
+        if (date && !providedSnapshotTime) {
           const oddsData = await fetchHistoricalOdds(apiKey, date);
           snapshotTime = oddsData.timestamp || snapshotTime;
         }
@@ -1700,6 +1714,23 @@ adminRoutes.post('/sync-player-props', async (c) => {
     const statements: any[] = [];
     const BATCH_SIZE = 50;
 
+    // Pre-build a name → externalId lookup in ONE query (batched for CPU).
+    // The previous per-prop findFirst call did 50+ DB round-trips per event
+    // and blew the 30s CPU cap whenever a game had full prop coverage.
+    // Normalize both sides (lowercase + strip punctuation + suffixes) so
+    // "AJ Brown" matches "A.J. Brown" and "Brian Robinson Jr." matches
+    // "Brian Robinson".
+    const allPlayers = await db.query.nflPlayers.findMany({
+      columns: { name: true, firstName: true, lastName: true, externalId: true },
+    });
+    const { normalizePlayerName } = await import('../utils/playerNames');
+    const nameToExternalId = new Map<string, string>();
+    for (const p of allPlayers) {
+      if (!p.externalId) continue;
+      const key = normalizePlayerName(p.name);
+      if (key && !nameToExternalId.has(key)) nameToExternalId.set(key, p.externalId);
+    }
+
     // Process the selected game(s)
     for (const game of gamesToProcess) {
       // Parse player props
@@ -1707,28 +1738,9 @@ adminRoutes.post('/sync-player-props', async (c) => {
       console.log(`Event ${game.id}: parsed ${propRecords.length} player props`);
       propsFound += propRecords.length;
 
-      // Match player names to our database player IDs
+      // Match player names to our database player IDs (in-memory map lookup)
       for (const prop of propRecords) {
-        // Match by first + last name in our database
-        const parts = prop.player_name.split(' ');
-        let playerExternalId: string | null = null;
-
-        if (parts.length >= 2) {
-          // Try exact match first
-          const firstName = parts[0];
-          const lastName = parts.slice(1).join(' ');
-
-          const dbPlayer = await db.query.nflPlayers.findFirst({
-            where: and(
-              eq(schema.nflPlayers.firstName, firstName),
-              eq(schema.nflPlayers.lastName, lastName)
-            ),
-            columns: { externalId: true },
-          });
-          if (dbPlayer) {
-            playerExternalId = dbPlayer.externalId || null;
-          }
-        }
+        const playerExternalId = nameToExternalId.get(normalizePlayerName(prop.player_name)) ?? null;
 
         const propId = generateId();
         statements.push(
@@ -1770,8 +1782,15 @@ adminRoutes.post('/sync-player-props', async (c) => {
 
     invalidateCache('player-props:', true);
 
-    // After storing props, generate projections from the lines
-    const projResult = await generateProjectionsFromProps(db, week, seasonYear);
+    // Generate projections from the newly stored props — unless caller is
+    // doing a backfill and explicitly opts out (set skipProjections=true).
+    // Projections generation is CPU-heavy (reads all player stats, models
+    // fantasy points per market), and for a historical backfill we can
+    // regenerate in one pass at the end rather than per-event.
+    const skipProj = body.skipProjections === true;
+    const projResult = skipProj
+      ? { generated: 0, updated: 0 }
+      : await generateProjectionsFromProps(db, week, seasonYear);
 
     const summary = {
       success: true,
@@ -1783,6 +1802,7 @@ adminRoutes.post('/sync-player-props', async (c) => {
       props_inserted: inserted,
       projections_generated: projResult.generated,
       projections_updated: projResult.updated,
+      skipped_projections: skipProj,
     };
 
     console.log('Sync summary:', summary);
