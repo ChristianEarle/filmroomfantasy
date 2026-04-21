@@ -73,7 +73,7 @@ export function RefundPolicyView({ isDarkMode }: RefundPolicyViewProps) {
           </ul>
           <p className="mt-3">
             To request a refund, email{' '}
-            <span className="font-medium">billing@filmroomfantasy.com</span> from the
+            <span className="font-medium">support@filmroomfantasy.com</span> from the
             email address on your account and include the date and amount of the charge.
           </p>
         </section>
@@ -112,7 +112,7 @@ export function RefundPolicyView({ isDarkMode }: RefundPolicyViewProps) {
           <h2 className={`text-xl font-semibold mb-3 ${h}`}>Contact</h2>
           <p>
             Billing questions:{' '}
-            <span className="font-medium">billing@filmroomfantasy.com</span>.
+            <span className="font-medium">support@filmroomfantasy.com</span>.
           </p>
         </section>
       </div>

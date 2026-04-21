@@ -69,7 +69,7 @@ export function AcceptableUseView({ isDarkMode }: AcceptableUseViewProps) {
           <h2 className={`text-xl font-semibold mb-3 ${h}`}>5. Reporting abuse</h2>
           <p>
             To report a violation of this AUP, email{' '}
-            <span className="font-medium">abuse@filmroomfantasy.com</span> with as
+            <span className="font-medium">support@filmroomfantasy.com</span> with as
             much detail as you can provide (URLs, timestamps, screenshots).
           </p>
         </section>
@@ -87,7 +87,7 @@ export function AcceptableUseView({ isDarkMode }: AcceptableUseViewProps) {
           <h2 className={`text-xl font-semibold mb-3 ${h}`}>Contact</h2>
           <p>
             Abuse reports:{' '}
-            <span className="font-medium">abuse@filmroomfantasy.com</span>.
+            <span className="font-medium">support@filmroomfantasy.com</span>.
           </p>
         </section>
       </div>
