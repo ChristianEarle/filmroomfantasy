@@ -297,7 +297,7 @@ function buildRedraftPrompt(
 
   return `You are an expert fantasy football analyst generating ${scoringFormat.toUpperCase()} redraft rankings for the upcoming NFL season.${superflex ? ' This is a SUPERFLEX league (QBs are significantly more valuable).' : ''}
 
-TASK: Rank these players for a full-season redraft draft. Use ADP as a starting reference but adjust based on your analysis of each player's situation, age, injury risk, depth chart position, and recent news.
+TASK: Rank these players for a full-season redraft draft. ADP is your primary anchor — stay within ±10 spots of ADP for any player unless you have a SPECIFIC, CONCRETE reason ADP hasn't priced in yet (recent injury, post-ADP trade, confirmed role change, coaching hire that shifts scheme). "Scored a lot last year" is NOT a reason — ADP already reflects last year's performance.
 
 PLAYER DATA:
 ${playerLines}
@@ -316,6 +316,18 @@ RESPOND WITH ONLY VALID JSON — an array of objects, one per ranked player. Ran
   }
 ]
 
+POSITIONAL VALUE BY ROUND (critical — 1-QB format${superflex ? ' does NOT apply because this is SUPERFLEX — QBs ARE top-tier picks' : ''}):
+Starting lineup: 1 QB, 2 RB, 3 WR, 1 TE, 1 FLEX (RB/WR/TE). Because you start only ONE QB, raw QB points DO NOT translate to draft value — positional scarcity dominates. A QB projected for 330 pts belongs in Round 5-7, NOT Round 2, because every team needs one QB and waiting loses you <40 pts vs the elite QBs.
+
+Typical 1-QB draft shape (reflects expert consensus and real ADP):
+- Rounds 1-2 (picks 1-24): Elite RBs and top WRs. AT MOST 1 QB in this range (only the very top QB, usually Josh Allen at ~pick 20). Zero to one elite TE.
+- Rounds 3-4 (picks 25-48): High-volume RBs, WR1/WR2 tier, top TEs. 1-2 QBs max here (Lamar Jackson, Jalen Hurts tier).
+- Rounds 5-7 (picks 49-84): WR2/WR3, flex RBs, the rest of the QB1 tier. This is where MOST starting QBs go.
+- Rounds 8-10 (picks 85-120): Late-round QBs, bench RBs, WR3/WR4, TE2s.
+- Rounds 11+ (picks 121+): Dart-throw QBs (Drake Maye, Caleb Williams, Trevor Lawrence tier), handcuffs, rookies, sleepers.
+
+RULE: No more than 3 QBs inside the top 40 overall. No QB inside the top 15 overall unless the consensus ADP agrees. If your instinct says "this QB is underranked because of points" — stop. ADP already accounts for points; the anchor is positional scarcity.${superflex ? '\n\nSUPERFLEX OVERRIDE: Because you can start a second QB in the flex, QB value roughly doubles. Top QBs belong in Round 1-2; the QB12 belongs in Round 6-7. Disregard the 1-QB round guidance above.' : ''}
+
 TIER RULES:
 - Tier 1: Elite studs (top ~8-10 overall)
 - Tier 2: High-end starters (top ~20)
@@ -327,9 +339,9 @@ TIER RULES:
 - Tier 8: Deep sleepers (180+)
 
 IMPORTANT:
-- projectedPoints is the full-season total for ${scoringFormat} scoring
+- projectedPoints is the full-season total for ${scoringFormat} scoring. QBs will project higher in raw points than RBs/WRs — that is EXPECTED and does not affect overallRank, which is driven by positional scarcity relative to ADP.
 - Tiers should have natural breakpoints — don't force exact counts
-- Flag players where you meaningfully disagree with ADP in the rationale
+- Deviating more than ±10 from ADP requires a concrete news/role reason cited in the rationale
 - Account for injury risk, age, opportunity changes, and coaching/scheme changes
 - rationale: 1 punchy sentence (shown inline in the rankings table)
 - analysis: 3-5 sentences of real scouting — strengths, weaknesses, situation, fantasy outlook. This is the main value-add. Be specific: reference stats, scheme, coaching, age curves, injury history. "Elite volume" is lazy; "led NFL with 178 targets at age 24, now gets a healthy Dak back after relying on Cooper Rush for 6 games" is good.`;
