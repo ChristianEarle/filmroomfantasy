@@ -51,7 +51,7 @@ export function DMCAView({ isDarkMode }: DMCAViewProps) {
           <h2 className={`text-xl font-semibold mb-3 ${h}`}>3. Designated agent</h2>
           <div className={`${codeBg} rounded-lg p-4 text-sm ${p}`}>
             <div><strong>FilmRoom Fantasy — DMCA Agent</strong></div>
-            <div>Email: <span className="font-medium">dmca@filmroomfantasy.com</span></div>
+            <div>Email: <span className="font-medium">support@filmroomfantasy.com</span></div>
             <div>Subject line: "DMCA Takedown Notice"</div>
           </div>
           <p className="mt-3">
@@ -97,7 +97,7 @@ export function DMCAView({ isDarkMode }: DMCAViewProps) {
           <h2 className={`text-xl font-semibold mb-3 ${h}`}>Contact</h2>
           <p>
             General copyright questions:{' '}
-            <span className="font-medium">dmca@filmroomfantasy.com</span>.
+            <span className="font-medium">support@filmroomfantasy.com</span>.
           </p>
         </section>
       </div>

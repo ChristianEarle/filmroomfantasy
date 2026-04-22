@@ -67,7 +67,7 @@ export function AccessibilityView({ isDarkMode }: AccessibilityViewProps) {
           <p>
             If you experience any difficulty accessing content on our site, or if you
             have suggestions for improving accessibility, please contact us at{' '}
-            <span className="font-medium">accessibility@filmroomfantasy.com</span>.
+            <span className="font-medium">support@filmroomfantasy.com</span>.
             We aim to respond within 5 business days. When possible, please include:
           </p>
           <ul className="list-disc list-inside space-y-2 mt-3">
@@ -90,7 +90,7 @@ export function AccessibilityView({ isDarkMode }: AccessibilityViewProps) {
           <h2 className={`text-xl font-semibold mb-3 ${h}`}>Contact</h2>
           <p>
             Accessibility contact:{' '}
-            <span className="font-medium">accessibility@filmroomfantasy.com</span>.
+            <span className="font-medium">support@filmroomfantasy.com</span>.
           </p>
         </section>
       </div>

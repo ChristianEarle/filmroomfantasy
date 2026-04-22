@@ -205,7 +205,7 @@ export function CookiePolicyView({ isDarkMode }: CookiePolicyViewProps) {
           <h2 className={`text-xl font-semibold mb-3 ${h}`}>Contact Us</h2>
           <p>
             Questions about this Cookie Policy? Email{' '}
-            <span className="font-medium">privacy@filmroomfantasy.com</span>.
+            <span className="font-medium">support@filmroomfantasy.com</span>.
           </p>
         </section>
       </div>

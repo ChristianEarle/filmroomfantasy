@@ -105,7 +105,7 @@ export function DoNotSellView({ isDarkMode }: DoNotSellViewProps) {
           </ul>
           <p className="mt-3">
             To exercise these rights, email{' '}
-            <span className="font-medium">privacy@filmroomfantasy.com</span> from the
+            <span className="font-medium">support@filmroomfantasy.com</span> from the
             email address associated with your account. We may need to verify your
             identity before fulfilling the request.
           </p>
@@ -133,7 +133,7 @@ export function DoNotSellView({ isDarkMode }: DoNotSellViewProps) {
           <h2 className={`text-xl font-semibold mb-3 ${h}`}>Contact</h2>
           <p>
             Privacy requests:{' '}
-            <span className="font-medium">privacy@filmroomfantasy.com</span>.
+            <span className="font-medium">support@filmroomfantasy.com</span>.
           </p>
         </section>
       </div>
