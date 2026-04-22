@@ -1,3 +1,28 @@
+# Allow /.well-known/* through (ACME cert validation, security.txt, etc.).
+# This MUST come before the dotfile denylist below so it wins first-match.
+/.well-known/*    /.well-known/:splat    200
+
+# Deny known-sensitive paths with a real 404 instead of the SPA shell.
+# Dotfiles (.env, .git/*, .htaccess, .aws/*, etc.)
+/.*    /404.html    404
+# WordPress probes
+/wp-admin    /404.html    404
+/wp-admin/*    /404.html    404
+/wp-login.php    /404.html    404
+/wp-content    /404.html    404
+/wp-content/*    /404.html    404
+/wp-includes    /404.html    404
+/wp-includes/*    /404.html    404
+# Admin surfaces
+/admin    /404.html    404
+/admin/*    /404.html    404
+# Server info leaks
+/server-info    /404.html    404
+/server-status    /404.html    404
+# Debug endpoints (API itself lives on a separate Worker)
+/api/debug    /404.html    404
+/api/debug/*    /404.html    404
+
 /assets/*    /assets/:splat    200
 /favicon.ico    /favicon.ico    200
 /favicon-32.png    /favicon-32.png    200
