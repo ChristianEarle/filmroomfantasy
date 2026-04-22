@@ -10,6 +10,16 @@
   X-Robots-Tag: all
   Cache-Control: public, max-age=3600
 
+# Google AdSense fetches this file from the root domain. It must respond
+# 200 with Content-Type text/plain; crawlers don't execute CSP so the
+# security headers from /* below are harmless, but we pin Content-Type and
+# short-circuit any robot/cache restrictions here to avoid "ads.txt not
+# found" reports in the AdSense console.
+/ads.txt
+  Content-Type: text/plain; charset=utf-8
+  X-Robots-Tag: all
+  Cache-Control: public, max-age=3600
+
 /*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
