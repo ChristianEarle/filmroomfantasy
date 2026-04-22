@@ -2542,10 +2542,15 @@ html {
 /* Explicit z-index layers for the cookie banner, mobile backdrop, and the
    mobile-open sidebar. Only .z-50 is present in the compiled Tailwind bundle,
    so we define the other tiers here to keep stacking predictable:
-     banner   (70) < backdrop (75) < mobile-open sidebar (80). */
+     banner   (70) < backdrop (75) < mobile-open sidebar (80).
+   The sidebar needs its own class (not Tailwind's .z-50) so the mobile
+   backdrop at z-75 never ends up on top of it and swallowing taps. */
 .z-cookie-banner {
   z-index: 70;
 }
 .z-mobile-backdrop {
   z-index: 75;
+}
+.z-mobile-sidebar {
+  z-index: 80;
 }
