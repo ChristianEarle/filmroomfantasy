@@ -3,8 +3,32 @@
 /.well-known/*    /.well-known/:splat    200
 
 # Deny known-sensitive paths with a real 404 instead of the SPA shell.
-# Dotfiles (.env, .git/*, .htaccess, .aws/*, etc.)
-/.*    /404.html    404
+# Dotfiles — enumerated explicitly rather than using a `/.*` catch-all,
+# which some matchers greedy-compile into `^/.*$` and end up swallowing
+# SPA routes like `/home` (BUG: home refresh returned 404).
+/.env    /404.html    404
+/.env.*    /404.html    404
+/.env/*    /404.html    404
+/.git    /404.html    404
+/.git/*    /404.html    404
+/.gitignore    /404.html    404
+/.gitattributes    /404.html    404
+/.htaccess    /404.html    404
+/.htpasswd    /404.html    404
+/.aws    /404.html    404
+/.aws/*    /404.html    404
+/.ssh    /404.html    404
+/.ssh/*    /404.html    404
+/.svn    /404.html    404
+/.svn/*    /404.html    404
+/.hg    /404.html    404
+/.hg/*    /404.html    404
+/.DS_Store    /404.html    404
+/.npmrc    /404.html    404
+/.vscode    /404.html    404
+/.vscode/*    /404.html    404
+/.idea    /404.html    404
+/.idea/*    /404.html    404
 # WordPress probes
 /wp-admin    /404.html    404
 /wp-admin/*    /404.html    404
