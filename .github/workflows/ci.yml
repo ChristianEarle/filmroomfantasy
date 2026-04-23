@@ -63,8 +63,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build frontend
-        run: npm run build
+      # Build + full prerender (puppeteer boots the built SPA, visits each
+      # public route, waits for React + the production API to respond, and
+      # rewrites <route>/index.html with fully-rendered HTML). Uses the Chrome
+      # that ships pre-installed on ubuntu-latest runners at
+      # /usr/bin/google-chrome-stable; scripts/prerender.js probes that path.
+      - name: Build frontend (with prerender)
+        run: npm run build:prerender
         env:
           VITE_API_URL: https://filmroom-api.earle2001.workers.dev/api
 

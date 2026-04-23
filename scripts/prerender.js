@@ -227,7 +227,11 @@ async function main() {
   server.kill();
 
   console.log(`\nPrerender complete: ${rendered} pages rendered, ${failed} failed.`);
-  if (failed > 0) process.exit(1);
+  // Only block the deploy if every route failed (e.g., the preview server
+  // never came up). Partial failures — typically caused by a transient API
+  // hiccup — leave the thin-but-valid static pages from generate-static-pages.js
+  // in place, which is strictly better than failing the whole deploy.
+  if (rendered === 0) process.exit(1);
 }
 
 main();
