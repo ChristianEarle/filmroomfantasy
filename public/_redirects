@@ -59,4 +59,26 @@
 /sw.js    /sw.js    200
 /apple-touch-icon.png    /apple-touch-icon.png    200
 /board    /player-rankings    301
-/*    /index.html    200
+
+# SPA-only routes without a prerendered directory — serve the app shell so
+# client-side routing can take over. Keep this list in sync with the SPA
+# router at src/App.tsx (VIEW_TO_PATH). Any path omitted here falls through
+# to the 404 catch-all at the bottom.
+/home             /index.html    200
+/team             /index.html    200
+/matchup          /index.html    200
+/settings         /index.html    200
+/profile          /index.html    200
+/all-players      /index.html    200
+/login            /index.html    200
+/register         /index.html    200
+/research         /index.html    200
+/draft-rankings   /index.html    200
+/league-analyzer  /index.html    200
+
+# Real 404 for unknown routes (replaces the previous /* -> /index.html 200
+# SPA fallback, which was a soft-404 anti-pattern: unknown URLs returned
+# HTTP 200 with the app shell). Prerendered routes (/player-rankings,
+# /trade-analyzer, /articles/<slug>, legal pages, etc.) are served directly
+# by Cloudflare Pages from <route>/index.html and never reach this rule.
+/*    /404.html    404
