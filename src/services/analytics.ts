@@ -1,17 +1,5 @@
 import { api } from './api';
-import { isAllowed } from './consent';
 import { trackPageView as trackPixelPageView } from './tracking';
-
-// Generate or retrieve a persistent anonymous session ID
-function getSessionId(): string {
-  const key = 'fr_session_id';
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(key, id);
-  }
-  return id;
-}
 
 function getDevice(): string {
   const ua = navigator.userAgent;
@@ -33,8 +21,10 @@ function getBrowser(): string {
 let lastTrackedPath = '';
 
 export function trackPageView(path: string): void {
-  // Respect user consent — skip analytics entirely if not granted
-  if (!isAllowed('analytics')) return;
+  // First-party page views are recorded server-side from anonymous request
+  // metadata (path, referrer, IP-derived daily hash). No client-side identifier
+  // is set, so this is cookieless and runs regardless of cookie-consent state.
+  // Third-party ad pixels below remain gated on consent inside trackPixelPageView.
 
   // Deduplicate rapid-fire calls for the same path
   if (path === lastTrackedPath) return;
@@ -44,7 +34,6 @@ export function trackPageView(path: string): void {
     const payload = {
       path,
       referrer: document.referrer || '',
-      sessionId: getSessionId(),
       device: getDevice(),
       browser: getBrowser(),
     };

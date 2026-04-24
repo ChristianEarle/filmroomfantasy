@@ -34,6 +34,19 @@ function getCentralTodayStartSec(): number {
   return ctDayStartSec - offsetSec;
 }
 
+// Derive a stable, daily-rotating visitor hash from IP + UA + salt.
+// Cookieless and non-persistent: the same visitor on the same UTC day produces
+// the same hash; on the next day they get a new one (rolling unique count).
+async function deriveVisitorHash(ip: string, ua: string, salt: string): Promise<string> {
+  const dateKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+  const data = new TextEncoder().encode(`${dateKey}|${salt}|${ip}|${ua}`);
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  const bytes = new Uint8Array(buf);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+  return `v_${hex.slice(0, 32)}`;
+}
+
 // ─── Public: record a page view ───────────────────────────────────────────────
 analyticsRoutes.post('/pageview', async (c) => {
   const db = c.env.DB;
@@ -42,13 +55,13 @@ analyticsRoutes.post('/pageview', async (c) => {
     const body = await c.req.json<{
       path: string;
       referrer?: string;
-      sessionId: string;
+      sessionId?: string;
       device?: string;
       browser?: string;
     }>();
 
-    if (!body.path || !body.sessionId) {
-      return c.json({ error: 'path and sessionId are required' }, 400);
+    if (!body.path) {
+      return c.json({ error: 'path is required' }, 400);
     }
 
     // Try to extract userId from JWT if present (optional — don't block on auth failure)
@@ -72,6 +85,20 @@ analyticsRoutes.post('/pageview', async (c) => {
     const country = c.req.header('cf-ipcountry') || null;
     const userAgent = c.req.header('user-agent') || null;
 
+    // Visitor identity: prefer the client-supplied sessionId if present, else
+    // derive a cookieless hash of (IP + UA + UTC day + salt). This lets us
+    // count unique visitors without setting any client-side identifier — so
+    // the metric works whether or not the user has consented to cookies.
+    let sessionId = body.sessionId?.trim() || '';
+    if (!sessionId) {
+      const ip =
+        c.req.header('cf-connecting-ip') ||
+        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+        '0.0.0.0';
+      const salt = c.env.ANALYTICS_SALT || 'fr-default-analytics-salt';
+      sessionId = await deriveVisitorHash(ip, userAgent || '', salt);
+    }
+
     const id = crypto.randomUUID();
     const nowSec = Math.floor(Date.now() / 1000);
 
@@ -83,7 +110,7 @@ analyticsRoutes.post('/pageview', async (c) => {
       body.path,
       body.referrer || null,
       userId,
-      body.sessionId,
+      sessionId,
       userAgent,
       country,
       body.device || null,

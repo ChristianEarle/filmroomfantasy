@@ -45,6 +45,7 @@ export type Env = {
   FEEDBACK_EMAIL?: string; // Optional: Email address to receive feedback notifications via Resend
   STRIPE_SECRET_KEY?: string; // Optional: Stripe secret key for billing
   STRIPE_WEBHOOK_SECRET?: string; // Optional: Stripe webhook signing secret
+  ANALYTICS_SALT?: string; // Optional: per-deploy salt for cookieless visitor hashing in /analytics/pageview
 };
 
 export type Variables = {

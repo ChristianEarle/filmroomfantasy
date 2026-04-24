@@ -75,12 +75,6 @@ export function CookiePolicyView({ isDarkMode }: CookiePolicyViewProps) {
                   <td className={`px-3 py-2 border ${tableBorder}`}>Session / 30 days</td>
                 </tr>
                 <tr>
-                  <td className={`px-3 py-2 border ${tableBorder}`}>fr_session_id</td>
-                  <td className={`px-3 py-2 border ${tableBorder}`}>Analytics</td>
-                  <td className={`px-3 py-2 border ${tableBorder}`}>Anonymous identifier used to deduplicate page views.</td>
-                  <td className={`px-3 py-2 border ${tableBorder}`}>Persistent (localStorage)</td>
-                </tr>
-                <tr>
                   <td className={`px-3 py-2 border ${tableBorder}`}>fr_cookie_consent</td>
                   <td className={`px-3 py-2 border ${tableBorder}`}>Essential</td>
                   <td className={`px-3 py-2 border ${tableBorder}`}>Stores your cookie consent choices.</td>
