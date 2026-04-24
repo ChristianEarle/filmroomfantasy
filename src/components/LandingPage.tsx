@@ -510,7 +510,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <div className="period">Forever</div>
               <div className="desc">Try the Trade Analyzer with basic access.</div>
               <ul className="check-list">
-                <li>1 trade analysis per day</li>
+                <li>3 trade analyses per day</li>
                 <li>2-team trades only</li>
                 <li>All league formats</li>
                 <li>AI verdict &amp; letter grade</li>
@@ -525,9 +525,8 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <div className="period">per month</div>
               <div className="desc">Unlock the full Trade Analyzer for your league.</div>
               <ul className="check-list">
-                <li>5 trade analyses per day</li>
+                <li>8 trade analyses per day</li>
                 <li>2, 3, and 4-team trades</li>
-                <li>Redraft, Dynasty, and Keeper</li>
                 <li>AI counter-offer suggestions</li>
                 <li>Playoff schedule comparisons</li>
                 <li>Trade History with AI grades</li>
@@ -543,8 +542,6 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <ul className="check-list">
                 <li>Unlimited trade analyses</li>
                 <li>Everything in Pro</li>
-                <li>Deeper player research for trades</li>
-                <li>ROS projections &amp; value charts</li>
                 <li>Custom scoring models <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Coming Soon</span></li>
                 <li>Early access to new features</li>
               </ul>

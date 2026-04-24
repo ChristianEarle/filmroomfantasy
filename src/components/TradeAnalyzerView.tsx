@@ -32,7 +32,6 @@ interface TradeUsage {
   limit: number; // -1 = unlimited
   remaining: number; // -1 = unlimited
   resetsDaily: boolean;
-  resetsWeekly?: boolean;
 }
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -2678,16 +2677,12 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                 ? 'Unlimited analyses'
                 : !hasUsesLeft
                 ? !user
-                  ? 'Create an account for 1 free analysis per day'
+                  ? 'Create an account for 3 free analyses per day'
                   : user.subscriptionTier === 'free'
                   ? 'No analyses left today. Upgrade for more.'
                   : 'No analyses left today. Resets at midnight.'
                 : `${usage.remaining}/${usage.limit} analyses remaining${
-                    usage.resetsDaily
-                      ? ' today'
-                      : usage.resetsWeekly
-                      ? ' this week'
-                      : ''
+                    usage.resetsDaily ? ' today' : ''
                   }`}
             </p>
           ) : (
