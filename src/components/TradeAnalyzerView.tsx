@@ -143,35 +143,88 @@ function PlayerSearchInput({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const showDropdown = isFocused && results.length > 0;
+  // Show the dropdown whenever there's any state worth surfacing — not
+  // just when we have results. Previously, an empty result set (or any
+  // error, which the old code silently treated as empty) collapsed the
+  // dropdown entirely, making search look broken during rate-limits.
+  const trimmedQuery = query.trim();
+  const showDropdown =
+    isFocused &&
+    trimmedQuery.length >= 2 &&
+    (results.length > 0 || isSearching || errorMsg !== null || hasSearched);
 
-  // Clean up timeout on unmount
+  // Clean up timers and in-flight requests on unmount
   useEffect(() => {
-    return () => clearTimeout(blurTimeoutRef.current);
+    return () => {
+      clearTimeout(blurTimeoutRef.current);
+      clearTimeout(debounceTimerRef.current);
+      abortRef.current?.abort();
+    };
   }, []);
 
-  const handleSearch = async (q: string) => {
-    setQuery(q);
-    if (q.trim().length < 2) {
-      setResults([]);
-      return;
-    }
+  const runSearch = async (q: string) => {
+    // Cancel any in-flight request so stale responses can't overwrite
+    // fresh ones when the user is typing quickly.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsSearching(true);
+    setErrorMsg(null);
     try {
       const data = await api.get<{ players: SearchResult[] }>(
-        `/players/search?q=${encodeURIComponent(q)}&limit=8`
+        `/players/search?q=${encodeURIComponent(q)}&limit=8`,
+        { signal: controller.signal },
       );
+      if (controller.signal.aborted) return;
       setResults(data.players || []);
-    } catch {
+      setHasSearched(true);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      if ((err as { name?: string })?.name === 'AbortError') return;
+      const status = (err as { status?: number })?.status;
       setResults([]);
+      setHasSearched(true);
+      setErrorMsg(
+        status === 429
+          ? 'Searching too fast — pause for a moment, then try again.'
+          : 'Search is temporarily unavailable. Try again in a moment.',
+      );
     } finally {
-      setIsSearching(false);
+      if (!controller.signal.aborted) setIsSearching(false);
     }
+  };
+
+  const handleSearch = (q: string) => {
+    setQuery(q);
+    // Reset per-keystroke UI state
+    clearTimeout(debounceTimerRef.current);
+    setErrorMsg(null);
+
+    if (q.trim().length < 2) {
+      // Cancel anything in flight and clear results — too short to search.
+      abortRef.current?.abort();
+      setResults([]);
+      setIsSearching(false);
+      setHasSearched(false);
+      return;
+    }
+
+    // Debounce so we don't fire a request per keystroke. 30 req/min
+    // rate limit on the server means a fast typer could otherwise
+    // trip a 429 within seconds.
+    debounceTimerRef.current = setTimeout(() => {
+      runSearch(q.trim());
+    }, 250);
   };
 
   const selectPlayer = (p: SearchResult) => {
@@ -182,8 +235,13 @@ function PlayerSearchInput({
       position: p.position,
       team: p.team,
     });
+    clearTimeout(debounceTimerRef.current);
+    abortRef.current?.abort();
     setQuery('');
     setResults([]);
+    setErrorMsg(null);
+    setHasSearched(false);
+    setIsSearching(false);
     setIsFocused(false);
   };
 
@@ -255,36 +313,54 @@ function PlayerSearchInput({
             isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'
           }`}
         >
-          {results.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => selectPlayer(r)}
-              className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${
-                isDarkMode ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
-              }`}
-            >
-              <span
-                className={`fr-text-10 font-bold px-1.5 py-0.5 rounded ${
-                  r.position === 'QB'
-                    ? 'bg-red-500/20 text-red-400'
-                    : r.position === 'RB'
-                    ? 'bg-green-500/20 text-green-400'
-                    : r.position === 'WR'
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : r.position === 'TE'
-                    ? 'bg-amber-500/20 text-amber-400'
-                    : 'bg-slate-500/20 text-slate-400'
+          {results.length > 0 ? (
+            results.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => selectPlayer(r)}
+                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${
+                  isDarkMode ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
                 }`}
               >
-                {r.position}
-              </span>
-              <span className="font-medium">{r.name}</span>
-              <span className={`ml-auto text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                {r.team}
-              </span>
-            </button>
-          ))}
+                <span
+                  className={`fr-text-10 font-bold px-1.5 py-0.5 rounded ${
+                    r.position === 'QB'
+                      ? 'bg-red-500/20 text-red-400'
+                      : r.position === 'RB'
+                      ? 'bg-green-500/20 text-green-400'
+                      : r.position === 'WR'
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : r.position === 'TE'
+                      ? 'bg-amber-500/20 text-amber-400'
+                      : 'bg-slate-500/20 text-slate-400'
+                  }`}
+                >
+                  {r.position}
+                </span>
+                <span className="font-medium">{r.name}</span>
+                <span className={`ml-auto text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {r.team}
+                </span>
+              </button>
+            ))
+          ) : (
+            <div
+              className={`px-3 py-2 text-sm ${
+                errorMsg
+                  ? 'text-amber-500'
+                  : isDarkMode
+                    ? 'text-slate-400'
+                    : 'text-slate-500'
+              }`}
+            >
+              {isSearching
+                ? 'Searching…'
+                : errorMsg
+                  ? errorMsg
+                  : 'No players match that search.'}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -498,10 +574,21 @@ function TradeTeamCard({
   const assetCount = team.sends.length;
 
   const defaultLabel = `Team ${teamIndex + 1}`;
+  // Lock the label input whenever it comes from a trusted source — the
+  // user's connected-league team or an opponent picked from the league
+  // dropdown. In those cases the label is used server-side to match
+  // the user's team to the "(YOU)" marker in the analyzer prompt, and
+  // letting the user blank it or rename it silently breaks direction
+  // detection. For fully-manual trades (no league), the label stays
+  // editable so users can still name teams for their own reference.
+  const labelLocked = !!isUserTeam || !!opponentOptions;
+
   // Controlled input would lose focus if we nulled empty strings, so
   // we restore the default on blur instead. That keeps editing fluid
   // (you can clear and retype) but guarantees a non-empty final value.
+  // Only relevant when the label isn't locked.
   const handleLabelBlur = (value: string) => {
+    if (labelLocked) return;
     if (!value.trim()) {
       onLabelChange(team.id, defaultLabel);
     }
@@ -571,9 +658,18 @@ function TradeTeamCard({
             onChange={(e) => onLabelChange(team.id, e.target.value)}
             onBlur={(e) => handleLabelBlur(e.target.value)}
             placeholder={defaultLabel}
+            readOnly={labelLocked}
+            aria-readonly={labelLocked}
+            title={
+              labelLocked
+                ? isUserTeam
+                  ? "Your team name comes from your connected league and can't be edited here."
+                  : "Opponent name is set by the 'Pick opponent from league' dropdown above."
+                : undefined
+            }
             className={`text-sm font-bold bg-transparent border-none outline-none w-full truncate ${
               isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
-            }`}
+            } ${labelLocked ? 'cursor-default select-none' : ''}`}
           />
           {isUserTeam && (
             <span
