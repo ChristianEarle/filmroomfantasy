@@ -20,6 +20,10 @@ import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
 import { inferPlayerTenure, type PlayerTenureInfo } from './playerTenure';
+import {
+  formatNflCalendarBlock,
+  getNflCalendarContext,
+} from '../utils/nflCalendar';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -775,6 +779,15 @@ export function formatTradeContextForPrompt(ctx: TradeContext): string {
     `Data availability — projections: ${ctx.dataAvailability.hasCurrentProjections}, ` +
       `stats: ${ctx.dataAvailability.hasCurrentStats}, vegas: ${ctx.dataAvailability.hasVegasLines}`
   );
+
+  // Directional NFL-calendar context: which season just ended, which is
+  // upcoming, where we sit relative to the draft. Disambiguates "YYYY
+  // pick" labels and rookie-class references for the AI. Derived from
+  // the actual date rather than `seasonYear` so a stale league anchor
+  // can't desync the temporal framing.
+  const calendar = getNflCalendarContext(new Date(ctx.generatedAt));
+  lines.push('');
+  lines.push(formatNflCalendarBlock(calendar));
 
   if (ctx.userContext) {
     const u = ctx.userContext;
