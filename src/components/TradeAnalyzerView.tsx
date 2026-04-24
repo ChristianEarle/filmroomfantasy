@@ -574,10 +574,21 @@ function TradeTeamCard({
   const assetCount = team.sends.length;
 
   const defaultLabel = `Team ${teamIndex + 1}`;
+  // Lock the label input whenever it comes from a trusted source — the
+  // user's connected-league team or an opponent picked from the league
+  // dropdown. In those cases the label is used server-side to match
+  // the user's team to the "(YOU)" marker in the analyzer prompt, and
+  // letting the user blank it or rename it silently breaks direction
+  // detection. For fully-manual trades (no league), the label stays
+  // editable so users can still name teams for their own reference.
+  const labelLocked = !!isUserTeam || !!opponentOptions;
+
   // Controlled input would lose focus if we nulled empty strings, so
   // we restore the default on blur instead. That keeps editing fluid
   // (you can clear and retype) but guarantees a non-empty final value.
+  // Only relevant when the label isn't locked.
   const handleLabelBlur = (value: string) => {
+    if (labelLocked) return;
     if (!value.trim()) {
       onLabelChange(team.id, defaultLabel);
     }
@@ -647,9 +658,18 @@ function TradeTeamCard({
             onChange={(e) => onLabelChange(team.id, e.target.value)}
             onBlur={(e) => handleLabelBlur(e.target.value)}
             placeholder={defaultLabel}
+            readOnly={labelLocked}
+            aria-readonly={labelLocked}
+            title={
+              labelLocked
+                ? isUserTeam
+                  ? "Your team name comes from your connected league and can't be edited here."
+                  : "Opponent name is set by the 'Pick opponent from league' dropdown above."
+                : undefined
+            }
             className={`text-sm font-bold bg-transparent border-none outline-none w-full truncate ${
               isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
-            }`}
+            } ${labelLocked ? 'cursor-default select-none' : ''}`}
           />
           {isUserTeam && (
             <span
