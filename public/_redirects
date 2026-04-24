@@ -60,25 +60,17 @@
 /apple-touch-icon.png    /apple-touch-icon.png    200
 /board    /player-rankings    301
 
-# SPA-only routes without a prerendered directory — serve the app shell so
-# client-side routing can take over. Keep this list in sync with the SPA
-# router at src/App.tsx (VIEW_TO_PATH). Any path omitted here falls through
-# to the 404 catch-all at the bottom.
-/home             /index.html    200
-/team             /index.html    200
-/matchup          /index.html    200
-/settings         /index.html    200
-/profile          /index.html    200
-/all-players      /index.html    200
-/login            /index.html    200
-/register         /index.html    200
-/research         /index.html    200
-/draft-rankings   /index.html    200
-/league-analyzer  /index.html    200
-
-# Real 404 for unknown routes (replaces the previous /* -> /index.html 200
-# SPA fallback, which was a soft-404 anti-pattern: unknown URLs returned
-# HTTP 200 with the app shell). Prerendered routes (/player-rankings,
-# /trade-analyzer, /articles/<slug>, legal pages, etc.) are served directly
-# by Cloudflare Pages from <route>/index.html and never reach this rule.
-/*    /404.html    404
+# SPA catch-all: serve the app shell for any path that hasn't already been
+# matched by a sensitive-path 404 above or by a prerendered static file.
+# React handles routing client-side, and the NotFound view is noindex'd for
+# genuinely unknown paths.
+#
+# The previous iteration tried `/* -> /404.html 404` plus an explicit
+# whitelist of SPA routes (commit d6dc7b1), relying on Cloudflare Pages to
+# prefer prerendered `<route>/index.html` over the splat. That produced
+# user-facing 404s whenever (a) the puppeteer prerender silently skipped a
+# route — the CI script only fails on total prerender failure — or (b) a
+# valid SPA path (including new article slugs) wasn't in the whitelist.
+# The soft-404 tradeoff is acceptable because NotFound is noindex'd; a
+# real user hitting a broken page is much worse than a crawler signal.
+/*    /index.html    200
