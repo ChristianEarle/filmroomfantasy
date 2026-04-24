@@ -37,9 +37,6 @@
 /wp-content/*    /404.html    404
 /wp-includes    /404.html    404
 /wp-includes/*    /404.html    404
-# Admin surfaces
-/admin    /404.html    404
-/admin/*    /404.html    404
 # Server info leaks
 /server-info    /404.html    404
 /server-status    /404.html    404
@@ -75,6 +72,8 @@
 /research         /index.html    200
 /draft-rankings   /index.html    200
 /league-analyzer  /index.html    200
+/admin            /index.html    200
+/admin/*          /index.html    200
 
 # Real 404 for unknown routes (replaces the previous /* -> /index.html 200
 # SPA fallback, which was a soft-404 anti-pattern: unknown URLs returned
