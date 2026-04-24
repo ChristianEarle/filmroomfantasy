@@ -20,6 +20,7 @@
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
+import { inferPlayerTenure, type PlayerTenureInfo } from './playerTenure';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -31,6 +32,11 @@ export interface EnrichedPlayerData {
   nflTeam: string;
   age: number | null;
   yearsExp: number | null;
+  /**
+   * Server-computed NFL tenure (draft class, rookie-vs-sophomore disambiguation).
+   * The analyzer prompt trusts this label over `yearsExp` alone.
+   */
+  tenure: PlayerTenureInfo;
   status: string;
   injuryNote: string | null;
   injuryBodyPart: string | null;
@@ -107,14 +113,32 @@ export async function fetchPlayerData(
 
   const playerIds = matchedPlayers.map((p) => p.id);
   const currentYear = new Date().getFullYear();
+  const previousYear = currentYear - 1;
 
-  const [weeklyStats, projections, news] = await Promise.all([
+  const [weeklyStats, prevWeeklyStats, projections, news] = await Promise.all([
     db.query.playerWeeklyStats.findMany({
       where: and(
         inArray(schema.playerWeeklyStats.playerId, playerIds),
         eq(schema.playerWeeklyStats.seasonYear, currentYear)
       ),
       orderBy: [desc(schema.playerWeeklyStats.week)],
+    }),
+    // Prior-season activity — used only to tell "incoming rookie" apart
+    // from "last year's rookie" since Sleeper's yearsExp can't do that
+    // reliably during offseason.
+    db.query.playerWeeklyStats.findMany({
+      where: and(
+        inArray(schema.playerWeeklyStats.playerId, playerIds),
+        eq(schema.playerWeeklyStats.seasonYear, previousYear)
+      ),
+      columns: {
+        playerId: true,
+        offSnaps: true,
+        passAttempts: true,
+        rushAttempts: true,
+        receptions: true,
+        targets: true,
+      },
     }),
     db.query.playerProjections.findMany({
       where: and(
@@ -130,6 +154,24 @@ export async function fetchPlayerData(
       limit: playerIds.length * 3,
     }),
   ]);
+
+  const playedPrevByPlayer = new Set<string>();
+  for (const s of prevWeeklyStats) {
+    const active =
+      Number(s.offSnaps ?? 0) > 0 ||
+      Number(s.passAttempts ?? 0) > 0 ||
+      Number(s.rushAttempts ?? 0) > 0 ||
+      Number(s.receptions ?? 0) > 0 ||
+      Number(s.targets ?? 0) > 0;
+    if (active) playedPrevByPlayer.add(s.playerId);
+  }
+
+  // In-season stats don't flow into this module's "current year"
+  // window until games start; treat Jan–Jul as offseason for tenure
+  // purposes (same rubric as tradeContext.computeSeasonPhase).
+  const monthNow = new Date().getUTCMonth();
+  const seasonPhaseForTenure: 'offseason' | 'preseason' | 'regular' | 'playoffs' =
+    monthNow >= 1 && monthNow <= 6 ? 'offseason' : monthNow === 7 ? 'preseason' : 'regular';
 
   const statsByPlayer = new Map<string, typeof weeklyStats>();
   for (const s of weeklyStats) {
@@ -251,12 +293,24 @@ export async function fetchPlayerData(
       opponent: s.opponent,
     }));
 
+    const tenure: PlayerTenureInfo =
+      player.position === 'DEF'
+        ? { draftClass: null, rookieStatus: 'veteran', tenureLabel: 'Team defense' }
+        : inferPlayerTenure({
+            yearsExp: player.yearsExp,
+            playedInCurrentSeason: (seasonStats?.gamesPlayed ?? 0) > 0,
+            playedInPreviousSeason: playedPrevByPlayer.has(player.id),
+            seasonYear: currentYear,
+            seasonPhase: seasonPhaseForTenure,
+          });
+
     result.set(player.name.toLowerCase(), {
       name: player.name,
       position: player.position,
       nflTeam: player.team,
       age: player.age,
       yearsExp: player.yearsExp,
+      tenure,
       status: player.status,
       injuryNote: player.injuryNote,
       injuryBodyPart: player.injuryBodyPart,
@@ -300,6 +354,9 @@ export function formatPlayerDataBlock(data: EnrichedPlayerData): string {
   if (data.depthChartOrder) bioDetails.push(`Depth chart: #${data.depthChartOrder}`);
   if (data.byeWeek) bioDetails.push(`Bye: Week ${data.byeWeek}`);
   if (bioDetails.length > 0) lines.push(bioDetails.join(' | '));
+  // Authoritative tenure label — trust over `yearsExp` alone to tell
+  // incoming rookies apart from last year's rookies.
+  lines.push(`Tenure: ${data.tenure.tenureLabel}`);
 
   if (data.status !== 'active') {
     const injury = [data.status.toUpperCase()];

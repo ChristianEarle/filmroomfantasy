@@ -19,6 +19,7 @@ import { eq, and, desc, inArray, gte } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
+import { inferPlayerTenure, type PlayerTenureInfo } from './playerTenure';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -59,6 +60,12 @@ export interface PlayerFacts {
     injuryBodyPart: string | null;
     depthChartOrder: number | null;
     byeWeek: number | null;
+    /**
+     * Server-computed tenure label. The AI should trust this over
+     * `yearsExp` alone — `yearsExp` lags the NFL calendar in offseason
+     * and can't distinguish an incoming rookie from last year's rookie.
+     */
+    tenure: PlayerTenureInfo;
   };
 
   /** Recent game-level volume (last 4 played games in the current season) */
@@ -253,6 +260,37 @@ export async function buildTradeContext({
     statsByPlayer.set(s.playerId, arr);
   }
 
+  // 2a. Fetch previous-season stats so we can distinguish "incoming rookie"
+  //     (no NFL games in our data) from "last year's rookie" (has prior-season
+  //     stats). Raw Sleeper yearsExp can't tell these apart during offseason.
+  const previousSeasonYear = seasonYear - 1;
+  const prevWeeklyStats = await chunkedInArrayFetch(playerIds, ID_CHUNK, (chunk) =>
+    db.query.playerWeeklyStats.findMany({
+      where: and(
+        inArray(schema.playerWeeklyStats.playerId, chunk),
+        eq(schema.playerWeeklyStats.seasonYear, previousSeasonYear)
+      ),
+      columns: {
+        playerId: true,
+        offSnaps: true,
+        passAttempts: true,
+        rushAttempts: true,
+        receptions: true,
+        targets: true,
+      },
+    })
+  );
+  const playedPrevSeasonByPlayer = new Set<string>();
+  for (const s of prevWeeklyStats) {
+    const hasActivity =
+      Number(s.offSnaps ?? 0) > 0 ||
+      Number(s.passAttempts ?? 0) > 0 ||
+      Number(s.rushAttempts ?? 0) > 0 ||
+      Number(s.receptions ?? 0) > 0 ||
+      Number(s.targets ?? 0) > 0;
+    if (hasActivity) playedPrevSeasonByPlayer.add(s.playerId);
+  }
+
   // 2b. Fetch recent news for these players (last 7 days, chunked)
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const recentNewsRows = await chunkedInArrayFetch(playerIds, ID_CHUNK, (chunk) =>
@@ -411,6 +449,10 @@ export async function buildTradeContext({
     propsByName.set(pr.playerName.toLowerCase(), nameMap);
   }
 
+  // Compute season phase up-front so player-tenure inference sees the
+  // same value the TradeContext will ultimately report.
+  const seasonPhaseForCtx = computeSeasonPhase(currentWeek, weeklyStats.length > 0);
+
   // 7. Build PlayerFacts[]
   const playerFacts: PlayerFacts[] = players.map((p) => {
     const stats = statsByPlayer.get(p.id) || [];
@@ -425,6 +467,22 @@ export async function buildTradeContext({
         Number(s.targets ?? 0) > 0;
       return off > 0 || activity;
     });
+
+    // DEF entries aren't rookies — skip the heuristic for them.
+    const tenure =
+      p.position === 'DEF'
+        ? {
+            draftClass: null,
+            rookieStatus: 'veteran' as const,
+            tenureLabel: 'Team defense',
+          }
+        : inferPlayerTenure({
+            yearsExp: p.yearsExp,
+            playedInCurrentSeason: played.length > 0,
+            playedInPreviousSeason: playedPrevSeasonByPlayer.has(p.id),
+            seasonYear,
+            seasonPhase: seasonPhaseForCtx,
+          });
 
     const recentVolume: PlayerFacts['recentVolume'] =
       played.length > 0
@@ -573,6 +631,7 @@ export async function buildTradeContext({
         injuryBodyPart: p.injuryBodyPart,
         depthChartOrder: p.depthChartOrder,
         byeWeek: p.byeWeek,
+        tenure,
       },
       recentVolume,
       projection,
@@ -604,7 +663,7 @@ export async function buildTradeContext({
     generatedAt: new Date().toISOString(),
     seasonYear,
     currentWeek,
-    seasonPhase: computeSeasonPhase(currentWeek, weeklyStats.length > 0),
+    seasonPhase: seasonPhaseForCtx,
     leagueSettings,
     players: playerFacts,
     userContext,
@@ -765,6 +824,9 @@ export function formatTradeContextForPrompt(ctx: TradeContext): string {
       bio.push(`Depth #${p.identity.depthChartOrder}`);
     if (p.identity.byeWeek != null) bio.push(`Bye W${p.identity.byeWeek}`);
     if (bio.length) lines.push(`  ${bio.join(' | ')}`);
+    // Authoritative tenure label — use this, not raw yearsExp, to
+    // distinguish incoming rookies from last year's rookies.
+    lines.push(`  Tenure: ${p.identity.tenure.tenureLabel}`);
     if (p.identity.status !== 'active') {
       lines.push(
         `  Injury: ${p.identity.status.toUpperCase()}` +
