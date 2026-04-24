@@ -163,7 +163,8 @@ export async function apiFetch<T>(
 
 // HTTP method helpers
 export const api = {
-  get: <T>(endpoint: string) => apiFetch<T>(endpoint, { method: 'GET' }),
+  get: <T>(endpoint: string, options?: { signal?: AbortSignal }) =>
+    apiFetch<T>(endpoint, { method: 'GET', signal: options?.signal }),
 
   post: <T>(endpoint: string, body?: unknown) =>
     apiFetch<T>(endpoint, {
