@@ -192,7 +192,7 @@ const LeagueContext = createContext<LeagueContextType | undefined>(undefined);
 
 export function LeagueProvider({ children }: { children: ReactNode }) {
   const { user, isAuthenticated } = useAuth();
-  const { leagues } = useLeaguesContext();
+  const { leagues, isLoading: leaguesLoading } = useLeaguesContext();
 
   // State
   const [selectedLeagueId, setSelectedLeagueIdState] = useState<string | null>(() => {
@@ -231,8 +231,11 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   const [allMatchupsLoading, setAllMatchupsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-select league: validate persisted selection or fall back to first league
+  // Auto-select league: validate persisted selection or fall back to first league.
+  // Skip while leagues are still loading so we don't clobber the persisted id
+  // before the fetch resolves.
   useEffect(() => {
+    if (leaguesLoading) return;
     if (leagues.length > 0) {
       if (!selectedLeagueId || !leagues.some(l => l.id === selectedLeagueId)) {
         setSelectedLeagueId(leagues[0].id);
@@ -246,7 +249,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
       setMatchup(null);
       setStandings([]);
     }
-  }, [leagues, selectedLeagueId, setSelectedLeagueId]);
+  }, [leagues, leaguesLoading, selectedLeagueId, setSelectedLeagueId]);
 
   // Reset viewedTeamId when league changes (so we can set it to the user's team)
   useEffect(() => {
