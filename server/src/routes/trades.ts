@@ -382,11 +382,37 @@ tradesRoutes.post(
     // Sanitize user-supplied context to mitigate prompt injection
     const userContextText = body.context ? sanitizePromptInput(body.context, 1000) : '';
 
+    // Resolve which team in the trade body corresponds to the user so
+    // the description can mark it "(YOU)". Prefer matching by the
+    // connected-league team name; fall back to teams[0] by convention
+    // (the client always seeds the user into the first slot).
+    let userTeamLabel: string | null = null;
+    if (body.userTeamId) {
+      try {
+        const userTeam = await db.query.teams.findFirst({
+          where: eq(schema.teams.id, body.userTeamId),
+          columns: { name: true },
+        });
+        const userTeamName = userTeam?.name?.trim().toLowerCase();
+        if (userTeamName) {
+          const matched = body.teams.find(
+            (t) => t.label.trim().toLowerCase() === userTeamName,
+          );
+          userTeamLabel = matched?.label ?? body.teams[0]?.label ?? null;
+        } else {
+          userTeamLabel = body.teams[0]?.label ?? null;
+        }
+      } catch (err) {
+        console.error('Failed to resolve user team for direction marker:', err);
+        userTeamLabel = body.teams[0]?.label ?? null;
+      }
+    }
+
     // Build the description + enrichment block, then hand off to the
     // shared analyzer service. The service owns the system prompt,
     // the fetch, and the response validation/clamping.
     const enrichmentBlock = buildEnrichmentBlock(body, playerData);
-    const tradeDescription = buildTradeDescription(body, enrichmentBlock);
+    const tradeDescription = buildTradeDescription(body, enrichmentBlock, userTeamLabel);
 
     try {
       const outcome = await analyzeTrade({
