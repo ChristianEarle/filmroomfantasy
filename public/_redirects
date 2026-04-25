@@ -37,9 +37,6 @@
 /wp-content/*    /404.html    404
 /wp-includes    /404.html    404
 /wp-includes/*    /404.html    404
-# Admin surfaces
-/admin    /404.html    404
-/admin/*    /404.html    404
 # Server info leaks
 /server-info    /404.html    404
 /server-status    /404.html    404
