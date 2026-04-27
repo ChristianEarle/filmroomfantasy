@@ -89,9 +89,15 @@ const ROUTES = [
  */
 function startPreviewServer() {
   return new Promise((resolve, reject) => {
-    const child = spawn('npx', ['vite', 'preview', '--port', String(PORT)], {
+    // npx is `npx.cmd` on Windows; spawn won't auto-resolve the extension.
+    // shell:true on Windows because Node 20+ refuses to spawn .cmd/.bat
+    // shims without it (EINVAL). Safe here: args are hardcoded constants.
+    const isWin = process.platform === 'win32';
+    const npxCmd = isWin ? 'npx.cmd' : 'npx';
+    const child = spawn(npxCmd, ['vite', 'preview', '--port', String(PORT)], {
       cwd: join(__dirname, '..'),
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: isWin,
     });
 
     let started = false;
@@ -135,21 +141,40 @@ function startPreviewServer() {
  */
 async function renderRoute(page, route) {
   const url = `${ORIGIN}${route}`;
-  await page.goto(url, { waitUntil: 'networkidle0', timeout: 30_000 });
+  // 'domcontentloaded' instead of 'networkidle0' — the SPA fires ongoing
+  // requests (analytics, polling, AdSense, ad pixels) that prevent the page
+  // from ever reaching networkidle, so each route hit the 30s timeout in CI
+  // and `browser.close()` deadlocked at the end. We don't need network-quiet;
+  // we wait explicitly for React content below.
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 });
 
-  // Wait for React to mount — the #root div should have children
+  // Wait for React to mount and render real content into #root.
   await page.waitForFunction(
     () => {
       const root = document.getElementById('root');
-      return root && root.children.length > 0;
+      // textContent length filters out the empty wrapper div Vite ships in
+      // index.html — we want the SPA to have actually rendered.
+      return root && root.children.length > 0 && (root.textContent || '').trim().length > 50;
     },
     { timeout: 10_000 }
   );
 
-  // Small extra wait for any post-render effects (animations, lazy loads)
+  // Brief settle for late hydration / suspense fallbacks.
   await new Promise((r) => setTimeout(r, 500));
 
   return page.content();
+}
+
+// Promise.race wrapper so a single hung step can't stall the whole script.
+// Used for cleanup steps where puppeteer/Node spawn calls have been observed
+// to deadlock indefinitely.
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
 }
 
 /**
@@ -222,9 +247,19 @@ async function main() {
     }
   }
 
-  // 3. Cleanup
-  await browser.close();
-  server.kill();
+  // 3. Cleanup — wrap each step so a hung close can't stall the script.
+  // SIGKILL on the spawn because `npx vite preview` starts vite as its own
+  // child; SIGTERM on the npx wrapper sometimes leaves vite running.
+  try {
+    await withTimeout(browser.close(), 10_000, 'browser.close()');
+  } catch (err) {
+    console.warn(`  ${err.message} — continuing.`);
+  }
+  try {
+    server.kill('SIGKILL');
+  } catch (err) {
+    console.warn(`  server.kill() failed: ${err.message}`);
+  }
 
   console.log(`\nPrerender complete: ${rendered} pages rendered, ${failed} failed.`);
   // Only block the deploy if every route failed (e.g., the preview server
@@ -234,4 +269,21 @@ async function main() {
   if (rendered === 0) process.exit(1);
 }
 
-main();
+// Global safety net: an earlier CI run hung for 6h because puppeteer or the
+// vite preview spawn never resolved cleanly. If we're still alive after 10
+// minutes something is wrong — kill the process so CI fails fast instead of
+// burning the runner timeout.
+const HARD_TIMEOUT_MS = 10 * 60 * 1000;
+const hardTimeout = setTimeout(() => {
+  console.error(`\nPrerender exceeded ${HARD_TIMEOUT_MS / 1000}s — killing.`);
+  process.exit(1);
+}, HARD_TIMEOUT_MS);
+hardTimeout.unref();
+
+main().then(
+  () => process.exit(0),
+  (err) => {
+    console.error('Prerender failed:', err);
+    process.exit(1);
+  },
+);
