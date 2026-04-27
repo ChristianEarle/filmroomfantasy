@@ -1,49 +1,27 @@
-# Allow /.well-known/* through (ACME cert validation, security.txt, etc.).
-# This MUST come before the dotfile denylist below so it wins first-match.
+# Cloudflare Pages _redirects.
+#
+# History note: an earlier version had a denylist for sensitive paths
+# (`/.env /404.html 404`, etc.). Cloudflare Pages does not support
+# rewrites with non-200/non-3xx status codes — see
+# https://developers.cloudflare.com/pages/configuration/redirects/ ("Rewrites
+# (other status codes) ❌"). The presence of those unsupported rules made
+# Pages skip the entire `_redirects` file, which broke the SPA catch-all
+# below and caused all auth/dashboard routes (/home, /login, /signup,
+# /settings, /research, etc.) to 404 in production.
+#
+# The dotfile/wp-admin denylist now falls through to the SPA shell, which
+# renders the noindex'd NotFound view. That's harmless: those paths never
+# pointed at real content, and bots probing them already know the app
+# exists from the response. If we ever need a real 404 for sensitive
+# paths, do it via a Pages Function or a small Worker — not via _redirects.
+
+# ACME / well-known passthrough so cert challenges work even though the
+# dotfile prefix would otherwise hit the SPA catch-all below.
 /.well-known/*    /.well-known/:splat    200
 
-# Deny known-sensitive paths with a real 404 instead of the SPA shell.
-# Dotfiles — enumerated explicitly rather than using a `/.*` catch-all,
-# which some matchers greedy-compile into `^/.*$` and end up swallowing
-# SPA routes like `/home` (BUG: home refresh returned 404).
-/.env    /404.html    404
-/.env.*    /404.html    404
-/.env/*    /404.html    404
-/.git    /404.html    404
-/.git/*    /404.html    404
-/.gitignore    /404.html    404
-/.gitattributes    /404.html    404
-/.htaccess    /404.html    404
-/.htpasswd    /404.html    404
-/.aws    /404.html    404
-/.aws/*    /404.html    404
-/.ssh    /404.html    404
-/.ssh/*    /404.html    404
-/.svn    /404.html    404
-/.svn/*    /404.html    404
-/.hg    /404.html    404
-/.hg/*    /404.html    404
-/.DS_Store    /404.html    404
-/.npmrc    /404.html    404
-/.vscode    /404.html    404
-/.vscode/*    /404.html    404
-/.idea    /404.html    404
-/.idea/*    /404.html    404
-# WordPress probes
-/wp-admin    /404.html    404
-/wp-admin/*    /404.html    404
-/wp-login.php    /404.html    404
-/wp-content    /404.html    404
-/wp-content/*    /404.html    404
-/wp-includes    /404.html    404
-/wp-includes/*    /404.html    404
-# Server info leaks
-/server-info    /404.html    404
-/server-status    /404.html    404
-# Debug endpoints (API itself lives on a separate Worker)
-/api/debug    /404.html    404
-/api/debug/*    /404.html    404
-
+# Static-asset passthroughs. Pages serves these automatically, but pinning
+# them here protects against the catch-all from accidentally rewriting them
+# to /index.html if Pages ever changes precedence.
 /assets/*    /assets/:splat    200
 /favicon.ico    /favicon.ico    200
 /favicon-32.png    /favicon-32.png    200
@@ -55,19 +33,11 @@
 /sitemap.xml    /sitemap.xml    200
 /sw.js    /sw.js    200
 /apple-touch-icon.png    /apple-touch-icon.png    200
+
+# Legacy URL → canonical
 /board    /player-rankings    301
 
-# SPA catch-all: serve the app shell for any path that hasn't already been
-# matched by a sensitive-path 404 above or by a prerendered static file.
-# React handles routing client-side, and the NotFound view is noindex'd for
-# genuinely unknown paths.
-#
-# The previous iteration tried `/* -> /404.html 404` plus an explicit
-# whitelist of SPA routes (commit d6dc7b1), relying on Cloudflare Pages to
-# prefer prerendered `<route>/index.html` over the splat. That produced
-# user-facing 404s whenever (a) the puppeteer prerender silently skipped a
-# route — the CI script only fails on total prerender failure — or (b) a
-# valid SPA path (including new article slugs) wasn't in the whitelist.
-# The soft-404 tradeoff is acceptable because NotFound is noindex'd; a
-# real user hitting a broken page is much worse than a crawler signal.
+# SPA catch-all. Anything else serves the React shell with status 200
+# so client-side routing can take over. The NotFound view is noindex'd
+# for genuinely unknown paths.
 /*    /index.html    200
