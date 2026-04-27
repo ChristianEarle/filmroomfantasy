@@ -1,0 +1,10 @@
+# Force LF line endings on Cloudflare Pages config files. Pages parses
+# _redirects line-by-line and a trailing \r pollutes the destination or
+# status code, silently breaking rules. The catch-all SPA fallback was
+# failing in production for exactly this reason.
+public/_redirects   text eol=lf
+public/_headers     text eol=lf
+public/_routes.json text eol=lf
+public/robots.txt   text eol=lf
+public/sitemap.xml  text eol=lf
+public/ads.txt      text eol=lf
