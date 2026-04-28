@@ -797,12 +797,50 @@ function AppContent() {
             ) : activeView === 'AcceptableUse' ? (
               <Suspense fallback={suspenseFallback}><AcceptableUseView isDarkMode={isDarkMode} /></Suspense>
             ) : (
-              <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-                <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Page Not Found</h2>
-                <p className={`mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>The page you're looking for doesn't exist.</p>
-                <button onClick={() => setActiveView('Home')} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                  Go Home
-                </button>
+              <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 py-12">
+                <div className={`text-6xl font-extrabold tracking-tight mb-3 ${isDarkMode ? 'text-blue-500' : 'text-blue-600'}`}>404</div>
+                <h2 className={`text-2xl sm:text-3xl font-bold mb-3 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Page not found</h2>
+                <p className={`mb-8 max-w-md ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                  The page you're looking for doesn't exist. Try one of these instead:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl">
+                  <button
+                    onClick={() => setActiveView('TradeAnalyzer')}
+                    className={`group flex flex-col items-center text-center p-5 rounded-xl border transition-all ${
+                      isDarkMode
+                        ? 'bg-slate-900 border-slate-800 hover:border-blue-500 hover:bg-slate-800'
+                        : 'bg-white border-slate-200 hover:border-blue-500 hover:shadow-md'
+                    }`}
+                  >
+                    <span className={`text-2xl mb-2`} aria-hidden>⇄</span>
+                    <span className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Run a trade analysis</span>
+                    <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Get an instant AI grade</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveView('Board')}
+                    className={`group flex flex-col items-center text-center p-5 rounded-xl border transition-all ${
+                      isDarkMode
+                        ? 'bg-slate-900 border-slate-800 hover:border-blue-500 hover:bg-slate-800'
+                        : 'bg-white border-slate-200 hover:border-blue-500 hover:shadow-md'
+                    }`}
+                  >
+                    <span className={`text-2xl mb-2`} aria-hidden>📊</span>
+                    <span className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Browse rankings</span>
+                    <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>PPR, Half PPR, Standard</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveView('Articles')}
+                    className={`group flex flex-col items-center text-center p-5 rounded-xl border transition-all ${
+                      isDarkMode
+                        ? 'bg-slate-900 border-slate-800 hover:border-blue-500 hover:bg-slate-800'
+                        : 'bg-white border-slate-200 hover:border-blue-500 hover:shadow-md'
+                    }`}
+                  >
+                    <span className={`text-2xl mb-2`} aria-hidden>📰</span>
+                    <span className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Read the latest article</span>
+                    <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Strategy & analysis guides</span>
+                  </button>
+                </div>
               </div>
             )}
           </PageTransition>
