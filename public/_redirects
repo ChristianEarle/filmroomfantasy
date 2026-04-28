@@ -38,6 +38,13 @@
 /board    /player-rankings    301
 
 # SPA catch-all. Anything else serves the React shell with status 200
-# so client-side routing can take over. The NotFound view is noindex'd
-# for genuinely unknown paths.
-/*    /index.html    200
+# so client-side routing can take over.
+#
+# Destination is /spa.html (a build-time copy of index.html written by
+# scripts/generate-static-pages.js), NOT /index.html. Pages canonicalizes
+# /index.html → / via 308 at the asset layer, which interferes with the
+# internal rewrite and caused this rule to silently no-op for /home,
+# /login, /signup, /settings, etc. Rewriting to /spa.html sidesteps the
+# canonicalization. /404.html is also a SPA-shell copy as a fallback in
+# case Pages still bypasses the catch-all on some paths.
+/*    /spa.html    200
