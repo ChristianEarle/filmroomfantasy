@@ -404,21 +404,18 @@ function main() {
     count++;
   }
 
-  // Overwrite 404.html with the SPA shell as a belt-and-suspenders fallback.
-  // Pages serves 404.html for any unmatched route by default, so even if the
-  // catch-all rewrite below were to silently fail, the React app still loads.
+  // Overwrite 404.html with the SPA shell so any path that misses both the
+  // static-asset lookup and the _redirects catch-all still loads the React
+  // app. Cloudflare Pages won't apply our `/* /index.html 200` rewrite when
+  // the destination is /index.html — the canonical-URL redirect on
+  // /index.html (308 → /) interferes — so without this, deep links like
+  // /home, /signup, /login fall through to a bare Cloudflare 404 page.
+  // This way the SPA renders correctly regardless of which fallback path
+  // Pages picks (status code may be 200 or 404 depending; UX is the same).
   writeFileSync(join(BUILD_DIR, '404.html'), template);
 
-  // Write a non-canonical-named SPA shell at /spa.html. The _redirects
-  // catch-all rewrites to this instead of /index.html because Pages
-  // canonicalizes /index.html → / (308) at the asset layer, which appears
-  // to interfere with internal rewrites and prevented the /* /index.html 200
-  // rule from firing in production. /spa.html has no canonical-URL redirect
-  // attached so the rewrite serves it cleanly with status 200.
-  writeFileSync(join(BUILD_DIR, 'spa.html'), template);
-
   console.log(`Generated ${count} static pages for SEO (including ${ARTICLES.length} articles).`);
-  console.log('Wrote 404.html and spa.html as SPA-shell fallbacks.');
+  console.log('Wrote 404.html as SPA-shell fallback.');
 }
 
 main();
