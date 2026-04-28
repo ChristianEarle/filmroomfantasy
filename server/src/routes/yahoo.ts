@@ -155,20 +155,29 @@ yahooRoutes.get('/callback', yahooCallbackRateLimit, async (c) => {
   const state = c.req.query('state');
   const error = c.req.query('error');
 
+  // Frontend origin to use as postMessage targetOrigin. The popup runs on
+  // the API worker's origin while the opener is on the app origin, so we
+  // must explicitly target the app origin or the message is silently dropped
+  // by the browser.
+  const frontendOrigin = c.env.APP_URL ? new URL(c.env.APP_URL).origin : '*';
+
   if (error) {
-    return c.html(getCallbackHtml(false, `Yahoo authorization failed: ${error}`));
+    console.error('[yahoo:callback] Yahoo returned error param:', error);
+    return c.html(getCallbackHtml(false, frontendOrigin, `Yahoo authorization failed: ${error}`));
   }
 
   if (!code || !state) {
-    return c.html(getCallbackHtml(false, 'Missing authorization code or state'));
+    console.error('[yahoo:callback] Missing code or state', { hasCode: !!code, hasState: !!state });
+    return c.html(getCallbackHtml(false, frontendOrigin, 'Missing authorization code or state'));
   }
 
   // Verify state to get userId
   let userId: string;
   try {
     userId = await verifyOAuthState(state, c.env.JWT_SECRET);
-  } catch {
-    return c.html(getCallbackHtml(false, 'Invalid or expired authorization state. Please try again.'));
+  } catch (err) {
+    console.error('[yahoo:callback] State verification failed:', err);
+    return c.html(getCallbackHtml(false, frontendOrigin, 'Invalid or expired authorization state. Please try again.'));
   }
 
   // Exchange code for tokens — derive callback URL from the incoming request
@@ -192,8 +201,8 @@ yahooRoutes.get('/callback', yahooCallbackRateLimit, async (c) => {
 
   if (!tokenRes.ok) {
     const errText = await tokenRes.text();
-    console.error('Yahoo token exchange failed:', errText);
-    return c.html(getCallbackHtml(false, 'Failed to exchange authorization code'));
+    console.error('[yahoo:callback] Token exchange failed:', tokenRes.status, errText);
+    return c.html(getCallbackHtml(false, frontendOrigin, 'Failed to exchange authorization code'));
   }
 
   const tokens = await tokenRes.json() as {
@@ -214,7 +223,8 @@ yahooRoutes.get('/callback', yahooCallbackRateLimit, async (c) => {
     updatedAt: new Date(),
   }).where(eq(schema.users.id, userId));
 
-  return c.html(getCallbackHtml(true));
+  console.log('[yahoo:callback] Successfully stored tokens for user', userId);
+  return c.html(getCallbackHtml(true, frontendOrigin));
 });
 
 // Get user's Yahoo Fantasy leagues
@@ -344,11 +354,15 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// HTML page returned by the OAuth callback to close the popup
-function getCallbackHtml(success: boolean, error?: string): string {
+// HTML page returned by the OAuth callback to close the popup.
+// `targetOrigin` is the parent (app) origin — the popup runs on the API
+// worker's origin, so posting to `window.location.origin` would silently
+// drop the message because the parent's origin doesn't match.
+function getCallbackHtml(success: boolean, targetOrigin: string, error?: string): string {
   const safeError = error ? escapeHtml(error) : 'Unknown error';
   // JSON.stringify + escapeHtml to prevent </script> breakout and XSS in script context
   const jsonError = error ? escapeHtml(JSON.stringify(error)) : 'null';
+  const safeTarget = escapeHtml(JSON.stringify(targetOrigin));
   return `<!DOCTYPE html>
 <html>
 <head><title>Yahoo Authorization</title></head>
@@ -359,7 +373,7 @@ function getCallbackHtml(success: boolean, error?: string): string {
 </div>
 <script>
   if (window.opener) {
-    window.opener.postMessage({ type: 'yahoo_oauth', success: ${success}, error: ${jsonError} }, window.location.origin);
+    window.opener.postMessage({ type: 'yahoo_oauth', success: ${success}, error: ${jsonError} }, ${safeTarget});
     setTimeout(function() { window.close(); }, 1500);
   }
 </script>

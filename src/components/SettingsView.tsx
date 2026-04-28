@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLeaguesContext } from '../context/LeaguesContext';
 import { leagueConnectService, sleeperApi, yahooApi, type Platform, type ExternalLeague } from '../services';
 import { authService } from '../services';
+import { API_ORIGIN } from '../services/api';
 import type { ScoringFormat } from '../services/auth';
 
 interface SettingsViewProps {
@@ -201,8 +202,10 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
       // Listen for the callback message
       const handleMessage = async (event: MessageEvent) => {
         if (event.data?.type !== 'yahoo_oauth') return;
-        // Validate origin — only accept messages from our own domain
-        if (event.origin !== window.location.origin) return;
+        // Validate origin — the callback popup runs on the API worker origin
+        // (cross-origin from the app) so we accept messages from either the
+        // app's own origin (dev/proxy mode) or the API origin (prod).
+        if (event.origin !== window.location.origin && event.origin !== API_ORIGIN) return;
         window.removeEventListener('message', handleMessage);
         yahooListenerRef.current = null;
 

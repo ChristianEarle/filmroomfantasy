@@ -2,6 +2,19 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+// Origin of the API server. In dev API_BASE_URL is the relative '/api', so
+// this resolves to the same origin as the page (Vite proxy). In prod it's
+// the worker origin, e.g. 'https://filmroom-api.earle2001.workers.dev'.
+// Used by Yahoo OAuth postMessage validation since the popup runs on the
+// API origin while the opener is on the app origin.
+export const API_ORIGIN = (() => {
+  try {
+    return new URL(API_BASE_URL, typeof window !== 'undefined' ? window.location.href : 'http://localhost').origin;
+  } catch {
+    return typeof window !== 'undefined' ? window.location.origin : '';
+  }
+})();
+
 // Auth token — fallback for browsers that block cross-origin cookies (Safari ITP, etc).
 // The httpOnly cookie remains the primary auth mechanism; this supplements it and
 // is persisted to localStorage so it survives page refresh when cookies are blocked.
