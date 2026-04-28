@@ -278,7 +278,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-outline" onClick={nav('Login')}>Log in</button>
-            <button className="btn btn-blue" onClick={nav('Login')}>Sign Up Free</button>
+            <button className="btn btn-blue" onClick={nav('Register')}>Sign Up Free</button>
           </div>
         </div>
       </div>
@@ -516,7 +516,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                 <li>AI verdict &amp; letter grade</li>
                 <li>Player rankings &amp; Game Slate</li>
               </ul>
-              <button className="price-btn secondary" onClick={nav('Login')}>Get Started</button>
+              <button className="price-btn secondary" onClick={nav('Register')}>Get Started</button>
             </div>
             <div className="price-card pop">
               <div className="pop-badge">Most Popular</div>

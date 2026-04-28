@@ -491,7 +491,19 @@ function AppContent() {
     return (
       <>
         <SEO {...seoProps} />
-        <LandingPage onNavigate={(view) => setActiveView(view as any)} />
+        <LandingPage
+          onNavigate={(view) => {
+            // 'Register' is not a top-level view — the auth screen is 'Login'
+            // with an internal authView state. Treat it like the /register URL
+            // handler does so the Sign Up CTA opens the registration form.
+            if (view === 'Register') {
+              setActiveView('Login');
+              setAuthView('register');
+            } else {
+              setActiveView(view as any);
+            }
+          }}
+        />
         <CookieConsentBanner
           isDarkMode={isDarkMode}
           onNavigate={(view) => setActiveView(view as any)}
