@@ -867,18 +867,22 @@ html {
 .px-1  { padding-left: 0.25rem; padding-right: 0.25rem; }
 .px-1\.5 { padding-left: 0.375rem; padding-right: 0.375rem; }
 .px-5  { padding-left: 1.25rem; padding-right: 1.25rem; }
+.px-10 { padding-left: 2.5rem; padding-right: 2.5rem; }
 .pl-2  { padding-left: 0.5rem; }
 .pl-3  { padding-left: 0.75rem; }
 .pr-6  { padding-right: 1.5rem; }
 .pr-8  { padding-right: 2rem; }
 .pt-2  { padding-top: 0.5rem; }
 .py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+.py-10 { padding-top: 2.5rem; padding-bottom: 2.5rem; }
+.py-12 { padding-top: 3rem; padding-bottom: 3rem; }
 
 /* Margin */
 .mb-5     { margin-bottom: 1.25rem; }
 .mt-0\.5  { margin-top: 0.125rem; }
 .mt-1\.5  { margin-top: 0.375rem; }
 .mt-4     { margin-top: 1rem; }
+.mt-20    { margin-top: 5rem; }
 .ml-0\.5  { margin-left: 0.125rem; }
 .ml-auto  { margin-left: auto; }
 .mr-auto  { margin-right: auto; }
@@ -888,6 +892,10 @@ html {
 /* Gap */
 .gap-2\.5 { gap: 0.625rem; }
 .gap-5    { gap: 1.25rem; }
+.gap-x-6  { column-gap: 1.5rem; }
+.gap-x-8  { column-gap: 2rem; }
+.gap-y-3  { row-gap: 0.75rem; }
+.gap-y-4  { row-gap: 1rem; }
 
 /* Font weight */
 .font-normal    { font-weight: 400; }
