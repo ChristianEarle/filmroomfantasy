@@ -24,6 +24,7 @@ const GOOGLE_ADS_ID = (import.meta.env.VITE_GOOGLE_ADS_ID as string | undefined)
 const GOOGLE_ADS_SIGNUP_LABEL = (import.meta.env.VITE_GOOGLE_ADS_SIGNUP_LABEL as string | undefined)?.trim();
 const GOOGLE_ADS_PURCHASE_LABEL = (import.meta.env.VITE_GOOGLE_ADS_PURCHASE_LABEL as string | undefined)?.trim();
 const TIKTOK_PIXEL_ID = (import.meta.env.VITE_TIKTOK_PIXEL_ID as string | undefined)?.trim();
+const REDDIT_PIXEL_ID = (import.meta.env.VITE_REDDIT_PIXEL_ID as string | undefined)?.trim();
 
 declare global {
   interface Window {
@@ -32,6 +33,7 @@ declare global {
     fbq?: ((...args: unknown[]) => void) & { callMethod?: unknown; queue?: unknown[]; loaded?: boolean; version?: string; push?: unknown };
     _fbq?: unknown;
     ttq?: { load: (id: string) => void; page: () => void; track: (event: string, params?: Record<string, unknown>) => void; instance?: unknown; methods?: string[] } & Record<string, unknown>;
+    rdt?: ((...args: unknown[]) => void) & { sendEvent?: unknown; callQueue?: unknown[] };
   }
 }
 
@@ -39,6 +41,7 @@ let gaLoaded = false;
 let metaLoaded = false;
 let googleAdsLoaded = false;
 let tiktokLoaded = false;
+let redditLoaded = false;
 
 function injectScript(src: string, id: string, async = true): void {
   if (document.getElementById(id)) return;
@@ -146,6 +149,28 @@ function loadTikTokPixel(): void {
   })(window, document, 'ttq');
 }
 
+function loadRedditPixel(): void {
+  if (redditLoaded || !REDDIT_PIXEL_ID) return;
+  redditLoaded = true;
+  (function (w: any, d: Document) {
+    if (!w.rdt) {
+      const p: any = (w.rdt = function () {
+        // eslint-disable-next-line prefer-rest-params
+        p.sendEvent ? p.sendEvent.apply(p, arguments) : p.callQueue.push(arguments);
+      });
+      p.callQueue = [];
+      const t = d.createElement('script');
+      t.src = 'https://www.redditstatic.com/ads/pixel.js';
+      t.async = true;
+      t.id = 'reddit-pixel-script';
+      const s = d.getElementsByTagName('script')[0];
+      s.parentNode?.insertBefore(t, s);
+    }
+  })(window, document);
+  window.rdt!('init', REDDIT_PIXEL_ID);
+  window.rdt!('track', 'PageVisit');
+}
+
 /** Initialize all pixels the user has consented to. Safe to call multiple times. */
 function syncPixelsToConsent(): void {
   if (isAllowed('analytics')) loadGA4();
@@ -153,6 +178,7 @@ function syncPixelsToConsent(): void {
     loadGoogleAds();
     loadMetaPixel();
     loadTikTokPixel();
+    loadRedditPixel();
   }
 }
 
@@ -177,6 +203,9 @@ export function trackPageView(path: string): void {
   if (tiktokLoaded && window.ttq) {
     window.ttq.page();
   }
+  if (redditLoaded && window.rdt) {
+    window.rdt('track', 'PageVisit');
+  }
 }
 
 /** User completed sign-up (free account creation). */
@@ -192,6 +221,9 @@ export function trackSignUp(method: 'email' | 'google' = 'email'): void {
   }
   if (tiktokLoaded && window.ttq) {
     window.ttq.track('CompleteRegistration');
+  }
+  if (redditLoaded && window.rdt) {
+    window.rdt('track', 'SignUp');
   }
 }
 
@@ -209,6 +241,9 @@ export function trackBeginCheckout(tier: 'pro' | 'elite', interval: 'month' | 'y
   }
   if (tiktokLoaded && window.ttq) {
     window.ttq.track('InitiateCheckout', { currency: 'USD', value, content_id: `${tier}_${interval}` });
+  }
+  if (redditLoaded && window.rdt) {
+    window.rdt('track', 'AddToCart', { currency: 'USD', value, itemCount: 1 });
   }
 }
 
@@ -240,5 +275,8 @@ export function trackPurchase(tier: 'pro' | 'elite', interval: 'month' | 'year',
   }
   if (tiktokLoaded && window.ttq) {
     window.ttq.track('CompletePayment', { currency: 'USD', value, content_id: `${tier}_${interval}` });
+  }
+  if (redditLoaded && window.rdt) {
+    window.rdt('track', 'Purchase', { currency: 'USD', value, transactionId: txnId });
   }
 }
