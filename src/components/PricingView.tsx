@@ -351,7 +351,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                 q: 'Can I sync multiple leagues on Free?',
                 a: 'Free tier allows 1 league sync. Pro and Elite support unlimited league syncs across Sleeper, Yahoo, and ESPN.',
               },
-{
+              {
                 q: 'What happens if I cancel?',
                 a: 'Your access ends at the end of your billing period. You can reactivate anytime without losing your data.',
               },
@@ -369,8 +369,8 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         </div>
 
         {/* Bottom CTA */}
-        <div className={`mt-20 text-center py-12 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-          <p className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+        <div className={`mt-12 text-center py-12 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+          <p className={`text-lg font-semibold mb-6 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Ready to level up your fantasy game?
           </p>
           <button
@@ -383,7 +383,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
                 window.location.href = '/login';
               }
             }}
-            className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all inline-flex items-center gap-2"
+            className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all inline-flex items-center gap-3"
           >
             <CreditCard className="w-5 h-5" />
             {isAuthenticated ? 'Start with Pro' : 'Sign Up Free'}
