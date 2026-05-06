@@ -56,6 +56,7 @@ const DisclaimerView = lazyWithReload(() => import('./components/DisclaimerView'
 const AccessibilityView = lazyWithReload(() => import('./components/AccessibilityView').then(m => ({ default: m.AccessibilityView })));
 const AcceptableUseView = lazyWithReload(() => import('./components/AcceptableUseView').then(m => ({ default: m.AcceptableUseView })));
 const DraftRankingsView = lazyWithReload(() => import('./components/DraftRankingsView').then(m => ({ default: m.DraftRankingsView })));
+const PlayerProfileView = lazyWithReload(() => import('./components/PlayerProfileView').then(m => ({ default: m.PlayerProfileView })));
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
 import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswordView';
@@ -71,6 +72,7 @@ import { LeaguesProvider, useLeaguesContext } from './context/LeaguesContext';
 import { trackPageView } from './services/analytics';
 import { trackSignUp } from './services/tracking';
 import { authService } from './services/auth';
+import { buildPlayerProfilePath, parsePlayerProfilePath } from './utils/slug';
 
 // Page transition wrapper component
 function PageTransition({ children, viewKey }: { children: React.ReactNode; viewKey: string }) {
@@ -212,6 +214,7 @@ const VIEW_TO_PATH: Record<string, string> = {
   Admin: '/admin',
   Articles: '/articles',
   ArticleDetail: '/articles', // handled with slug in URL
+  PlayerProfile: '/players', // handled with slug-id in URL
   Privacy: '/privacy',
   Terms: '/terms',
   CookiePolicy: '/cookies',
@@ -238,6 +241,9 @@ function getViewFromURL(): string {
   if (path.startsWith('/articles/') && path.length > '/articles/'.length) return 'ArticleDetail';
   if (path === '/articles') return 'Articles';
 
+  // Handle player profile routes (/players/{slug}-{id})
+  if (path.startsWith('/players/') && parsePlayerProfilePath(path)) return 'PlayerProfile';
+
   const view = PATH_TO_VIEW[path] ?? 'NotFound';
   // /register is handled within the Login view via authView state
   if (view === 'Register') return 'Login';
@@ -251,6 +257,11 @@ function getArticleSlugFromURL(): string | null {
     return path.slice('/articles/'.length);
   }
   return null;
+}
+
+/** Extract player profile id + slug from URL (/players/{slug}-{id}) */
+function getPlayerProfileFromURL(): { slug: string; id: string } | null {
+  return parsePlayerProfilePath(window.location.pathname);
 }
 
 // Main App content component that uses auth context
@@ -271,9 +282,10 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works
-  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'Privacy' | 'Terms' | 'CookiePolicy' | 'DMCA' | 'Refunds' | 'DoNotSell' | 'Disclaimer' | 'Accessibility' | 'AcceptableUse' | 'NotFound'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'PlayerProfile' | 'Privacy' | 'Terms' | 'CookiePolicy' | 'DMCA' | 'Refunds' | 'DoNotSell' | 'Disclaimer' | 'Accessibility' | 'AcceptableUse' | 'NotFound'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [articleSlug, setArticleSlug] = useState<string | null>(() => getArticleSlugFromURL());
+  const [playerProfile, setPlayerProfile] = useState<{ slug: string; id: string } | null>(() => getPlayerProfileFromURL());
   // Local dark mode state for unauthenticated users (initialized from localStorage)
   const [localDarkMode, setLocalDarkMode] = useState<boolean>(() => {
     try {
@@ -313,6 +325,8 @@ function AppContent() {
     let targetPath: string;
     if (activeView === 'ArticleDetail' && articleSlug) {
       targetPath = `/articles/${articleSlug}`;
+    } else if (activeView === 'PlayerProfile' && playerProfile) {
+      targetPath = `/players/${playerProfile.slug}-${playerProfile.id}`;
     } else {
       targetPath = VIEW_TO_PATH[activeView] || '/player-rankings';
     }
@@ -320,7 +334,7 @@ function AppContent() {
       window.history.pushState({ view: activeView }, '', targetPath);
     }
     trackPageView(targetPath);
-  }, [activeView, articleSlug]);
+  }, [activeView, articleSlug, playerProfile]);
 
   // Handle browser back/forward buttons (popstate) so routing stays in sync
   useEffect(() => {
@@ -328,6 +342,7 @@ function AppContent() {
       const view = getViewFromURL();
       setActiveView(view as any);
       setArticleSlug(getArticleSlugFromURL());
+      setPlayerProfile(getPlayerProfileFromURL());
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -416,6 +431,37 @@ function AppContent() {
 
   const handlePlayerClick = useCallback((player: Player) => {
     setSelectedPlayer(player);
+  }, []);
+
+  /** Navigate to the standalone player profile page (closes modal if open). */
+  const handleOpenPlayerProfile = useCallback((p: { id: string; name: string }) => {
+    setSelectedPlayer(null);
+    const path = buildPlayerProfilePath(p.name, p.id);
+    const parsed = parsePlayerProfilePath(path);
+    if (parsed) {
+      setPlayerProfile(parsed);
+      setActiveView('PlayerProfile');
+    }
+  }, []);
+
+  /** Reopen the modal as a quick-look from the standalone profile page. */
+  const handleQuickLookFromProfile = useCallback((p: { id: string; name: string; team: string; position: 'QB' | 'RB' | 'WR' | 'TE' | 'K' | 'DEF'; headshotUrl?: string | null }) => {
+    setSelectedPlayer({
+      id: p.id,
+      rank: 0,
+      name: p.name,
+      team: p.team,
+      position: p.position as Player['position'],
+      keyLine: '',
+      projectedPoints: 0,
+      weekChange: 0,
+      headshotUrl: p.headshotUrl ?? null,
+    });
+  }, []);
+
+  const handleBackFromPlayerProfile = useCallback(() => {
+    setPlayerProfile(null);
+    setActiveView('Board');
   }, []);
 
   const handleLogin = useCallback(async (email: string, password: string) => {
@@ -778,6 +824,18 @@ function AppContent() {
                   onNavigate={(view) => setActiveView(view as any)}
                 />
               </Suspense>
+            ) : activeView === 'PlayerProfile' && playerProfile ? (
+              <Suspense fallback={suspenseFallback}>
+                <PlayerProfileView
+                  playerId={playerProfile.id}
+                  isDarkMode={isDarkMode}
+                  seasonYear={league?.seasonYear}
+                  currentWeek={currentWeek}
+                  scoringFormat={league?.scoringFormat}
+                  onBack={handleBackFromPlayerProfile}
+                  onOpenQuickLook={handleQuickLookFromProfile}
+                />
+              </Suspense>
             ) : activeView === 'Privacy' ? (
               <Suspense fallback={suspenseFallback}><PrivacyPolicyView isDarkMode={isDarkMode} /></Suspense>
             ) : activeView === 'Terms' ? (
@@ -864,6 +922,7 @@ function AppContent() {
           seasonYear={league?.seasonYear}
           currentWeek={currentWeek}
           scoringFormat={league?.scoringFormat}
+          onViewFullProfile={handleOpenPlayerProfile}
         />
       )}
 

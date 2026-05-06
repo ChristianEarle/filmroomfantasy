@@ -923,11 +923,18 @@ playerRoutes.get('/stats/available-years', optionalAuthMiddleware, async (c) => 
 // Get player details
 playerRoutes.get('/:id', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
-  const playerId = c.req.param('id');
+  const idParam = c.req.param('id');
 
   try {
+    // Resolve playerId — accept either our internal id or the Sleeper externalId
+    // (numeric). Mirrors the resolution behavior of /:id/stats and the other
+    // sibling routes so /players/:slug-:externalId profile URLs work.
+    const lookupColumn = /^\d+$/.test(idParam)
+      ? schema.nflPlayers.externalId
+      : schema.nflPlayers.id;
+
     const player = await db.query.nflPlayers.findFirst({
-      where: eq(schema.nflPlayers.id, playerId),
+      where: eq(lookupColumn, idParam),
       with: {
         news: {
           orderBy: desc(schema.playerNews.publishedAt),
@@ -1153,12 +1160,19 @@ playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
 // Get player projections
 playerRoutes.get('/:id/projections', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
-  const playerId = c.req.param('id');
+  let playerId = c.req.param('id');
   const week = c.req.query('week');
   const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
   const scoringFormat = c.req.query('format') || 'ppr';
 
   try {
+    if (/^\d+$/.test(playerId)) {
+      const player = await db.query.nflPlayers.findFirst({
+        where: eq(schema.nflPlayers.externalId, playerId),
+      });
+      if (player) playerId = player.id;
+    }
+
     const conditions = [
       eq(schema.playerProjections.playerId, playerId),
       eq(schema.playerProjections.seasonYear, season),
@@ -1184,9 +1198,16 @@ playerRoutes.get('/:id/projections', optionalAuthMiddleware, async (c) => {
 // Get player news + articles linked to this player
 playerRoutes.get('/:id/news', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
-  const playerId = c.req.param('id');
+  let playerId = c.req.param('id');
 
   try {
+    if (/^\d+$/.test(playerId)) {
+      const player = await db.query.nflPlayers.findFirst({
+        where: eq(schema.nflPlayers.externalId, playerId),
+      });
+      if (player) playerId = player.id;
+    }
+
     // Fetch player news and linked articles in parallel
     const [newsItems, articleLinks] = await Promise.all([
       db.query.playerNews.findMany({
@@ -1238,7 +1259,7 @@ playerRoutes.get('/:id/news', optionalAuthMiddleware, async (c) => {
 // Get player prop lines for a specific week
 playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
-  const playerId = c.req.param('id');
+  const idParam = c.req.param('id');
   const week = parseInt(c.req.query('week') || '1', 10);
   const season = parseInt(c.req.query('season') || '2025', 10);
 
@@ -1247,14 +1268,19 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
   }
 
   try {
-    // Get player info
+    // Get player info — accept either internal id or Sleeper externalId
+    const lookupColumn = /^\d+$/.test(idParam)
+      ? schema.nflPlayers.externalId
+      : schema.nflPlayers.id;
     const player = await db.query.nflPlayers.findFirst({
-      where: eq(schema.nflPlayers.id, playerId),
+      where: eq(lookupColumn, idParam),
     });
 
     if (!player) {
       return c.json({ error: 'Player not found' }, 404);
     }
+
+    const playerId = player.id;
 
     // Name matching between Sleeper and The Odds API is inconsistent —
     // Sleeper strips "Jr." suffixes and some punctuation, sportsbooks don't.
