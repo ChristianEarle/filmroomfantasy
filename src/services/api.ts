@@ -1,6 +1,35 @@
 // Base API configuration and utilities
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// Resolve the API origin in this priority order:
+//   1. VITE_API_URL — explicit override (CI sets this to the worker URL).
+//   2. Hostname auto-detect — if we're on a known production host, point at
+//      the deployed worker. This is the safety net: if the build env var ever
+//      goes missing (Vite only inherits VITE_* from .env files, not always
+//      from process.env, depending on version/config), we still route to the
+//      worker instead of falling through to the same-origin Pages site (which
+//      returns 404/405 for /api/*).
+//   3. '/api' — local dev only, served via the Vite proxy in vite.config.ts.
+const PROD_API_URL = 'https://filmroom-api.earle2001.workers.dev/api';
+const PROD_HOSTS = new Set([
+  'filmroomfantasy.com',
+  'www.filmroomfantasy.com',
+  'filmroom.app',
+  'www.filmroom.app',
+]);
+
+function resolveApiBaseUrl(): string {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) return envUrl;
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (PROD_HOSTS.has(host) || host.endsWith('.filmroomfantasy.pages.dev')) {
+      return PROD_API_URL;
+    }
+  }
+  return '/api';
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 // Origin of the API server. In dev API_BASE_URL is the relative '/api', so
 // this resolves to the same origin as the page (Vite proxy). In prod it's
