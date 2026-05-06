@@ -100,7 +100,7 @@ export function AppFooter({ isDarkMode, onNavigate }: AppFooterProps) {
           <button
             type="button"
             onClick={openCookiePreferences}
-            className={`${linkClass} transition-colors`}
+            className={`${linkClass} text-xs font-normal transition-colors`}
           >
             Cookie preferences
           </button>
