@@ -369,7 +369,7 @@ export function PricingView({ isDarkMode, userTier = 'free', isAuthenticated = f
         </div>
 
         {/* Bottom CTA */}
-        <div className={`mt-20 text-center py-12 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+        <div className={`mt-8 text-center py-12 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
           <p className={`text-lg font-semibold mb-6 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Ready to level up your fantasy game?
           </p>
