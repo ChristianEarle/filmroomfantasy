@@ -19,6 +19,8 @@ interface PlayerCardProps {
   currentWeek?: number;
   /** League scoring format. Defaults to 'ppr'. */
   scoringFormat?: string;
+  /** Optional handler — when set, the modal shows a "View full profile" CTA that navigates to the standalone player page. */
+  onViewFullProfile?: (player: { id: string; name: string }) => void;
 }
 
 interface APIWeeklyStat {
@@ -75,7 +77,7 @@ const statText = (isDarkMode: boolean) => isDarkMode ? 'text-slate-300' : 'text-
 const statMuted = (isDarkMode: boolean) => isDarkMode ? 'text-slate-400' : 'text-slate-700';
 const colBorder = (isDarkMode: boolean) => isDarkMode ? 'border-r border-slate-600' : 'border-r border-slate-200';
 
-export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeasonYear, currentWeek: propsCurrentWeek, scoringFormat: propsScoringFormat }: PlayerCardProps) {
+export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeasonYear, currentWeek: propsCurrentWeek, scoringFormat: propsScoringFormat, onViewFullProfile }: PlayerCardProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'props' | 'breakdown' | 'history'>('props');
 
@@ -342,12 +344,22 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             <span className={isDarkMode ? 'text-slate-600' : 'text-slate-400'}>/</span>
             <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Player Card</span>
           </button>
-          <button
-            onClick={handleClose}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-white hover:bg-slate-100 border border-slate-200'}`}
-          >
-            <X className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
-          </button>
+          <div className="flex items-center gap-2">
+            {onViewFullProfile && (
+              <button
+                onClick={() => onViewFullProfile({ id: player.id, name: player.name })}
+                className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${isDarkMode ? 'bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 border border-blue-700/40' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'}`}
+              >
+                View full profile →
+              </button>
+            )}
+            <button
+              onClick={handleClose}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-white hover:bg-slate-100 border border-slate-200'}`}
+            >
+              <X className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

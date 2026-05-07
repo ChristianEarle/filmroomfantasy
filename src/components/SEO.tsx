@@ -94,6 +94,10 @@ const ROUTE_SEO: Record<string, { title: string; description: string }> = {
     title: 'Fantasy Football Articles & Guides | FilmRoom',
     description: 'Expert fantasy football strategy guides, rankings analysis, waiver wire tips, and beginner resources.',
   },
+  PlayerProfile: {
+    title: 'NFL Player Profile | FilmRoom',
+    description: 'NFL player profile with weekly fantasy football stats, projections, matchup analysis, Vegas props, and the latest news.',
+  },
   Privacy: {
     title: 'Privacy Policy | FilmRoom',
     description: 'FilmRoom Fantasy privacy policy. Learn how we collect, use, and protect your personal information and league data.',
@@ -439,4 +443,56 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
   }
 
   return props;
+}
+
+/** Build per-player SEO props for the standalone profile page. */
+export function getPlayerProfileSEOProps(player: {
+  name: string;
+  team?: string;
+  position?: string;
+  headshotUrl?: string | null;
+  byeWeek?: number;
+}, profilePath: string): SEOProps {
+  const { name, team, position, headshotUrl } = player;
+  const positionFull: Record<string, string> = {
+    QB: 'Quarterback',
+    RB: 'Running Back',
+    WR: 'Wide Receiver',
+    TE: 'Tight End',
+    K: 'Kicker',
+    DEF: 'Defense',
+  };
+  const posLabel = position ? (positionFull[position] ?? position) : 'Player';
+  const teamLabel = team ?? 'NFL';
+  const title = `${name} Fantasy Stats, Projections & News (${teamLabel} ${position ?? ''}) | FilmRoom`.replace(/\s+/g, ' ').trim();
+  const description = `${name}, ${teamLabel} ${posLabel}. Weekly fantasy football stats, projections, matchup grade, Vegas props, and the latest news on FilmRoom.`;
+
+  return {
+    title,
+    description,
+    path: profilePath,
+    type: 'profile',
+    image: headshotUrl ?? undefined,
+    jsonLd: [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'Person',
+        'name': name,
+        'jobTitle': posLabel,
+        ...(team ? { 'affiliation': { '@type': 'SportsTeam', 'name': team } } : {}),
+        'memberOf': { '@type': 'SportsOrganization', 'name': 'National Football League', 'url': 'https://www.nfl.com' },
+        ...(headshotUrl ? { 'image': headshotUrl } : {}),
+        'url': `${BASE_URL}${profilePath}`,
+      },
+      {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        'itemListElement': [
+          { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': BASE_URL },
+          { '@type': 'ListItem', 'position': 2, 'name': 'Player Rankings', 'item': `${BASE_URL}/player-rankings` },
+          { '@type': 'ListItem', 'position': 3, 'name': name, 'item': `${BASE_URL}${profilePath}` },
+        ],
+      },
+    ],
+  };
 }
