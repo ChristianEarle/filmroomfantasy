@@ -293,7 +293,7 @@ export function PlayerProfileView({
         <button
           type="button"
           onClick={onBack}
-          className={`flex items-center gap-1.5 transition-colors group ${muted} hover:${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+          className={`flex items-center gap-1.5 transition-colors group ${muted} ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-900'}`}
         >
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
           <span>Back</span>
