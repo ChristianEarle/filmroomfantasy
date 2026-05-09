@@ -369,20 +369,21 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className={headerBtn}>
+          <button type="button" className={headerBtn} aria-label="Compare players">
             <Plus className="w-3.5 h-3.5" />
-            Compare (0)
+            <span className="hidden sm:inline">Compare (0)</span>
           </button>
-          <button type="button" className={headerBtn}>
+          <button type="button" className={headerBtn} aria-label="Export rankings">
             <Download className="w-3.5 h-3.5" />
-            Export
+            <span className="hidden sm:inline">Export</span>
           </button>
           <button
             type="button"
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white border border-blue-600 hover:bg-blue-500 transition-colors"
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            Ask AI about draft
+            <span className="hidden sm:inline">Ask AI about draft</span>
+            <span className="sm:hidden">Ask AI</span>
           </button>
         </div>
       </div>
@@ -396,7 +397,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           {pill(rankingView === 'rookie', () => setRankingView('rookie'), 'Rookie')}
         </div>
 
-        <span className={`h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+        <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
 
         {/* Scoring format as pills */}
         <div className="flex gap-1">
@@ -405,7 +406,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           {pill(scoringFormat === 'standard', () => setScoringFormat('standard'), 'Standard')}
         </div>
 
-        <span className={`h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+        <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
 
         {/* Position filter */}
         <div className="flex gap-1">
@@ -416,7 +417,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           ))}
         </div>
 
-        <span className={`h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+        <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
 
         {/* Superflex toggle */}
         <label className={`inline-flex items-center gap-2 cursor-pointer select-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
@@ -434,22 +435,22 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           </span>
           <span className="text-xs font-semibold">Superflex</span>
         </label>
+      </div>
 
-        {/* Search */}
-        <div className="relative ml-auto">
-          <Search className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
-          <input
-            type="text"
-            placeholder="Search player..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className={`pl-8 pr-3 py-1.5 text-sm rounded-lg border w-48 outline-none ${
-              isDarkMode
-                ? 'bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-500 focus:border-blue-500'
-                : 'bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-blue-500'
-            }`}
-          />
-        </div>
+      {/* Search */}
+      <div className="relative">
+        <Search className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+        <input
+          type="text"
+          placeholder="Search player..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className={`pl-8 pr-3 py-1.5 text-sm rounded-lg border w-full sm:w-64 outline-none ${
+            isDarkMode
+              ? 'bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-500 focus:border-blue-500'
+              : 'bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-blue-500'
+          }`}
+        />
       </div>
 
       {/* Callout cards */}
@@ -515,19 +516,19 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
       ) : (
         <div className={`${panelCls} overflow-hidden`}>
           {/* Table header */}
-          <div className={`flex items-center gap-3 px-4 py-2 border-b fr-text-10 uppercase fr-tracking-wider font-bold ${
+          <div className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b fr-text-10 uppercase fr-tracking-wider font-bold ${
             isDarkMode ? 'bg-slate-900/80 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-500'
           }`}>
-            <span className="w-8 text-center">#</span>
-            <span className="flex-1">Player</span>
-            <span className="text-right" style={{ width: '80px' }}>Proj Pts</span>
-            <span className="text-right" style={{ width: '60px' }}>ADP</span>
-            <span className="flex justify-center" style={{ width: '90px' }}>Value</span>
-            <span className="flex justify-center items-center gap-1" style={{ width: '90px' }}>
+            <span className="w-6 sm:w-8 text-center">#</span>
+            <span className="flex-1 min-w-0">Player</span>
+            <span className="text-right w-14 sm:w-20">Proj</span>
+            <span className="hidden sm:inline text-right" style={{ width: '60px' }}>ADP</span>
+            <span className="flex justify-center w-[72px] sm:w-[90px]">Value</span>
+            <span className="hidden md:flex justify-center items-center gap-1" style={{ width: '90px' }}>
               Trend <span className="fr-text-9 normal-case tracking-normal text-slate-500">(4wk)</span>
             </span>
-            <span className="text-center" style={{ width: '40px' }}>Age</span>
-            <span style={{ width: '16px' }} />
+            <span className="hidden sm:inline text-center" style={{ width: '40px' }}>Age</span>
+            <span className="hidden sm:inline" style={{ width: '16px' }} />
           </div>
 
           <div className="space-y-0">
@@ -674,14 +675,14 @@ function PlayerRow({
       }`}
     >
       <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+        className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 cursor-pointer"
         onClick={onToggleRationale}
         role="button"
         tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleRationale(); } }}
       >
         {/* Rank */}
-        <span className={`w-8 text-center text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        <span className={`w-6 sm:w-8 text-center text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
           {ranking.overallRank}
         </span>
 
@@ -700,32 +701,32 @@ function PlayerRow({
           </div>
           <div className="flex items-center gap-1.5 fr-text-11">
             <span className={`font-bold ${posColor}`}>{p.position}{ranking.positionRank}</span>
-            <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>{p.team} · Age {p.age ?? '—'}</span>
+            <span className={`truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{p.team} · Age {p.age ?? '—'}</span>
           </div>
         </div>
 
         {/* Projected Points */}
-        <div className="text-right" style={{ width: '80px' }}>
+        <div className="text-right w-14 sm:w-20">
           <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             {ranking.projectedPoints != null ? `${ranking.projectedPoints.toFixed(1)}` : '—'}
           </span>
-          <span className={`fr-text-10 ml-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>pts</span>
+          <span className={`fr-text-10 ml-0.5 hidden sm:inline ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>pts</span>
         </div>
 
         {/* ADP */}
-        <div className="text-right" style={{ width: '60px' }}>
+        <div className="hidden sm:block text-right" style={{ width: '60px' }}>
           <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
             {ranking.adp != null ? ranking.adp.toFixed(1) : '—'}
           </span>
         </div>
 
         {/* Value Badge */}
-        <div className="flex justify-center" style={{ width: '90px' }}>
+        <div className="flex justify-center w-[72px] sm:w-[90px]">
           {valueBadge}
         </div>
 
         {/* Trend sparkline */}
-        <div className="flex justify-center items-center" style={{ width: '90px' }}>
+        <div className="hidden md:flex justify-center items-center" style={{ width: '90px' }}>
           <Sparkline
             points={trendPoints(ranking.id, ranking.adpDelta)}
             color={
@@ -739,7 +740,7 @@ function PlayerRow({
         </div>
 
         {/* Age */}
-        <div className="text-center" style={{ width: '40px' }}>
+        <div className="hidden sm:block text-center" style={{ width: '40px' }}>
           <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
             {p.age ?? '—'}
           </span>
