@@ -302,7 +302,14 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
       // Auto-sync the league to import teams and rosters
       if (result.league?.id) {
         try {
-          await leagueConnectService.syncLeague(result.league.id);
+          const syncResult = await leagueConnectService.syncLeague(result.league.id);
+          // The sync may succeed at the league level but fail to identify
+          // which Sleeper roster belongs to this user (e.g. wrong username,
+          // or the league was connected by ID without a username). Surface
+          // that as a warning so the user knows to fix it in settings.
+          if (syncResult?.warning) {
+            setConnectError(syncResult.warning);
+          }
         } catch (syncError: unknown) {
           const msg = syncError instanceof Error ? syncError.message : 'Sync failed';
           setConnectError(`League connected but sync failed: ${msg}. You can try syncing manually.`);

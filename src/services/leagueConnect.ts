@@ -283,8 +283,13 @@ export const leagueConnectService = {
   },
 
   // Sync league data from external platform
-  syncLeague: async (leagueId: string): Promise<{ success: boolean; message: string }> => {
-    return api.post<{ success: boolean; message: string }>(`/leagues/${leagueId}/sync`);
+  syncLeague: async (leagueId: string): Promise<{
+    success: boolean;
+    message: string;
+    userTeamMatched?: boolean;
+    warning?: string | null;
+  }> => {
+    return api.post(`/leagues/${leagueId}/sync`);
   },
 
   // Disconnect a league
