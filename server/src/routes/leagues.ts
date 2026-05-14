@@ -493,15 +493,39 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
       }
 
       // Add user to existing league (store sleeperUserId for reliable sync matching, fall back to username)
+      const storedExternalUsername = sleeperUserId || sleeperUsername || null;
       await db.insert(schema.leagueMembers).values({
         id: generateId(),
         userId: user.id,
         leagueId: existingLeague.id,
         role: 'member',
-        externalUsername: sleeperUserId || sleeperUsername || null,
+        externalUsername: storedExternalUsername,
       });
 
-      // Create team for user
+      // If a team for this Sleeper user already exists in the league (because
+      // another app user already imported the league and synced rosters),
+      // associate the joining user with that existing team rather than
+      // creating a duplicate placeholder. The team keeps its original
+      // ownerId; the joining user's view of "my team" is resolved at read
+      // time via league_members.externalUsername → teams.externalOwnerId.
+      if (sleeperUserId) {
+        const existingTeam = await db.query.teams.findFirst({
+          where: and(
+            eq(schema.teams.leagueId, existingLeague.id),
+            eq(schema.teams.externalOwnerId, sleeperUserId)
+          ),
+        });
+        if (existingTeam) {
+          return c.json({
+            league: existingLeague,
+            team: { id: existingTeam.id, name: existingTeam.name },
+          }, 201);
+        }
+      }
+
+      // No matching team yet (e.g. original connector hasn't synced).
+      // Create a placeholder; sync will reconcile it with the real roster
+      // via the externalUsername → externalOwnerId match.
       const teamId = generateId();
       await db.insert(schema.teams).values({
         id: teamId,
@@ -562,8 +586,9 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
       team: { id: teamId, name: `${user.username}'s Team` },
     }, 201);
   } catch (error) {
-    console.error('Connect league error:', error);
-    return c.json({ error: 'Failed to connect league' }, 500);
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error('Connect league error:', err);
+    return c.json({ error: err.message || 'Failed to connect league' }, 500);
   }
 });
 
@@ -698,11 +723,8 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         userMap.set(sleeperUser.user_id, sleeperUser);
       }
 
-      // Find the current user's team in our database
-      const userTeam = league.teams.find(t => t.ownerId === user.id);
-
-      // Find which Sleeper user matches this app user
-      // externalUsername may contain a Sleeper user_id (preferred) or a username/display_name
+      // Find which Sleeper user matches this app user.
+      // externalUsername may contain a Sleeper user_id (preferred) or a username/display_name.
       let userSleeperUserId: string | null = null;
       if (membership.externalUsername) {
         const stored = membership.externalUsername;
@@ -723,6 +745,16 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
           }
         }
       }
+
+      // Find the current user's team in our database.
+      // Prefer a team this user already owns (the common single-user case).
+      // For users who joined an already-connected league, ownership stays with
+      // the original importer, so also resolve via externalUsername → externalOwnerId.
+      const userTeam =
+        league.teams.find(t => t.ownerId === user.id) ||
+        (userSleeperUserId
+          ? league.teams.find(t => t.externalOwnerId === userSleeperUserId)
+          : undefined);
 
       // Track which roster ID belongs to the user
       let userRosterAssigned = false;
@@ -789,10 +821,17 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
             })
             .where(eq(schema.teams.id, team.id));
         } else {
-          // Check if team already exists (by external roster ID stored in name temporarily)
-          const existingTeam = league.teams.find(t =>
-            t.name === teamName || t.name.includes(`Roster ${roster.roster_id}`)
-          );
+          // Check if an opponent team already exists for this Sleeper user.
+          // Prefer externalOwnerId — it's the stable Sleeper user_id and won't
+          // collide when two teams share a display name. Fall back to the
+          // legacy name-based match only for teams created by older syncs
+          // that never recorded externalOwnerId.
+          const sleeperOwnerId = String(roster.owner_id);
+          const existingTeam =
+            league.teams.find(t => t.externalOwnerId === sleeperOwnerId) ||
+            league.teams.find(t =>
+              !t.externalOwnerId && (t.name === teamName || t.name.includes(`Roster ${roster.roster_id}`))
+            );
 
           if (existingTeam) {
             team = existingTeam;
@@ -834,17 +873,27 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
           }
         }
 
-        // Sync roster players
+        // Sync roster players.
+        // We build the full set of new roster_spots rows in memory first, then
+        // delete + bulk-insert at the end. D1 has no real transactions, so the
+        // previous pattern (delete-then-insert-in-a-loop) left a team with an
+        // empty roster if any player insert failed mid-way. Doing all the work
+        // up-front means a thrown error aborts before we wipe the old rows.
         if (roster.players && roster.players.length > 0 && (isUserTeam || team)) {
-          // First, delete existing roster spots for this team
-          await db.delete(schema.rosterSpots)
-            .where(eq(schema.rosterSpots.teamId, team.id));
-
           // Get starters array from roster. Sleeper orders this array to match the
           // non-bench entries of the league's `roster_positions`, and uses the
           // sentinel "0" / "Invalid" for empty starter slots — so `starters[i]`
           // corresponds to `starterSlots[i]` position-for-position.
           const starters = roster.starters || [];
+
+          const newSpots: Array<{
+            id: string;
+            teamId: string;
+            playerId: string;
+            slot: string;
+            isStarter: boolean;
+            acquiredType: 'sync';
+          }> = [];
 
           for (let i = 0; i < roster.players.length; i++) {
             const playerId = roster.players[i];
@@ -867,7 +916,11 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
             // Check if player exists in our database (from pre-fetched batch)
             let player = existingPlayersByExtId.get(playerId) || null;
 
-            // If player doesn't exist, create from pre-fetched Sleeper data
+            // If player doesn't exist, create from pre-fetched Sleeper data.
+            // Player-row leaks across syncs are harmless (rows in a shared
+            // table), so we don't bother rolling them back if a later step
+            // fails — but we still let the error propagate to abort the sync
+            // rather than silently producing an incomplete roster.
             if (!player) {
               const playerData = sleeperPlayers[playerId];
 
@@ -894,20 +947,29 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
                 jerseyNumber: playerData?.number,
                 depthChartOrder: playerData?.depth_chart_order,
               });
-              player = { id: newPlayerId } as any;
+              player = { id: newPlayerId };
               existingPlayersByExtId.set(playerId, { id: newPlayerId });
             }
 
-            // Insert roster spot (player is guaranteed to exist at this point)
-            if (player) {
-              await db.insert(schema.rosterSpots).values({
-                id: generateId(),
-                teamId: team.id,
-                playerId: player.id,
-                slot,
-                isStarter,
-                acquiredType: 'sync',
-              });
+            newSpots.push({
+              id: generateId(),
+              teamId: team.id,
+              playerId: player.id,
+              slot,
+              isStarter,
+              acquiredType: 'sync',
+            });
+          }
+
+          // All new rows successfully constructed — now swap them in.
+          // Delete + insert still aren't atomic in D1, but the window is tiny
+          // and any failure here is logged at the outer catch.
+          await db.delete(schema.rosterSpots)
+            .where(eq(schema.rosterSpots.teamId, team.id));
+          if (newSpots.length > 0) {
+            // Chunk inserts to stay well under D1's bound-parameter ceiling.
+            for (let i = 0; i < newSpots.length; i += 50) {
+              await db.insert(schema.rosterSpots).values(newSpots.slice(i, i + 50));
             }
           }
         }
@@ -922,11 +984,13 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         where: eq(schema.teams.leagueId, league.id),
       });
 
-      // Map rosters to teams by matching names
+      // Map rosters to teams by externalOwnerId (stable Sleeper user_id).
+      // Falling back to name would mis-route matchups when two Sleeper users
+      // share a display name; the team rows we just upserted above all carry
+      // externalOwnerId, so this lookup is reliable.
       for (const roster of rosters) {
-        const sleeperUser = userMap.get(roster.owner_id);
-        const teamName = sleeperUser?.metadata?.team_name || sleeperUser?.display_name || `Team ${roster.roster_id}`;
-        const matchingTeam = updatedTeams.find(t => t.name === teamName);
+        const sleeperOwnerId = String(roster.owner_id);
+        const matchingTeam = updatedTeams.find(t => t.externalOwnerId === sleeperOwnerId);
         if (matchingTeam) {
           rosterIdToTeamId.set(roster.roster_id, matchingTeam.id);
         }
@@ -1367,6 +1431,15 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         console.error('Trade ingest failed (non-blocking):', e);
       }
 
+      // If we couldn't pin the user to a Sleeper roster, surface a warning so
+      // the UI can prompt them to set their Sleeper username (otherwise their
+      // "my team" view will be empty even though the league synced fine).
+      const userMatchWarning = !userRosterAssigned
+        ? (membership.externalUsername
+            ? `We synced the league but couldn't find a Sleeper roster matching "${membership.externalUsername}". Re-enter your Sleeper username in league settings.`
+            : 'We synced the league but don\'t know which roster is yours. Add your Sleeper username in league settings to see your team.')
+        : null;
+
       return c.json({
         success: true,
         message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, ${statsImported} player stats, ${propsProjectionsCount} projections from book lines, ${projectionsImported} projections from Sleeper, and ${tradesIngested} trades updated.`,
@@ -1376,6 +1449,8 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         projectionsImported,
         propsProjections: propsProjectionsCount,
         tradesIngested,
+        userTeamMatched: userRosterAssigned,
+        warning: userMatchWarning,
       });
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
