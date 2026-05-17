@@ -12,6 +12,7 @@ export {
   espnApi,
   yahooApi,
   mflApi,
+  PlatformError,
 } from './leagueConnect';
 
 // Export types

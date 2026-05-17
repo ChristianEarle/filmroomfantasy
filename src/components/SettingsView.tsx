@@ -3,9 +3,10 @@ import { FeedbackWidget } from './FeedbackWidget';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLeaguesContext } from '../context/LeaguesContext';
-import { leagueConnectService, sleeperApi, yahooApi, type Platform, type ExternalLeague } from '../services';
+import { leagueConnectService, sleeperApi, yahooApi, PlatformError, type Platform, type ExternalLeague } from '../services';
 import { authService } from '../services';
 import { API_ORIGIN } from '../services/api';
+import { UpgradeModal } from './UpgradeModal';
 import type { ScoringFormat } from '../services/auth';
 
 interface SettingsViewProps {
@@ -57,9 +58,13 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
   // Manual league ID state
   const [manualLeagueId, setManualLeagueId] = useState('');
+  const [manualSeasonYear, setManualSeasonYear] = useState<number>(new Date().getFullYear());
   const [fetchedLeague, setFetchedLeague] = useState<ExternalLeague | null>(null);
   const [fetchingLeague, setFetchingLeague] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Upgrade modal (shown when free user hits the 1-league limit)
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
 
   // Connection state
   const [connecting, setConnecting] = useState(false);
@@ -142,11 +147,28 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     setSleeperLeagues([]);
     setSleeperError(null);
     setManualLeagueId('');
+    setManualSeasonYear(new Date().getFullYear());
     setFetchedLeague(null);
     setFetchError(null);
     setConnectError(null);
     setYahooLeagues([]);
     setYahooError(null);
+  };
+
+  // Map a typed PlatformError to a user-readable string. Without this the UI
+  // collapses every failure (timeout, 5xx, rate-limit, real 404) into
+  // "user not found" — which is the #1 reported false negative.
+  const platformErrorMessage = (err: unknown, fallback: string): string => {
+    if (err instanceof PlatformError) {
+      switch (err.kind) {
+        case 'rate_limited': return err.message;
+        case 'unavailable':  return err.message;
+        case 'timeout':      return err.message;
+        case 'network':      return err.message;
+        default:             return fallback;
+      }
+    }
+    return err instanceof Error ? err.message : fallback;
   };
 
   const handleCloseModal = () => {
@@ -156,13 +178,22 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
   // Fetch Sleeper user's leagues
   const handleFetchSleeperLeagues = async () => {
-    if (!sleeperUsername.trim()) return;
+    const trimmed = sleeperUsername.trim();
+    if (!trimmed) return;
+
+    // Validate before hitting the network — Sleeper usernames are 3-15
+    // alphanumeric/underscore. Pre-flighting lets the user fix typos
+    // instantly instead of waiting for a confusing 404.
+    if (!/^[a-zA-Z0-9_]{3,15}$/.test(trimmed)) {
+      setSleeperError('Username must be 3–15 characters, letters/numbers/underscores only. Use your Sleeper username, not your display name.');
+      return;
+    }
 
     setLoadingSleeperLeagues(true);
     setSleeperError(null);
 
     try {
-      const sleeperUser = await sleeperApi.getUser(sleeperUsername.trim());
+      const sleeperUser = await sleeperApi.getUser(trimmed);
       if (!sleeperUser) {
         setSleeperError('User not found. Please check the username (not display name).');
         setLoadingSleeperLeagues(false);
@@ -177,8 +208,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
         setSleeperLeagues(fetchedLeagues);
         setConnectionStep('sleeper-leagues');
       }
-    } catch {
-      setSleeperError('Failed to fetch leagues. Please try again.');
+    } catch (err) {
+      setSleeperError(platformErrorMessage(err, 'Failed to fetch leagues. Please try again.'));
     } finally {
       setLoadingSleeperLeagues(false);
     }
@@ -266,15 +297,23 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     setFetchedLeague(null);
 
     try {
-      const league = await leagueConnectService.fetchExternalLeague(selectedPlatform, manualLeagueId.trim());
+      const league = await leagueConnectService.fetchExternalLeague(
+        selectedPlatform,
+        manualLeagueId.trim(),
+        manualSeasonYear,
+      );
       if (!league) {
-        setFetchError('League not found. Please check the ID and make sure the league is public.');
+        setFetchError(
+          selectedPlatform === 'espn'
+            ? 'League not found. ESPN private leagues are not yet supported — make sure your league is set to public.'
+            : 'League not found. Please check the ID and the season year.'
+        );
       } else {
         setFetchedLeague(league);
         setConnectionStep('confirm');
       }
-    } catch {
-      setFetchError('Failed to fetch league. Please try again.');
+    } catch (err) {
+      setFetchError(platformErrorMessage(err, 'Failed to fetch league. Please try again.'));
     } finally {
       setFetchingLeague(false);
     }
@@ -299,10 +338,14 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
         league.platform === 'sleeper' ? savedSleeperUserId ?? undefined : undefined
       );
 
-      // Auto-sync the league to import teams and rosters
+      // Auto-sync the league to import teams and rosters. Use the QUICK sync
+      // variant — it imports rosters + current week only and stays well under
+      // the Workers wall-time limit so first-time connect almost always
+      // succeeds. The user can hit the manual "Sync" button later to pull
+      // full schedule + historical stats + projections.
       if (result.league?.id) {
         try {
-          const syncResult = await leagueConnectService.syncLeague(result.league.id);
+          const syncResult = await leagueConnectService.syncLeagueQuick(result.league.id);
           // The sync may succeed at the league level but fail to identify
           // which Sleeper roster belongs to this user (e.g. wrong username,
           // or the league was connected by ID without a username). Surface
@@ -312,7 +355,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
           }
         } catch (syncError: unknown) {
           const msg = syncError instanceof Error ? syncError.message : 'Sync failed';
-          setConnectError(`League connected but sync failed: ${msg}. You can try syncing manually.`);
+          setConnectError(`League connected but sync failed: ${msg}. Open Settings and tap Sync to retry.`);
           refetchLeagues();
           onLeagueSynced?.();
           setBackgroundConnecting(null);
@@ -394,7 +437,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
           <button
             onClick={() => {
               if (user?.subscriptionTier !== 'pro' && user?.subscriptionTier !== 'elite' && leagues.length >= 1) {
-                setConnectError('Upgrade to Pro or Elite to connect multiple leagues. Free accounts are limited to 1 league.');
+                setUpgradeModalOpen(true);
                 return;
               }
               setConnectError(null);
@@ -882,10 +925,30 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                     <p className={`text-xs mt-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                       {selectedPlatform === 'sleeper' && 'Find your league ID in the Sleeper app under League Settings'}
                       {selectedPlatform === 'espn' && 'Find your league ID in the URL: fantasy.espn.com/football/league?leagueId=XXXXXX'}
-                      {selectedPlatform === 'yahoo' && 'Find your league ID in the URL: football.fantasysports.yahoo.com/f1/XXXXXX'}
                       {selectedPlatform === 'mfl' && 'Find your league ID in the URL: myfantasyleague.com/YYYY/home/XXXXX (the 5-digit number)'}
                     </p>
                   </div>
+
+                  {/* Season selector — off-season users (Jan–Aug) need to pick last year's league */}
+                  {(selectedPlatform === 'espn' || selectedPlatform === 'mfl') && (
+                    <div>
+                      <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Season
+                      </label>
+                      <select
+                        value={manualSeasonYear}
+                        onChange={(e) => setManualSeasonYear(parseInt(e.target.value, 10))}
+                        className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                      >
+                        {(() => {
+                          const cy = new Date().getFullYear();
+                          return [cy, cy - 1, cy - 2].map((y) => (
+                            <option key={y} value={y}>{y}</option>
+                          ));
+                        })()}
+                      </select>
+                    </div>
+                  )}
 
                   {fetchError && (
                     <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
@@ -1047,6 +1110,42 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
           </div>
         </div>
       )}
+
+      {/* Upgrade modal — shown when a free user hits the 1-league cap.
+          Replaces an inline banner that users frequently missed. */}
+      <UpgradeModal
+        isOpen={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        isDarkMode={isDarkMode}
+        onUpgradeClick={async (priceId: string) => {
+          try {
+            const res = await fetch(
+              `${import.meta.env.VITE_API_URL || API_ORIGIN + '/api'}/billing/create-checkout`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                  priceId,
+                  successUrl: `${window.location.origin}?billing=success`,
+                  cancelUrl: `${window.location.origin}?billing=cancel`,
+                }),
+              }
+            );
+            if (!res.ok) {
+              const error = await res.json() as { error?: string };
+              setConnectError(error.error || 'Failed to start checkout. Please try again.');
+              setUpgradeModalOpen(false);
+              return;
+            }
+            const { url } = await res.json() as { url: string };
+            if (url) window.location.href = url;
+          } catch (err) {
+            setConnectError(err instanceof Error ? err.message : 'Failed to start checkout. Please try again.');
+            setUpgradeModalOpen(false);
+          }
+        }}
+      />
     </div>
   );
 }

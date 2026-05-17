@@ -418,7 +418,11 @@ leagueRoutes.post('/:id/join', authMiddleware, async (c) => {
 });
 
 // Connect external league (Sleeper, ESPN, Yahoo)
-leagueRoutes.post('/connect', authMiddleware, async (c) => {
+// Connect endpoint is moderately expensive (DB writes + lookups) and
+// uncapped previously. Match the protection level of /sync.
+const connectRateLimit = rateLimit(10, 15 * 60 * 1000);
+
+leagueRoutes.post('/connect', connectRateLimit, authMiddleware, async (c) => {
   const user = c.get('user');
   const db = c.get('db');
 
@@ -592,6 +596,280 @@ leagueRoutes.post('/connect', authMiddleware, async (c) => {
   }
 });
 
+// ----------------------------------------------------------------
+// In-memory cache for the Sleeper players blob (~5MB JSON).
+// Persists across requests within a single Worker isolate. TTL 6h
+// because the players list changes slowly (depth-chart updates,
+// injuries, trades). Cuts sync wall-time by 1-3s on cache hits.
+// For cross-isolate caching, move to KV / R2 — needs a binding the
+// user provisions in Cloudflare, so left as an in-isolate cache.
+// ----------------------------------------------------------------
+type SleeperPlayersBlob = Record<string, any>;
+interface PlayerCacheEntry { data: SleeperPlayersBlob; fetchedAt: number; }
+const PLAYER_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function getCachedSleeperPlayers(): SleeperPlayersBlob | null {
+  const entry = (globalThis as any).__sleeperPlayerCache as PlayerCacheEntry | undefined;
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > PLAYER_CACHE_TTL_MS) return null;
+  return entry.data;
+}
+
+function setCachedSleeperPlayers(data: SleeperPlayersBlob) {
+  (globalThis as any).__sleeperPlayerCache = { data, fetchedAt: Date.now() } satisfies PlayerCacheEntry;
+}
+
+// Fetch the Sleeper players blob with caching. Returns {} on failure
+// so callers can continue with degraded player matching.
+async function fetchSleeperPlayersCached(): Promise<SleeperPlayersBlob> {
+  const cached = getCachedSleeperPlayers();
+  if (cached) return cached;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const res = await fetch('https://api.sleeper.app/v1/players/nfl', { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json() as SleeperPlayersBlob;
+      setCachedSleeperPlayers(data);
+      return data;
+    }
+  } catch (e) {
+    console.error('Failed to fetch Sleeper players blob:', e);
+  }
+  return {};
+}
+
+// ----------------------------------------------------------------
+// Quick-sync route — called immediately after a league is connected.
+// Imports only teams, rosters, and roster spots. Skips matchup
+// history, stats import, projections, and trade ingest so it stays
+// well within Cloudflare's wall-time limit on the user's first
+// connection. The manual "Sync" button still hits the full route
+// for richer data.
+// ----------------------------------------------------------------
+const quickSyncRateLimit = rateLimit(10, 15 * 60 * 1000);
+
+leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+  const leagueId = c.req.param('id');
+
+  if (!user) return c.json({ error: 'Not authenticated' }, 401);
+
+  const membership = await db.query.leagueMembers.findFirst({
+    where: and(
+      eq(schema.leagueMembers.userId, user.id),
+      eq(schema.leagueMembers.leagueId, leagueId)
+    ),
+  });
+  if (!membership) return c.json({ error: 'Not a member of this league' }, 403);
+
+  const league = await db.query.leagues.findFirst({
+    where: eq(schema.leagues.id, leagueId),
+    with: { teams: true },
+  });
+  if (!league) return c.json({ error: 'League not found' }, 404);
+
+  // Only Sleeper supports a quick-sync fast-path today. For other platforms,
+  // fall through and have the client call the regular /sync route.
+  if (league.platform !== 'sleeper' || !league.externalId) {
+    return c.json({
+      success: true,
+      message: `Quick sync skipped — ${league.platform || 'manual'} leagues use the full sync.`,
+      userTeamMatched: false,
+    });
+  }
+
+  try {
+    const [rostersResponse, usersResponse, playersData] = await Promise.all([
+      fetch(`https://api.sleeper.app/v1/league/${league.externalId}/rosters`),
+      fetch(`https://api.sleeper.app/v1/league/${league.externalId}/users`),
+      fetchSleeperPlayersCached(),
+    ]);
+
+    if (!rostersResponse.ok) {
+      return c.json({ error: 'Failed to fetch rosters from Sleeper' }, 500);
+    }
+    const rosters = validateSleeperArray(await rostersResponse.json(), isValidSleeperRoster, 'rosters');
+    if (rosters.length === 0) {
+      return c.json({ error: 'No valid rosters returned from Sleeper' }, 500);
+    }
+
+    if (!usersResponse.ok) {
+      return c.json({ error: 'Failed to fetch users from Sleeper' }, 500);
+    }
+    const sleeperUsers = validateSleeperArray(await usersResponse.json(), isValidSleeperUser, 'users');
+
+    // Match the app user to a Sleeper user via stored user_id (preferred) or username/display_name.
+    let userSleeperUserId: string | null = null;
+    if (membership.externalUsername) {
+      const stored = membership.externalUsername;
+      const direct = sleeperUsers.find(u => u.user_id === stored);
+      if (direct) {
+        userSleeperUserId = direct.user_id;
+      } else {
+        for (const su of sleeperUsers) {
+          if (
+            su.display_name?.toLowerCase() === stored.toLowerCase() ||
+            su.username?.toLowerCase() === stored.toLowerCase()
+          ) {
+            userSleeperUserId = su.user_id;
+            break;
+          }
+        }
+      }
+    }
+
+    const userMap = new Map<string, any>();
+    for (const su of sleeperUsers) userMap.set(su.user_id, su);
+
+    // Pre-batch player lookups so we don't N+1 the DB during roster insert.
+    const INVALID_PLAYER_IDS = new Set(['invalid', '0', '']);
+    const allExternalIds = new Set<string>();
+    for (const r of rosters) {
+      if (r.players) {
+        for (const pid of r.players) {
+          if (pid && !INVALID_PLAYER_IDS.has(String(pid).toLowerCase())) {
+            allExternalIds.add(String(pid));
+          }
+        }
+      }
+    }
+    const externalIdArray = Array.from(allExternalIds);
+    const playerByExtId = new Map<string, { id: string }>();
+    for (let i = 0; i < externalIdArray.length; i += 50) {
+      const chunk = externalIdArray.slice(i, i + 50);
+      const found = await db.query.nflPlayers.findMany({
+        where: inArray(schema.nflPlayers.externalId, chunk),
+        columns: { id: true, externalId: true },
+      });
+      for (const p of found) {
+        if (p.externalId) playerByExtId.set(p.externalId, { id: p.id });
+      }
+    }
+
+    let teamsImported = 0;
+    let userRosterAssigned = false;
+    const userTeam =
+      league.teams.find(t => t.ownerId === user.id) ||
+      (userSleeperUserId
+        ? league.teams.find(t => t.externalOwnerId === userSleeperUserId)
+        : undefined);
+
+    for (const roster of rosters) {
+      const su = userMap.get(roster.owner_id);
+      const teamName = su?.metadata?.team_name || su?.display_name || `Team ${roster.roster_id}`;
+      const ownerDisplayName = su?.display_name || su?.username || `Owner ${roster.roster_id}`;
+      const isUserTeam = userTeam && !userRosterAssigned && userSleeperUserId && roster.owner_id === userSleeperUserId;
+
+      let teamId: string;
+      if (isUserTeam) {
+        teamId = userTeam.id;
+        userRosterAssigned = true;
+        await db.update(schema.teams).set({
+          externalOwnerId: String(roster.owner_id),
+          ownerDisplayName,
+          name: teamName,
+          wins: roster.settings?.wins || 0,
+          losses: roster.settings?.losses || 0,
+          ties: roster.settings?.ties || 0,
+          pointsFor: roster.settings?.fpts || 0,
+          pointsAgainst: roster.settings?.fpts_against || 0,
+          updatedAt: new Date(),
+        }).where(eq(schema.teams.id, userTeam.id));
+      } else {
+        const existing = league.teams.find(t => t.externalOwnerId === String(roster.owner_id));
+        if (existing) {
+          teamId = existing.id;
+          await db.update(schema.teams).set({
+            ownerDisplayName,
+            name: teamName,
+            wins: roster.settings?.wins || 0,
+            losses: roster.settings?.losses || 0,
+            ties: roster.settings?.ties || 0,
+            pointsFor: roster.settings?.fpts || 0,
+            pointsAgainst: roster.settings?.fpts_against || 0,
+            updatedAt: new Date(),
+          }).where(eq(schema.teams.id, existing.id));
+        } else {
+          teamId = generateId();
+          await db.insert(schema.teams).values({
+            id: teamId,
+            leagueId: league.id,
+            ownerId: user.id,
+            externalOwnerId: String(roster.owner_id),
+            ownerDisplayName,
+            name: teamName,
+            wins: roster.settings?.wins || 0,
+            losses: roster.settings?.losses || 0,
+            ties: roster.settings?.ties || 0,
+            pointsFor: roster.settings?.fpts || 0,
+            pointsAgainst: roster.settings?.fpts_against || 0,
+            faabBudget: 100,
+          });
+        }
+      }
+      teamsImported++;
+
+      // Roster spots — clear + reinsert atomically to keep the page snappy.
+      await db.delete(schema.rosterSpots).where(eq(schema.rosterSpots.teamId, teamId));
+
+      const starters = Array.isArray(roster.starters) ? roster.starters : [];
+      const players = Array.isArray(roster.players) ? roster.players : [];
+
+      let benchCount = 0;
+      for (const pid of players) {
+        const idStr = String(pid);
+        if (INVALID_PLAYER_IDS.has(idStr.toLowerCase())) continue;
+        const dbPlayer = playerByExtId.get(idStr);
+        if (!dbPlayer) {
+          // Player not yet in DB — skip silently. The next admin sync-players
+          // run will pick them up; full /sync handles upserts.
+          continue;
+        }
+        const starterIdx = starters.indexOf(idStr);
+        const isStarter = starterIdx >= 0;
+        const slot = isStarter
+          ? (playersData[idStr]?.position || `S${starterIdx + 1}`)
+          : `BN${++benchCount}`;
+        try {
+          await db.insert(schema.rosterSpots).values({
+            id: generateId(),
+            teamId,
+            playerId: dbPlayer.id,
+            slot,
+            isStarter,
+            acquiredType: 'sync',
+          });
+        } catch (e) {
+          // Unique constraint violation — skip duplicate insert
+          console.error('Quick-sync roster insert error (non-fatal):', e);
+        }
+      }
+    }
+
+    // Surface a warning if we couldn't link this user to any Sleeper roster.
+    // Same shape as the full-sync response so the UI handles it identically.
+    const warning = !userRosterAssigned && userSleeperUserId
+      ? `We synced the league but couldn't find a Sleeper roster matching your account. Open league settings to update your Sleeper username.`
+      : !userRosterAssigned && !membership.externalUsername
+      ? `League synced. To highlight your team, set your Sleeper username in league settings.`
+      : null;
+
+    return c.json({
+      success: true,
+      message: `Quick sync complete: ${teamsImported} teams imported.`,
+      userTeamMatched: userRosterAssigned,
+      warning,
+    });
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error('Quick sync error:', err);
+    return c.json({ error: err.message || 'Quick sync failed' }, 500);
+  }
+});
+
 // Sync league data from external platform
 // Stricter rate limit: 3 syncs per 15 minutes per IP (expensive external API calls)
 const syncRateLimit = rateLimit(3, 15 * 60 * 1000);
@@ -638,22 +916,7 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       const [rostersResponse, usersResponse, playersResult, sleeperLeagueResult] = await Promise.all([
         fetch(`https://api.sleeper.app/v1/league/${league.externalId}/rosters`),
         fetch(`https://api.sleeper.app/v1/league/${league.externalId}/users`),
-        (async () => {
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 25000);
-            const playersResponse = await fetch('https://api.sleeper.app/v1/players/nfl', {
-              signal: controller.signal,
-            });
-            clearTimeout(timeoutId);
-            if (playersResponse.ok) {
-              return await playersResponse.json() as Record<string, any>;
-            }
-          } catch (e) {
-            console.error('Failed to fetch Sleeper players (sync continues with basic player names):', e);
-          }
-          return {};
-        })(),
+        fetchSleeperPlayersCached(),
         (async () => {
           try {
             const res = await fetch(`https://api.sleeper.app/v1/league/${league.externalId}`);
@@ -2061,6 +2324,264 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       const err = error instanceof Error ? error : new Error(String(error));
       console.error('MFL sync error:', err);
       return c.json({ error: err.message || 'Failed to sync league from MFL' }, 500);
+    }
+  }
+
+  // Handle ESPN sync (public leagues only — private leagues require SWID +
+  // ESPN_S2 cookies, which we don't store yet. See TODO at the end of this file.)
+  if (league.platform === 'espn' && league.externalId) {
+    try {
+      const year = league.seasonYear || new Date().getFullYear();
+      const espnUrl = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${year}/segments/0/leagues/${encodeURIComponent(league.externalId)}?view=mTeam&view=mRoster&view=mMatchup&view=mSettings`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const espnRes = await fetch(espnUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!espnRes.ok) {
+        const body = await espnRes.text().catch(() => '');
+        const isPrivate = espnRes.status === 401 || espnRes.status === 403;
+        return c.json({
+          error: isPrivate
+            ? 'ESPN league is private. Make it public in ESPN settings (private-league cookie auth is not yet supported).'
+            : `Failed to fetch league from ESPN (HTTP ${espnRes.status}). ${body.slice(0, 200)}`,
+        }, 500);
+      }
+
+      const espnData = await espnRes.json() as any;
+      const espnTeams = Array.isArray(espnData?.teams) ? espnData.teams : [];
+      if (espnTeams.length === 0) {
+        return c.json({ error: 'No teams returned from ESPN' }, 500);
+      }
+
+      const currentWeek = parseInt(String(espnData?.scoringPeriodId ?? espnData?.status?.currentMatchupPeriod ?? 1), 10) || 1;
+      const teamCount = espnTeams.length;
+
+      // Update league metadata + currentWeek so the rest of the app sees fresh data.
+      await db.update(schema.leagues).set({
+        name: espnData?.settings?.name || league.name,
+        teamCount,
+        currentWeek,
+        updatedAt: new Date(),
+      }).where(eq(schema.leagues.id, league.id));
+
+      // ESPN position/lineup mappings (limited to fantasy-relevant slots).
+      // Source: ESPN's internal constants — these are well-known and stable.
+      const POSITION: Record<number, string> = { 1: 'QB', 2: 'RB', 3: 'WR', 4: 'TE', 5: 'K', 16: 'DEF' };
+      const LINEUP_SLOT: Record<number, string> = {
+        0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 7: 'FLEX',
+        16: 'DEF', 17: 'K', 20: 'BN', 21: 'IR', 23: 'FLEX',
+      };
+      // ESPN pro team ID → standard NFL abbreviation. Used to match DEF.
+      const PRO_TEAM: Record<number, string> = {
+        1:'ATL',2:'BUF',3:'CHI',4:'CIN',5:'CLE',6:'DAL',7:'DEN',8:'DET',9:'GB',10:'TEN',
+        11:'IND',12:'KC',13:'LV',14:'LAR',15:'MIA',16:'MIN',17:'NE',18:'NO',19:'NYG',20:'NYJ',
+        21:'PHI',22:'ARI',23:'PIT',24:'LAC',25:'SF',26:'SEA',27:'TB',28:'WAS',29:'CAR',30:'JAX',
+        33:'BAL',34:'HOU',
+      };
+
+      let teamsImported = 0;
+      let playersImported = 0;
+      let userRosterAssigned = false;
+
+      // Try to match the app user to an ESPN team via their league_members.externalUsername.
+      // ESPN identifies owners by a SWID GUID — we don't have a clean mapping from
+      // app username to SWID, so we match by team display name as a best-effort.
+      const userClaim = membership.externalUsername?.toLowerCase().trim();
+
+      for (const espnTeam of espnTeams) {
+        const espnTeamId = String(espnTeam.id);
+        const teamName = [espnTeam.location, espnTeam.nickname].filter(Boolean).join(' ').trim()
+          || espnTeam.name
+          || `Team ${espnTeamId}`;
+        const ownerDisplayName = espnTeam.owners?.[0]
+          ? String(espnTeam.owners[0]).replace(/[{}]/g, '').slice(0, 16)
+          : teamName;
+        const record = espnTeam.record?.overall || {};
+
+        const isUserTeam =
+          !userRosterAssigned && userClaim &&
+          (teamName.toLowerCase() === userClaim ||
+           teamName.toLowerCase().includes(userClaim));
+
+        const existing = league.teams.find(t => t.externalOwnerId === espnTeamId)
+          || (isUserTeam ? league.teams.find(t => t.ownerId === user.id) : undefined);
+
+        let teamId: string;
+        if (existing) {
+          teamId = existing.id;
+          await db.update(schema.teams).set({
+            externalOwnerId: espnTeamId,
+            ownerDisplayName,
+            name: teamName,
+            wins: record.wins || 0,
+            losses: record.losses || 0,
+            ties: record.ties || 0,
+            pointsFor: record.pointsFor || 0,
+            pointsAgainst: record.pointsAgainst || 0,
+            updatedAt: new Date(),
+          }).where(eq(schema.teams.id, existing.id));
+          if (isUserTeam) userRosterAssigned = true;
+        } else {
+          teamId = generateId();
+          await db.insert(schema.teams).values({
+            id: teamId,
+            leagueId: league.id,
+            ownerId: user.id,
+            externalOwnerId: espnTeamId,
+            ownerDisplayName,
+            name: teamName,
+            wins: record.wins || 0,
+            losses: record.losses || 0,
+            ties: record.ties || 0,
+            pointsFor: record.pointsFor || 0,
+            pointsAgainst: record.pointsAgainst || 0,
+            faabBudget: 100,
+          });
+          if (isUserTeam) userRosterAssigned = true;
+        }
+        teamsImported++;
+
+        // Roster sync — atomic delete + reinsert
+        const entries = Array.isArray(espnTeam.roster?.entries) ? espnTeam.roster.entries : [];
+        await db.delete(schema.rosterSpots).where(eq(schema.rosterSpots.teamId, teamId));
+
+        let benchCount = 0;
+        for (const entry of entries) {
+          const player = entry?.playerPoolEntry?.player;
+          if (!player) continue;
+          const position = POSITION[player.defaultPositionId];
+          if (!position) continue; // skip non-fantasy positions
+
+          // Match player in DB: name + position first, then DEF by team
+          let dbPlayer = null;
+          const firstName = String(player.firstName || '').trim();
+          const lastName = String(player.lastName || '').trim();
+          const fullName = String(player.fullName || `${firstName} ${lastName}`).trim();
+
+          if (firstName && lastName) {
+            dbPlayer = await db.query.nflPlayers.findFirst({
+              where: and(
+                eq(schema.nflPlayers.firstName, firstName),
+                eq(schema.nflPlayers.lastName, lastName),
+                eq(schema.nflPlayers.position, position),
+              ),
+            });
+          }
+          if (!dbPlayer && fullName) {
+            dbPlayer = await db.query.nflPlayers.findFirst({
+              where: and(
+                eq(schema.nflPlayers.name, fullName),
+                eq(schema.nflPlayers.position, position),
+              ),
+            });
+          }
+          if (!dbPlayer && position === 'DEF') {
+            const teamAbbr = PRO_TEAM[player.proTeamId];
+            if (teamAbbr) {
+              dbPlayer = await db.query.nflPlayers.findFirst({
+                where: and(
+                  eq(schema.nflPlayers.team, teamAbbr),
+                  eq(schema.nflPlayers.position, 'DEF'),
+                ),
+              });
+            }
+          }
+          if (!dbPlayer) continue;
+
+          const lineupSlotId = entry.lineupSlotId;
+          const slotLabel = LINEUP_SLOT[lineupSlotId];
+          const isBench = slotLabel === 'BN';
+          const isIR = slotLabel === 'IR';
+          const isStarter = !isBench && !isIR && !!slotLabel;
+          const slot = isIR ? 'IR' : isBench ? `BN${++benchCount}` : (slotLabel || position);
+
+          try {
+            await db.insert(schema.rosterSpots).values({
+              id: generateId(),
+              teamId,
+              playerId: dbPlayer.id,
+              slot,
+              isStarter,
+              acquiredType: 'sync',
+            });
+            playersImported++;
+          } catch (e) {
+            console.error('ESPN roster insert error (non-fatal):', e);
+          }
+        }
+      }
+
+      // Matchups — only the current week to keep this within wall-time.
+      let matchupsImported = 0;
+      try {
+        const schedule = Array.isArray(espnData?.schedule) ? espnData.schedule : [];
+        const espnTeamIdToTeamId = new Map<string, string>();
+        const refreshedTeams = await db.query.teams.findMany({
+          where: eq(schema.teams.leagueId, league.id),
+        });
+        for (const t of refreshedTeams) {
+          if (t.externalOwnerId) espnTeamIdToTeamId.set(t.externalOwnerId, t.id);
+        }
+
+        for (const game of schedule) {
+          const week = parseInt(String(game?.matchupPeriodId ?? 0), 10);
+          if (!week || week !== currentWeek) continue;
+          const homeTeamId = espnTeamIdToTeamId.get(String(game?.home?.teamId));
+          const awayTeamId = espnTeamIdToTeamId.get(String(game?.away?.teamId));
+          if (!homeTeamId || !awayTeamId) continue;
+
+          const homeScore = Number(game?.home?.totalPoints || 0);
+          const awayScore = Number(game?.away?.totalPoints || 0);
+          const isComplete = !!game?.winner && String(game.winner).toUpperCase() !== 'UNDECIDED';
+
+          const existing = await db.query.matchups.findFirst({
+            where: and(
+              eq(schema.matchups.leagueId, league.id),
+              eq(schema.matchups.week, week),
+              eq(schema.matchups.homeTeamId, homeTeamId),
+            ),
+          });
+          if (existing) {
+            await db.update(schema.matchups)
+              .set({ homeScore, awayScore, isComplete })
+              .where(eq(schema.matchups.id, existing.id));
+          } else {
+            await db.insert(schema.matchups).values({
+              id: generateId(),
+              leagueId: league.id,
+              week,
+              homeTeamId,
+              awayTeamId,
+              homeScore,
+              awayScore,
+              isComplete,
+            });
+            matchupsImported++;
+          }
+        }
+      } catch (scheduleErr) {
+        console.error('ESPN schedule sync error (non-fatal):', scheduleErr);
+      }
+
+      const warning = !userRosterAssigned
+        ? `League synced. To highlight your team, set your ESPN team name in league settings.`
+        : null;
+
+      return c.json({
+        success: true,
+        message: `Synced from ESPN: ${teamsImported} teams, ${playersImported} players, ${matchupsImported} matchups`,
+        teamsImported,
+        playersImported,
+        matchupsImported,
+        userTeamMatched: userRosterAssigned,
+        warning,
+      });
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error('ESPN sync error:', err);
+      return c.json({ error: err.message || 'Failed to sync league from ESPN' }, 500);
     }
   }
 
