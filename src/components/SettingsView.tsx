@@ -181,11 +181,12 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     const trimmed = sleeperUsername.trim();
     if (!trimmed) return;
 
-    // Validate before hitting the network — Sleeper usernames are 3-15
-    // alphanumeric/underscore. Pre-flighting lets the user fix typos
-    // instantly instead of waiting for a confusing 404.
-    if (!/^[a-zA-Z0-9_]{3,15}$/.test(trimmed)) {
-      setSleeperError('Username must be 3–15 characters, letters/numbers/underscores only. Use your Sleeper username, not your display name.');
+    // Validate before hitting the network — Sleeper usernames are typically
+    // 1-32 chars of letters/numbers/underscore/dot/hyphen. Pre-flighting
+    // lets the user fix typos instantly instead of waiting for a 404, but
+    // we stay permissive: real Sleeper accounts with hyphens/dots exist.
+    if (!/^[a-zA-Z0-9_.-]{1,32}$/.test(trimmed)) {
+      setSleeperError('Username must be letters, numbers, underscores, dots, or hyphens. Use your Sleeper username, not your display name.');
       return;
     }
 

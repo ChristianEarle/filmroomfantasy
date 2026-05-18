@@ -682,10 +682,19 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
   }
 
   try {
-    const [rostersResponse, usersResponse, playersData] = await Promise.all([
+    const [rostersResponse, usersResponse, playersData, sleeperLeagueResult] = await Promise.all([
       fetch(`https://api.sleeper.app/v1/league/${league.externalId}/rosters`),
       fetch(`https://api.sleeper.app/v1/league/${league.externalId}/users`),
       fetchSleeperPlayersCached(),
+      (async () => {
+        try {
+          const res = await fetch(`https://api.sleeper.app/v1/league/${league.externalId}`);
+          if (res.ok) return await res.json() as any;
+        } catch (e) {
+          console.error('Quick-sync: failed to fetch Sleeper league metadata (using fallback slot template):', e);
+        }
+        return null;
+      })(),
     ]);
 
     if (!rostersResponse.ok) {
@@ -700,6 +709,28 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
       return c.json({ error: 'Failed to fetch users from Sleeper' }, 500);
     }
     const sleeperUsers = validateSleeperArray(await usersResponse.json(), isValidSleeperUser, 'users');
+
+    // Build the real starter slot template from league.roster_positions — same
+    // logic as the full /sync route. Without this, FLEX/Superflex slots get
+    // mislabeled with the player's natural position (e.g. a RB in FLEX gets
+    // slotted as "RB" twice). Falls back to the standard 9-man lineup shape
+    // if the metadata fetch failed.
+    const leagueRosterPositions: string[] = Array.isArray(sleeperLeagueResult?.roster_positions)
+      ? sleeperLeagueResult.roster_positions
+      : [];
+    const BENCH_SLOTS = new Set(['BN', 'IR', 'TAXI']);
+    const startingPositions = leagueRosterPositions.filter(
+      (p) => typeof p === 'string' && !BENCH_SLOTS.has(p.toUpperCase())
+    );
+    const slotTotalCounts: Record<string, number> = {};
+    for (const pos of startingPositions) slotTotalCounts[pos] = (slotTotalCounts[pos] || 0) + 1;
+    const slotRunningCounts: Record<string, number> = {};
+    const starterSlots = startingPositions.length > 0
+      ? startingPositions.map((pos) => {
+          slotRunningCounts[pos] = (slotRunningCounts[pos] || 0) + 1;
+          return slotTotalCounts[pos] > 1 ? `${pos}${slotRunningCounts[pos]}` : pos;
+        })
+      : ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'TE', 'FLEX', 'K', 'DEF'];
 
     // Match the app user to a Sleeper user via stored user_id (preferred) or username/display_name.
     let userSleeperUserId: string | null = null;
@@ -830,8 +861,12 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
         }
         const starterIdx = starters.indexOf(idStr);
         const isStarter = starterIdx >= 0;
+        // Use the league's roster_positions template for starter slots so
+        // FLEX/Superflex/etc. get labeled correctly. Fall back to the player's
+        // natural position if the template is shorter than the starters array
+        // (shouldn't happen, but defensive).
         const slot = isStarter
-          ? (playersData[idStr]?.position || `S${starterIdx + 1}`)
+          ? (starterSlots[starterIdx] || playersData[idStr]?.position || `S${starterIdx + 1}`)
           : `BN${++benchCount}`;
         try {
           await db.insert(schema.rosterSpots).values({
@@ -2395,9 +2430,9 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         const teamName = [espnTeam.location, espnTeam.nickname].filter(Boolean).join(' ').trim()
           || espnTeam.name
           || `Team ${espnTeamId}`;
-        const ownerDisplayName = espnTeam.owners?.[0]
-          ? String(espnTeam.owners[0]).replace(/[{}]/g, '').slice(0, 16)
-          : teamName;
+        // ESPN's public API only exposes a SWID GUID in `owners[]`, not a display
+        // name — show the team name instead so we don't render a raw GUID to users.
+        const ownerDisplayName = teamName;
         const record = espnTeam.record?.overall || {};
 
         const isUserTeam =
