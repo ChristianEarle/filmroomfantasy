@@ -65,8 +65,14 @@ async function fetchUpstream(url: string): Promise<{ ok: true; data: unknown } |
 // Limits keep path params from being abused as SSRF vectors. Sleeper user_ids
 // are numeric strings, usernames are short alphanumeric; ESPN/MFL league IDs
 // are numeric. 64 chars is generous enough for any legitimate value.
+// `..` is rejected explicitly: the WHATWG URL constructor normalizes `..`
+// segments when fetch parses the URL, so an input like ".." would silently
+// rewrite the upstream path. Not a security hole (base URLs are hardcoded,
+// upstream is public read-only), but it surfaces as confusing 404s.
 function isSafeIdent(s: string | undefined, maxLen = 64): s is string {
-  return !!s && s.length > 0 && s.length <= maxLen && /^[a-zA-Z0-9_.-]+$/.test(s);
+  if (!s || s.length === 0 || s.length > maxLen) return false;
+  if (s.includes('..')) return false;
+  return /^[a-zA-Z0-9_.-]+$/.test(s);
 }
 
 // ============================================
