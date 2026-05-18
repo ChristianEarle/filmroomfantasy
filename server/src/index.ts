@@ -40,6 +40,11 @@ export type Env = {
   GOOGLE_CLIENT_ID?: string; // Google OAuth client ID — get from https://console.cloud.google.com/apis/credentials
   YAHOO_CLIENT_ID?: string; // Yahoo OAuth client ID — get from https://developer.yahoo.com/apps/
   YAHOO_CLIENT_SECRET?: string; // Yahoo OAuth client secret
+  // Optional explicit redirect_uri. Set this when the worker is reachable on
+  // multiple hostnames (custom domain + workers.dev) but Yahoo's OAuth app only
+  // whitelists one. If unset, the callback URL is derived from the incoming
+  // request, which works fine in single-host deploys.
+  YAHOO_REDIRECT_URI?: string;
   RESEND_API_KEY?: string; // Optional: Resend API key for password reset emails — get from https://resend.com
   APP_URL?: string; // Frontend URL for password reset links (defaults to http://localhost:5173)
   FEEDBACK_EMAIL?: string; // Optional: Email address to receive feedback notifications via Resend
@@ -147,6 +152,20 @@ app.use('*', async (c, next) => {
     if (!c.env.JWT_SECRET) console.error('[startup] CRITICAL: JWT_SECRET not set — auth will fail');
     if (!c.env.DB) console.error('[startup] CRITICAL: DB (D1 binding) not configured');
     if (!c.env.SYNC_SECRET) console.warn('[startup] WARNING: SYNC_SECRET not set — admin endpoints unprotected');
+    // APP_URL is used as postMessage targetOrigin for Yahoo OAuth callback.
+    // If it's missing the popup falls back to '*' which works but is noisy in
+    // browser security audits; if it's set to the wrong origin the message is
+    // silently dropped and OAuth appears to hang.
+    if (c.env.ENVIRONMENT === 'production' && !c.env.APP_URL) {
+      console.warn('[startup] WARNING: APP_URL not set — Yahoo OAuth postMessage will target "*"');
+    }
+    if (c.env.APP_URL) {
+      try {
+        new URL(c.env.APP_URL);
+      } catch {
+        console.error('[startup] CRITICAL: APP_URL is not a valid URL:', c.env.APP_URL);
+      }
+    }
   }
   await next();
 });

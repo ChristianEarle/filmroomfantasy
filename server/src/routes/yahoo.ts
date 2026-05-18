@@ -17,6 +17,16 @@ const YAHOO_AUTH_URL = 'https://api.login.yahoo.com/oauth2/request_auth';
 const YAHOO_TOKEN_URL = 'https://api.login.yahoo.com/oauth2/get_token';
 const YAHOO_API_BASE = 'https://fantasysports.yahooapis.com/fantasy/v2';
 
+// Derive the OAuth callback URL. Prefer the explicit YAHOO_REDIRECT_URI env
+// var (required when the worker is reachable on multiple hostnames but Yahoo's
+// app only whitelists one); fall back to deriving from the incoming request
+// for single-host deploys.
+function resolveCallbackUrl(env: Env, requestUrl: string): string {
+  if (env.YAHOO_REDIRECT_URI) return env.YAHOO_REDIRECT_URI;
+  const reqUrl = new URL(requestUrl);
+  return `${reqUrl.protocol}//${reqUrl.host}/api/yahoo/callback`;
+}
+
 // Generate a signed state parameter containing userId (stateless — no KV needed)
 async function createOAuthState(userId: string, secret: string): Promise<string> {
   const key = new TextEncoder().encode(secret);
@@ -133,10 +143,7 @@ yahooRoutes.post('/auth-url', yahooAuthRateLimit, authMiddleware, async (c) => {
   }
 
   const state = await createOAuthState(user.id, c.env.JWT_SECRET);
-
-  // Derive callback URL from the incoming request (works in any environment)
-  const reqUrl = new URL(c.req.url);
-  const callbackUrl = `${reqUrl.protocol}//${reqUrl.host}/api/yahoo/callback`;
+  const callbackUrl = resolveCallbackUrl(c.env, c.req.url);
 
   const params = new URLSearchParams({
     client_id: c.env.YAHOO_CLIENT_ID,
@@ -180,9 +187,9 @@ yahooRoutes.get('/callback', yahooCallbackRateLimit, async (c) => {
     return c.html(getCallbackHtml(false, frontendOrigin, 'Invalid or expired authorization state. Please try again.'));
   }
 
-  // Exchange code for tokens — derive callback URL from the incoming request
-  const reqUrl = new URL(c.req.url);
-  const callbackUrl = `${reqUrl.protocol}//${reqUrl.host}/api/yahoo/callback`;
+  // Exchange code for tokens. Must use the same redirect_uri as the auth-url
+  // step or Yahoo rejects the exchange.
+  const callbackUrl = resolveCallbackUrl(c.env, c.req.url);
 
   const credentials = btoa(`${c.env.YAHOO_CLIENT_ID}:${c.env.YAHOO_CLIENT_SECRET}`);
 
@@ -240,7 +247,7 @@ yahooRoutes.get('/leagues', yahooReadRateLimit, authMiddleware, async (c) => {
   });
 
   if (!freshUser?.yahooAccessToken) {
-    return c.json({ error: 'Yahoo account not connected' }, 400);
+    return c.json({ error: 'Yahoo account not connected', code: 'YAHOO_NOT_CONNECTED' }, 400);
   }
 
   try {
@@ -259,7 +266,28 @@ yahooRoutes.get('/leagues', yahooReadRateLimit, authMiddleware, async (c) => {
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Failed to fetch Yahoo leagues';
     console.error('Yahoo leagues fetch error:', error);
-    return c.json({ error: msg }, 500);
+
+    // Refresh failures + 401s mean the saved tokens are dead — clear them so
+    // the UI re-prompts OAuth instead of silently failing forever.
+    const isAuthErr = /401|unauthorized|invalid_grant|refresh failed/i.test(msg);
+    if (isAuthErr) {
+      try {
+        await db.update(schema.users).set({
+          yahooAccessToken: null,
+          yahooRefreshToken: null,
+          yahooTokenExpiresAt: null,
+          updatedAt: new Date(),
+        }).where(eq(schema.users.id, user.id));
+      } catch (clearErr) {
+        console.error('Failed to clear stale Yahoo tokens:', clearErr);
+      }
+      return c.json({
+        error: 'Yahoo session expired. Please reconnect your Yahoo account.',
+        code: 'YAHOO_REAUTH_REQUIRED',
+      }, 401);
+    }
+
+    return c.json({ error: msg, code: 'YAHOO_API_ERROR' }, 500);
   }
 });
 
