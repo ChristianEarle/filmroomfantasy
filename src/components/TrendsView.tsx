@@ -91,7 +91,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   const [leadersPosFilter, setLeadersPosFilter] = useState<'ALL' | 'QB' | 'RB' | 'WR' | 'TE'>('ALL');
   const leadersFetchVersion = useRef(0);
 
-  const currentWeek = league?.currentWeek ?? 1;
+  const currentWeek = league?.currentWeek;
   const seasonYear = getEffectiveSeason(league?.seasonYear);
 
   const leagueParam = useMemo(() => league?.id ? `&leagueId=${league.id}` : '', [league?.id]);
@@ -100,15 +100,21 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
     setLoading(true);
     setError(null);
     try {
+      // Skip the projections call when there's no league/week — otherwise it fires with week=1 against the wrong season
+      // and silently returns an empty list, which the UI then misreports as "no projection changes."
+      const projPromise = (currentWeek != null && league?.id != null)
+        ? api.get<{ movements: ProjectionMover[] }>(
+            `/players/projection-movements?week=${currentWeek}&season=${seasonYear}&scoringFormat=ppr&limit=20`
+          ).catch((err) => {
+            console.warn('Failed to fetch projection movements:', err);
+            return { movements: [] };
+          })
+        : Promise.resolve({ movements: [] });
+
       const [upRes, downRes, projRes] = await Promise.all([
         api.get<{ trending: TrendingPlayer[] }>(`/players/trending?direction=up${leagueParam}`),
         api.get<{ trending: TrendingPlayer[] }>(`/players/trending?direction=down${leagueParam}`),
-        api.get<{ movements: ProjectionMover[] }>(
-          `/players/projection-movements?week=${currentWeek}&season=${seasonYear}&scoringFormat=ppr&limit=20`
-        ).catch((err) => {
-          console.warn('Failed to fetch projection movements:', err);
-          return { movements: [] };
-        }),
+        projPromise,
       ]);
 
       setTrendingUp(upRes.trending || []);
@@ -123,7 +129,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
     } finally {
       setLoading(false);
     }
-  }, [currentWeek, seasonYear, leagueParam]);
+  }, [currentWeek, seasonYear, leagueParam, league?.id]);
 
   useEffect(() => {
     fetchData();
@@ -167,7 +173,9 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
       name: p.name,
       team: p.team,
       position,
-      keyLine: `${p.ownedPct}% owned`,
+      // ownedPct is only meaningful when a league is connected — without one, every value is 0 (no data).
+      // Fall back to "Trending" so the modal doesn't claim every player is 0% owned.
+      keyLine: league?.id ? `${p.ownedPct}% owned` : 'Trending',
       projectedPoints: p.projectedPoints || p.avgPointsPPR || 0,
       weekChange: p.trendDirection === 'up' ? p.trendValue : p.trendDirection === 'down' ? -p.trendValue : 0,
       headshotUrl: p.headshotUrl ?? null,
@@ -214,8 +222,6 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
       headshotUrl: l.headshotUrl,
     };
   };
-
-  const hasAnyData = trendingUp.length > 0 || trendingDown.length > 0 || projectionMovers.length > 0;
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
@@ -305,6 +311,18 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
           </button>
         </div>
       </div>
+
+      {/* Non-blocking error banner — shows when fetchData failed but doesn't hide the tab panels. */}
+      {error && (
+        <div
+          role="alert"
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            isDarkMode ? 'bg-red-950/30 border-red-900 text-red-300' : 'bg-red-50 border-red-200 text-red-700'
+          }`}
+        >
+          {error} Try refreshing.
+        </div>
+      )}
 
       {/* Loading */}
       {loading ? (
@@ -430,14 +448,6 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
             </div>
           )}
         </div>
-      ) : error || !hasAnyData ? (
-        <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <Activity className={`w-10 h-10 mx-auto mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
-          <h3 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No trend data available</h3>
-          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            {error || 'Could not load trending data. Try refreshing.'}
-          </p>
-        </div>
       ) : activeTab === 'trending' ? (
         /* Trending Tab — two-column: Most Added / Most Dropped */
         <div id="panel-trending" role="tabpanel" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -542,7 +552,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
         <div id="panel-projections" role="tabpanel" className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <div className={`px-6 py-4 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
             <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-              Biggest Projection Movers — Week {currentWeek}
+              Biggest Projection Movers{currentWeek ? ` — Week ${currentWeek}` : ''}
             </h2>
             <div className="flex items-center gap-2" data-testid="projection-filters">
               {FILTER_OPTIONS.map((f) => {
