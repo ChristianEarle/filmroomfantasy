@@ -15,6 +15,20 @@ Priority tiers:
 
 ---
 
+## Current Focus
+
+Active sprint — work these next, in roughly this order. Each links into the detailed entries below.
+
+1. **AI systems foundation** — Ask AI chat assistant, AI post-game analysis, ROS rankings from AI, per-player AI take. (see P3 — AI Surfaces)
+2. **Implement League Analyzer** — Real page replacing the "Coming Soon" placeholder. (see P3 — AI Surfaces)
+3. **Fix draft rankings** — Restore sidebar nav + finish the rankings feature (tiers, ADP, projections). Then layer the P3 enhancements. (see P1 + P3 — Draft Rankings)
+4. **Fix Trends page** — Page is broken / incomplete. Audit + add "Recent Best Performers" as a new tab alongside Roster Trends / Projection Movers / Odds Movement. (see P2 audit + new P3 item below)
+5. **Polish Game Slate + GameDetailModal** — Audit + visual polish pass. (see P2 audit)
+6. **Polish standalone player page + Player modules** — PlayerCard, PlayerProfileView, PlayerAvatar, projection breakdown, FilmRoom Insights, quick actions. (see P1 player card + P2 audits)
+7. **Consistent UI / design system pass** — Establish shared tokens (spacing, type, color, radius, shadow, focus, motion) and apply across every view. (see new P2 entry)
+
+---
+
 ## P0 — Launch Blockers
 
 - [ ] **Finish Google OAuth setup** — Obtain real Google OAuth Client ID from Google Cloud Console, set `GOOGLE_CLIENT_ID` in `server/.dev.vars` and `VITE_GOOGLE_CLIENT_ID` in `.env`, configure authorized origins/redirect URIs, run `wrangler secret put GOOGLE_CLIENT_ID` for production. Code is wired; only the credential is missing.
@@ -63,7 +77,8 @@ Each component: bugs, hardcoded/fake data, unused code, missing error handling, 
 - [ ] **App.tsx** — Routing, state management, context wiring, page transitions
 
 ### Polish
-- [ ] **Page-by-page polish pass** — Tighten loading states, empty states, error messages, micro-animations, hover states, focus rings, typography/spacing consistency. Audit each view for "feels finished vs. feels prototype" gaps across HomeView, Board, Matchup, GameSlate, Trends, AllPlayers, Team, Waivers, PlayoffPredictor, TradeAnalyzer, TradeHistory, TradeFinder, DraftRankings, Settings, Profile, LeagueAnalyzer (new), standalone player page.
+- [ ] **Consistent UI / design system pass** — Establish a shared token set and apply across every view before doing the per-page polish below. Tokens to nail down: spacing scale (4/8/12/16/24/32/48), type ramp (display / h1 / h2 / h3 / body / caption / mono), color tokens (surface tiers, border tiers, text primary/secondary/muted, semantic success/warning/error/info, accent), radius scale (sm/md/lg/pill), elevation/shadow tiers, focus-ring style, motion duration + easing presets. Codify in `src/styles/tokens.css` (CSS vars) + a Tailwind config mapping. Then sweep every component to remove ad-hoc spacing, ad-hoc grays, ad-hoc font sizes, and ad-hoc shadows. Specific consistency targets: card surfaces (background + border + radius identical across HomeView, Board, Matchup, Settings, Profile, TradeAnalyzer, DraftRankings, etc.), table chrome (header row, divider, hover, selected), button heights and padding, modal chrome, empty-state pattern, loading skeleton pattern, error-banner pattern. This is the foundation that makes the per-page polish below trivial.
+- [ ] **Page-by-page polish pass** — After the design-system pass lands. Tighten loading states, empty states, error messages, micro-animations, hover states, focus rings, typography/spacing consistency. Audit each view for "feels finished vs. feels prototype" gaps across HomeView, Board, Matchup, GameSlate, Trends, AllPlayers, Team, Waivers, PlayoffPredictor, TradeAnalyzer, TradeHistory, TradeFinder, DraftRankings, Settings, Profile, LeagueAnalyzer (new), standalone player page.
 
 ---
 
@@ -143,8 +158,10 @@ Click-to-add real draft picks (with original-owner info) in the builder, instead
 - [ ] **League Analyzer page with AI team analyzer** — New top-level view auditing the user's league: team-by-team strength grades, positional surplus/deficit, schedule difficulty ROS, championship odds, AI-generated narrative per team ("biggest strength", "biggest hole", "most likely to fall off", "trade target fits"). Reuses Monte Carlo from PlayoffPredictorView + trade-finder's `LeagueContextSnapshot`. Sidebar nav already exists as "Coming Soon" placeholder. Pro/Elite gated.
 - [ ] **AI analysis of players** — 1–2 paragraph per-player take in PlayerCard modal AND standalone player page. Covers recent form, matchup, role/usage trend, start/sit recommendation. Cache by `(playerId, week, season)`. Reuse prompt/model setup from `server/src/services/draftRankings.ts`. Pro/Elite gated.
 - [ ] **AI post-game analysis** — Short AI recap per finalized NFL game focused on fantasy takeaways (exceeded/missed expectations, target share/carry shifts, injury-driven role changes, waiver implications). Surfaced on GameDetailModal and user matchup recap. Cron triggers on `gameStatus === 'final'` transitions. Cache per `(gameId, season, week)`.
-- [ ] **AI chat assistant** — Persistent chat bubble (bottom-right) answering fantasy questions in user's league context: roster, matchup, waivers, trades, start/sit. Reuses `LeagueContextSnapshot`. Streamed responses, persisted history. Entry points from PlayerCard ("Ask about Josh Allen"), Matchup ("Who should I start?"), Trade Analyzer follow-ups. Pro/Elite gated.
+- [ ] **AI chat assistant ("Ask AI")** — Persistent chat bubble (bottom-right) answering fantasy questions in user's league context: roster, matchup, waivers, trades, start/sit. Reuses `LeagueContextSnapshot`. Streamed responses, persisted history. Entry points from PlayerCard ("Ask about Josh Allen"), Matchup ("Who should I start?"), Trade Analyzer follow-ups. Slash-style entry from any page. Pro/Elite gated.
+- [ ] **ROS (Rest-of-Season) rankings from AI** — New ranking type that projects each player's remaining-season value, factoring in current form, schedule strength ROS, injury risk, and target/usage trajectory. Distinct from draft rankings (snapshot at draft time) and weekly player rankings (week-only). New `ranking_type = 'ros'` rows in `draft_rankings` (or new `ros_rankings` table if schema diverges). Daily regeneration cron during season. AI prompt seeds with: current season stats to date, remaining schedule, recent news, injury status. Surface as a tab on the Player Rankings view + a dedicated `/ros-rankings` page. Pro/Elite gated.
 - [ ] **Finish odds movement tracking on Trends** — Third tab on TrendsView: "Odds Movement" — player prop line movement (over/under yardage, anytime TD, receptions). External odds source (DraftKings/FanDuel public or paid like The Odds API). New `player_prop_lines` table keyed on `(playerId, propType, sportsbook, capturedAt)` with daily-or-better cron. Per-player chip: current line, opening line, % change, sparkline. Consolidates with LOW item "Trends based on player prop movements" and MEDIUM "Projection breakdown working."
+- [ ] **Recent Best Performers tab on Trends** — Fourth tab on TrendsView (alongside Roster Trends, Projection Movers, Odds Movement). Surfaces the highest-scoring players over the last 1 / 3 / season-to-date weeks with a small toggle. Per row: PPG over the window, delta vs. season average, % rostered, position rank, and a "trade target?" flag for non-rostered players. Data: existing `player_weekly_stats` aggregated server-side via a new `GET /players/recent-leaders?window=1|3|stf` endpoint. Cheap to build (no new AI, no new external source); pairs with the broken-trends-fix in the Current Focus list.
 
 ---
 
