@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { TrendingUp, TrendingDown, Activity, Loader2, RefreshCw, ArrowUpRight, ArrowDownRight, Users, BarChart3, Trophy } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
@@ -35,6 +35,33 @@ interface ProjectionMover {
   movement: number;
 }
 
+interface RecentLeader {
+  id: string;
+  name: string;
+  team: string;
+  position: string;
+  headshotUrl: string | null;
+  games: number;
+  ppg: number;
+  seasonPpg: number;
+  delta: number;
+  posRank: number;
+  ownedPct: number | null;
+  ownedInLeague: boolean | null;
+  tradeTarget: boolean;
+}
+
+interface RecentLeadersResponse {
+  window: '1' | '3' | 'stf';
+  weeks: number[];
+  latestWeek: number;
+  leaders: RecentLeader[];
+  season: number;
+  position: string | null;
+  leagueId: string | null;
+  limit: number;
+}
+
 type ActiveTab = 'trending' | 'projections' | 'leaders';
 
 const VALID_POSITIONS = new Set<Player['position']>(['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'FLEX']);
@@ -56,6 +83,11 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   const [projFilter, setProjFilter] = useState<'all' | 'up' | 'down'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [leaders, setLeaders] = useState<RecentLeader[]>([]);
+  const [leadersLoading, setLeadersLoading] = useState(false);
+  const [leadersError, setLeadersError] = useState<string | null>(null);
+  const leadersFetchVersion = useRef(0);
 
   const currentWeek = league?.currentWeek ?? 1;
   const seasonYear = getEffectiveSeason(league?.seasonYear);
@@ -94,6 +126,33 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Lazy fetch for the Recent Best Performers tab — only runs when the tab is active.
+  // Request-version counter prevents stale responses from clobbering newer ones on rapid tab switches.
+  useEffect(() => {
+    if (activeTab !== 'leaders') return;
+    const version = ++leadersFetchVersion.current;
+    setLeadersLoading(true);
+    setLeadersError(null);
+    api
+      .get<RecentLeadersResponse>(
+        `/players/recent-leaders?window=3&season=${seasonYear}${leagueParam}&limit=25`
+      )
+      .then((res) => {
+        if (version !== leadersFetchVersion.current) return;
+        setLeaders(res.leaders || []);
+      })
+      .catch((err) => {
+        if (version !== leadersFetchVersion.current) return;
+        console.error('Failed to load recent leaders:', err);
+        setLeadersError('Failed to load recent leaders.');
+        setLeaders([]);
+      })
+      .finally(() => {
+        if (version !== leadersFetchVersion.current) return;
+        setLeadersLoading(false);
+      });
+  }, [activeTab, seasonYear, leagueParam]);
 
   const convertTrendingToPlayer = (p: TrendingPlayer, index: number): Player => {
     const position = VALID_POSITIONS.has(p.position as Player['position'])
@@ -135,6 +194,23 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
     }),
     [projectionMovers, projFilter]
   );
+
+  const convertLeaderToPlayer = (l: RecentLeader, index: number): Player => {
+    const position = VALID_POSITIONS.has(l.position as Player['position'])
+      ? (l.position as Player['position'])
+      : 'FLEX';
+    return {
+      id: l.id,
+      rank: index + 1,
+      name: l.name,
+      team: l.team,
+      position,
+      keyLine: `${l.ppg.toFixed(1)} PPR/g`,
+      projectedPoints: l.ppg,
+      weekChange: l.delta,
+      headshotUrl: l.headshotUrl,
+    };
+  };
 
   const hasAnyData = trendingUp.length > 0 || trendingDown.length > 0 || projectionMovers.length > 0;
 
@@ -233,13 +309,81 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
           <Loader2 className="w-8 h-8 animate-spin text-blue-500" role="status" aria-label="Loading trends data" />
         </div>
       ) : activeTab === 'leaders' ? (
-        /* Leaders Tab — placeholder, wired up in next step */
-        <div id="panel-leaders" role="tabpanel" className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <Trophy className={`w-10 h-10 mx-auto mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
-          <h3 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Recent Best Performers</h3>
-          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            Top scorers over the last 3 weeks — coming up.
-          </p>
+        /* Leaders Tab — Recent Best Performers over the last 3 weeks */
+        <div id="panel-leaders" role="tabpanel" className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <div className={`px-6 py-4 border-b flex items-center gap-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <Trophy className="w-4 h-4 text-amber-500" />
+            <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Recent Best Performers</h2>
+            <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Last 3 weeks</span>
+          </div>
+          {leadersLoading ? (
+            <div className="p-12 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-500" role="status" aria-label="Loading recent leaders" />
+            </div>
+          ) : leadersError ? (
+            <div className={`p-12 text-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              <Trophy className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">{leadersError}</p>
+              <p className="text-xs mt-1">Try refreshing or come back later.</p>
+            </div>
+          ) : leaders.length === 0 ? (
+            <div className={`p-12 text-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              <Trophy className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No recent leaders yet.</p>
+              <p className="text-xs mt-1">Weekly stats appear after games finalize.</p>
+            </div>
+          ) : (
+            <div className={`divide-y ${isDarkMode ? 'divide-slate-800' : 'divide-slate-100'}`}>
+              {leaders.map((leader, i) => (
+                <button
+                  key={leader.id}
+                  onClick={() => onPlayerClick(convertLeaderToPlayer(leader, i))}
+                  aria-label={`View ${leader.name} details`}
+                  data-testid={`leader-${i}`}
+                  className={`w-full px-6 py-3 text-left transition-colors flex items-center gap-3 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
+                >
+                  <span className={`text-xs font-mono w-5 text-center ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>{i + 1}</span>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                    {(leader.name || '?').split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-sm font-semibold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{leader.name || 'Unknown'}</span>
+                      {leader.tradeTarget && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${isDarkMode ? 'bg-green-600/20 text-green-400' : 'bg-green-50 text-green-700'}`}>TRADE TARGET</span>
+                      )}
+                      {leader.ownedInLeague === true && !leader.tradeTarget && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${isDarkMode ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>ROSTERED</span>
+                      )}
+                    </div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      {leader.team} • {leader.position}{leader.position ? leader.posRank : ''}
+                      <span className="mx-1">•</span>
+                      {leader.games} {leader.games === 1 ? 'game' : 'games'}
+                      {leader.ownedPct !== null && (
+                        <>
+                          <span className="mx-1">•</span>
+                          {leader.ownedPct}% owned
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0 flex items-center gap-3">
+                    {leader.delta !== 0 && (
+                      <div className={`flex items-center gap-0.5 text-xs font-semibold ${leader.delta > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {leader.delta > 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                        {leader.delta > 0 ? '+' : ''}{leader.delta.toFixed(1)}
+                      </div>
+                    )}
+                    <div>
+                      <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{leader.ppg.toFixed(1)}</div>
+                      <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>PPR/g</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       ) : error || !hasAnyData ? (
         <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
