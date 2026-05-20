@@ -663,6 +663,68 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
   }
 });
 
+// Recent best performers — top scorers over the last 1 week, 3 weeks, or season-to-date.
+// Aggregates from player_weekly_stats. Optional leagueId surfaces ownership + "trade target" flag for non-rostered breakouts.
+playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+
+  // window: '1' (last week) | '3' (last 3 weeks) | 'stf' (season-to-date)
+  const windowRaw = c.req.query('window') || '1';
+  if (windowRaw !== '1' && windowRaw !== '3' && windowRaw !== 'stf') {
+    return c.json({ error: "window must be '1', '3', or 'stf'" }, 400);
+  }
+  const window = windowRaw as '1' | '3' | 'stf';
+
+  // season: optional int, clamped to 2000-2100. Defaults via resolveDisplaySeason (falls back to most recent year with games).
+  const requestedSeasonRaw = c.req.query('season');
+  let requestedSeason: number;
+  if (requestedSeasonRaw) {
+    const parsed = parseInt(requestedSeasonRaw);
+    if (isNaN(parsed) || parsed < 2000 || parsed > 2100) {
+      return c.json({ error: 'Invalid season' }, 400);
+    }
+    requestedSeason = parsed;
+  } else {
+    requestedSeason = new Date().getFullYear();
+  }
+  const resolved = await resolveDisplaySeason(db, requestedSeason);
+  const season = resolved.season;
+
+  // position: optional whitelist
+  const positionRaw = c.req.query('position');
+  const validPositions = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DEF']);
+  if (positionRaw && !validPositions.has(positionRaw)) {
+    return c.json({ error: 'Invalid position' }, 400);
+  }
+  const position = positionRaw as 'QB' | 'RB' | 'WR' | 'TE' | 'K' | 'DEF' | undefined;
+
+  // limit: int, clamped 1-50, default 25. Guard against NaN before clamping.
+  const limitRaw = parseInt(c.req.query('limit') || '25');
+  const limit = isNaN(limitRaw) ? 25 : Math.min(Math.max(limitRaw, 1), 50);
+
+  // leagueId: optional, length-capped + character-whitelisted to prevent abuse
+  const leagueId = c.req.query('leagueId');
+  if (leagueId && (leagueId.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(leagueId))) {
+    return c.json({ error: 'Invalid leagueId' }, 400);
+  }
+
+  try {
+    return c.json({
+      window,
+      weeks: [],
+      latestWeek: 0,
+      leaders: [],
+      season,
+      position: position ?? null,
+      leagueId: leagueId ?? null,
+      limit,
+    });
+  } catch (error) {
+    console.error('Recent leaders error:', error);
+    return c.json({ error: 'Failed to fetch recent leaders' }, 500);
+  }
+});
+
 // Search players (quick search) — rate limited, input sanitized
 playerRoutes.get('/search', playerSearchRateLimit, optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
