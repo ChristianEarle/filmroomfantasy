@@ -87,6 +87,8 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   const [leaders, setLeaders] = useState<RecentLeader[]>([]);
   const [leadersLoading, setLeadersLoading] = useState(false);
   const [leadersError, setLeadersError] = useState<string | null>(null);
+  const [leadersWindow, setLeadersWindow] = useState<'1' | '3' | 'stf'>('3');
+  const [leadersPosFilter, setLeadersPosFilter] = useState<'ALL' | 'QB' | 'RB' | 'WR' | 'TE'>('ALL');
   const leadersFetchVersion = useRef(0);
 
   const currentWeek = league?.currentWeek ?? 1;
@@ -128,15 +130,16 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   }, [fetchData]);
 
   // Lazy fetch for the Recent Best Performers tab — only runs when the tab is active.
-  // Request-version counter prevents stale responses from clobbering newer ones on rapid tab switches.
+  // Request-version counter prevents stale responses from clobbering newer ones on rapid tab switches or chip clicks.
   useEffect(() => {
     if (activeTab !== 'leaders') return;
     const version = ++leadersFetchVersion.current;
+    const positionParam = leadersPosFilter === 'ALL' ? '' : `&position=${leadersPosFilter}`;
     setLeadersLoading(true);
     setLeadersError(null);
     api
       .get<RecentLeadersResponse>(
-        `/players/recent-leaders?window=3&season=${seasonYear}${leagueParam}&limit=25`
+        `/players/recent-leaders?window=${leadersWindow}&season=${seasonYear}${leagueParam}${positionParam}&limit=25`
       )
       .then((res) => {
         if (version !== leadersFetchVersion.current) return;
@@ -152,7 +155,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
         if (version !== leadersFetchVersion.current) return;
         setLeadersLoading(false);
       });
-  }, [activeTab, seasonYear, leagueParam]);
+  }, [activeTab, seasonYear, leagueParam, leadersWindow, leadersPosFilter]);
 
   const convertTrendingToPlayer = (p: TrendingPlayer, index: number): Player => {
     const position = VALID_POSITIONS.has(p.position as Player['position'])
@@ -309,12 +312,54 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
           <Loader2 className="w-8 h-8 animate-spin text-blue-500" role="status" aria-label="Loading trends data" />
         </div>
       ) : activeTab === 'leaders' ? (
-        /* Leaders Tab — Recent Best Performers over the last 3 weeks */
+        /* Leaders Tab — Recent Best Performers with window + position toggles */
         <div id="panel-leaders" role="tabpanel" className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <div className={`px-6 py-4 border-b flex items-center gap-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-            <Trophy className="w-4 h-4 text-amber-500" />
-            <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Recent Best Performers</h2>
-            <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Last 3 weeks</span>
+          <div className={`px-6 py-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-500" />
+                <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Recent Best Performers</h2>
+                <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {leadersWindow === '1' ? 'Last week' : leadersWindow === '3' ? 'Last 3 weeks' : 'Season to date'}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1" data-testid="leaders-window-toggle">
+                  {(['1', '3', 'stf'] as const).map((w) => (
+                    <button
+                      key={w}
+                      onClick={() => setLeadersWindow(w)}
+                      aria-pressed={leadersWindow === w}
+                      data-testid={`window-${w}`}
+                      className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
+                        leadersWindow === w
+                          ? 'bg-blue-600 text-white'
+                          : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {w === '1' ? '1W' : w === '3' ? '3W' : 'STF'}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-1" data-testid="leaders-position-filter">
+                  {(['ALL', 'QB', 'RB', 'WR', 'TE'] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setLeadersPosFilter(p)}
+                      aria-pressed={leadersPosFilter === p}
+                      data-testid={`position-${p}`}
+                      className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
+                        leadersPosFilter === p
+                          ? 'bg-blue-600 text-white'
+                          : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
           {leadersLoading ? (
             <div className="p-12 flex items-center justify-center">
