@@ -709,11 +709,137 @@ playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
   }
 
   try {
+    // 1. Find the most recent week with stats for this season.
+    const latestWeekResult = await db
+      .select({ maxWeek: sql<number>`max(${schema.playerWeeklyStats.week})` })
+      .from(schema.playerWeeklyStats)
+      .where(eq(schema.playerWeeklyStats.seasonYear, season));
+    const latestWeek = latestWeekResult[0]?.maxWeek ?? 0;
+
+    if (latestWeek < 1) {
+      return c.json({
+        window,
+        weeks: [],
+        latestWeek: 0,
+        leaders: [],
+        season,
+        position: position ?? null,
+        leagueId: leagueId ?? null,
+        limit,
+      });
+    }
+
+    // 2. Build the window's week list (clamped to ≥ 1).
+    let weeks: number[];
+    if (window === '1') {
+      weeks = [latestWeek];
+    } else if (window === '3') {
+      const start = Math.max(1, latestWeek - 2);
+      weeks = [];
+      for (let w = start; w <= latestWeek; w++) weeks.push(w);
+    } else {
+      weeks = [];
+      for (let w = 1; w <= latestWeek; w++) weeks.push(w);
+    }
+
+    // 3. Aggregate top-N by ppg over the window. Inner-join nfl_players so we can filter by position at the DB level.
+    //    Drop inactive rows by requiring at least some scoring signal — DEF/K have no offensive snaps so we can't gate on off_snaps.
+    const windowConditions: SQL[] = [
+      eq(schema.playerWeeklyStats.seasonYear, season),
+      inArray(schema.playerWeeklyStats.week, weeks),
+    ];
+    if (position) {
+      windowConditions.push(eq(schema.nflPlayers.position, position));
+    }
+    const windowAgg = await db
+      .select({
+        playerId: schema.playerWeeklyStats.playerId,
+        ppg: sql<number>`ROUND(AVG(${schema.playerWeeklyStats.fantasyPointsPPR}), 2)`.as('ppg'),
+        games: sql<number>`COUNT(*)`.as('games'),
+        total: sql<number>`ROUND(SUM(${schema.playerWeeklyStats.fantasyPointsPPR}), 2)`.as('total'),
+      })
+      .from(schema.playerWeeklyStats)
+      .innerJoin(schema.nflPlayers, eq(schema.nflPlayers.id, schema.playerWeeklyStats.playerId))
+      .where(and(...windowConditions))
+      .groupBy(schema.playerWeeklyStats.playerId)
+      .orderBy(sql`ppg DESC, total DESC`)
+      .limit(limit);
+
+    if (windowAgg.length === 0) {
+      return c.json({
+        window,
+        weeks,
+        latestWeek,
+        leaders: [],
+        season,
+        position: position ?? null,
+        leagueId: leagueId ?? null,
+        limit,
+      });
+    }
+
+    const topIds = windowAgg.map(r => r.playerId);
+
+    // 4. Hydrate player metadata.
+    const players = await db.query.nflPlayers.findMany({
+      where: inArray(schema.nflPlayers.id, topIds),
+    });
+    const playerById = new Map(players.map(p => [p.id, p]));
+
+    // 5. Season-to-date average for the same player set — used to compute delta vs. season norm.
+    //    Skip when window === 'stf' (delta is 0 by definition).
+    const seasonPpgById = new Map<string, number>();
+    if (window !== 'stf') {
+      const seasonAgg = await db
+        .select({
+          playerId: schema.playerWeeklyStats.playerId,
+          ppg: sql<number>`ROUND(AVG(${schema.playerWeeklyStats.fantasyPointsPPR}), 2)`.as('ppg'),
+        })
+        .from(schema.playerWeeklyStats)
+        .where(and(
+          eq(schema.playerWeeklyStats.seasonYear, season),
+          inArray(schema.playerWeeklyStats.playerId, topIds),
+        ))
+        .groupBy(schema.playerWeeklyStats.playerId);
+      for (const row of seasonAgg) {
+        seasonPpgById.set(row.playerId, row.ppg ?? 0);
+      }
+    }
+
+    // 6. Build leader rows + compute posRank within the result set (1..N per position).
+    const posCounter = new Map<string, number>();
+    const leaders = windowAgg
+      .map(row => {
+        const player = playerById.get(row.playerId);
+        if (!player) return null;
+        const seasonPpg = window === 'stf' ? row.ppg : (seasonPpgById.get(row.playerId) ?? row.ppg);
+        const delta = window === 'stf' ? 0 : Number((row.ppg - seasonPpg).toFixed(2));
+        const posKey = player.position || 'NA';
+        const nextRank = (posCounter.get(posKey) ?? 0) + 1;
+        posCounter.set(posKey, nextRank);
+        return {
+          id: player.id,
+          name: player.name,
+          team: player.team,
+          position: player.position,
+          headshotUrl: player.headshotUrl ?? null,
+          games: row.games,
+          ppg: row.ppg,
+          seasonPpg,
+          delta,
+          posRank: nextRank,
+          ownedPct: null as number | null,
+          ownedInLeague: null as boolean | null,
+          tradeTarget: false,
+        };
+      })
+      .filter(<T>(x: T | null): x is T => x !== null);
+
     return c.json({
       window,
-      weeks: [],
-      latestWeek: 0,
-      leaders: [],
+      weeks,
+      latestWeek,
+      leaders,
       season,
       position: position ?? null,
       leagueId: leagueId ?? null,
