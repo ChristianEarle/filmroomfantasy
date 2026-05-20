@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { TrendingUp, TrendingDown, Activity, Loader2, RefreshCw, ArrowUpRight, ArrowDownRight, Users, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, Loader2, RefreshCw, ArrowUpRight, ArrowDownRight, Users, BarChart3, Trophy } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
@@ -35,7 +35,7 @@ interface ProjectionMover {
   movement: number;
 }
 
-type ActiveTab = 'trending' | 'projections';
+type ActiveTab = 'trending' | 'projections' | 'leaders';
 
 const VALID_POSITIONS = new Set<Player['position']>(['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'FLEX']);
 const TREND_WINDOW = 'Last 14 days';
@@ -210,6 +210,20 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
             <BarChart3 className="w-3.5 h-3.5" />
             Projection Movers
           </button>
+          <button
+            role="tab"
+            aria-selected={activeTab === 'leaders'}
+            aria-controls="panel-leaders"
+            onClick={() => setActiveTab('leaders')}
+            className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+              activeTab === 'leaders'
+                ? 'bg-blue-600 text-white'
+                : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Trophy className="w-3.5 h-3.5" />
+            Recent Best Performers
+          </button>
         </div>
       </div>
 
@@ -217,6 +231,15 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
       {loading ? (
         <div className={`rounded-lg border p-12 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <Loader2 className="w-8 h-8 animate-spin text-blue-500" role="status" aria-label="Loading trends data" />
+        </div>
+      ) : activeTab === 'leaders' ? (
+        /* Leaders Tab — placeholder, wired up in next step */
+        <div id="panel-leaders" role="tabpanel" className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <Trophy className={`w-10 h-10 mx-auto mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
+          <h3 className={`font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Recent Best Performers</h3>
+          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            Top scorers over the last 3 weeks — coming up.
+          </p>
         </div>
       ) : error || !hasAnyData ? (
         <div className={`rounded-lg border p-12 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>

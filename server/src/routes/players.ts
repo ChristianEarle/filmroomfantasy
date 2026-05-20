@@ -668,8 +668,8 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
 playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
 
-  // window: '1' (last week) | '3' (last 3 weeks) | 'stf' (season-to-date)
-  const windowRaw = c.req.query('window') || '1';
+  // window: '1' (last week) | '3' (last 3 weeks, default — more stable than single-week) | 'stf' (season-to-date)
+  const windowRaw = c.req.query('window') || '3';
   if (windowRaw !== '1' && windowRaw !== '3' && windowRaw !== 'stf') {
     return c.json({ error: "window must be '1', '3', or 'stf'" }, 400);
   }
