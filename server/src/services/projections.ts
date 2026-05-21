@@ -361,6 +361,7 @@ export async function generateProjectionsFromProps(
         seasonYear,
         scoringFormat: format,
         projectedPoints: points,
+        source: 'props' as const,
         projPassYards: proj.projectedStats.projPassYards,
         projPassTDs: proj.projectedStats.projPassTDs,
         projRushYards: proj.projectedStats.projRushYards,
@@ -372,7 +373,8 @@ export async function generateProjectionsFromProps(
       };
 
       if (existingProj) {
-        // Snapshot the old projection before overwriting
+        // Snapshot the old projection before overwriting. The snapshot's source matches the OLD row's source
+        // (the value being snapshotted) so /projection-movements can filter to same-source comparisons later.
         statements.push(
           db.insert(schema.projectionLineSnapshots).values({
             id: generateId(),
@@ -381,6 +383,7 @@ export async function generateProjectionsFromProps(
             seasonYear,
             scoringFormat: format,
             snapshotAt: new Date(),
+            source: existingProj.source ?? 'sleeper',
             projectedPoints: existingProj.projectedPoints,
             projPassYards: existingProj.projPassYards ?? null,
             projPassTDs: existingProj.projPassTDs ?? null,
