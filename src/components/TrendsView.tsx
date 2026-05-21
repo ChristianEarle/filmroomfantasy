@@ -30,6 +30,7 @@ interface ProjectionMover {
   name: string;
   team: string;
   position: string;
+  source: 'props' | 'sleeper';
   previousProjectedPoints: number;
   projectedPoints: number;
   movement: number;
@@ -612,7 +613,28 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                     {(mover.name || '?').split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-semibold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{mover.name || 'Unknown'}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-sm font-semibold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{mover.name || 'Unknown'}</span>
+                      {mover.source === 'props' ? (
+                        <span
+                          title="Projection derived from our prop-line model"
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${
+                            isDarkMode ? 'bg-indigo-600/20 text-indigo-300' : 'bg-indigo-50 text-indigo-700'
+                          }`}
+                        >
+                          OURS
+                        </span>
+                      ) : mover.source === 'sleeper' ? (
+                        <span
+                          title="Projection sourced from Sleeper"
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${
+                            isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'
+                          }`}
+                        >
+                          SLEEPER
+                        </span>
+                      ) : null}
+                    </div>
                     <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                       {mover.team} • {mover.position}
                       <span className="mx-1">•</span>
