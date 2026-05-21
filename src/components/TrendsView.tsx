@@ -141,10 +141,9 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
     fetchData();
   }, [fetchData]);
 
-  // Lazy fetch for the Recent Best Performers tab — only runs when the tab is active.
+  // Lazy fetch for the Recent Best Performers tab.
   // Request-version counter prevents stale responses from clobbering newer ones on rapid tab switches or chip clicks.
-  useEffect(() => {
-    if (activeTab !== 'leaders') return;
+  const fetchLeaders = useCallback(() => {
     const version = ++leadersFetchVersion.current;
     const positionParam = leadersPosFilter === 'ALL' ? '' : `&position=${leadersPosFilter}`;
     setLeadersLoading(true);
@@ -164,10 +163,19 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
         setLeaders([]);
       })
       .finally(() => {
-        if (version !== leadersFetchVersion.current) return;
-        setLeadersLoading(false);
+        if (version === leadersFetchVersion.current) setLeadersLoading(false);
       });
-  }, [activeTab, seasonYear, leagueParam, leadersWindow, leadersPosFilter]);
+  }, [leadersWindow, leadersPosFilter, seasonYear, leagueParam]);
+
+  useEffect(() => {
+    if (activeTab !== 'leaders') return;
+    fetchLeaders();
+  }, [activeTab, fetchLeaders]);
+
+  const handleRefresh = useCallback(() => {
+    fetchData();
+    if (activeTab === 'leaders') fetchLeaders();
+  }, [activeTab, fetchData, fetchLeaders]);
 
   const convertTrendingToPlayer = (p: TrendingPlayer, index: number): Player => {
     const position = VALID_POSITIONS.has(p.position as Player['position'])
@@ -259,12 +267,12 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                 </div>
               </div>
               <button
-                onClick={fetchData}
-                disabled={loading}
+                onClick={handleRefresh}
+                disabled={loading || leadersLoading}
                 aria-label="Refresh trends data"
                 className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${(loading || leadersLoading) ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>
@@ -326,16 +334,12 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
             isDarkMode ? 'bg-red-950/30 border-red-900 text-red-300' : 'bg-red-50 border-red-200 text-red-700'
           }`}
         >
-          {error} Try refreshing.
+          {error.replace(/\.$/, '')} — try refreshing.
         </div>
       )}
 
-      {/* Loading */}
-      {loading ? (
-        <div className={`rounded-lg border p-12 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500" role="status" aria-label="Loading trends data" />
-        </div>
-      ) : activeTab === 'leaders' ? (
+      {/* Leaders tab is checked first so the global loader (driven by the trending fetch) doesn't mask the leaders panel during initial mount. */}
+      {activeTab === 'leaders' ? (
         /* Leaders Tab — Recent Best Performers with window + position toggles */
         <div id="panel-leaders" role="tabpanel" className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <div className={`px-6 py-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
@@ -426,7 +430,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                       )}
                     </div>
                     <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                      {leader.team} • {leader.position}{leader.position ? leader.posRank : ''}
+                      {leader.team} • {leader.position ? `${leader.position}${leader.posRank}` : '—'}
                       <span className="mx-1">•</span>
                       {leader.games} {leader.games === 1 ? 'game' : 'games'}
                       {leader.ownedPct !== null && (
@@ -453,6 +457,10 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
               ))}
             </div>
           )}
+        </div>
+      ) : loading ? (
+        <div className={`rounded-lg border p-12 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" role="status" aria-label="Loading trends data" />
         </div>
       ) : activeTab === 'trending' ? (
         /* Trending Tab — two-column: Most Added / Most Dropped */
