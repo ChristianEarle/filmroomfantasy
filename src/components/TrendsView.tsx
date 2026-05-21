@@ -90,6 +90,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   const [leadersWindow, setLeadersWindow] = useState<'1' | '3' | 'stf'>('3');
   const [leadersPosFilter, setLeadersPosFilter] = useState<'ALL' | 'QB' | 'RB' | 'WR' | 'TE'>('ALL');
   const leadersFetchVersion = useRef(0);
+  const fetchDataVersion = useRef(0);
 
   const currentWeek = league?.currentWeek;
   const seasonYear = getEffectiveSeason(league?.seasonYear);
@@ -97,6 +98,9 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   const leagueParam = useMemo(() => league?.id ? `&leagueId=${league.id}` : '', [league?.id]);
 
   const fetchData = useCallback(async () => {
+    // Request-version guard prevents a slow earlier response from clobbering a newer one
+    // when the user switches leagues / season rapidly.
+    const version = ++fetchDataVersion.current;
     setLoading(true);
     setError(null);
     try {
@@ -117,17 +121,19 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
         projPromise,
       ]);
 
+      if (version !== fetchDataVersion.current) return;
       setTrendingUp(upRes.trending || []);
       setTrendingDown(downRes.trending || []);
       setProjectionMovers(projRes.movements || []);
     } catch (err) {
+      if (version !== fetchDataVersion.current) return;
       console.error('Failed to load trends data:', err);
       setError('Failed to load trends data.');
       setTrendingUp([]);
       setTrendingDown([]);
       setProjectionMovers([]);
     } finally {
-      setLoading(false);
+      if (version === fetchDataVersion.current) setLoading(false);
     }
   }, [currentWeek, seasonYear, leagueParam, league?.id]);
 
