@@ -615,8 +615,15 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
       const playerIds = currentProjections.map(p => p.playerId);
       if (playerIds.length === 0) return [];
 
+      // Map each player to its current source so we can filter snapshots to same-source comparisons.
+      // A provider switch (props → sleeper or vice versa) leaves the player with no matching snapshot,
+      // which causes movement to fall through to 0 and get filtered out below — intended behavior.
+      const currentSourceByPlayer = new Map<string, string>(
+        currentProjections.map(p => [p.playerId, p.source])
+      );
+
       const CHUNK = 50;
-      const snapshots: { playerId: string; projectedPoints: number; snapshotAt: Date }[] = [];
+      const snapshots: { playerId: string; projectedPoints: number; snapshotAt: Date; source: string }[] = [];
       for (let i = 0; i < playerIds.length; i += CHUNK) {
         const chunk = playerIds.slice(i, i + CHUNK);
         const rows = await db.query.projectionLineSnapshots.findMany({
@@ -628,11 +635,13 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
           ),
           orderBy: asc(schema.projectionLineSnapshots.snapshotAt),
         });
-        snapshots.push(...rows.map(r => ({ playerId: r.playerId, projectedPoints: r.projectedPoints, snapshotAt: r.snapshotAt })));
+        snapshots.push(...rows.map(r => ({ playerId: r.playerId, projectedPoints: r.projectedPoints, snapshotAt: r.snapshotAt, source: r.source })));
       }
 
       const earliestByPlayer = new Map<string, { projectedPoints: number; snapshotAt: Date }>();
       for (const s of snapshots) {
+        // Same-source filter: skip snapshots whose source doesn't match the current row's source.
+        if (s.source !== currentSourceByPlayer.get(s.playerId)) continue;
         if (!earliestByPlayer.has(s.playerId)) earliestByPlayer.set(s.playerId, { projectedPoints: s.projectedPoints, snapshotAt: s.snapshotAt });
       }
 
@@ -646,6 +655,7 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
             name: (p as any).player?.name,
             team: (p as any).player?.team,
             position: (p as any).player?.position,
+            source: p.source,
             previousProjectedPoints: prevPts,
             projectedPoints: p.projectedPoints,
             movement,
