@@ -128,14 +128,21 @@ Click-to-add real draft picks (with original-owner info) in the builder, instead
 
 ## P3 — Draft Rankings: Enhancements
 
+> **Status (post-cleanup sprint):** The cleanup sprint ripped out `Math.sin`-derived fake data columns and several buttons are still rendered in `DraftRankingsView.tsx` as visible-but-inert placeholders (Compare, Export, Ask AI, Watch, Trade value, Add to compare). Wiring the buttons below has gone from "nice-to-have polish" to "finish the visible UI." Tackle the button-wiring items first, then the data-infrastructure ones.
+
+### Button wiring (visible dead UI — do first)
+- [ ] **Compare drawer (up to N)** (~1 day frontend) — `+ Compare (0)` header button opens side-drawer with 2–4 players side-by-side. Client-side `selectedForCompare: Set<string>` threaded through `PlayerRow` with hover checkbox. Reuse expanded-row panel markup per column. Pair with the per-row "Add to compare" button (same state).
+- [ ] **Export rankings** (~2h) — CSV download of current filtered rankings (`#, Player, Position, Team, ProjPts, ADP, ValueDelta, Tier, Analysis`). Pure frontend `data:text/csv` blob. Smallest cheap win — wires up the dead Export button.
+- [ ] **"Ask AI about draft" button** (~half day) — Quick chat modal against currently loaded rankings ("who should I draft at pick 5?"). Reuse `/trades/follow-up` pattern via new `/draft-rankings/ask` endpoint. Pro/Elite gated.
+- [ ] **Watch / watchlist** (~1 day frontend + backend) — Per-row "Watch" button persists to a new `user_player_watchlist` table (auth-gated). Frontend shows a saved indicator + a filter chip "Watching only". Same pattern reusable across PlayerCard, Board, etc.
+- [ ] **Trade value link** (~1h) — Per-row "Trade value" button opens the Trade Analyzer pre-populated with that player on the user's side. Just a routing handler + query param — no new backend needed.
+
+### Data infrastructure (real metrics behind the columns we removed)
 - [ ] **4-week trend sparkline** (~half day frontend + 1-day backend) — `rank_history` table keyed on `(playerId, scoringFormat, superflex, rankingType, snapshotDate)`, daily cron snapshots from `draft_rankings`. Extend `/draft-rankings` to return `recentRanks: number[]`. Inline 60×20 SVG path in TREND slot.
 - [ ] **24h / 7d / 30d / Preseason Open rank movement** (~4h frontend if rank_history exists) — Four deltas in expanded row's `Rank Movement` panel. Green up, red down. Depends on sparkline task landing first.
 - [ ] **Ceiling / Floor** (~half day backend) — Extend AI generator in `server/src/services/draftRankings.ts` to emit `ceilingRank` and `floorRank`, store on `draft_rankings`, surface in response.
 - [ ] **Detailed projection breakdown in expanded row** (~1 day) — PPG, Rush Yds, Rush TDs, Rec, Rec Yds per player. Either join `player_projections` at query time or snapshot stats onto `draft_rankings` row at generation.
 - [ ] **ECR (Expert Consensus Rank) + Best Ball ADP** (~2 days) — New `player_external_ranks` table. ECR via FantasyPros API (gated). Best Ball ADP via Underdog (friendly) or DraftKings (fragile). Surface in `Draft Value` panel.
-- [ ] **Compare drawer (up to N)** (~1 day frontend) — `+ Compare (0)` header button opens side-drawer with 2–4 players side-by-side. Client-side `selectedForCompare: Set<string>` threaded through `PlayerRow` with hover checkbox. Reuse expanded-row panel markup per column.
-- [ ] **Export rankings** (~2h) — CSV download of current filtered rankings (`#, Player, Position, Team, ProjPts, ADP, ValueDelta, Tier, Analysis`). Pure frontend `data:text/csv` blob.
-- [ ] **"Ask AI about draft" button** (~half day) — Quick chat modal against currently loaded rankings ("who should I draft at pick 5?"). Reuse `/trades/follow-up` pattern via new `/draft-rankings/ask` endpoint. Pro/Elite gated.
 - [ ] **Redraft / Dynasty / Rookie three-way split** (~3h backend + 1h frontend) — Current backend bundles Dynasty + Rookie as `dynasty_rookie`. Split into three independent ranking types. Existing rows stay until regenerated.
 
 ---
