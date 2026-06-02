@@ -384,7 +384,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           </p>
         </div>
       ) : (
-        <div className={`${panelCls} overflow-hidden`}>
+        <div className={`${panelCls} overflow-hidden`} data-testid="rankings-table">
           {/* Table header */}
           <div className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b fr-text-10 uppercase fr-tracking-wider font-bold ${
             isDarkMode ? 'bg-slate-900/80 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-500'

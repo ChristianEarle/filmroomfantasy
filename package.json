@@ -49,14 +49,19 @@
             "vaul": "^1.1.2"
       },
       "devDependencies": {
+            "@testing-library/dom": "^10.4.0",
+            "@testing-library/jest-dom": "^6.6.3",
+            "@testing-library/react": "^16.1.0",
             "@types/node": "^20.10.0",
             "@types/react": "^19.2.14",
             "@types/react-dom": "^19.2.3",
             "@vitejs/plugin-react-swc": "^3.10.2",
+            "jsdom": "^25.0.1",
             "puppeteer-core": "^24.0.0",
             "sharp": "^0.34.5",
             "typescript": "^5.9.3",
-            "vite": "6.3.5"
+            "vite": "6.3.5",
+            "vitest": "^2.1.8"
       },
       "scripts": {
             "dev": "vite",
@@ -65,7 +70,9 @@
             "typecheck": "tsc --noEmit",
             "typecheck:server": "cd server && tsc --noEmit",
             "preview": "vite preview",
-            "lint": "eslint src --ext .ts,.tsx"
+            "lint": "eslint src --ext .ts,.tsx",
+            "test": "vitest run",
+            "test:watch": "vitest"
       },
       "optionalDependencies": {
             "@rollup/rollup-win32-x64-msvc": "^4.60.2"
