@@ -221,6 +221,9 @@ export const playerProjections = sqliteTable('player_projections', {
   projectedPointsHigh: real('projected_points_high'),
   scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
 
+  // 'props' (our prop-line model) | 'sleeper' (fallback). See migration 0035.
+  source: text('source').notNull().default('sleeper'),
+
   weekRank: integer('week_rank'),
   positionRank: integer('position_rank'),
 
@@ -246,6 +249,9 @@ export const projectionLineSnapshots = sqliteTable('projection_line_snapshots', 
   seasonYear: integer('season_year').notNull(),
   scoringFormat: text('scoring_format').notNull(),
   snapshotAt: integer('snapshot_at', { mode: 'timestamp' }).notNull(),
+  // Source of the value being snapshotted (the OLD row's source, captured before overwrite).
+  // Movement queries filter by current row's source to avoid cross-provider comparisons.
+  source: text('source').notNull().default('sleeper'),
   projectedPoints: real('projected_points').notNull(),
   projPassYards: real('proj_pass_yards'),
   projPassTDs: real('proj_pass_tds'),

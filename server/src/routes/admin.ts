@@ -1309,6 +1309,7 @@ adminRoutes.post('/sync-projections', async (c) => {
                   seasonYear,
                   scoringFormat: dbFormat,
                   projectedPoints,
+                  source: 'sleeper' as const,
                   projPassYards: playerProj.pass_yd || null,
                   projPassTDs: playerProj.pass_td || null,
                   projRushYards: playerProj.rush_yd || null,
@@ -1320,6 +1321,28 @@ adminRoutes.post('/sync-projections', async (c) => {
                 };
 
                 if (existingProj) {
+                  // Snapshot the old projection before overwriting so /projection-movements can compute net change.
+                  // Snapshot's source matches the OLD row's source — the same-source filter on movement queries
+                  // then prevents conflating a provider switch with real line movement.
+                  projStatements.push(
+                    db.insert(schema.projectionLineSnapshots).values({
+                      id: generateId(),
+                      playerId,
+                      week: weekNum,
+                      seasonYear,
+                      scoringFormat: dbFormat,
+                      snapshotAt: new Date(),
+                      source: existingProj.source ?? 'sleeper',
+                      projectedPoints: existingProj.projectedPoints,
+                      projPassYards: existingProj.projPassYards ?? null,
+                      projPassTDs: existingProj.projPassTDs ?? null,
+                      projRushYards: existingProj.projRushYards ?? null,
+                      projRushTDs: existingProj.projRushTDs ?? null,
+                      projReceptions: existingProj.projReceptions ?? null,
+                      projRecYards: existingProj.projRecYards ?? null,
+                      projRecTDs: existingProj.projRecTDs ?? null,
+                    })
+                  );
                   projStatements.push(
                     db.update(schema.playerProjections)
                       .set(projData)

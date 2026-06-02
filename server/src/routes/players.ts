@@ -615,8 +615,15 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
       const playerIds = currentProjections.map(p => p.playerId);
       if (playerIds.length === 0) return [];
 
+      // Map each player to its current source so we can filter snapshots to same-source comparisons.
+      // A provider switch (props → sleeper or vice versa) leaves the player with no matching snapshot,
+      // which causes movement to fall through to 0 and get filtered out below — intended behavior.
+      const currentSourceByPlayer = new Map<string, string>(
+        currentProjections.map(p => [p.playerId, p.source])
+      );
+
       const CHUNK = 50;
-      const snapshots: { playerId: string; projectedPoints: number; snapshotAt: Date }[] = [];
+      const snapshots: { playerId: string; projectedPoints: number; snapshotAt: Date; source: string }[] = [];
       for (let i = 0; i < playerIds.length; i += CHUNK) {
         const chunk = playerIds.slice(i, i + CHUNK);
         const rows = await db.query.projectionLineSnapshots.findMany({
@@ -628,11 +635,13 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
           ),
           orderBy: asc(schema.projectionLineSnapshots.snapshotAt),
         });
-        snapshots.push(...rows.map(r => ({ playerId: r.playerId, projectedPoints: r.projectedPoints, snapshotAt: r.snapshotAt })));
+        snapshots.push(...rows.map(r => ({ playerId: r.playerId, projectedPoints: r.projectedPoints, snapshotAt: r.snapshotAt, source: r.source })));
       }
 
       const earliestByPlayer = new Map<string, { projectedPoints: number; snapshotAt: Date }>();
       for (const s of snapshots) {
+        // Same-source filter: skip snapshots whose source doesn't match the current row's source.
+        if (s.source !== currentSourceByPlayer.get(s.playerId)) continue;
         if (!earliestByPlayer.has(s.playerId)) earliestByPlayer.set(s.playerId, { projectedPoints: s.projectedPoints, snapshotAt: s.snapshotAt });
       }
 
@@ -646,6 +655,7 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
             name: (p as any).player?.name,
             team: (p as any).player?.team,
             position: (p as any).player?.position,
+            source: p.source,
             previousProjectedPoints: prevPts,
             projectedPoints: p.projectedPoints,
             movement,
@@ -660,6 +670,228 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
   } catch (error) {
     console.error('Projection movements error:', error);
     return c.json({ error: 'Failed to fetch projection movements' }, 500);
+  }
+});
+
+// Recent best performers — top scorers over the last 1 week, 3 weeks, or season-to-date.
+// Aggregates from player_weekly_stats. Optional leagueId surfaces ownership + "trade target" flag for non-rostered breakouts.
+playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+
+  // window: '1' (last week) | '3' (last 3 weeks, default — more stable than single-week) | 'stf' (season-to-date)
+  const windowRaw = c.req.query('window') || '3';
+  if (windowRaw !== '1' && windowRaw !== '3' && windowRaw !== 'stf') {
+    return c.json({ error: "window must be '1', '3', or 'stf'" }, 400);
+  }
+  const window = windowRaw as '1' | '3' | 'stf';
+
+  // season: optional int, clamped to 2000-2100. Defaults via resolveDisplaySeason (falls back to most recent year with games).
+  const requestedSeasonRaw = c.req.query('season');
+  let requestedSeason: number;
+  if (requestedSeasonRaw) {
+    const parsed = parseInt(requestedSeasonRaw);
+    if (isNaN(parsed) || parsed < 2000 || parsed > 2100) {
+      return c.json({ error: 'Invalid season' }, 400);
+    }
+    requestedSeason = parsed;
+  } else {
+    requestedSeason = new Date().getFullYear();
+  }
+  const resolved = await resolveDisplaySeason(db, requestedSeason);
+  const season = resolved.season;
+
+  // position: optional whitelist
+  const positionRaw = c.req.query('position');
+  const validPositions = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DEF']);
+  if (positionRaw && !validPositions.has(positionRaw)) {
+    return c.json({ error: 'Invalid position' }, 400);
+  }
+  const position = positionRaw as 'QB' | 'RB' | 'WR' | 'TE' | 'K' | 'DEF' | undefined;
+
+  // limit: int, clamped 1-50, default 25. Guard against NaN before clamping.
+  const limitRaw = parseInt(c.req.query('limit') || '25');
+  const limit = isNaN(limitRaw) ? 25 : Math.min(Math.max(limitRaw, 1), 50);
+
+  // leagueId: optional, length-capped + character-whitelisted to prevent abuse
+  const leagueId = c.req.query('leagueId');
+  if (leagueId && (leagueId.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(leagueId))) {
+    return c.json({ error: 'Invalid leagueId' }, 400);
+  }
+
+  try {
+    const cacheKey = `recent-leaders:${season}:${window}:${leagueId || 'none'}:${position || 'all'}:${limit}`;
+    const payload = await cached(cacheKey, 10 * 60 * 1000, async () => {
+      // 1. Find the most recent week with stats for this season.
+      const latestWeekResult = await db
+        .select({ maxWeek: sql<number>`max(${schema.playerWeeklyStats.week})` })
+        .from(schema.playerWeeklyStats)
+        .where(eq(schema.playerWeeklyStats.seasonYear, season));
+      const latestWeek = latestWeekResult[0]?.maxWeek ?? 0;
+
+      if (latestWeek < 1) {
+        return {
+          window,
+          weeks: [],
+          latestWeek: 0,
+          leaders: [],
+          season,
+          position: position ?? null,
+          leagueId: leagueId ?? null,
+          limit,
+        };
+      }
+
+      // 2. Build the window's week list (clamped to ≥ 1).
+      let weeks: number[];
+      if (window === '1') {
+        weeks = [latestWeek];
+      } else if (window === '3') {
+        const start = Math.max(1, latestWeek - 2);
+        weeks = [];
+        for (let w = start; w <= latestWeek; w++) weeks.push(w);
+      } else {
+        weeks = [];
+        for (let w = 1; w <= latestWeek; w++) weeks.push(w);
+      }
+
+      // 3. Aggregate top-N by ppg over the window. Inner-join nfl_players so we can filter by position at the DB level.
+      //    Drop inactive rows by requiring at least some scoring signal — DEF/K have no offensive snaps so we can't gate on off_snaps.
+      const windowConditions: SQL[] = [
+        eq(schema.playerWeeklyStats.seasonYear, season),
+        inArray(schema.playerWeeklyStats.week, weeks),
+      ];
+      if (position) {
+        windowConditions.push(eq(schema.nflPlayers.position, position));
+      }
+      const windowAgg = await db
+        .select({
+          playerId: schema.playerWeeklyStats.playerId,
+          ppg: sql<number>`ROUND(AVG(${schema.playerWeeklyStats.fantasyPointsPPR}), 2)`.as('ppg'),
+          games: sql<number>`COUNT(*)`.as('games'),
+          total: sql<number>`ROUND(SUM(${schema.playerWeeklyStats.fantasyPointsPPR}), 2)`.as('total'),
+        })
+        .from(schema.playerWeeklyStats)
+        .innerJoin(schema.nflPlayers, eq(schema.nflPlayers.id, schema.playerWeeklyStats.playerId))
+        .where(and(...windowConditions))
+        .groupBy(schema.playerWeeklyStats.playerId)
+        .orderBy(sql`ppg DESC, total DESC`)
+        .limit(limit);
+
+      if (windowAgg.length === 0) {
+        return {
+          window,
+          weeks,
+          latestWeek,
+          leaders: [],
+          season,
+          position: position ?? null,
+          leagueId: leagueId ?? null,
+          limit,
+        };
+      }
+
+      const topIds = windowAgg.map(r => r.playerId);
+
+      // 4. Hydrate player metadata.
+      const players = await db.query.nflPlayers.findMany({
+        where: inArray(schema.nflPlayers.id, topIds),
+      });
+      const playerById = new Map(players.map(p => [p.id, p]));
+
+      // 5. Season-to-date average for the same player set — used to compute delta vs. season norm.
+      //    Skip when window === 'stf' (delta is 0 by definition).
+      const seasonPpgById = new Map<string, number>();
+      if (window !== 'stf') {
+        const seasonAgg = await db
+          .select({
+            playerId: schema.playerWeeklyStats.playerId,
+            ppg: sql<number>`ROUND(AVG(${schema.playerWeeklyStats.fantasyPointsPPR}), 2)`.as('ppg'),
+          })
+          .from(schema.playerWeeklyStats)
+          .where(and(
+            eq(schema.playerWeeklyStats.seasonYear, season),
+            inArray(schema.playerWeeklyStats.playerId, topIds),
+          ))
+          .groupBy(schema.playerWeeklyStats.playerId);
+        for (const row of seasonAgg) {
+          seasonPpgById.set(row.playerId, row.ppg ?? 0);
+        }
+      }
+
+      // 6. League ownership (only if leagueId provided AND league actually has teams).
+      //    rosteredPlayerIds is intentionally empty when leagueTeamCount is 0 so ownedInLeague stays null below.
+      let leagueTeamCount = 0;
+      let rosteredPlayerIds = new Set<string>();
+      if (leagueId) {
+        const teams = await db.query.teams.findMany({
+          where: eq(schema.teams.leagueId, leagueId),
+          columns: { id: true },
+        });
+        leagueTeamCount = teams.length;
+        if (teams.length > 0) {
+          const teamIds = teams.map(t => t.id);
+          const rosterRows = await db
+            .select({ playerId: schema.rosterSpots.playerId })
+            .from(schema.rosterSpots)
+            .where(inArray(schema.rosterSpots.teamId, teamIds));
+          rosteredPlayerIds = new Set(rosterRows.map(r => r.playerId));
+        }
+      }
+
+      // 7. Build leader rows + compute posRank within the result set (1..N per position).
+      const POS_THRESHOLDS: Record<string, number> = { QB: 18, RB: 12, WR: 12, TE: 8, K: 8, DEF: 8 };
+      const ownershipAvailable = leagueId !== undefined && leagueTeamCount > 0;
+      const posCounter = new Map<string, number>();
+      const leaders = windowAgg
+        .map(row => {
+          const player = playerById.get(row.playerId);
+          if (!player) return null;
+          const seasonPpg = window === 'stf' ? row.ppg : (seasonPpgById.get(row.playerId) ?? row.ppg);
+          const delta = window === 'stf' ? 0 : Number((row.ppg - seasonPpg).toFixed(2));
+          const posKey = player.position || 'NA';
+          const nextRank = (posCounter.get(posKey) ?? 0) + 1;
+          posCounter.set(posKey, nextRank);
+
+          const ownedInLeague = ownershipAvailable ? rosteredPlayerIds.has(player.id) : null;
+          const ownedPct = ownedInLeague === null ? null : (ownedInLeague ? 100 : 0);
+          const threshold = POS_THRESHOLDS[posKey] ?? 999;
+          const tradeTarget =
+            ownedInLeague === false && delta >= 3 && row.ppg >= threshold;
+
+          return {
+            id: player.id,
+            name: player.name,
+            team: player.team,
+            position: player.position,
+            headshotUrl: player.headshotUrl ?? null,
+            games: row.games,
+            ppg: row.ppg,
+            seasonPpg,
+            delta,
+            posRank: nextRank,
+            ownedPct,
+            ownedInLeague,
+            tradeTarget,
+          };
+        })
+        .filter(<T>(x: T | null): x is T => x !== null);
+
+      return {
+        window,
+        weeks,
+        latestWeek,
+        leaders,
+        season,
+        position: position ?? null,
+        leagueId: leagueId ?? null,
+        limit,
+      };
+    });
+
+    return c.json(payload);
+  } catch (error) {
+    console.error('Recent leaders error:', error);
+    return c.json({ error: 'Failed to fetch recent leaders' }, 500);
   }
 });
 
