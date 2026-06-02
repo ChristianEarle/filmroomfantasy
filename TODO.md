@@ -144,6 +144,7 @@ Click-to-add real draft picks (with original-owner info) in the builder, instead
 - [ ] **Detailed projection breakdown in expanded row** (~1 day) — PPG, Rush Yds, Rush TDs, Rec, Rec Yds per player. Either join `player_projections` at query time or snapshot stats onto `draft_rankings` row at generation.
 - [ ] **ECR (Expert Consensus Rank) + Best Ball ADP** (~2 days) — New `player_external_ranks` table. ECR via FantasyPros API (gated). Best Ball ADP via Underdog (friendly) or DraftKings (fragile). Surface in `Draft Value` panel.
 - [ ] **Redraft / Dynasty / Rookie three-way split** (~3h backend + 1h frontend) — Current backend bundles Dynasty + Rookie as `dynasty_rookie`. Split into three independent ranking types. Existing rows stay until regenerated.
+- [ ] **Superflex variants + re-add toggle** (~2h backend + 30m frontend) — Superflex ranking variants aren't generated (only `superflex=false` is in `DEFAULT_VARIANTS`), so the cleanup sprint removed the Superflex toggle from `DraftRankingsView.tsx` and hardcoded the fetch to `superflex=0` to avoid an empty result. To restore: add `superflex: true` variants to `DEFAULT_VARIANTS` in `server/src/services/draftRankings.ts`, regenerate, then re-add the toggle + wire `superflex` back into the fetch URL and `useCallback` deps.
 
 ---
 

@@ -217,12 +217,10 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
 
   // Derive defaults from connected league
   const defaultScoring: ScoringFormat = (league?.scoringFormat as ScoringFormat) || 'ppr';
-  const defaultSuperflex = (league as any)?.hasSuperflex ?? false;
 
   const [rankingView, setRankingView] = useState<'redraft' | 'dynasty'>('redraft');
   const rankingType: RankingType = rankingView === 'redraft' ? 'redraft' : 'dynasty_rookie';
   const [scoringFormat, setScoringFormat] = useState<ScoringFormat>(defaultScoring);
-  const [superflex, setSuperflex] = useState(defaultSuperflex);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedRationale, setExpandedRationale] = useState<string | null>(null);
@@ -235,10 +233,11 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
     setLoading(true);
     setError(null);
     try {
-      const sf = superflex ? '1' : '0';
+      // Superflex variants aren't generated yet (tracked in TODO.md backlog);
+      // always request the 1-QB variant so dynasty never lands on an empty result.
       const season = new Date().getFullYear();
       const data = await api.get<DraftRankingsResponse>(
-        `/draft-rankings?type=${rankingType}&scoring=${scoringFormat}&superflex=${sf}&season=${season}`,
+        `/draft-rankings?type=${rankingType}&scoring=${scoringFormat}&superflex=0&season=${season}`,
       );
       setRankings(data.rankings);
       setGeneratedAt(data.meta.generatedAt);
@@ -249,7 +248,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
     } finally {
       setLoading(false);
     }
-  }, [rankingType, scoringFormat, superflex]);
+  }, [rankingType, scoringFormat]);
 
   useEffect(() => {
     fetchRankings();
@@ -415,25 +414,6 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
             </span>
           ))}
         </div>
-
-        <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
-
-        {/* Superflex toggle */}
-        <label className={`inline-flex items-center gap-2 cursor-pointer select-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-          <input type="checkbox" checked={superflex} onChange={() => setSuperflex(!superflex)} className="sr-only" />
-          <span
-            className={`relative inline-block w-8 h-4 rounded-full transition-colors ${
-              superflex ? 'bg-blue-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
-                superflex ? 'translate-x-4' : 'translate-x-0'
-              }`}
-            />
-          </span>
-          <span className="text-xs font-semibold">Superflex</span>
-        </label>
       </div>
 
       {/* Search */}
