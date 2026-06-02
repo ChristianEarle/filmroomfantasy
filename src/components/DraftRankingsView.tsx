@@ -3,6 +3,7 @@ import { Medal, Loader2, Search, ChevronDown, ChevronRight, TrendingUp, Trending
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
+import { downloadRankingsCsv } from '../utils/csvExport';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -263,7 +264,18 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
             <Plus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Compare (0)</span>
           </button>
-          <button type="button" className={headerBtn} aria-label="Export rankings">
+          <button
+            type="button"
+            className={headerBtn}
+            aria-label="Export rankings"
+            disabled={filteredRankings.length === 0}
+            onClick={() =>
+              downloadRankingsCsv(
+                filteredRankings,
+                `draft-rankings-${rankingType}-${scoringFormat}-${new Date().getFullYear()}.csv`,
+              )
+            }
+          >
             <Download className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Export</span>
           </button>
