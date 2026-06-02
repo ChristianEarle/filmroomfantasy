@@ -18,6 +18,7 @@ vi.mock('../context/LeagueContext', () => ({
 }));
 
 import { DraftRankingsView } from './DraftRankingsView';
+import { consumeTradeSeed } from '../utils/tradeSeed';
 
 // ── Fixtures ─────────────────────────────────────────────────────────
 
@@ -94,6 +95,7 @@ beforeEach(() => {
   hoisted.mockGet.mockReset();
   hoisted.mockGet.mockResolvedValue(response(ALL));
   hoisted.league.current = null;
+  localStorage.clear();
 });
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -245,6 +247,18 @@ describe('DraftRankingsView — compare basket', () => {
     // The button now reads "Added"; clicking again removes the player.
     fireEvent.click(table().getByRole('button', { name: /added/i }));
     expect(screen.getByText('Compare (0)')).toBeInTheDocument();
+  });
+});
+
+describe('DraftRankingsView — trade value', () => {
+  it('seeds the player and navigates to the Trade Analyzer', async () => {
+    const onNavigate = vi.fn();
+    render(<DraftRankingsView onPlayerClick={vi.fn()} isDarkMode={false} onNavigate={onNavigate} />);
+    await loaded();
+    expandRow('Josh Allen');
+    fireEvent.click(table().getByRole('button', { name: /trade value/i }));
+    expect(onNavigate).toHaveBeenCalledWith('TradeAnalyzer');
+    expect(consumeTradeSeed()).toMatchObject({ id: 'a', type: 'player', name: 'Josh Allen', position: 'QB' });
   });
 });
 

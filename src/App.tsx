@@ -787,7 +787,7 @@ function AppContent() {
                 <Suspense fallback={suspenseFallback}><WaiversView onPlayerClick={setSelectedPlayer} onViewAll={handleViewAllFromWaivers} isDarkMode={isDarkMode} /></Suspense>
               )
             ) : activeView === 'DraftRankings' ? (
-              <Suspense fallback={suspenseFallback}><DraftRankingsView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
+              <Suspense fallback={suspenseFallback}><DraftRankingsView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
             ) : activeView === 'LeagueAnalyzer' ? (
               <ComingSoonView title="League Analyzer" description="Deep dive into your league with power rankings, strength of schedule analysis, and roster composition breakdowns." icon="league" isDarkMode={isDarkMode} />
             ) : activeView === 'TradeAnalyzer' ? (

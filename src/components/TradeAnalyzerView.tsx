@@ -26,6 +26,7 @@ import {
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useLeaguesContext } from '../context/LeaguesContext';
+import { consumeTradeSeed } from '../utils/tradeSeed';
 
 interface TradeUsage {
   used: number;
@@ -1800,6 +1801,13 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
     });
     setResult(null);
   }, []);
+
+  // Consume a player seeded by another view (e.g. the Draft Rankings "Trade
+  // value" button) once on mount, dropping it onto the first team.
+  useEffect(() => {
+    const seeded = consumeTradeSeed();
+    if (seeded) handleAddAsset(0, seeded);
+  }, [handleAddAsset]);
 
   const handleRemoveAsset = useCallback((teamId: number, assetId: string) => {
     setTeams((prev) =>

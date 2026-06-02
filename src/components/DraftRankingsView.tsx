@@ -4,6 +4,7 @@ import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
 import { downloadRankingsCsv } from '../utils/csvExport';
+import { seedTradeAsset } from '../utils/tradeSeed';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -49,6 +50,8 @@ interface DraftRankingsResponse {
 interface DraftRankingsViewProps {
   onPlayerClick: (player: Player) => void;
   isDarkMode: boolean;
+  /** Navigate to another top-level view (e.g. the Trade Analyzer). */
+  onNavigate?: (view: string) => void;
 }
 
 // ── Constants ───────────────────────────────────────────────────────
@@ -103,7 +106,7 @@ const MAX_COMPARE = 4;
 
 // ── Component ───────────────────────────────────────────────────────
 
-export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsViewProps) {
+export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: DraftRankingsViewProps) {
   const { league } = useLeagueContext();
 
   // Derive defaults from connected league
@@ -132,6 +135,13 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
       return [...prev, ranking];
     });
   }, []);
+
+  // Seed the player onto the user's side and jump to the Trade Analyzer.
+  const handleTradeValue = useCallback((ranking: DraftRanking) => {
+    const p = ranking.player;
+    seedTradeAsset({ id: p.id, type: 'player', name: p.name, position: p.position, team: p.team });
+    onNavigate?.('TradeAnalyzer');
+  }, [onNavigate]);
 
   const fetchRankings = useCallback(async () => {
     setLoading(true);
@@ -459,6 +469,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
               onPlayerClick={handlePlayerClick}
               compareIds={compareIds}
               onToggleCompare={toggleCompare}
+              onTradeValue={handleTradeValue}
             />
           ))}
           </div>
@@ -505,6 +516,7 @@ function TierGroup({
   onPlayerClick,
   compareIds,
   onToggleCompare,
+  onTradeValue,
 }: {
   tier: number;
   label: string;
@@ -516,6 +528,7 @@ function TierGroup({
   onPlayerClick: (ranking: DraftRanking) => void;
   compareIds: Set<string>;
   onToggleCompare: (ranking: DraftRanking) => void;
+  onTradeValue: (ranking: DraftRanking) => void;
 }) {
   const colors = TIER_COLORS[tier] || TIER_COLORS[5];
   const colorClass = isDarkMode ? colors.dark : colors.light;
@@ -548,6 +561,7 @@ function TierGroup({
             onPlayerClick={() => onPlayerClick(ranking)}
             isInCompare={compareIds.has(ranking.player.id)}
             onToggleCompare={() => onToggleCompare(ranking)}
+            onTradeValue={() => onTradeValue(ranking)}
           />
         ))}
       </div>
@@ -564,6 +578,7 @@ function PlayerRow({
   onPlayerClick,
   isInCompare,
   onToggleCompare,
+  onTradeValue,
 }: {
   ranking: DraftRanking;
   rankingType: RankingType;
@@ -573,6 +588,7 @@ function PlayerRow({
   onPlayerClick: () => void;
   isInCompare: boolean;
   onToggleCompare: () => void;
+  onTradeValue: () => void;
 }) {
   const p = ranking.player;
   const posColor = POSITION_COLORS[p.position] || 'text-slate-400';
@@ -716,6 +732,7 @@ function PlayerRow({
               <div className="flex gap-1.5 mt-3 pt-3 border-t border-slate-700/50" onClick={e => e.stopPropagation()}>
                 <button
                   type="button"
+                  onClick={onTradeValue}
                   className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
                     isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                   }`}
