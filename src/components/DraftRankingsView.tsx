@@ -229,7 +229,10 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
 
   // ── Render ──────────────────────────────────────────────────────────
 
-  const movedTodayCount = rankings.filter(r => r.adpDelta !== null && Math.abs(r.adpDelta) >= 3).length;
+  // adpDelta is the rank-vs-ADP gap (negative = ranked above ADP = steal,
+  // positive = ranked below ADP = reach), not day-over-day movement.
+  const stealCount = rankings.filter(r => r.adpDelta !== null && r.adpDelta < -3).length;
+  const reachCount = rankings.filter(r => r.adpDelta !== null && r.adpDelta > 3).length;
 
   const headerBtn = `inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
     isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
@@ -250,7 +253,8 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               {generatedAt && <>Updated {new Date(generatedAt).toLocaleDateString()} · </>}
               {rankings.length} players ranked
-              {movedTodayCount > 0 && <> · <span className="text-emerald-500">{movedTodayCount} moved today</span></>}
+              {stealCount > 0 && <> · <span className="text-emerald-500">{stealCount} steal{stealCount !== 1 ? 's' : ''}</span></>}
+              {reachCount > 0 && <> · <span className="text-red-500">{reachCount} reach{reachCount !== 1 ? 'es' : ''}</span></>}
             </p>
           </div>
         </div>
