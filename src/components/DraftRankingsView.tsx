@@ -97,119 +97,6 @@ const POSITION_COLORS: Record<string, string> = {
   TE: 'text-orange-400',
 };
 
-// ── Deterministic derivations ───────────────────────────────────────
-// These produce stable mock values for fields the ranking API doesn't surface
-// (weekly trend, long-range rank movement, stat line). Seeded by player id so
-// values don't flicker between renders.
-
-function seededHash(id: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < id.length; i++) {
-    h ^= id.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function seededFloat(seed: number, index: number): number {
-  const x = Math.sin(seed + index * 9301) * 10000;
-  return x - Math.floor(x);
-}
-
-function trendPoints(id: string, adpDelta: number | null): number[] {
-  const seed = seededHash(id);
-  const dir = adpDelta == null ? 0 : -Math.sign(adpDelta);
-  const base = 50;
-  const pts: number[] = [];
-  for (let i = 0; i < 8; i++) {
-    const drift = dir * (i / 7) * 30;
-    const jitter = (seededFloat(seed, i) - 0.5) * 12;
-    pts.push(base + drift + jitter);
-  }
-  return pts;
-}
-
-function rankMovement(id: string, adpDelta: number | null): { h24: number; d7: number; d30: number; preseason: number } {
-  const seed = seededHash(id);
-  const baseline = adpDelta ?? 0;
-  const h24 = Math.round((seededFloat(seed, 1) - 0.5) * 2);
-  const d7 = Math.round(baseline * 0.2 + (seededFloat(seed, 2) - 0.5) * 2);
-  const d30 = Math.round(baseline * 0.5 + (seededFloat(seed, 3) - 0.5) * 3);
-  const preseason = Math.round(baseline + (seededFloat(seed, 4) - 0.5) * 4);
-  return { h24, d7, d30, preseason };
-}
-
-function seasonStatLine(position: string, projectedPoints: number | null, id: string): { label: string; value: string }[] {
-  const pts = projectedPoints ?? 0;
-  const seed = seededHash(id);
-  const jitter = (i: number, span: number) => (seededFloat(seed, i) - 0.5) * span;
-
-  if (position === 'RB') {
-    const rushYds = Math.max(200, Math.round(pts * 2.8 + jitter(10, 200)));
-    const rushTDs = Math.max(2, Math.round(pts / 38 + jitter(11, 3)));
-    const rec = Math.max(15, Math.round(pts / 5.2 + jitter(12, 10)));
-    const recYds = Math.max(120, Math.round(rec * 8 + jitter(13, 80)));
-    return [
-      { label: 'Rush Yds', value: rushYds.toLocaleString() },
-      { label: 'Rush TDs', value: String(rushTDs) },
-      { label: 'Rec', value: String(rec) },
-      { label: 'Rec Yds', value: recYds.toLocaleString() },
-    ];
-  }
-  if (position === 'WR' || position === 'TE') {
-    const rec = Math.max(30, Math.round(pts / 3.2 + jitter(10, 12)));
-    const recYds = Math.max(400, Math.round(rec * 12.5 + jitter(11, 100)));
-    const recTDs = Math.max(3, Math.round(pts / 42 + jitter(12, 2)));
-    const targets = Math.round(rec * 1.55);
-    return [
-      { label: 'Targets', value: String(targets) },
-      { label: 'Rec', value: String(rec) },
-      { label: 'Rec Yds', value: recYds.toLocaleString() },
-      { label: 'Rec TDs', value: String(recTDs) },
-    ];
-  }
-  if (position === 'QB') {
-    const passYds = Math.max(3000, Math.round(pts * 11 + jitter(10, 300)));
-    const passTDs = Math.max(18, Math.round(pts / 12 + jitter(11, 4)));
-    const ints = Math.max(5, Math.round(pts / 35 + jitter(12, 2)));
-    const rushYds = Math.max(100, Math.round(pts / 4.5 + jitter(13, 150)));
-    return [
-      { label: 'Pass Yds', value: passYds.toLocaleString() },
-      { label: 'Pass TDs', value: String(passTDs) },
-      { label: 'INTs', value: String(ints) },
-      { label: 'Rush Yds', value: rushYds.toLocaleString() },
-    ];
-  }
-  return [];
-}
-
-function Sparkline({ points, color }: { points: number[]; color: string }) {
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-  const w = 60;
-  const h = 20;
-  const path = points
-    .map((p, i) => {
-      const x = (i / (points.length - 1)) * w;
-      const y = h - ((p - min) / range) * h;
-      return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(' ');
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible">
-      <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function formatMovement(n: number): { text: string; className: string } {
-  if (n === 0) return { text: '—', className: 'text-slate-500' };
-  if (n > 0) return { text: `↑ ${n}`, className: 'text-emerald-500' };
-  return { text: `↓ ${Math.abs(n)}`, className: 'text-red-500' };
-}
-
-
 // ── Component ───────────────────────────────────────────────────────
 
 export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsViewProps) {
@@ -503,9 +390,6 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
             <span className="text-right w-14 sm:w-20">Proj</span>
             <span className="hidden sm:inline text-right" style={{ width: '60px' }}>ADP</span>
             <span className="flex justify-center w-[72px] sm:w-[90px]">Value</span>
-            <span className="hidden md:flex justify-center items-center gap-1" style={{ width: '90px' }}>
-              Trend <span className="fr-text-9 normal-case tracking-normal text-slate-500">(4wk)</span>
-            </span>
             <span className="hidden sm:inline text-center" style={{ width: '40px' }}>Age</span>
             <span className="hidden sm:inline" style={{ width: '16px' }} />
           </div>
@@ -704,20 +588,6 @@ function PlayerRow({
           {valueBadge}
         </div>
 
-        {/* Trend sparkline */}
-        <div className="hidden md:flex justify-center items-center" style={{ width: '90px' }}>
-          <Sparkline
-            points={trendPoints(ranking.id, ranking.adpDelta)}
-            color={
-              ranking.adpDelta == null || Math.abs(ranking.adpDelta) < 3
-                ? isDarkMode ? '#64748b' : '#94a3b8'
-                : ranking.adpDelta < 0
-                ? '#10b981'
-                : '#ef4444'
-            }
-          />
-        </div>
-
         {/* Age */}
         <div className="hidden sm:block text-center" style={{ width: '40px' }}>
           <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
@@ -736,93 +606,29 @@ function PlayerRow({
       {/* Expanded detail — 4-column grid */}
       {isExpanded && (
         <div className={`px-4 pb-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             {/* Season Projection */}
             <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
               <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 Season Projection
               </h4>
-              <div className="space-y-1.5">
-                {(() => {
-                  const pts = ranking.projectedPoints;
-                  const ppg = pts != null ? (pts / 17).toFixed(1) : '—';
-                  const rows: { label: string; value: string }[] = [
-                    { label: 'Total Points', value: pts?.toFixed(1) ?? '—' },
-                    { label: 'PPG', value: ppg },
-                    ...seasonStatLine(p.position, pts, ranking.id),
-                  ];
-                  return rows.map(({ label, value }) => (
+              {ranking.projectedPoints != null ? (
+                <div className="space-y-1.5">
+                  {[
+                    { label: 'Total Points', value: ranking.projectedPoints.toFixed(1) },
+                    { label: 'PPG', value: (ranking.projectedPoints / 17).toFixed(1) },
+                  ].map(({ label, value }) => (
                     <div key={label} className="flex justify-between text-sm">
                       <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
                       <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{value}</span>
                     </div>
-                  ));
-                })()}
-              </div>
-            </div>
-
-            {/* Draft Value */}
-            <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-              <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                Draft Value
-              </h4>
-              <div className="space-y-1.5">
-                {(() => {
-                  const seed = seededHash(ranking.id);
-                  const ecr = ranking.adp != null ? (ranking.adp + (seededFloat(seed, 20) - 0.5) * 1.8) : null;
-                  const bestBallAdp = ranking.adp != null ? (ranking.adp - 0.8 + (seededFloat(seed, 21) - 0.5) * 1.2) : null;
-                  const rows: { label: string; value: string; color?: string }[] = [
-                    { label: 'FilmRoom Rank', value: String(ranking.overallRank) },
-                    { label: 'Consensus ADP', value: ranking.adp?.toFixed(1) ?? '—' },
-                    { label: 'ECR', value: ecr != null ? ecr.toFixed(1) : '—' },
-                    {
-                      label: 'Value Delta',
-                      value: adpDelta != null ? (adpDelta > 0 ? `-${adpDelta.toFixed(1)}` : `+${Math.abs(adpDelta).toFixed(1)}`) : '—',
-                      color: adpDelta != null ? (adpDelta < 0 ? 'text-emerald-500' : adpDelta > 0 ? 'text-red-500' : undefined) : undefined,
-                    },
-                    { label: 'Best Ball ADP', value: bestBallAdp != null ? bestBallAdp.toFixed(1) : '—' },
-                  ];
-                  return rows.map(({ label, value, color }) => (
-                    <div key={label} className="flex justify-between text-sm">
-                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
-                      <span className={`font-bold ${color ?? (isDarkMode ? 'text-white' : 'text-slate-900')}`}>{value}</span>
-                    </div>
-                  ));
-                })()}
-              </div>
-            </div>
-
-            {/* Rank Movement */}
-            <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-              <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                Rank Movement
-              </h4>
-              <div className="space-y-1.5">
-                {(() => {
-                  const m = rankMovement(ranking.id, ranking.adpDelta);
-                  const preseasonBase = Math.max(1, ranking.overallRank - m.preseason);
-                  const h24 = formatMovement(m.h24);
-                  const d7 = formatMovement(m.d7);
-                  const d30 = formatMovement(m.d30);
-                  const rows: { label: string; value: string; className: string }[] = [
-                    { label: '24h', value: h24.text, className: h24.className },
-                    { label: '7d', value: d7.text, className: d7.className },
-                    { label: '30d', value: d30.text, className: d30.className },
-                    { label: 'Preseason Open', value: String(preseasonBase), className: isDarkMode ? 'text-white' : 'text-slate-900' },
-                    {
-                      label: 'Ceiling / Floor',
-                      value: `${p.position}${Math.max(1, ranking.positionRank - 3)} / ${p.position}${ranking.positionRank + 3}`,
-                      className: isDarkMode ? 'text-white' : 'text-slate-900',
-                    },
-                  ];
-                  return rows.map(({ label, value, className }) => (
-                    <div key={label} className="flex justify-between text-sm">
-                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
-                      <span className={`font-bold ${className}`}>{value}</span>
-                    </div>
-                  ));
-                })()}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  No season projection available for this player yet.
+                </p>
+              )}
             </div>
 
             {/* AI Take */}
