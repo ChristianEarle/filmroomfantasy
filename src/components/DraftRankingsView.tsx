@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Medal, Loader2, Search, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, AlertTriangle, Plus, Download, MessageSquare, Heart, ArrowUpRight } from 'lucide-react';
+import { Medal, Loader2, Search, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, AlertTriangle, Plus, Download, MessageSquare, Heart, ArrowUpRight, Check, X } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
@@ -98,6 +98,9 @@ const POSITION_COLORS: Record<string, string> = {
   TE: 'text-orange-400',
 };
 
+// Max players that can sit in the compare basket at once.
+const MAX_COMPARE = 4;
+
 // ── Component ───────────────────────────────────────────────────────
 
 export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsViewProps) {
@@ -116,6 +119,19 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [compareList, setCompareList] = useState<DraftRanking[]>([]);
+  const [showCompare, setShowCompare] = useState(false);
+
+  const compareIds = useMemo(() => new Set(compareList.map(r => r.player.id)), [compareList]);
+  const toggleCompare = useCallback((ranking: DraftRanking) => {
+    setCompareList(prev => {
+      if (prev.some(r => r.player.id === ranking.player.id)) {
+        return prev.filter(r => r.player.id !== ranking.player.id);
+      }
+      if (prev.length >= MAX_COMPARE) return prev;
+      return [...prev, ranking];
+    });
+  }, []);
 
   const fetchRankings = useCallback(async () => {
     setLoading(true);
@@ -141,6 +157,18 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
   useEffect(() => {
     fetchRankings();
   }, [fetchRankings]);
+
+  // A comparison only makes sense within one variant, so reset the basket when
+  // the ranking type or scoring format changes.
+  useEffect(() => {
+    setCompareList([]);
+    setShowCompare(false);
+  }, [rankingType, scoringFormat]);
+
+  // Close the modal automatically once the basket is emptied.
+  useEffect(() => {
+    if (compareList.length === 0) setShowCompare(false);
+  }, [compareList.length]);
 
   // Filter and group by tier
   const filteredRankings = useMemo(() => {
@@ -260,9 +288,16 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className={headerBtn} aria-label="Compare players">
+          <button
+            type="button"
+            className={headerBtn}
+            aria-label="Compare players"
+            disabled={compareList.length < 2}
+            title={compareList.length < 2 ? 'Add 2+ players to compare' : 'Compare selected players'}
+            onClick={() => setShowCompare(true)}
+          >
             <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Compare (0)</span>
+            <span className="hidden sm:inline">Compare ({compareList.length})</span>
           </button>
           <button
             type="button"
@@ -422,10 +457,22 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
               expandedRationale={expandedRationale}
               onToggleRationale={id => setExpandedRationale(prev => prev === id ? null : id)}
               onPlayerClick={handlePlayerClick}
+              compareIds={compareIds}
+              onToggleCompare={toggleCompare}
             />
           ))}
           </div>
         </div>
+      )}
+
+      {showCompare && compareList.length > 0 && (
+        <PlayerComparisonModal
+          rankings={compareList}
+          rankingType={rankingType}
+          isDarkMode={isDarkMode}
+          onClose={() => setShowCompare(false)}
+          onRemove={toggleCompare}
+        />
       )}
     </div>
   );
@@ -456,6 +503,8 @@ function TierGroup({
   expandedRationale,
   onToggleRationale,
   onPlayerClick,
+  compareIds,
+  onToggleCompare,
 }: {
   tier: number;
   label: string;
@@ -465,6 +514,8 @@ function TierGroup({
   expandedRationale: string | null;
   onToggleRationale: (id: string) => void;
   onPlayerClick: (ranking: DraftRanking) => void;
+  compareIds: Set<string>;
+  onToggleCompare: (ranking: DraftRanking) => void;
 }) {
   const colors = TIER_COLORS[tier] || TIER_COLORS[5];
   const colorClass = isDarkMode ? colors.dark : colors.light;
@@ -495,6 +546,8 @@ function TierGroup({
             isExpanded={expandedRationale === ranking.id}
             onToggleRationale={() => onToggleRationale(ranking.id)}
             onPlayerClick={() => onPlayerClick(ranking)}
+            isInCompare={compareIds.has(ranking.player.id)}
+            onToggleCompare={() => onToggleCompare(ranking)}
           />
         ))}
       </div>
@@ -509,6 +562,8 @@ function PlayerRow({
   isExpanded,
   onToggleRationale,
   onPlayerClick,
+  isInCompare,
+  onToggleCompare,
 }: {
   ranking: DraftRanking;
   rankingType: RankingType;
@@ -516,6 +571,8 @@ function PlayerRow({
   isExpanded: boolean;
   onToggleRationale: () => void;
   onPlayerClick: () => void;
+  isInCompare: boolean;
+  onToggleCompare: () => void;
 }) {
   const p = ranking.player;
   const posColor = POSITION_COLORS[p.position] || 'text-slate-400';
@@ -668,12 +725,16 @@ function PlayerRow({
                 </button>
                 <button
                   type="button"
+                  onClick={onToggleCompare}
+                  aria-pressed={isInCompare}
                   className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
-                    isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    isInCompare
+                      ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-500'
+                      : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                   }`}
                 >
-                  <Plus className="w-3 h-3" />
-                  Add to compare
+                  {isInCompare ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                  {isInCompare ? 'Added' : 'Add to compare'}
                 </button>
                 <button
                   type="button"
@@ -690,6 +751,111 @@ function PlayerRow({
 
         </div>
       )}
+    </div>
+  );
+}
+
+function PlayerComparisonModal({
+  rankings,
+  rankingType,
+  isDarkMode,
+  onClose,
+  onRemove,
+}: {
+  rankings: DraftRanking[];
+  rankingType: RankingType;
+  isDarkMode: boolean;
+  onClose: () => void;
+  onRemove: (ranking: DraftRanking) => void;
+}) {
+  const tierLabels = TIER_LABELS[rankingType] || TIER_LABELS.redraft;
+
+  // Close on Escape for keyboard users.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Player comparison">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className={`relative w-full max-w-4xl max-h-[85vh] overflow-auto rounded-2xl border shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className={`sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+          <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            Compare players ({rankings.length})
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close comparison"
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 flex gap-3 overflow-x-auto">
+          {rankings.map(r => {
+            const p = r.player;
+            const posColor = POSITION_COLORS[p.position] || 'text-slate-400';
+            const d = r.adpDelta;
+            const valueText = d == null
+              ? '—'
+              : Math.abs(d) < 3 ? 'Fair' : d < 0 ? `+${Math.abs(d).toFixed(0)} steal` : `-${d.toFixed(0)} reach`;
+            const valueColor = d == null || Math.abs(d) < 3 ? (isDarkMode ? 'text-slate-300' : 'text-slate-700') : d < 0 ? 'text-emerald-500' : 'text-red-500';
+            const rows: { label: string; value: string; color?: string }[] = [
+              { label: 'Overall Rank', value: String(r.overallRank) },
+              { label: 'Position', value: `${p.position}${r.positionRank}` },
+              { label: 'Proj Pts', value: r.projectedPoints != null ? r.projectedPoints.toFixed(1) : '—' },
+              { label: 'PPG', value: r.projectedPoints != null ? (r.projectedPoints / 17).toFixed(1) : '—' },
+              { label: 'ADP', value: r.adp != null ? r.adp.toFixed(1) : '—' },
+              { label: 'Value', value: valueText, color: valueColor },
+              { label: 'Tier', value: tierLabels[r.tier] || `Tier ${r.tier}` },
+            ];
+            return (
+              <div
+                key={r.id}
+                className={`min-w-[200px] flex-1 rounded-xl border p-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{p.name}</div>
+                    <div className="fr-text-11">
+                      <span className={`font-bold ${posColor}`}>{p.position}{r.positionRank}</span>
+                      <span className={`ml-1.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{p.team} · Age {p.age ?? '—'}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(r)}
+                    aria-label={`Remove ${p.name} from comparison`}
+                    className={`flex-shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md border ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800' : 'border-slate-200 text-slate-400 hover:bg-white'}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-1.5">
+                  {rows.map(({ label, value, color }) => (
+                    <div key={label} className="flex justify-between text-xs">
+                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
+                      <span className={`font-bold ${color ?? (isDarkMode ? 'text-white' : 'text-slate-900')}`}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className={`mt-3 pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                  <div className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-1 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>AI Take</div>
+                  <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                    {r.analysis || r.rationale}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

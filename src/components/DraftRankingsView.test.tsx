@@ -211,6 +211,43 @@ describe('DraftRankingsView — filtering', () => {
   });
 });
 
+describe('DraftRankingsView — compare basket', () => {
+  it('adds players to the basket and opens the comparison modal', async () => {
+    renderView();
+    await loaded();
+    expect(screen.getByRole('button', { name: 'Compare players' })).toBeDisabled();
+
+    expandRow('Josh Allen');
+    fireEvent.click(table().getByRole('button', { name: /add to compare/i }));
+    expect(screen.getByText('Compare (1)')).toBeInTheDocument();
+    // One player is not enough to compare.
+    expect(screen.getByRole('button', { name: 'Compare players' })).toBeDisabled();
+
+    expandRow('Christian McCaffrey');
+    fireEvent.click(table().getByRole('button', { name: /add to compare/i }));
+    expect(screen.getByText('Compare (2)')).toBeInTheDocument();
+
+    const compareBtn = screen.getByRole('button', { name: 'Compare players' });
+    expect(compareBtn).toBeEnabled();
+    fireEvent.click(compareBtn);
+
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByText('Josh Allen')).toBeInTheDocument();
+    expect(dialog.getByText('Christian McCaffrey')).toBeInTheDocument();
+  });
+
+  it('toggles a player back out of the basket', async () => {
+    renderView();
+    await loaded();
+    expandRow('Josh Allen');
+    fireEvent.click(table().getByRole('button', { name: /add to compare/i }));
+    expect(screen.getByText('Compare (1)')).toBeInTheDocument();
+    // The button now reads "Added"; clicking again removes the player.
+    fireEvent.click(table().getByRole('button', { name: /added/i }));
+    expect(screen.getByText('Compare (0)')).toBeInTheDocument();
+  });
+});
+
 describe('DraftRankingsView — empty state', () => {
   it('renders the empty state when no rankings exist', async () => {
     hoisted.mockGet.mockResolvedValue(response([]));
