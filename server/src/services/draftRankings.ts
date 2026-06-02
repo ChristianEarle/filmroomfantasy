@@ -40,11 +40,11 @@ const ANTHROPIC_BATCH_URL = 'https://api.anthropic.com/v1/messages/batches';
 // drafts (Josh Allen @ ADP 2.21 instead of ~20), which pollutes 1-QB
 // rankings badly.
 //
-// Dynasty rookie ADP still uses MFL's IS_KEEPER=R endpoint — it's the only
-// free JSON source for rookie-draft ADP. Current matching is thin because
-// Sleeper's player catalog doesn't yet have the 2026 NFL draft class;
-// expected to self-correct once the NFL draft lands and sync-players picks
-// up the new rookies.
+// Dynasty rookie ADP comes from FantasyCalc (primary) — they publish
+// dynasty values that include rookies with age/prospect-adjusted ranks;
+// after filtering to rookies-only at write time we get a clean rookie
+// pecking order. MFL IS_KEEPER=R is kept as a fallback for rookies that
+// FantasyCalc doesn't cover yet (e.g. late-breaking rookies).
 
 /**
  * Normalize a player name for cross-feed matching. Strips punctuation and
@@ -127,6 +127,113 @@ async function fetchFantasyProsADP(
     console.error('[draftRankings] FantasyPros ADP fetch failed:', err);
     return new Map();
   }
+}
+
+/**
+ * Fetch FantasyCalc dynasty values. Returns Map<normalizedName, { rank, value }>
+ * where rank is the player's overall dynasty rank (1 = most valuable). The
+ * dataset includes rookies with age/prospect-adjusted ranks, so filtering
+ * the returned map to rookies-only (by yearsExp === 0 in our DB) yields a
+ * clean rookie pecking order with much better coverage than MFL's
+ * IS_KEEPER=R feed.
+ *
+ * Docs: https://api.fantasycalc.com (public, no key required).
+ */
+async function fetchFantasyCalcDynastyValues(
+  scoringFormat: 'ppr' | 'half-ppr' | 'standard',
+  superflex: boolean,
+): Promise<Map<string, { rank: number; value: number }>> {
+  const ppr = scoringFormat === 'ppr' ? 1 : scoringFormat === 'half-ppr' ? 0.5 : 0;
+  const numQbs = superflex ? 2 : 1;
+  const url = `https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=${numQbs}&numTeams=12&ppr=${ppr}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn(`[draftRankings] FantasyCalc dynasty ${scoringFormat} HTTP ${res.status}`);
+      return new Map();
+    }
+    const data = (await res.json()) as Array<{
+      player?: { name?: string };
+      overallRank?: number;
+      value?: number;
+    }>;
+    if (!Array.isArray(data)) {
+      console.warn('[draftRankings] FantasyCalc returned non-array payload');
+      return new Map();
+    }
+    const result = new Map<string, { rank: number; value: number }>();
+    for (const entry of data) {
+      const name = entry.player?.name;
+      const rank = entry.overallRank;
+      const value = entry.value;
+      if (!name || typeof rank !== 'number') continue;
+      result.set(normalizePlayerName(name), { rank, value: typeof value === 'number' ? value : 0 });
+    }
+    console.log(`[draftRankings] FantasyCalc dynasty (${scoringFormat}, sf=${superflex}): ${result.size} entries`);
+    return result;
+  } catch (err) {
+    console.error('[draftRankings] FantasyCalc dynasty fetch failed:', err);
+    return new Map();
+  }
+}
+
+/**
+ * Build a rookie-only ADP map by taking FantasyCalc dynasty ranks for
+ * yearsExp===0 players, re-indexing so 1 = top rookie, 2 = second rookie,
+ * etc. This gives the model a clean 1-N rookie draft order anchor.
+ * MFL IS_KEEPER=R is merged in as a fallback for rookies FantasyCalc
+ * hasn't priced yet.
+ */
+async function buildRookieAdpMap(
+  db: DB,
+  scoringFormat: 'ppr' | 'half-ppr' | 'standard',
+  superflex: boolean,
+  seasonYear: number,
+): Promise<Map<string, number>> {
+  const [fcDynasty, mflRookie] = await Promise.all([
+    fetchFantasyCalcDynastyValues(scoringFormat, superflex),
+    fetchMFLADP(seasonYear, scoringFormat, 'R'),
+  ]);
+
+  // Pull rookies from our player catalog so we can filter FC's full-dynasty
+  // ranks down to rookies-only. FC tags players by position, not rookie
+  // status — yearsExp in our DB is the source of truth.
+  const rookies = await db.query.nflPlayers.findMany({
+    where: and(
+      eq(schema.nflPlayers.yearsExp, 0),
+      inArray(schema.nflPlayers.position, ['QB', 'RB', 'WR', 'TE']),
+    ),
+  });
+
+  // Rookies present in FC dynasty data, sorted by FC overall rank ascending.
+  const rookiesWithFcRank = rookies
+    .map(r => {
+      const hit = fcDynasty.get(normalizePlayerName(r.name));
+      return hit ? { name: r.name, rank: hit.rank } : null;
+    })
+    .filter((x): x is { name: string; rank: number } => x !== null)
+    .sort((a, b) => a.rank - b.rank);
+
+  const result = new Map<string, number>();
+  rookiesWithFcRank.forEach((r, idx) => {
+    result.set(normalizePlayerName(r.name), idx + 1);
+  });
+
+  // Merge MFL rookie ADP for anyone FC missed. MFL ranks are already
+  // rookie-draft order, but we place them after the FC-ranked rookies so
+  // the FC anchor dominates.
+  const offset = result.size;
+  const mflEntries = Array.from(mflRookie.entries()).sort((a, b) => a[1] - b[1]);
+  let extra = 0;
+  for (const [normName] of mflEntries) {
+    if (result.has(normName)) continue;
+    extra += 1;
+    result.set(normName, offset + extra);
+  }
+
+  console.log(`[draftRankings] Rookie ADP: ${result.size} entries (${offset} from FC, ${extra} from MFL fallback)`);
+  return result;
 }
 
 type KeeperType = 'N' | 'R'; // N = redraft, R = rookie-only
@@ -352,27 +459,31 @@ function buildDynastyRookiePrompt(
   scoringFormat: string,
   superflex: boolean,
 ): string {
-  const playerLines = players
-    .slice(0, 100)
+  // Anchor the prompt on the rookies FantasyCalc has ranked (p.adp !== null
+  // here is the re-indexed rookie rank, 1 = top rookie). Unranked rookies
+  // come after, sorted by depth chart and news presence.
+  const ranked = players.filter(p => p.adp !== null).sort((a, b) => (a.adp ?? 999) - (b.adp ?? 999));
+  const unranked = players
+    .filter(p => p.adp === null)
+    .sort((a, b) => (a.depthChartOrder ?? 99) - (b.depthChartOrder ?? 99));
+
+  const playerLines = [...ranked, ...unranked]
+    .slice(0, 150)
     .map(p => {
       const newsStr = p.recentNews.length > 0 ? ` | News: ${p.recentNews.join('; ')}` : '';
-      return `${p.name} (${p.position}, ${p.team}) | Age: ${p.age ?? '?'} | Status: ${p.status}${p.injuryNote ? ` (${p.injuryNote})` : ''} | Depth: ${p.depthChartOrder ?? '?'}${newsStr}`;
+      const adpStr = p.adp !== null ? `Rookie ADP ${p.adp}` : 'Rookie ADP N/A';
+      return `${p.name} (${p.position}, ${p.team}) | Age: ${p.age ?? '?'} | ${adpStr} | Depth: ${p.depthChartOrder ?? '?'} | Status: ${p.status}${p.injuryNote ? ` (${p.injuryNote})` : ''}${newsStr}`;
     })
     .join('\n');
 
-  return `You are an expert fantasy football dynasty analyst generating rookie rankings for the upcoming NFL season in ${scoringFormat.toUpperCase()} scoring.${superflex ? ' This is a SUPERFLEX league (rookie QBs are significantly more valuable).' : ''}
+  return `You are an expert fantasy football dynasty analyst generating DYNASTY ROOKIE DRAFT rankings for ${scoringFormat.toUpperCase()} scoring.${superflex ? ' This is a SUPERFLEX league — rookie QBs with Round 1 NFL draft capital are dramatically more valuable.' : ' This is a 1-QB league — rookie QBs are significantly LESS valuable unless they have elite draft capital AND a clear day-1 starting job.'}
 
-TASK: Rank these rookies for a dynasty rookie draft. Focus on:
-- NFL draft capital (round drafted — higher picks get more opportunity)
-- Landing spot and path to playing time (depth chart position)
-- Team offensive scheme and coaching staff
-- Athletic profile and college production trajectory
-- Recent news (OTA reports, training camp buzz, injuries)
+TASK: Rank these players for a dynasty rookie-only draft. This is the annual 1st/2nd/3rd/4th-round rookie draft that happens every offseason in dynasty leagues — you are ordering THIS YEAR'S rookie class, nothing else. Anchor on the "Rookie ADP" column (1 = consensus top rookie). Stay within ±4 of Rookie ADP unless there is a concrete post-ADP reason (NFL draft result, trade, injury, depth-chart change).
 
-ROOKIE PLAYER DATA:
+ROOKIE DATA:
 ${playerLines}
 
-RESPOND WITH ONLY VALID JSON — an array of objects, one per ranked rookie:
+RESPOND WITH ONLY VALID JSON — rank the top 60 rookies:
 [
   {
     "name": "Player Name",
@@ -381,23 +492,33 @@ RESPOND WITH ONLY VALID JSON — an array of objects, one per ranked rookie:
     "positionRank": 1,
     "tier": 1,
     "projectedPoints": null,
-    "rationale": "1 concise sentence on rank and value",
-    "analysis": "3-5 sentence detailed breakdown covering: draft capital and what it signals, landing spot quality (scheme, coaching, offensive line), path to playing time (who's ahead, competition), college production profile, and realistic year-1 vs long-term dynasty outlook."
+    "rationale": "1 concise sentence on rookie draft value",
+    "analysis": "3-5 sentence breakdown covering: NFL draft capital (round/pick), landing spot (scheme, coaching, OL/run-game quality, QB play for pass-catchers), path to touches year 1 (who's ahead, competition, aging vets in front), college profile (production, athletic testing, age-adjusted metrics), and year-1 vs long-term dynasty outlook."
   }
 ]
 
-TIER RULES (dynasty rookie context):
-- Tier 1: Consensus top picks — elite draft capital + premium landing spot (top ~3-5)
-- Tier 2: Strong starters — high draft capital or great situation (top ~10-12)
-- Tier 3: Solid picks with clear path (top ~18-20)
-- Tier 4: Upside picks with some risk (top ~24-28)
-- Tier 5: Dart throws — late-round NFL picks or crowded backfields (28+)
+RANKING PRIORITIES (in order):
+1. **NFL draft capital** — Round 1 picks get the most opportunity, runway, and coaching investment. A Round 1 WR almost always outperforms a Round 3 WR even if the Round 3 prospect has better college tape. Day 3 picks (Round 4+) are dart throws regardless of college production.
+2. **Landing spot for touches/targets** — a Round 2 RB to a team with no incumbent starter is worth more than a Round 1 RB stuck behind an established RB1. For WRs: target share path matters more than team quality. For TEs: scheme + QB matter.
+3. **Position** — in ${superflex ? 'SUPERFLEX, Round 1 QBs are the top 2-3 rookie picks regardless of landing spot because SF QB scarcity is extreme' : '1-QB, RBs > WRs at the top (RB touches translate instantly; WR year-1 hit rate is low); QBs fall unless they have a clean path to starting'}. TEs almost never belong in the top 8 rookie picks in 1-QB — the TE rookie year is usually a redshirt.
+4. **Age/profile** — younger declared rookies (age 20-21) with elite athletic testing get a boost; older rookies (22+ with mediocre testing) get dinged.
+
+TIER RULES (dynasty rookie draft):
+- Tier 1: 1.01-level — the consensus top rookie, generational profile + elite landing spot
+- Tier 2: Round 1 picks — clean path to touches, Round 1 NFL draft capital (ranks ~2-6)
+- Tier 3: Early 2nd — Round 2 NFL picks with good situations, or Round 1 NFL picks with a tougher path (ranks ~7-14)
+- Tier 4: Mid 2nd — Day 2 NFL picks with unclear roles, or Day 3 picks to premium landing spots (ranks ~15-20)
+- Tier 5: Late 2nd / Early 3rd — high-upside fliers with real capital or situation (ranks ~21-28)
+- Tier 6: Late 3rd — depth bets with one clear positive (capital OR situation, not both) (ranks ~29-36)
+- Tier 7: 4th-round fliers — dart throws on athletic profile or UDFAs in good spots (ranks ~37-48)
+- Tier 8: Deep darts — taxi-squad stashes, scheme-specific fits (ranks 49+)
 
 IMPORTANT:
-- projectedPoints can be null for rookies with high uncertainty, or a rough estimate if you're confident
+- projectedPoints should be null for most rookies — year-1 projections are noise for anyone outside the top ~8. You may include a rough estimate for the clear top-tier contributors.
+- A rookie ranked far above his Rookie ADP needs a concrete reason cited (e.g. "selected with pick 1.04 after rankings were published", "starting RB in front of him was released")
 - rationale: 1 punchy sentence (shown inline in the rankings table)
-- analysis: 3-5 sentences of real scouting — draft capital, landing spot, depth chart, college production, year-1 vs long-term outlook. Be specific: "Day 2 pick in a run-heavy offense behind an aging Derrick Henry, with the offensive line ranked 5th in run blocking" is good. "Good prospect with upside" is worthless.
-- Landing spot matters MORE than college tape for year-1 fantasy value`;
+- analysis: 3-5 sentences of real scouting. Be specific: "Round 1 pick at #12, walks into a vacated 280-touch RB1 role after Saquon's trade, 22 college touchdowns at 21.0 YPC after contact, projected 14+ PPR PPG as a rookie" is good. "Good prospect with upside" is worthless.
+- Do NOT include veterans, practice-squad holdovers, or non-rookies. If a player's age is 24+ they are almost certainly not a true rookie — skip them.`;
 }
 
 // ── Batch submission ────────────────────────────────────────────────
@@ -451,12 +572,12 @@ export async function submitDraftRankingsBatch(
   const metas: BatchVariantMeta[] = [];
 
   for (const v of variants) {
-    // Redraft → FantasyPros 1-QB ADP (MFL's ADP pool is dominated by
-    // superflex drafts, which ranks QBs way too high for 1-QB leagues).
-    // Dynasty rookie → MFL rookie-only ADP (FantasyPros doesn't expose
-    // rookie ADP cleanly; MFL's is the only free structured source).
+    // ADP source per ranking type:
+    //  Redraft → FantasyPros 1-QB ADP (MFL is dominated by superflex drafts)
+    //  Dynasty rookie → FantasyCalc dynasty values filtered to rookies
+    //    (clean age/prospect-adjusted ranks) + MFL IS_KEEPER=R fallback
     const adp = v.rankingType === 'dynasty_rookie'
-      ? await fetchMFLADP(seasonYear, v.scoringFormat, 'R')
+      ? await buildRookieAdpMap(db, v.scoringFormat, v.superflex, seasonYear)
       : await fetchFantasyProsADP(v.scoringFormat);
     const contexts = await buildPlayerContexts(db, v.rankingType, v.scoringFormat, seasonYear, adp);
     if (contexts.length === 0) {
@@ -795,7 +916,7 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
   // rather than what was in effect hours ago when the batch was submitted.
   // Same source routing as the submit path.
   const adp = meta.rankingType === 'dynasty_rookie'
-    ? await fetchMFLADP(seasonYear, meta.scoringFormat, 'R')
+    ? await buildRookieAdpMap(db, meta.scoringFormat, meta.superflex, seasonYear)
     : await fetchFantasyProsADP(meta.scoringFormat);
   const contexts = await buildPlayerContexts(
     db, meta.rankingType, meta.scoringFormat, seasonYear, adp,

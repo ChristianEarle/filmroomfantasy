@@ -66,5 +66,8 @@
             "typecheck:server": "cd server && tsc --noEmit",
             "preview": "vite preview",
             "lint": "eslint src --ext .ts,.tsx"
+      },
+      "optionalDependencies": {
+            "@rollup/rollup-win32-x64-msvc": "^4.60.2"
       }
 }

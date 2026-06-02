@@ -68,11 +68,14 @@ const TIER_LABELS: Record<string, Record<number, string>> = {
     8: 'Deep Sleepers',
   },
   dynasty_rookie: {
-    1: 'Top Picks',
-    2: 'Strong Starters',
-    3: 'Solid Picks',
-    4: 'Upside Picks',
-    5: 'Dart Throws',
+    1: '1.01-level',
+    2: 'Round 1',
+    3: 'Early 2nd',
+    4: 'Mid 2nd',
+    5: 'Late 2nd / Early 3rd',
+    6: 'Late 3rd',
+    7: '4th-round Fliers',
+    8: 'Deep Darts',
   },
 };
 
@@ -216,7 +219,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
   const defaultScoring: ScoringFormat = (league?.scoringFormat as ScoringFormat) || 'ppr';
   const defaultSuperflex = (league as any)?.hasSuperflex ?? false;
 
-  const [rankingView, setRankingView] = useState<'redraft' | 'dynasty' | 'rookie'>('redraft');
+  const [rankingView, setRankingView] = useState<'redraft' | 'dynasty'>('redraft');
   const rankingType: RankingType = rankingView === 'redraft' ? 'redraft' : 'dynasty_rookie';
   const [scoringFormat, setScoringFormat] = useState<ScoringFormat>(defaultScoring);
   const [superflex, setSuperflex] = useState(defaultSuperflex);
@@ -255,9 +258,6 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
   // Filter and group by tier
   const filteredRankings = useMemo(() => {
     let filtered = rankings;
-    if (rankingView === 'rookie') {
-      filtered = filtered.filter(r => (r.player.yearsExp ?? 99) <= 0);
-    }
     if (positionFilter !== 'ALL') {
       filtered = filtered.filter(r => r.player.position === positionFilter);
     }
@@ -268,7 +268,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
       );
     }
     return filtered;
-  }, [rankings, rankingView, positionFilter, searchQuery]);
+  }, [rankings, positionFilter, searchQuery]);
 
   const tierGroups = useMemo(() => {
     const groups = new Map<number, DraftRanking[]>();
@@ -394,7 +394,6 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode }: DraftRankingsVi
         <div className="flex gap-1">
           {pill(rankingView === 'redraft', () => setRankingView('redraft'), 'Redraft')}
           {pill(rankingView === 'dynasty', () => setRankingView('dynasty'), 'Dynasty')}
-          {pill(rankingView === 'rookie', () => setRankingView('rookie'), 'Rookie')}
         </div>
 
         <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
