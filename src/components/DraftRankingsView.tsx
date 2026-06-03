@@ -2,7 +2,9 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Medal, Loader2, Search, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, AlertTriangle, Plus, Download, MessageSquare, Heart, ArrowUpRight, Check, X } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
+import { useAuth } from '../context/AuthContext';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { AiChatModal } from './AiChatModal';
 import api from '../services/api';
 import { downloadRankingsCsv } from '../utils/csvExport';
 import { seedTradeAsset } from '../utils/tradeSeed';
@@ -126,8 +128,23 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   const [compareList, setCompareList] = useState<DraftRanking[]>([]);
   const [showCompare, setShowCompare] = useState(false);
   const [watchingOnly, setWatchingOnly] = useState(false);
+  const [showAsk, setShowAsk] = useState(false);
 
+  const { user, isAuthenticated } = useAuth();
   const watchlist = useWatchlist();
+
+  // Ask AI is Pro/Elite only: route logged-out users to login, free tier to pricing.
+  const handleAskAi = useCallback(() => {
+    if (!isAuthenticated) {
+      onNavigate?.('Login');
+      return;
+    }
+    if ((user?.subscriptionTier || 'free') === 'free') {
+      onNavigate?.('Pricing');
+      return;
+    }
+    setShowAsk(true);
+  }, [isAuthenticated, user, onNavigate]);
 
   const compareIds = useMemo(() => new Set(compareList.map(r => r.player.id)), [compareList]);
   const toggleCompare = useCallback((ranking: DraftRanking) => {
@@ -342,6 +359,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
           </button>
           <button
             type="button"
+            onClick={handleAskAi}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white border border-blue-600 hover:bg-blue-500 transition-colors"
           >
             <MessageSquare className="w-3.5 h-3.5" />
@@ -512,6 +530,17 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
           onRemove={toggleCompare}
         />
       )}
+
+      <AiChatModal
+        isOpen={showAsk}
+        onClose={() => setShowAsk(false)}
+        isDarkMode={isDarkMode}
+        title="Ask AI about the draft"
+        endpoint="/draft-rankings/ask"
+        contextParams={{ type: rankingType, scoring: scoringFormat, season: new Date().getFullYear() }}
+        placeholder="e.g. Who should I draft at pick 5?"
+        quickActions={['Who are the top 3 RBs?', 'Best value in round 5?', 'Should I draft a QB early?']}
+      />
     </div>
   );
 }
