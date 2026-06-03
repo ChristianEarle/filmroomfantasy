@@ -9,12 +9,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const hoisted = vi.hoisted(() => ({
   mockGet: vi.fn(),
   league: { current: null as any },
+  watchlist: { current: null as any },
 }));
 
 vi.mock('../App', () => ({}));
 vi.mock('../services/api', () => ({ default: { get: hoisted.mockGet } }));
 vi.mock('../context/LeagueContext', () => ({
   useLeagueContext: () => ({ league: hoisted.league.current }),
+}));
+// Mock the watchlist hook so the component test doesn't need AuthProvider/network.
+vi.mock('../hooks/useWatchlist', () => ({
+  useWatchlist: () => hoisted.watchlist.current,
 }));
 
 import { DraftRankingsView } from './DraftRankingsView';
@@ -95,6 +100,14 @@ beforeEach(() => {
   hoisted.mockGet.mockReset();
   hoisted.mockGet.mockResolvedValue(response(ALL));
   hoisted.league.current = null;
+  hoisted.watchlist.current = {
+    watchedIds: new Set<string>(),
+    isWatched: () => false,
+    toggle: vi.fn(),
+    loading: false,
+    isAuthenticated: false,
+    refresh: vi.fn(),
+  };
   localStorage.clear();
 });
 
@@ -259,6 +272,38 @@ describe('DraftRankingsView — trade value', () => {
     fireEvent.click(table().getByRole('button', { name: /trade value/i }));
     expect(onNavigate).toHaveBeenCalledWith('TradeAnalyzer');
     expect(consumeTradeSeed()).toMatchObject({ id: 'a', type: 'player', name: 'Josh Allen', position: 'QB' });
+  });
+});
+
+describe('DraftRankingsView — watchlist', () => {
+  it('routes logged-out users to login when clicking Watch', async () => {
+    const onNavigate = vi.fn();
+    render(<DraftRankingsView onPlayerClick={vi.fn()} isDarkMode={false} onNavigate={onNavigate} />);
+    await loaded();
+    // The "Watching" filter pill is hidden when logged out.
+    expect(screen.queryByRole('button', { name: 'Watching' })).toBeNull();
+    expandRow('Josh Allen');
+    fireEvent.click(table().getByRole('button', { name: /^watch$/i }));
+    expect(onNavigate).toHaveBeenCalledWith('Login');
+    expect(hoisted.watchlist.current.toggle).not.toHaveBeenCalled();
+  });
+
+  it('toggles the watchlist and shows the filter when authenticated', async () => {
+    const toggle = vi.fn();
+    hoisted.watchlist.current = {
+      watchedIds: new Set<string>(),
+      isWatched: () => false,
+      toggle,
+      loading: false,
+      isAuthenticated: true,
+      refresh: vi.fn(),
+    };
+    render(<DraftRankingsView onPlayerClick={vi.fn()} isDarkMode={false} onNavigate={vi.fn()} />);
+    await loaded();
+    expect(screen.getByRole('button', { name: 'Watching' })).toBeInTheDocument();
+    expandRow('Josh Allen');
+    fireEvent.click(table().getByRole('button', { name: /^watch$/i }));
+    expect(toggle).toHaveBeenCalledWith('a');
   });
 });
 

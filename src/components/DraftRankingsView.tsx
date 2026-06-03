@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Medal, Loader2, Search, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, AlertTriangle, Plus, Download, MessageSquare, Heart, ArrowUpRight, Check, X } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
+import { useWatchlist } from '../hooks/useWatchlist';
 import api from '../services/api';
 import { downloadRankingsCsv } from '../utils/csvExport';
 import { seedTradeAsset } from '../utils/tradeSeed';
@@ -124,6 +125,9 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [compareList, setCompareList] = useState<DraftRanking[]>([]);
   const [showCompare, setShowCompare] = useState(false);
+  const [watchingOnly, setWatchingOnly] = useState(false);
+
+  const watchlist = useWatchlist();
 
   const compareIds = useMemo(() => new Set(compareList.map(r => r.player.id)), [compareList]);
   const toggleCompare = useCallback((ranking: DraftRanking) => {
@@ -142,6 +146,15 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     seedTradeAsset({ id: p.id, type: 'player', name: p.name, position: p.position, team: p.team });
     onNavigate?.('TradeAnalyzer');
   }, [onNavigate]);
+
+  // Toggle a player on the watchlist; route logged-out users to login first.
+  const handleToggleWatch = useCallback((ranking: DraftRanking) => {
+    if (!watchlist.isAuthenticated) {
+      onNavigate?.('Login');
+      return;
+    }
+    void watchlist.toggle(ranking.player.id);
+  }, [watchlist, onNavigate]);
 
   const fetchRankings = useCallback(async () => {
     setLoading(true);
@@ -192,8 +205,11 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
         r => r.player.name.toLowerCase().includes(q) || r.player.team.toLowerCase().includes(q),
       );
     }
+    if (watchingOnly) {
+      filtered = filtered.filter(r => watchlist.watchedIds.has(r.player.id));
+    }
     return filtered;
-  }, [rankings, positionFilter, searchQuery]);
+  }, [rankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
 
   const tierGroups = useMemo(() => {
     const groups = new Map<number, DraftRanking[]>();
@@ -362,6 +378,15 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
             </span>
           ))}
         </div>
+
+        {watchlist.isAuthenticated && (
+          <>
+            <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+            <div className="flex gap-1">
+              {pill(watchingOnly, () => setWatchingOnly(v => !v), 'Watching')}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Search */}
@@ -470,6 +495,8 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
               compareIds={compareIds}
               onToggleCompare={toggleCompare}
               onTradeValue={handleTradeValue}
+              watchedIds={watchlist.watchedIds}
+              onToggleWatch={handleToggleWatch}
             />
           ))}
           </div>
@@ -517,6 +544,8 @@ function TierGroup({
   compareIds,
   onToggleCompare,
   onTradeValue,
+  watchedIds,
+  onToggleWatch,
 }: {
   tier: number;
   label: string;
@@ -529,6 +558,8 @@ function TierGroup({
   compareIds: Set<string>;
   onToggleCompare: (ranking: DraftRanking) => void;
   onTradeValue: (ranking: DraftRanking) => void;
+  watchedIds: Set<string>;
+  onToggleWatch: (ranking: DraftRanking) => void;
 }) {
   const colors = TIER_COLORS[tier] || TIER_COLORS[5];
   const colorClass = isDarkMode ? colors.dark : colors.light;
@@ -562,6 +593,8 @@ function TierGroup({
             isInCompare={compareIds.has(ranking.player.id)}
             onToggleCompare={() => onToggleCompare(ranking)}
             onTradeValue={() => onTradeValue(ranking)}
+            isWatched={watchedIds.has(ranking.player.id)}
+            onToggleWatch={() => onToggleWatch(ranking)}
           />
         ))}
       </div>
@@ -579,6 +612,8 @@ function PlayerRow({
   isInCompare,
   onToggleCompare,
   onTradeValue,
+  isWatched,
+  onToggleWatch,
 }: {
   ranking: DraftRanking;
   rankingType: RankingType;
@@ -589,6 +624,8 @@ function PlayerRow({
   isInCompare: boolean;
   onToggleCompare: () => void;
   onTradeValue: () => void;
+  isWatched: boolean;
+  onToggleWatch: () => void;
 }) {
   const p = ranking.player;
   const posColor = POSITION_COLORS[p.position] || 'text-slate-400';
@@ -755,12 +792,16 @@ function PlayerRow({
                 </button>
                 <button
                   type="button"
+                  onClick={onToggleWatch}
+                  aria-pressed={isWatched}
                   className={`inline-flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
-                    isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    isWatched
+                      ? 'bg-rose-500/15 border-rose-500/40 text-rose-500 hover:bg-rose-500/25'
+                      : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                   }`}
                 >
-                  <Heart className="w-3 h-3" />
-                  Watch
+                  <Heart className={`w-3 h-3 ${isWatched ? 'fill-current' : ''}`} />
+                  {isWatched ? 'Watching' : 'Watch'}
                 </button>
               </div>
             </div>
