@@ -45,6 +45,22 @@ export const sessions = sqliteTable('sessions', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
+// Players a user has saved to their watchlist. One row per (user, player);
+// the unique index makes adds idempotent and the user index keeps list reads
+// cheap. Both FKs cascade so rows clean up when a user or player is removed.
+export const userPlayerWatchlist = sqliteTable('user_player_watchlist', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  userPlayerUnique: uniqueIndex('idx_user_player_watchlist_unique').on(table.userId, table.playerId),
+  userIdx: index('idx_user_player_watchlist_user').on(table.userId),
+}));
+
+export type UserPlayerWatchlist = typeof userPlayerWatchlist.$inferSelect;
+export type NewUserPlayerWatchlist = typeof userPlayerWatchlist.$inferInsert;
+
 // ============================================
 // LEAGUE STRUCTURE
 // ============================================
