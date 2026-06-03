@@ -7,6 +7,7 @@ import type { Env, Variables } from '../index';
 import { computeOutcome, computeRecordImpact } from '../services/tradeOutcomes';
 import { ingestSleeperTrades } from '../services/tradeIngest';
 import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
+import { getTodayKey } from '../utils/prompt';
 
 /**
  * Resolution result for the caller's team in a league. Includes the
@@ -163,10 +164,6 @@ const RETRO_GRADE_LIMITS: Record<string, number> = {
   pro: 5,
   elite: Infinity,
 };
-
-function getTodayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 // ── GET /history?leagueId=...&season=... ─────────────────────────────
 // Returns trades the caller was in for a league (optionally filtered
