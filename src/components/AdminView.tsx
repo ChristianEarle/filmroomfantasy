@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users, TrendingUp, Shield, Loader2, Search, ChevronUp, ChevronDown, BarChart3, Globe, Monitor, Smartphone, Tablet, Eye, MousePointer, FileText } from 'lucide-react';
+import { Users, TrendingUp, Shield, Loader2, Search, ChevronUp, ChevronDown, BarChart3, Globe, Monitor, Smartphone, Tablet, Eye, MousePointer, FileText, Medal, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 import { ArticleEditor } from './ArticleEditor';
 
@@ -42,6 +42,25 @@ interface AnalyticsData {
 }
 
 type AdminTab = 'overview' | 'analytics' | 'articles';
+
+// Mirrors DEFAULT_VARIANTS in server/src/services/draftRankings.ts (all 1-QB).
+const DRAFT_RANKING_VARIANTS = [
+  { label: 'Redraft · PPR', type: 'redraft', scoring: 'ppr' },
+  { label: 'Redraft · Half PPR', type: 'redraft', scoring: 'half-ppr' },
+  { label: 'Dynasty Rookie · PPR', type: 'dynasty_rookie', scoring: 'ppr' },
+  { label: 'Dynasty Rookie · Half PPR', type: 'dynasty_rookie', scoring: 'half-ppr' },
+] as const;
+
+interface RankingBatchJob {
+  id: string;
+  anthropicBatchId: string;
+  status: string;
+  seasonYear: number;
+  variants: { rankingType: string; scoringFormat: string; superflex: boolean }[];
+  submittedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+}
 
 export function AdminView({ isDarkMode }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -436,6 +455,14 @@ function OverviewTab({
         )}
       </div>
 
+      {/* Draft Rankings generation */}
+      <DraftRankingsAdminCard
+        isDarkMode={isDarkMode}
+        cardClass={cardClass}
+        textPrimary={textPrimary}
+        textSecondary={textSecondary}
+      />
+
       {/* Recent Users */}
       {stats?.recentUsers && stats.recentUsers.length > 0 && (
         <div className={cardClass}>
@@ -479,6 +506,137 @@ function OverviewTab({
             </table>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Draft Rankings Admin Card ────────────────────────────────────────────────
+function DraftRankingsAdminCard({
+  isDarkMode, cardClass, textPrimary, textSecondary,
+}: {
+  isDarkMode: boolean;
+  cardClass: string;
+  textPrimary: string;
+  textSecondary: string;
+}) {
+  const [jobs, setJobs] = useState<RankingBatchJob[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [submitting, setSubmitting] = useState<string | null>(null);
+  const [result, setResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const fetchJobs = useCallback(async () => {
+    setJobsLoading(true);
+    try {
+      const data = await api.get<{ jobs: RankingBatchJob[] }>('/admin/ranking-batch-jobs');
+      setJobs(data.jobs);
+    } catch {
+      // Non-fatal — leave the existing list in place.
+    } finally {
+      setJobsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs]);
+
+  const generate = async (v: typeof DRAFT_RANKING_VARIANTS[number]) => {
+    setSubmitting(v.label);
+    setResult(null);
+    try {
+      const data = await api.post<{ message: string }>('/admin/generate-draft-rankings', {
+        type: v.type,
+        scoring: v.scoring,
+        superflex: false,
+      });
+      setResult({ type: 'success', message: data.message });
+      fetchJobs();
+    } catch (err) {
+      setResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to submit batch' });
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  const statusColor = (status: string) =>
+    status === 'completed' ? 'text-emerald-500' : status === 'failed' ? 'text-red-500' : 'text-amber-500';
+
+  return (
+    <div className={cardClass}>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className={`text-lg font-semibold ${textPrimary}`}>
+          <Medal className="w-5 h-5 inline mr-2" />
+          Draft Rankings
+        </h2>
+        <button
+          onClick={fetchJobs}
+          disabled={jobsLoading}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-50 ${
+            isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          {jobsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          Refresh
+        </button>
+      </div>
+      <p className={`text-sm mb-4 ${textSecondary}`}>
+        Submit an Anthropic batch to regenerate a ranking variant. Results land in the table once the hourly
+        process-batches cron picks up the completed batch.
+      </p>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {DRAFT_RANKING_VARIANTS.map((v) => (
+          <button
+            key={v.label}
+            onClick={() => generate(v)}
+            disabled={submitting !== null}
+            className="px-3 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+          >
+            {submitting === v.label ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Generate {v.label}
+          </button>
+        ))}
+      </div>
+      {result && (
+        <div className={`mb-4 px-3 py-2 rounded-lg text-sm ${
+          result.type === 'success'
+            ? isDarkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-50 text-green-700'
+            : isDarkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-700'
+        }`}>
+          {result.message}
+        </div>
+      )}
+      {jobs.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                <th className={`text-left pb-2 font-medium ${textSecondary}`}>Variants</th>
+                <th className={`text-left pb-2 font-medium ${textSecondary}`}>Status</th>
+                <th className={`text-left pb-2 font-medium ${textSecondary}`}>Submitted</th>
+                <th className={`text-left pb-2 font-medium ${textSecondary}`}>Completed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.id} className={`border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                  <td className={`py-2 ${textPrimary}`}>
+                    {job.variants.map((va) => `${va.rankingType}/${va.scoringFormat}${va.superflex ? '/SF' : ''}`).join(', ') || '—'}
+                  </td>
+                  <td className={`py-2 font-medium ${statusColor(job.status)}`}>{job.status}</td>
+                  <td className={`py-2 whitespace-nowrap ${textSecondary}`}>
+                    {job.submittedAt ? new Date(job.submittedAt).toLocaleString() : '—'}
+                  </td>
+                  <td className={`py-2 whitespace-nowrap ${textSecondary}`}>
+                    {job.completedAt ? new Date(job.completedAt).toLocaleString() : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className={`text-sm ${textSecondary}`}>{jobsLoading ? 'Loading jobs…' : 'No batch jobs yet.'}</p>
       )}
     </div>
   );
