@@ -2077,3 +2077,44 @@ adminRoutes.post('/process-ranking-batches', async (c) => {
     }, 500);
   }
 });
+
+/**
+ * GET /api/admin/ranking-batch-jobs
+ *
+ * Returns the most recent draft-ranking batch jobs (newest first) so the admin
+ * UI can show generation status. The stored `variants` JSON is parsed for the
+ * client.
+ */
+adminRoutes.get('/ranking-batch-jobs', async (c) => {
+  const db = c.get('db');
+  try {
+    const rows = await db.query.rankingBatchJobs.findMany({
+      orderBy: (j, { desc }) => [desc(j.submittedAt)],
+      limit: 20,
+    });
+    return c.json({
+      jobs: rows.map((j) => ({
+        id: j.id,
+        anthropicBatchId: j.anthropicBatchId,
+        status: j.status,
+        seasonYear: j.seasonYear,
+        variants: (() => {
+          try {
+            return JSON.parse(j.variants);
+          } catch {
+            return [];
+          }
+        })(),
+        submittedAt: j.submittedAt,
+        completedAt: j.completedAt,
+        errorMessage: j.errorMessage,
+      })),
+    });
+  } catch (err) {
+    console.error('[admin] ranking-batch-jobs error:', err);
+    return c.json({
+      error: 'Failed to load ranking batch jobs',
+      message: err instanceof Error ? err.message : 'Unknown error',
+    }, 500);
+  }
+});
