@@ -26,6 +26,7 @@ import { tradeFinderRoutes } from './routes/tradeFinder';
 import { analyticsRoutes } from './routes/analytics';
 import { articleRoutes } from './routes/articles';
 import { draftRankingsRoutes } from './routes/draftRankings';
+import { watchlistRoutes } from './routes/watchlist';
 import { platformProxyRoutes } from './routes/platformProxy';
 
 // Types
@@ -211,6 +212,7 @@ app.route('/api/admin', adminStatsRoutes);
 app.route('/api/analytics', analyticsRoutes);
 app.route('/api/articles', articleRoutes);
 app.route('/api/draft-rankings', draftRankingsRoutes);
+app.route('/api/watchlist', watchlistRoutes);
 // Proxy for external fantasy platform read APIs (Sleeper/ESPN/MFL).
 // Routes browser-originated lookups through our own origin to avoid CORS,
 // ad-blockers, and policy changes on upstream platforms.
