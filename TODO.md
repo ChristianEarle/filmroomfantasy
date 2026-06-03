@@ -21,7 +21,7 @@ Active sprint — work these next, in roughly this order. Each links into the de
 
 1. **AI systems foundation** — Ask AI chat assistant, AI post-game analysis, ROS rankings from AI, per-player AI take. (see P3 — AI Surfaces)
 2. **Implement League Analyzer** — Real page replacing the "Coming Soon" placeholder. (see P3 — AI Surfaces)
-3. **Fix draft rankings** — Restore sidebar nav + finish the rankings feature (tiers, ADP, projections). Then layer the P3 enhancements. (see P1 + P3 — Draft Rankings)
+3. **Fix draft rankings** — ✅ Mostly shipped: removed the fabricated `Math.sin`-derived columns/panels, fixed the misleading "moved today" header copy, sourced dynasty-rookie ADP from FantasyCalc, removed the ungenerated superflex toggle, wired four buttons (Export, Compare, Add to compare, Trade value), and added an admin Generate UI + `ranking-batch-jobs` endpoint. Remaining: wire the Ask AI + Watch buttons (backend) and the data-infrastructure items. (see P3 — Draft Rankings)
 4. **Fix Trends page** — Page is broken / incomplete. Audit + add "Recent Best Performers" as a new tab alongside Roster Trends / Projection Movers / Odds Movement. (see P2 audit + new P3 item below)
 5. **Polish Game Slate + GameDetailModal** — Audit + visual polish pass. (see P2 audit)
 6. **Polish standalone player page + Player modules** — PlayerCard, PlayerProfileView, PlayerAvatar, projection breakdown, FilmRoom Insights, quick actions. (see P1 player card + P2 audits)
