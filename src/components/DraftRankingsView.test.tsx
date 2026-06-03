@@ -8,14 +8,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // controlled fixtures with no network or provider.
 const hoisted = vi.hoisted(() => ({
   mockGet: vi.fn(),
+  mockPost: vi.fn(),
   league: { current: null as any },
   watchlist: { current: null as any },
+  auth: { current: { user: null as any, isAuthenticated: false } },
 }));
 
 vi.mock('../App', () => ({}));
-vi.mock('../services/api', () => ({ default: { get: hoisted.mockGet } }));
+vi.mock('../services/api', () => ({
+  default: { get: hoisted.mockGet, post: hoisted.mockPost },
+  api: { get: hoisted.mockGet, post: hoisted.mockPost },
+}));
 vi.mock('../context/LeagueContext', () => ({
   useLeagueContext: () => ({ league: hoisted.league.current }),
+}));
+vi.mock('../context/AuthContext', () => ({
+  useAuth: () => hoisted.auth.current,
 }));
 // Mock the watchlist hook so the component test doesn't need AuthProvider/network.
 vi.mock('../hooks/useWatchlist', () => ({
@@ -108,6 +116,8 @@ beforeEach(() => {
     isAuthenticated: false,
     refresh: vi.fn(),
   };
+  hoisted.auth.current = { user: null, isAuthenticated: false };
+  hoisted.mockPost.mockReset();
   localStorage.clear();
 });
 
@@ -304,6 +314,34 @@ describe('DraftRankingsView — watchlist', () => {
     expandRow('Josh Allen');
     fireEvent.click(table().getByRole('button', { name: /^watch$/i }));
     expect(toggle).toHaveBeenCalledWith('a');
+  });
+});
+
+describe('DraftRankingsView — Ask AI gating', () => {
+  it('routes logged-out users to login', async () => {
+    const onNavigate = vi.fn();
+    render(<DraftRankingsView onPlayerClick={vi.fn()} isDarkMode={false} onNavigate={onNavigate} />);
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: /ask ai/i }));
+    expect(onNavigate).toHaveBeenCalledWith('Login');
+    expect(screen.queryByRole('dialog', { name: /ask ai about the draft/i })).toBeNull();
+  });
+
+  it('routes free-tier users to pricing', async () => {
+    const onNavigate = vi.fn();
+    hoisted.auth.current = { user: { subscriptionTier: 'free' }, isAuthenticated: true };
+    render(<DraftRankingsView onPlayerClick={vi.fn()} isDarkMode={false} onNavigate={onNavigate} />);
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: /ask ai/i }));
+    expect(onNavigate).toHaveBeenCalledWith('Pricing');
+  });
+
+  it('opens the chat modal for Pro users', async () => {
+    hoisted.auth.current = { user: { subscriptionTier: 'pro' }, isAuthenticated: true };
+    render(<DraftRankingsView onPlayerClick={vi.fn()} isDarkMode={false} onNavigate={vi.fn()} />);
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: /ask ai/i }));
+    expect(screen.getByRole('dialog', { name: /ask ai about the draft/i })).toBeInTheDocument();
   });
 });
 

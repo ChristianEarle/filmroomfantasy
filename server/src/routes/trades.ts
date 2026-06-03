@@ -5,6 +5,7 @@ import * as schema from '../db/schema';
 import type { Env, Variables } from '../index';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
+import { sanitizePromptInput, getTodayKey, type ConversationTurn } from '../utils/prompt';
 import {
   buildTradeContext,
   type LeagueSettings,
@@ -26,37 +27,9 @@ type DB = ReturnType<typeof drizzle<typeof schema>>;
 
 const tradesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// ── Prompt Injection Defense ──────────────────────────────────────────
-
-/** Max length for individual user-supplied text fields injected into prompts */
-const MAX_FIELD_LENGTH = 200;
-
-/**
- * Sanitize user-supplied text before injecting into AI prompts.
- * Strips patterns commonly used in prompt injection attacks and
- * enforces a length limit to reduce attack surface.
- */
-function sanitizePromptInput(input: string, maxLength = MAX_FIELD_LENGTH): string {
-  let s = input.slice(0, maxLength);
-
-  // Remove characters that could be used to fake message boundaries or inject roles
-  // Strip common role/instruction injection patterns (case-insensitive)
-  s = s.replace(/(\r?\n){2,}/g, ' '); // collapse multi-newlines to space
-  s = s.replace(
-    /\b(system|assistant|human|user|ignore|forget|disregard|override)\s*:/gi,
-    '$1 -'
-  );
-
-  // Strip XML-style tags that could mimic system/tool boundaries
-  s = s.replace(/<\/?[a-z_-]+>/gi, '');
-
-  // Strip markdown-style header injection
-  s = s.replace(/^#{1,6}\s/gm, '');
-
-  return s.trim();
-}
-
 // ── Trade Usage Limits ────────────────────────────────────────────────
+// sanitizePromptInput / getTodayKey / ConversationTurn now live in
+// ../utils/prompt (shared with tradeHistory and the draft-rankings ask route).
 
 /** Daily trade analysis limits by subscription tier */
 const TRADE_LIMITS: Record<string, number> = {
@@ -68,10 +41,6 @@ const TRADE_LIMITS: Record<string, number> = {
 /** Number of analyses allowed for unauthenticated users per day */
 const ANON_LIMIT = 1;
 
-function getTodayKey(): string {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-}
-
 function generateId(): string {
   return crypto.randomUUID();
 }
@@ -82,11 +51,6 @@ function generateId(): string {
 // now live in services/tradeAnalyzer.ts (single source of truth for both
 // this route and the Trade Finder's verification pass). We still define
 // route-local types for follow-up / conversation state below.
-
-interface ConversationTurn {
-  role: 'user' | 'assistant';
-  content: string;
-}
 
 // Player enrichment (season stats, trend, news) lives in
 // services/tradePlayerEnrichment.ts — imported above so the Trade
