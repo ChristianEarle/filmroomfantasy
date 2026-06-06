@@ -82,7 +82,9 @@ Each component: bugs, hardcoded/fake data, unused code, missing error handling, 
 
 ---
 
-## P3 — Trade Finder: API Cost & Rate-Limit Hardening
+## P3 — Trade Finder: API Cost & Rate-Limit Hardening — ❌ SCRAPPED
+
+> **Scrapped (2026-06):** The Trade Finder feature is abandoned (its tab is already hidden in `TradeAnalyzerShell.tsx`). Do not pursue the items below. `TradeFinderView`, the `/api/trade-finder` routes, and the `tradeFinder` / `tradeMatcher` / `tradeConstructor` services are now dead code and can be removed in a cleanup pass. (Distinct from the Trade **Analyzer**, which stays.) Items retained below for historical context only.
 
 Reduce Anthropic API pressure on `/trade-finder/recommendations` (currently 6–10 parallel Claude calls per cold request). Ordered by impact-vs-effort.
 
@@ -97,9 +99,9 @@ Reduce Anthropic API pressure on `/trade-finder/recommendations` (currently 6–
 
 ---
 
-## P3 — Trade Finder: Discovery Enhancements
+## P3 — Trade Finder: Discovery Enhancements — ❌ SCRAPPED
 
-> Most require the existing mega-call path to be stable first.
+> **Scrapped (2026-06):** Trade Finder is abandoned — see the note in the section above. Items below are historical only.
 
 - [ ] **"Target a specific player" UI entry point** (~half day) — Collapsible panel in `TradeFinderView.tsx` with searchable combobox of every non-user player. Runs a single focused construction call for that exact player. Extend `RecommendationsBody` with `targetPlayerId`, thread through `findTradeRecommendations`, bump `CACHE_VERSION`.
 - [ ] **Historical league-specific trade anchors** (~1 day) — `tradeIngest.ts` + `tradeOutcomes.ts` already ingest accepted trades into the `trades` table but finder never reads them. Pull 3 most recent accepted trades for the user's league and inject as calibration examples in the constructor prompt. Add `getRecentAcceptedTradesForLeague(leagueId, limit)` helper.
