@@ -1,6 +1,22 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  /* UI cohesion: de-tint Tailwind's blue-gray `slate` ramp to pure neutral so
+     every `slate-*` surface across the app matches the landing page's near-black
+     palette. One-place override (globals.css loads after the compiled
+     index.css). Same lightness as slate, chroma 0 — see docs/design-standard.md. */
+  --color-slate-50: oklch(0.985 0 0);
+  --color-slate-100: oklch(0.97 0 0);
+  --color-slate-200: oklch(0.922 0 0);
+  --color-slate-300: oklch(0.87 0 0);
+  --color-slate-400: oklch(0.708 0 0);
+  --color-slate-500: oklch(0.556 0 0);
+  --color-slate-600: oklch(0.439 0 0);
+  --color-slate-700: oklch(0.371 0 0);
+  --color-slate-800: oklch(0.269 0 0);
+  --color-slate-900: oklch(0.205 0 0);
+  --color-slate-950: oklch(0.145 0 0);
+
   --font-size: 16px;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
