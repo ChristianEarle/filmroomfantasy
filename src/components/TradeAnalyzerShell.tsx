@@ -39,7 +39,7 @@ export function TradeAnalyzerShell({ isDarkMode }: TradeAnalyzerShellProps) {
               onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                 active
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-blue-600 text-white'
                   : isDarkMode
                   ? 'text-slate-300 hover:bg-slate-800'
                   : 'text-slate-700 hover:bg-slate-100'

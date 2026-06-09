@@ -385,13 +385,14 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
 
       {/* Search */}
       <div className="relative">
-        <Search className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+        <Search style={{ left: '0.875rem' }} className={`absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
         <input
           type="text"
           placeholder="Search player..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          className={`pl-8 pr-3 py-1.5 text-sm rounded-lg border w-full sm:w-64 outline-none ${
+          style={{ paddingLeft: '2.5rem' }}
+          className={`pr-3 py-1.5 text-sm rounded-lg border w-full sm:w-64 outline-none ${
             isDarkMode
               ? 'bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-500 focus:border-blue-500'
               : 'bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-blue-500'
