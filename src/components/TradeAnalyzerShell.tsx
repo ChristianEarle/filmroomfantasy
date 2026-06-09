@@ -2,12 +2,6 @@ import { useState } from 'react';
 import { ArrowRightLeft, History } from 'lucide-react';
 import { TradeAnalyzerView } from './TradeAnalyzerView';
 import { TradeHistoryView } from './TradeHistoryView';
-// NOTE: TradeFinderView is intentionally NOT imported — the Trade
-// Finder tab is hidden for now. The component, backend route, and
-// related services are still in the repo so we can re-enable the
-// tab without re-implementing anything. To bring it back: re-add
-// the import, the 'finder' Tab union member, the tabs array entry,
-// and the render case below.
 
 type Tab = 'analyzer' | 'history';
 
