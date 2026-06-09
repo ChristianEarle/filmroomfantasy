@@ -82,7 +82,9 @@ Each component: bugs, hardcoded/fake data, unused code, missing error handling, 
 
 ---
 
-## P3 — Trade Finder: API Cost & Rate-Limit Hardening
+## P3 — Trade Finder: API Cost & Rate-Limit Hardening — ❌ SCRAPPED
+
+> **Scrapped (2026-06):** The Trade Finder feature is abandoned (its tab is already hidden in `TradeAnalyzerShell.tsx`). Do not pursue the items below. `TradeFinderView`, the `/api/trade-finder` routes, and the `tradeFinder` / `tradeMatcher` / `tradeConstructor` services are now dead code and can be removed in a cleanup pass. (Distinct from the Trade **Analyzer**, which stays.) Items retained below for historical context only.
 
 Reduce Anthropic API pressure on `/trade-finder/recommendations` (currently 6–10 parallel Claude calls per cold request). Ordered by impact-vs-effort.
 
@@ -97,9 +99,9 @@ Reduce Anthropic API pressure on `/trade-finder/recommendations` (currently 6–
 
 ---
 
-## P3 — Trade Finder: Discovery Enhancements
+## P3 — Trade Finder: Discovery Enhancements — ❌ SCRAPPED
 
-> Most require the existing mega-call path to be stable first.
+> **Scrapped (2026-06):** Trade Finder is abandoned — see the note in the section above. Items below are historical only.
 
 - [ ] **"Target a specific player" UI entry point** (~half day) — Collapsible panel in `TradeFinderView.tsx` with searchable combobox of every non-user player. Runs a single focused construction call for that exact player. Extend `RecommendationsBody` with `targetPlayerId`, thread through `findTradeRecommendations`, bump `CACHE_VERSION`.
 - [ ] **Historical league-specific trade anchors** (~1 day) — `tradeIngest.ts` + `tradeOutcomes.ts` already ingest accepted trades into the `trades` table but finder never reads them. Pull 3 most recent accepted trades for the user's league and inject as calibration examples in the constructor prompt. Add `getRecentAcceptedTradesForLeague(leagueId, limit)` helper.
@@ -134,7 +136,7 @@ Click-to-add real draft picks (with original-owner info) in the builder, instead
 - [x] **Compare basket (up to 4)** — `Compare (N)` header button opens a comparison modal with 2–4 players side-by-side; per-row "Add to compare" toggles membership. Client-side basket in `DraftRankingsView`, resets on variant change. (Done.)
 - [x] **Export rankings** — CSV download of the current filtered rankings via `src/utils/csvExport.ts` (formula-injection guarded). (Done.)
 - [x] **Trade value link** — Per-row "Trade value" seeds the player via `src/utils/tradeSeed.ts` and navigates to the Trade Analyzer, which consumes the seed on mount onto team 0. (Done.)
-- [x] **"Ask AI about draft" button** — Implemented: shared AI helpers extracted to `server/src/utils/prompt.ts`; `POST /api/draft-rankings/ask` (Pro/Elite gated, daily-capped, server-built ranking context); a self-contained `src/components/AiChatModal.tsx` wired to the Ask AI button with login→`Login` / free→`Pricing` gating. **Deploy step pending: worker deploy.** (Note: implemented as a standalone modal rather than refactoring TradeAnalyzer's `FollowUpChat`, to avoid regressing the trade flow; free-tier routes to Pricing instead of an in-context UpgradeModal.) Implementation steps were:
+- [x] **"Ask AI about draft" button** — Implemented: shared AI helpers extracted to `server/src/utils/prompt.ts`; `POST /api/draft-rankings/ask` (Pro/Elite gated, daily-capped, server-built ranking context); a self-contained `src/components/AiChatModal.tsx` wired to the Ask AI button with login→`Login` / free→`Pricing` gating. Merged + deployed (endpoint returns 401 unauthenticated in prod). **⚠️ Live verification pending:** the authed Pro/Elite question→answer round-trip has NOT been confirmed end-to-end (tests mock Anthropic). Needs a Pro/Elite login to exercise once; the Anthropic call is byte-for-byte identical to the live `POST /api/trades/follow-up`, so the integration is expected to work. (Note: implemented as a standalone modal rather than refactoring TradeAnalyzer's `FollowUpChat`, to avoid regressing the trade flow; free-tier routes to Pricing instead of an in-context UpgradeModal.) Implementation steps were:
   - **A0 — extract shared AI helpers (prereq, ~30m):** move `sanitizePromptInput`, `getTodayKey`, and the `ConversationTurn` interface out of `trades.ts` into a new `server/src/utils/prompt.ts`; import them in `trades.ts` and `tradeHistory.ts` (drops its duplicate `getTodayKey`). Pure refactor; server `tsc` is the gate.
   - **A1 — backend `POST /api/draft-rankings/ask`** in `server/src/routes/draftRankings.ts`: `authMiddleware` + `rateLimit(20, 60_000)`; free tier → `403 { code: 'TIER_REQUIRED' }`; daily cap via the existing `tradeAnalysisUsage` table keyed `draftask:${user.id}` (Pro 20/day, Elite ∞ — **no new table**). Body `{ conversationHistory, question, type, scoring, season }` — client sends only variant selectors; **server** queries `draftRankings` (top ~50 for that variant) and builds the context string so it can't be spoofed. Sanitize `question` (1000 chars), cap history to last 10 turns. Anthropic call identical to follow-up (`claude-sonnet-4-20250514`, `max_tokens` 1024, `temperature` 0.4, 30s timeout) with `buildDraftAskSystemPrompt(context)`; returns `{ answer }`. Security: tier check server-side only, rate-limit + daily cap, treat `question` as untrusted (ranking data is the only authoritative context).
   - **A2 — frontend modal + gating:** extract `FollowUpChat` (`TradeAnalyzerView` ~894-1010 + `handleFollowUp`) into a shared `src/components/AiChatModal.tsx` (`isOpen`, `onClose`, `endpoint`, `contextParams`, `title`, quick-actions, `isDarkMode`) and refactor TradeAnalyzer to consume it. Wire the Ask AI button to open it with `{ type, scoring, season }`; add `useAuth` → logged-out routes to login, free tier shows `UpgradeModal`. Tests: `buildDraftAskSystemPrompt` + request validation; component test for open-modal (Pro) / UpgradeModal (free) / login (logged-out).
