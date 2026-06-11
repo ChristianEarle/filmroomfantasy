@@ -350,72 +350,12 @@ leagueRoutes.put('/:id', authMiddleware, async (c) => {
   }
 });
 
-// Join a league (with invite code - simplified)
-leagueRoutes.post('/:id/join', authMiddleware, async (c) => {
-  const user = c.get('user');
-  const db = c.get('db');
-  const leagueId = c.req.param('id');
-
-  if (!user) {
-    return c.json({ error: 'Not authenticated' }, 401);
-  }
-
-  // Check if already a member
-  const existingMembership = await db.query.leagueMembers.findFirst({
-    where: and(
-      eq(schema.leagueMembers.userId, user.id),
-      eq(schema.leagueMembers.leagueId, leagueId)
-    ),
-  });
-
-  if (existingMembership) {
-    return c.json({ error: 'Already a member of this league' }, 400);
-  }
-
-  const league = await db.query.leagues.findFirst({
-    where: eq(schema.leagues.id, leagueId),
-    with: {
-      teams: true,
-    },
-  });
-
-  if (!league) {
-    return c.json({ error: 'League not found' }, 404);
-  }
-
-  if (league.teams.length >= league.teamCount) {
-    return c.json({ error: 'League is full' }, 400);
-  }
-
-  try {
-    const body = await c.req.json();
-    const { teamName } = body;
-
-    // Add as member
-    await db.insert(schema.leagueMembers).values({
-      id: generateId(),
-      userId: user.id,
-      leagueId,
-      role: 'member',
-    });
-
-    // Create team
-    const teamId = generateId();
-    await db.insert(schema.teams).values({
-      id: teamId,
-      leagueId,
-      ownerId: user.id,
-      name: teamName || `${user.username}'s Team`,
-      waiverPriority: league.teams.length + 1,
-      faabBudget: league.waiverBudget || 100,
-    });
-
-    return c.json({ message: 'Joined league successfully', teamId }, 201);
-  } catch (error) {
-    console.error('Join league error:', error);
-    return c.json({ error: 'Failed to join league' }, 500);
-  }
-});
+// NOTE: There is intentionally no "join league" endpoint. Joining by league id
+// was an unauthenticated-membership hole (any logged-in user who knew a league
+// id could add themselves and read its data), and no client ever used it.
+// League membership is only granted by creating a league or connecting an
+// external platform league. If shareable invites are ever needed, add a new
+// endpoint gated on a per-league secret invite code.
 
 // Connect external league (Sleeper, ESPN, Yahoo)
 // Connect endpoint is moderately expensive (DB writes + lookups) and

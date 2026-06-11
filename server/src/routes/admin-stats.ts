@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
-import { eq } from 'drizzle-orm';
-import * as schema from '../db/schema';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
+import { resolveSessionUser } from '../utils/sessionUser';
 import type { Env, Variables } from '../index';
 
 export const adminStatsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -68,20 +67,9 @@ adminStatsRoutes.use('*', async (c, next) => {
   const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
 
   if (token) {
-    try {
-      const { jwtVerify } = await import('jose');
-      const secret = new TextEncoder().encode(c.env.JWT_SECRET);
-      const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
-      if (payload.sub) {
-        const db = c.get('db');
-        const user = await db.query.users.findFirst({
-          where: eq(schema.users.id, payload.sub as string),
-        });
-        if (user) c.set('user', user);
-      }
-    } catch {
-      // Invalid token — fall through to key check
-    }
+    // Verify JWT *and* the session row so revoked sessions lose admin access.
+    const user = await resolveSessionUser(token, c.get('db'), c.env.JWT_SECRET);
+    if (user) c.set('user', user);
   }
 
   await adminAuthMiddleware(c, next);

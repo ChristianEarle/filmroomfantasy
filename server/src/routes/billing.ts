@@ -397,9 +397,12 @@ billingRoutes.post('/webhook', async (c) => {
       const subscriptionId = event.data.object.subscription;
 
       if (customerId) {
-        // Determine the subscription tier from the purchased price
-        // Fetch the subscription from Stripe to get the price ID
-        let tier = 'pro'; // Default fallback
+        // Determine the subscription tier strictly from the purchased price.
+        // We never default to a paid tier: if we can't confirm exactly which
+        // mapped price was bought, we grant nothing (fail closed) to prevent a
+        // free upgrade via an unmapped/cheaper price or a failed Stripe re-fetch.
+        let tier: string | null = null;
+        let resolvedExpiry: Date | null = null;
         if (subscriptionId && stripeSecretKey) {
           try {
             const subResponse = await fetch(
@@ -411,35 +414,48 @@ billingRoutes.post('/webhook', async (c) => {
             );
             if (subResponse.ok) {
               const sub = await subResponse.json() as {
+                current_period_end?: number;
                 items?: { data?: { price?: { id: string } }[] };
               };
               const priceId = sub.items?.data?.[0]?.price?.id;
               if (priceId && PRICE_TO_TIER[priceId]) {
                 tier = PRICE_TO_TIER[priceId];
               }
-              console.log(`[billing] Checkout completed: customer=${customerId}, price=${priceId}, tier=${tier}`);
+              // Drive entitlement off Stripe's period end, not a hardcoded year.
+              if (sub.current_period_end) {
+                resolvedExpiry = new Date(sub.current_period_end * 1000);
+              }
+              console.log(`[billing] Checkout completed: customer=${customerId}, price=${priceId}, tier=${tier ?? 'unrecognized'}`);
+            } else {
+              console.error(`[billing] Subscription fetch returned ${subResponse.status} — not granting tier`);
             }
           } catch (err) {
             console.error('[billing] Failed to fetch subscription for tier detection:', err);
-            // Fall through with default tier 'pro'
+            // Fail closed — leave tier null so we do not grant access.
           }
         }
 
-        // Find user by stripe customer ID and update subscription
-        const users = await db
-          .select()
-          .from(schema.users)
-          .where(eq(schema.users.stripeCustomerId, customerId));
+        if (!tier) {
+          console.warn(`[billing] Could not resolve a mapped tier for customer ${customerId} — skipping upgrade`);
+        }
 
-        if (users.length > 0) {
+        // Find user by stripe customer ID and update subscription
+        const users = tier
+          ? await db
+              .select()
+              .from(schema.users)
+              .where(eq(schema.users.stripeCustomerId, customerId))
+          : [];
+
+        if (tier && users.length > 0) {
           const user = users[0];
           await db
             .update(schema.users)
             .set({
               subscriptionTier: tier,
               stripeSubscriptionId: subscriptionId || undefined,
-              subscriptionExpiresAt: new Date(
-                Date.now() + 365 * 24 * 60 * 60 * 1000
+              subscriptionExpiresAt: (
+                resolvedExpiry ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
               ).toISOString(),
             })
             .where(eq(schema.users.id, user.id));
@@ -456,9 +472,11 @@ billingRoutes.post('/webhook', async (c) => {
       const subStatus = event.data.object.status;
 
       if (customerId && (subStatus === 'active' || subStatus === 'trialing')) {
-        // Re-fetch subscription to get updated tier
+        // Re-fetch subscription to get updated tier. Fail closed: only apply a
+        // tier we can map from the actual price — never default to a paid tier.
         const subscriptionId = event.data.object.id;
-        let tier = 'pro';
+        let tier: string | null = null;
+        let resolvedExpiry: Date | null = null;
         if (subscriptionId && stripeSecretKey) {
           try {
             const subResponse = await fetch(
@@ -470,27 +488,42 @@ billingRoutes.post('/webhook', async (c) => {
             );
             if (subResponse.ok) {
               const sub = await subResponse.json() as {
+                current_period_end?: number;
                 items?: { data?: { price?: { id: string } }[] };
               };
               const priceId = sub.items?.data?.[0]?.price?.id;
               if (priceId && PRICE_TO_TIER[priceId]) {
                 tier = PRICE_TO_TIER[priceId];
               }
+              if (sub.current_period_end) {
+                resolvedExpiry = new Date(sub.current_period_end * 1000);
+              }
+            } else {
+              console.error(`[billing] Subscription fetch returned ${subResponse.status} on update — not changing tier`);
             }
           } catch (err) {
             console.error('[billing] Failed to fetch subscription on update:', err);
           }
         }
 
-        const users = await db
-          .select()
-          .from(schema.users)
-          .where(eq(schema.users.stripeCustomerId, customerId));
+        if (!tier) {
+          console.warn(`[billing] Update event for customer ${customerId} had no mapped tier — skipping`);
+        }
 
-        if (users.length > 0) {
+        const users = tier
+          ? await db
+              .select()
+              .from(schema.users)
+              .where(eq(schema.users.stripeCustomerId, customerId))
+          : [];
+
+        if (tier && users.length > 0) {
           await db
             .update(schema.users)
-            .set({ subscriptionTier: tier })
+            .set({
+              subscriptionTier: tier,
+              ...(resolvedExpiry ? { subscriptionExpiresAt: resolvedExpiry.toISOString() } : {}),
+            })
             .where(eq(schema.users.id, users[0].id));
           console.log(`[billing] User ${users[0].id} subscription updated to ${tier}`);
         }

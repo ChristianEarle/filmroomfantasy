@@ -454,6 +454,19 @@ teamRoutes.post('/:id/roster/add', authMiddleware, async (c) => {
   try {
     const { playerId, slot, dropPlayerId } = await c.req.json();
 
+    if (!playerId || typeof playerId !== 'string') {
+      return c.json({ error: 'Invalid playerId' }, 400);
+    }
+
+    // Validate slot against the same allowlist used by the lineup endpoint.
+    const validSlots = [
+      'QB', 'RB1', 'RB2', 'WR1', 'WR2', 'WR3', 'TE', 'FLEX', 'SUPERFLEX', 'K', 'DEF',
+      'BN1', 'BN2', 'BN3', 'BN4', 'BN5', 'BN6', 'BN7', 'BN8', 'IR', 'IR2',
+    ];
+    if (slot !== undefined && !validSlots.includes(slot)) {
+      return c.json({ error: `Invalid slot: ${slot}` }, 400);
+    }
+
     // Check if player exists
     const player = await db.query.nflPlayers.findFirst({
       where: eq(schema.nflPlayers.id, playerId),

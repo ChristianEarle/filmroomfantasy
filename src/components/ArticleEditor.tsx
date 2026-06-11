@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Edit3, Trash2, Eye, Loader2, Save, ArrowLeft, ExternalLink, X, Search, Users } from 'lucide-react';
 import { api } from '../services/api';
+import { sanitizeArticleHtml } from '../utils/sanitizeHtml';
 
 interface ArticleEditorProps {
   isDarkMode: boolean;
@@ -262,7 +263,7 @@ export function ArticleEditor({ isDarkMode }: ArticleEditorProps) {
             <p className={`text-sm mb-4 ${textSecondary}`}>{description}</p>
             <div
               className={`prose max-w-none ${isDarkMode ? 'prose-invert' : ''}`}
-              dangerouslySetInnerHTML={{ __html: content }}
+              dangerouslySetInnerHTML={{ __html: sanitizeArticleHtml(content) }}
             />
           </div>
         ) : (
