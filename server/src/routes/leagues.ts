@@ -33,11 +33,13 @@ const leagueRateLimit = rateLimit(60, 60 * 1000);
 export const leagueRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // Generate a short, human-shareable, unguessable invite code (no ambiguous chars).
+// The alphabet is exactly 32 chars, so we map each random byte with a 5-bit mask
+// (& 31) instead of modulo — uniform/unbiased and avoids the modulo-bias pattern.
 function generateInviteCode(): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 chars = 5 bits
   const bytes = crypto.getRandomValues(new Uint8Array(10));
   let code = '';
-  for (let i = 0; i < bytes.length; i++) code += alphabet[bytes[i] % alphabet.length];
+  for (let i = 0; i < bytes.length; i++) code += alphabet[bytes[i] & 31];
   return code;
 }
 
