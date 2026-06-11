@@ -112,25 +112,3 @@ export function useCreateLeague() {
 
   return { createLeague, isCreating, error };
 }
-
-export function useJoinLeague() {
-  const [isJoining, setIsJoining] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  const joinLeague = useCallback(async (leagueId: string, teamName?: string) => {
-    setIsJoining(true);
-    setError(null);
-    try {
-      const response = await leagueService.joinLeague(leagueId, teamName);
-      return response;
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to join league');
-      setError(error);
-      throw error;
-    } finally {
-      setIsJoining(false);
-    }
-  }, []);
-
-  return { joinLeague, isJoining, error };
-}
