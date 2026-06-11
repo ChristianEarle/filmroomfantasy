@@ -84,6 +84,9 @@ export const leagues = sqliteTable('leagues', {
   leagueType: text('league_type').notNull().default('redraft'), // 'redraft' | 'dynasty' | 'keeper'
   hasSuperflex: integer('has_superflex', { mode: 'boolean' }).notNull().default(false),
   hasTePremium: integer('has_te_premium', { mode: 'boolean' }).notNull().default(false),
+  // Secret code required to join the league via POST /:id/join. Shared by the
+  // commissioner out-of-band; nullable for legacy rows (join is denied if null).
+  inviteCode: text('invite_code'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });

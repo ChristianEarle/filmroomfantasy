@@ -13,6 +13,7 @@ import {
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
+import { timingSafeEqual } from '../utils/crypto';
 import { generateProjectionsFromProps } from '../services/projections';
 import {
   fetchLeague as fetchMflLeague,
@@ -30,6 +31,15 @@ import type { Env, Variables } from '../index';
 const leagueRateLimit = rateLimit(60, 60 * 1000);
 
 export const leagueRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Generate a short, human-shareable, unguessable invite code (no ambiguous chars).
+function generateInviteCode(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  let code = '';
+  for (let i = 0; i < bytes.length; i++) code += alphabet[bytes[i] % alphabet.length];
+  return code;
+}
 
 // Apply rate limiting to all league routes
 leagueRoutes.use('*', leagueRateLimit);
@@ -116,6 +126,7 @@ leagueRoutes.post('/', authMiddleware, async (c) => {
       playoffTeams,
       waiverType,
       waiverBudget,
+      inviteCode: generateInviteCode(),
     });
 
     // Add creator as commissioner
@@ -215,9 +226,13 @@ leagueRoutes.get('/:id', authMiddleware, async (c) => {
     }
   }
 
+  // Only expose the invite code to the commissioner — it's the join secret.
+  const { inviteCode: _inviteCode, ...leaguePublic } = league;
+
   return c.json({
     league: {
-      ...league,
+      ...leaguePublic,
+      ...(membership.role === 'commissioner' ? { inviteCode: league.inviteCode } : {}),
       role: membership.role,
       teams: league.teams.map(t => {
         const isCurrentUserTeam = userSleeperUserId != null && t.externalOwnerId === userSleeperUserId;
@@ -389,7 +404,14 @@ leagueRoutes.post('/:id/join', authMiddleware, async (c) => {
 
   try {
     const body = await c.req.json();
-    const { teamName } = body;
+    const { teamName, inviteCode } = body;
+
+    // Require a matching invite code. Without this, knowing a league id would be
+    // enough to join (and read) any league. Fail closed if the league has no
+    // code set (legacy rows) — the commissioner must rotate one in first.
+    if (!league.inviteCode || typeof inviteCode !== 'string' || !timingSafeEqual(inviteCode, league.inviteCode)) {
+      return c.json({ error: 'Invalid or missing invite code' }, 403);
+    }
 
     // Add as member
     await db.insert(schema.leagueMembers).values({
@@ -559,6 +581,7 @@ leagueRoutes.post('/connect', connectRateLimit, authMiddleware, async (c) => {
       seasonYear,
       waiverType: 'faab',
       waiverBudget: 100,
+      inviteCode: generateInviteCode(),
     });
 
     // Add user as commissioner

@@ -1,8 +1,20 @@
 import { Hono } from 'hono';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
+import { rateLimit } from '../middleware/rateLimit';
 import type { Env, Variables } from '../index';
 
 export const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Cap stored analytics strings so a client can't flood the table with huge rows.
+const truncate = (v: string | null | undefined, max: number): string | null => {
+  if (v == null) return null;
+  const s = String(v);
+  return s.length > max ? s.slice(0, max) : s;
+};
+
+// Public, unauthenticated endpoint — rate limit per IP to prevent data-pollution
+// and storage-cost abuse. Generous enough for legitimate SPA navigation.
+const pageviewRateLimit = rateLimit(120, 60 * 1000);
 
 // ─── Central Time helpers ────────────────────────────────────────────────────
 /** Returns the current US Central Time UTC offset in seconds (-6h CST or -5h CDT). */
@@ -48,7 +60,7 @@ async function deriveVisitorHash(ip: string, ua: string, salt: string): Promise<
 }
 
 // ─── Public: record a page view ───────────────────────────────────────────────
-analyticsRoutes.post('/pageview', async (c) => {
+analyticsRoutes.post('/pageview', pageviewRateLimit, async (c) => {
   const db = c.env.DB;
 
   try {
@@ -60,7 +72,7 @@ analyticsRoutes.post('/pageview', async (c) => {
       browser?: string;
     }>();
 
-    if (!body.path) {
+    if (!body.path || typeof body.path !== 'string') {
       return c.json({ error: 'path is required' }, 400);
     }
 
@@ -89,7 +101,7 @@ analyticsRoutes.post('/pageview', async (c) => {
     // derive a cookieless hash of (IP + UA + UTC day + salt). This lets us
     // count unique visitors without setting any client-side identifier — so
     // the metric works whether or not the user has consented to cookies.
-    let sessionId = body.sessionId?.trim() || '';
+    let sessionId = truncate(body.sessionId?.trim(), 128) || '';
     if (!sessionId) {
       const ip =
         c.req.header('cf-connecting-ip') ||
@@ -107,14 +119,14 @@ analyticsRoutes.post('/pageview', async (c) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       id,
-      body.path,
-      body.referrer || null,
+      truncate(body.path, 512),
+      truncate(body.referrer, 512),
       userId,
       sessionId,
-      userAgent,
-      country,
-      body.device || null,
-      body.browser || null,
+      truncate(userAgent, 512),
+      truncate(country, 8),
+      truncate(body.device, 64),
+      truncate(body.browser, 64),
       nowSec,
     ).run();
 
