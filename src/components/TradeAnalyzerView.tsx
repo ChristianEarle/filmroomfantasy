@@ -309,7 +309,7 @@ function PlayerSearchInput({
       </div>
       {showDropdown && (
         <div
-          className={`absolute z-50 mt-1 w-full rounded-lg border shadow-lg max-h-48 overflow-y-auto ${
+          className={`absolute z-50 mt-1 w-full rounded-lg border max-h-48 overflow-y-auto ${
             isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'
           }`}
         >
@@ -860,7 +860,7 @@ function FairnessMeter({
       />
       <div className="relative h-0">
         <div
-          className={`absolute w-5 h-5 rounded-full shadow transition-all duration-500 ${markerBorder} ${
+          className={`absolute w-5 h-5 rounded-full transition-all duration-500 ${markerBorder} ${
             isDarkMode ? 'bg-white' : 'bg-slate-900'
           }`}
           style={{
@@ -941,10 +941,10 @@ function FollowUpChat({
       )}
 
       <div
-        className={`flex items-center gap-2 p-2 rounded-2xl border shadow-lg ${
+        className={`flex items-center gap-2 p-2 rounded-2xl border ${
           isDarkMode
-            ? 'bg-slate-900 border-slate-700 shadow-black/40'
-            : 'bg-white border-slate-200 shadow-slate-200/60'
+            ? 'bg-slate-900 border-slate-700'
+            : 'bg-white border-slate-200'
         }`}
       >
         <div
@@ -1159,7 +1159,7 @@ function TradeResultsCard({
       <div
         style={{
           backgroundImage: isDarkMode
-            ? 'linear-gradient(135deg, rgb(15,23,42), rgba(16,185,129,0.05))'
+            ? 'linear-gradient(135deg, #1a1a1a, rgba(16,185,129,0.05))'
             : 'linear-gradient(135deg, #ffffff, rgba(236,253,245,0.5))',
         }}
         className={`rounded-2xl border p-6 ${
@@ -1244,10 +1244,10 @@ function TradeResultsCard({
             : isDarkMode ? 'border-amber-500/30' : 'border-amber-200';
           const cardBgImage = isWinner
             ? isDarkMode
-              ? 'linear-gradient(135deg, rgb(15,23,42), rgba(16,185,129,0.05))'
+              ? 'linear-gradient(135deg, #1a1a1a, rgba(16,185,129,0.05))'
               : 'linear-gradient(135deg, #ffffff, rgba(236,253,245,0.6))'
             : isDarkMode
-              ? 'linear-gradient(135deg, rgb(15,23,42), rgba(245,158,11,0.05))'
+              ? 'linear-gradient(135deg, #1a1a1a, rgba(245,158,11,0.05))'
               : 'linear-gradient(135deg, #ffffff, rgba(255,251,235,0.6))';
           const badgeClasses = isWinner
             ? isDarkMode
@@ -1362,7 +1362,7 @@ function TradeResultsCard({
         <div
           style={{
             backgroundImage: isDarkMode
-              ? 'linear-gradient(135deg, rgb(15,23,42), rgba(59,130,246,0.05))'
+              ? 'linear-gradient(135deg, #1a1a1a, rgba(59,130,246,0.05))'
               : 'linear-gradient(135deg, #ffffff, rgba(239,246,255,0.6))',
           }}
           className={`rounded-xl border p-5 ${
@@ -2005,7 +2005,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
       onClick={onClick}
       className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${
         active
-          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+          ? 'bg-blue-600 text-white border-blue-600'
           : isDarkMode
           ? 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-600 hover:text-white'
           : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900'
@@ -2647,7 +2647,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
             disabled={!canAnalyze}
             className={`flex-1 px-6 py-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
               canAnalyze
-                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/20'
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
                 : isDarkMode
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                 : 'bg-slate-100 text-slate-400 cursor-not-allowed'

@@ -160,17 +160,18 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
           {searchOpen ? (
             <div className="flex items-center gap-2">
               <div className="relative">
-                <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+                <Search style={{ left: '0.875rem' }} className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
                 <input
                   type="text"
                   placeholder="Search players..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`w-48 sm:w-64 pl-9 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                  style={{ paddingLeft: '2.625rem', paddingRight: '0.75rem' }}
+                  className={`w-48 sm:w-64 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
                   autoFocus
                 />
                 {isSearching && (
-                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-blue-500" />
+                  <Loader2 style={{ right: '0.75rem' }} className="absolute top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-blue-500" />
                 )}
               </div>
             </div>

@@ -362,8 +362,8 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
         <div
           style={{
             backgroundImage: isDarkMode
-              ? 'linear-gradient(135deg, rgb(15,23,42) 0%, rgb(15,23,42) 50%, rgba(23,37,84,0.4) 100%)'
-              : 'linear-gradient(135deg, #ffffff, rgba(239,246,255,0.4))',
+              ? 'linear-gradient(135deg, #1a1a1a 0%, #1a1a1a 55%, rgba(59,130,246,0.10) 100%)'
+              : 'linear-gradient(135deg, #ffffff, rgba(245,245,245,0.6))',
           }}
           className={`relative overflow-hidden rounded-2xl border p-6 ${
           isDarkMode ? 'border-slate-700' : 'border-slate-200'
@@ -413,7 +413,7 @@ export function HomeView({ onPlayerClick, onViewChange, onGameSelect, isDarkMode
               }`}>
                 <div className="flex items-center gap-3 fr-min-w-0">
                   <div
-                    style={{ backgroundImage: 'linear-gradient(135deg, #3b82f6, #a855f7)' }}
+                    style={{ backgroundImage: 'linear-gradient(135deg, #3b82f6, #60a5fa)' }}
                     className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
                   >
                     {getInitials(userTeam?.name || 'You')}
