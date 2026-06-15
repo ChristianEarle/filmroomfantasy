@@ -158,7 +158,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 )}
               </button>
               {showTeamDropdown && league?.teams && league.teams.length > 1 && (
-                <div className={`absolute top-full left-0 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border shadow-xl z-50 overflow-hidden max-h-80 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className={`absolute top-full left-0 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border z-50 overflow-hidden max-h-80 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                   {league.teams.map(team => (
                     <button
                       key={team.id}
@@ -217,7 +217,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 <ChevronDown className={`w-4 h-4 transition-transform ${showWeekDropdown ? 'rotate-180' : ''}`} />
               </button>
               {showWeekDropdown && (
-                <div className={`absolute top-12 right-0 w-32 rounded-lg border shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className={`absolute top-12 right-0 w-32 rounded-lg border z-50 overflow-hidden max-h-64 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                   {Array.from({ length: 18 }, (_, i) => i + 1).map(week => (
                     <button
                       key={week}

@@ -346,7 +346,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
           Check the latest player rankings, evaluate trades, and find waiver wire gems — all powered by Vegas lines.
         </p>
         <div className="flex flex-wrap justify-center gap-3">
-          <button onClick={() => onNavigate('Board')} className="px-6 py-3 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-md shadow-blue-500/25">
+          <button onClick={() => onNavigate('Board')} className="px-6 py-3 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
             View Rankings
           </button>
           <button onClick={() => onNavigate('TradeAnalyzer')} className={`px-6 py-3 text-sm font-semibold rounded-lg border transition-colors ${isDarkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 text-slate-700 hover:bg-white'}`}>
@@ -372,7 +372,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
                   className={`group text-left p-6 rounded-xl border transition-all ${
                     isDarkMode
                       ? 'bg-slate-900 border-slate-700 hover:border-slate-500'
-                      : 'bg-white border-slate-200 hover:shadow-md hover:shadow-slate-200/50'
+                      : 'bg-white border-slate-200'
                   }`}
                 >
                   {raCat && (

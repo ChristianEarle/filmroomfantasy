@@ -375,7 +375,7 @@ export function AllPlayersView({
                 <ChevronDown className={`w-3 h-3 transition-transform ${showWeekDropdown ? 'rotate-180' : ''}`} />
               </button>
               {showWeekDropdown && (
-                <div role="listbox" className={`absolute top-8 left-0 w-20 rounded-lg border shadow-xl z-50 overflow-hidden max-h-48 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div role="listbox" className={`absolute top-8 left-0 w-20 rounded-lg border z-50 overflow-hidden max-h-48 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                   {NFL_WEEKS.map(week => (
                     <button
                       key={week}

@@ -114,7 +114,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
             </button>
 
             {leagueDropdownOpen && (
-              <div className={`absolute top-full right-0 mt-1 w-64 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div className={`absolute top-full right-0 mt-1 w-64 rounded-lg border z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                 <div className={`px-3 py-2 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   <span className={`text-xs font-medium uppercase tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Switch League</span>
                 </div>
@@ -187,7 +187,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
           )}
 
           {searchOpen && (searchResults.length > 0 || (searchQuery.length >= 2 && !isSearching) || (searchQuery.length > 0 && searchQuery.length < 2)) && (
-            <div role="listbox" aria-label="Player search results" className={`absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div role="listbox" aria-label="Player search results" className={`absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 rounded-lg border z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               {searchResults.length > 0 && (
                 <div className="max-h-96 overflow-y-auto">
                   {searchResults.map((player) => (

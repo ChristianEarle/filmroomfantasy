@@ -244,7 +244,7 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
             tabIndex={0}
             onClick={() => handleGameClick(game, espnGames[idx])}
             onKeyDown={(e) => handleGameKeyDown(e, game, espnGames[idx])}
-            className={`rounded-lg border overflow-hidden hover:shadow-lg transition-all cursor-pointer hover:border-blue-500 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
+            className={`rounded-lg border overflow-hidden transition-all cursor-pointer hover:border-blue-500 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
           >
             {/* Game Header */}
             <div className={`px-3 sm:px-6 py-2 sm:py-3 border-b flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>

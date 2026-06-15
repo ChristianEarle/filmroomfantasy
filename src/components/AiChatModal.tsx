@@ -85,7 +85,7 @@ export function AiChatModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className={`relative w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border shadow-xl ${panel}`}>
+      <div className={`relative w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border ${panel}`}>
         <div className={`flex items-center justify-between px-5 py-3 border-b ${border}`}>
           <h3 className={`text-sm font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             <MessageSquare className={`w-4 h-4 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />

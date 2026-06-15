@@ -94,7 +94,7 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
   const dropdownMenu = dropdownOpen && position ? createPortal(
     <div
       id="league-dropdown-portal"
-      className={`rounded-lg border shadow-lg overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+      className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
       style={{
         position: 'fixed',
         bottom: position.bottom,

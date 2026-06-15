@@ -364,7 +364,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Card */}
-          <div className={`lg:col-span-2 rounded-lg border overflow-hidden shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <div className={`lg:col-span-2 rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             {/* Player Header */}
             <div className={`p-3 sm:p-6 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700' : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'}`}>
               <div className="flex items-start justify-between gap-2">

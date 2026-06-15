@@ -772,7 +772,7 @@ function PlayerComparisonModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Player comparison">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className={`relative w-full max-w-4xl max-h-[85vh] overflow-auto rounded-2xl border shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <div className={`relative w-full max-w-4xl max-h-[85vh] overflow-auto rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className={`sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Compare players ({rankings.length})
