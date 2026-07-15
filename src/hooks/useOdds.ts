@@ -20,11 +20,31 @@ export function useOdds(week: number, season: number) {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get<{ odds?: GameOdds[] }>(
-        `/games/odds?week=${week}&season=${season}`
-      );
+      // Server envelope: { games: [{ gameId, homeTeam, awayTeam,
+      //   spreads: { homePoint, ... } | null,
+      //   totals: { overPoint, ... } | null,
+      //   moneylines: { homePrice, awayPrice } | null }] }
+      const response = await api.get<{
+        games?: Array<{
+          gameId: string;
+          homeTeam: string;
+          awayTeam: string;
+          spreads: { homePoint: number | null } | null;
+          totals: { overPoint: number | null } | null;
+          moneylines: { homePrice: number | null; awayPrice: number | null } | null;
+        }>;
+      }>(`/games/odds?week=${week}&season=${season}`);
 
-      const oddsList = Array.isArray(response?.odds) ? response.odds : [];
+      const games = Array.isArray(response?.games) ? response.games : [];
+      const oddsList: GameOdds[] = games.map((g) => ({
+        gameId: g.gameId,
+        homeTeam: g.homeTeam,
+        awayTeam: g.awayTeam,
+        homeSpread: g.spreads?.homePoint ?? null,
+        total: g.totals?.overPoint ?? null,
+        homeMoneyline: g.moneylines?.homePrice ?? null,
+        awayMoneyline: g.moneylines?.awayPrice ?? null,
+      }));
       setOdds(oddsList);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to fetch odds');
