@@ -7,6 +7,7 @@ import * as schema from './db/schema';
 // Import utilities
 import { cleanupExpiredRateLimits } from './middleware/rateLimit';
 import { snapshotRankHistory } from './services/draftRankings';
+import { generateInjuryNewsNotifications } from './services/notifications';
 
 // Import routes
 import { authRoutes } from './routes/auth';
@@ -27,6 +28,7 @@ import { analyticsRoutes } from './routes/analytics';
 import { articleRoutes } from './routes/articles';
 import { draftRankingsRoutes } from './routes/draftRankings';
 import { watchlistRoutes } from './routes/watchlist';
+import { notificationRoutes } from './routes/notifications';
 import { platformProxyRoutes } from './routes/platformProxy';
 
 // Types
@@ -212,6 +214,7 @@ app.route('/api/analytics', analyticsRoutes);
 app.route('/api/articles', articleRoutes);
 app.route('/api/draft-rankings', draftRankingsRoutes);
 app.route('/api/watchlist', watchlistRoutes);
+app.route('/api/notifications', notificationRoutes);
 // Proxy for external fantasy platform read APIs (Sleeper/ESPN/MFL).
 // Routes browser-originated lookups through our own origin to avoid CORS,
 // ad-blockers, and policy changes on upstream platforms.
@@ -288,6 +291,16 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-news');
     await callSync('/api/admin/sync-games');
 
+    // Fan fresh injury news out to in-app notifications for rostered/watched
+    // players. Idempotent (dedupe keys), and failures never break the sync.
+    try {
+      const db = drizzle(env.DB, { schema });
+      const res = await generateInjuryNewsNotifications(db);
+      console.log(`[cron] injury notifications: ${res.attempted} rows for ${res.relevantNews} news items (${res.scannedNews} scanned)`);
+    } catch (err) {
+      console.error('[cron] injury notification generation failed:', err);
+    }
+
     // Snapshot current draft rankings into rank_history for movement deltas
     // and trend sparklines. Idempotent per UTC day (existence check + unique
     // index), so retried cron runs are no-ops.
@@ -324,6 +337,16 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-twitter-news');
     await callSync('/api/admin/sync-espn-news');
     await callSync('/api/admin/sync-rotowire-news');
+
+    // Notify rostered/watchlist owners about injury-relevant items from the
+    // RSS syncs above. Idempotent via dedupe keys; never breaks the sync.
+    try {
+      const db = drizzle(env.DB, { schema });
+      const res = await generateInjuryNewsNotifications(db);
+      console.log(`[cron] injury notifications: ${res.attempted} rows for ${res.relevantNews} news items (${res.scannedNews} scanned)`);
+    } catch (err) {
+      console.error('[cron] injury notification generation failed:', err);
+    }
   } else if (event.cron === '0 13 * * 1') {
     // Weekly Monday 8 AM EST (13:00 UTC): submit an Anthropic batch per
     // variant. Each single-variant submission runs in its own worker
