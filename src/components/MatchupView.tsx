@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { TrendingUp, TrendingDown, Zap, Shield, Target, Loader2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Zap, Shield, Target, Loader2, AlertTriangle, Activity, ArrowLeftRight } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import type { RosterPlayer } from '../context/LeagueContext';
@@ -31,6 +32,240 @@ interface MatchupViewProps {
 /** Strip trailing digits from a roster slot for display (e.g. "RB1" → "RB", "WR2" → "WR", "FLEX" → "FLEX") */
 function displaySlot(slot: string): string {
   return (slot || '').replace(/\d+$/, '');
+}
+
+// ---------------------------------------------------------------------------
+// FilmRoom Edge Analysis — deterministic insights derived from matchup data
+// ---------------------------------------------------------------------------
+
+type EdgeSeverity = 'positive' | 'warning' | 'negative';
+
+interface EdgeInsight {
+  id: string;
+  label: string;
+  text: string;
+  severity: EdgeSeverity;
+  icon: LucideIcon;
+}
+
+interface PositionComparisonRow {
+  position: string;
+  diff: number;
+  yourPlayer: MatchupPlayer;
+  oppPlayer: MatchupPlayer;
+}
+
+/** Injury designations that make a player unlikely/unable to play */
+const SEVERE_STATUSES = new Set(['out', 'doubtful', 'ir', 'injured reserve', 'pup', 'sus', 'suspended', 'cov', 'covid', 'nfi', 'dnr']);
+/** Injury designations worth monitoring */
+const WATCH_STATUSES = new Set(['questionable', 'q']);
+
+function normalizeStatus(status?: string): string {
+  return (status || '').trim().toLowerCase();
+}
+
+function isInjuryStatus(status?: string): boolean {
+  const s = normalizeStatus(status);
+  return SEVERE_STATUSES.has(s) || WATCH_STATUSES.has(s);
+}
+
+function formatInjuryStatus(status?: string): string {
+  const raw = (status || '').trim();
+  const s = raw.toLowerCase();
+  if (s === 'ir' || s === 'injured reserve') return 'IR';
+  if (s === 'q') return 'Questionable';
+  if (s === 'sus') return 'Suspended';
+  if (s === 'cov' || s === 'covid') return 'COVID';
+  if (s === 'pup') return 'PUP';
+  if (s === 'nfi' || s === 'dnr') return raw.toUpperCase();
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+}
+
+/** Can a bench player of `benchPos` fill the roster slot the given starter occupies? */
+function benchCanFillSlot(benchPos: string, starter: RosterPlayer): boolean {
+  if (starter.position === benchPos) return true;
+  const slot = (starter.slot || '').toUpperCase();
+  if (slot.includes('FLEX')) {
+    if (slot.includes('SUPER')) return ['QB', 'RB', 'WR', 'TE'].includes(benchPos);
+    return ['RB', 'WR', 'TE'].includes(benchPos);
+  }
+  return false;
+}
+
+interface EdgeAnalysisInput {
+  hasMatchup: boolean;
+  isComplete: boolean;
+  opponentName: string;
+  positionComparison: PositionComparisonRow[];
+  yourRoster: RosterPlayer[];
+  oppRoster: RosterPlayer[];
+  yourTotal: number;
+  opponentTotal: number;
+}
+
+/** Build 0-6 deterministic insights from data already in the matchup payload. No AI involved. */
+function buildEdgeInsights(input: EdgeAnalysisInput): EdgeInsight[] {
+  const { hasMatchup, isComplete, opponentName, positionComparison, yourRoster, oppRoster, yourTotal, opponentTotal } = input;
+  const insights: EdgeInsight[] = [];
+  const projDiff = yourTotal - opponentTotal;
+  const realComps = positionComparison.filter(c => c.oppPlayer.name !== EMPTY_SLOT_NAME);
+
+  // 1) Overall lineup edge — how many slots you win and by how much overall
+  if (hasMatchup && realComps.length > 0 && (yourTotal > 0 || opponentTotal > 0)) {
+    const slotsWon = realComps.filter(c => c.diff > 1).length;
+    const slotsLost = realComps.filter(c => c.diff < -1).length;
+    const margin = Math.abs(projDiff).toFixed(1);
+    if (isComplete) {
+      if (projDiff > 0) {
+        insights.push({ id: 'overall', label: 'Matchup Verdict', severity: 'positive', icon: Target, text: `You won ${slotsWon} of ${realComps.length} head-to-head spots on the way to a ${margin}-point victory.` });
+      } else if (projDiff < 0) {
+        insights.push({ id: 'overall', label: 'Matchup Verdict', severity: 'negative', icon: Target, text: `${opponentName} took ${slotsLost} of ${realComps.length} head-to-head spots in a ${margin}-point win.` });
+      } else {
+        insights.push({ id: 'overall', label: 'Matchup Verdict', severity: 'warning', icon: Target, text: 'Dead even — this matchup finished in a tie.' });
+      }
+    } else if (Math.abs(projDiff) < 1) {
+      insights.push({ id: 'overall', label: 'Lineup Edge', severity: 'warning', icon: Target, text: `This one is a toss-up — projections separate you and ${opponentName} by less than a point.` });
+    } else if (projDiff >= 1) {
+      insights.push({ id: 'overall', label: 'Lineup Edge', severity: 'positive', icon: Target, text: `You hold the edge at ${slotsWon} of ${realComps.length} lineup spots and project ${margin} points ahead overall.` });
+    } else {
+      insights.push({ id: 'overall', label: 'Lineup Edge', severity: 'negative', icon: Target, text: `${opponentName} holds the edge at ${slotsLost} of ${realComps.length} lineup spots and projects ${margin} points ahead overall.` });
+    }
+  }
+
+  // 2) Biggest positional advantage
+  const best = realComps.reduce<PositionComparisonRow | null>((acc, c) => (c.diff > 1 && (!acc || c.diff > acc.diff) ? c : acc), null);
+  if (best) {
+    insights.push({
+      id: 'biggest-edge',
+      label: 'Biggest Edge',
+      severity: 'positive',
+      icon: TrendingUp,
+      text: isComplete
+        ? `${best.yourPlayer.name} outscored ${best.oppPlayer.name} by ${best.diff.toFixed(1)} points at ${best.position}.`
+        : `${best.yourPlayer.name} projects ${best.diff.toFixed(1)} points ahead of ${best.oppPlayer.name} at ${best.position}.`,
+    });
+  }
+
+  // 3) Biggest positional disadvantage
+  const worst = realComps.reduce<PositionComparisonRow | null>((acc, c) => (c.diff < -1 && (!acc || c.diff < acc.diff) ? c : acc), null);
+  if (worst) {
+    insights.push({
+      id: 'toughest-gap',
+      label: 'Toughest Gap',
+      severity: 'negative',
+      icon: TrendingDown,
+      text: isComplete
+        ? `${worst.oppPlayer.name} outscored ${worst.yourPlayer.name} by ${Math.abs(worst.diff).toFixed(1)} points at ${worst.position}.`
+        : `${worst.oppPlayer.name} projects ${Math.abs(worst.diff).toFixed(1)} points ahead of ${worst.yourPlayer.name} at ${worst.position}.`,
+    });
+  }
+
+  const yourStarters = yourRoster.filter(p => p.isStarter);
+  const yourBench = yourRoster.filter(p => !p.isStarter);
+
+  // 4) Start/sit flag — best bench upgrade over the weakest eligible starter
+  if (!isComplete) {
+    let bestSwap: { bench: RosterPlayer; starter: RosterPlayer; delta: number } | null = null;
+    for (const b of yourBench) {
+      const benchProj = b.projectedPoints || 0;
+      if (benchProj <= 0 || SEVERE_STATUSES.has(normalizeStatus(b.status))) continue;
+      let weakest: RosterPlayer | null = null;
+      for (const s of yourStarters) {
+        if (!benchCanFillSlot(b.position, s)) continue;
+        if (!weakest || (s.projectedPoints || 0) < (weakest.projectedPoints || 0)) weakest = s;
+      }
+      if (!weakest) continue;
+      const delta = benchProj - (weakest.projectedPoints || 0);
+      if (delta >= 2 && (!bestSwap || delta > bestSwap.delta)) {
+        bestSwap = { bench: b, starter: weakest, delta };
+      }
+    }
+    if (bestSwap) {
+      insights.push({
+        id: 'start-sit',
+        label: 'Start/Sit',
+        severity: 'warning',
+        icon: ArrowLeftRight,
+        text: `Bench ${bestSwap.bench.position} ${bestSwap.bench.name} projects ${bestSwap.delta.toFixed(1)} points more than starter ${bestSwap.starter.name} (${displaySlot(bestSwap.starter.slot)}) — worth a lineup look.`,
+      });
+    }
+  }
+
+  // 5) Injury alert — your starters with a designation
+  const yourInjured = yourStarters.filter(p => isInjuryStatus(p.status));
+  if (yourInjured.length > 0) {
+    const anySevere = yourInjured.some(p => SEVERE_STATUSES.has(normalizeStatus(p.status)));
+    const list = yourInjured.map(p => `${p.name} (${formatInjuryStatus(p.status)})`).join(', ');
+    insights.push({
+      id: 'injury-yours',
+      label: 'Injury Alert',
+      severity: anySevere ? 'negative' : 'warning',
+      icon: AlertTriangle,
+      text: yourInjured.length === 1
+        ? `Your starter ${yourInjured[0].name} (${yourInjured[0].position}) is listed as ${formatInjuryStatus(yourInjured[0].status)}.`
+        : `${yourInjured.length} of your starters carry injury designations: ${list}.`,
+    });
+  }
+
+  // 6) Live pace — actual points banked vs projection for in-progress weeks
+  if (hasMatchup && !isComplete && yourTotal > 0 && opponentTotal > 0) {
+    const yourLive = yourStarters.reduce((sum, p) => sum + (p.actualPoints || 0), 0);
+    const oppLive = oppRoster.filter(p => p.isStarter).reduce((sum, p) => sum + (p.actualPoints || 0), 0);
+    if (yourLive > 0 || oppLive > 0) {
+      const yourPct = Math.round((yourLive / yourTotal) * 100);
+      const oppPct = Math.round((oppLive / opponentTotal) * 100);
+      insights.push({
+        id: 'live-pace',
+        label: 'Live Pace',
+        severity: yourPct >= oppPct ? 'positive' : 'warning',
+        icon: Activity,
+        text: `You've banked ${yourLive.toFixed(1)} of ${yourTotal.toFixed(1)} projected points (${yourPct}%), while ${opponentName} sits at ${oppLive.toFixed(1)} of ${opponentTotal.toFixed(1)} (${oppPct}%).`,
+      });
+    }
+  }
+
+  // 7) Opponent injuries — a potential edge for you
+  if (hasMatchup) {
+    const oppInjured = oppRoster.filter(p => p.isStarter && isInjuryStatus(p.status));
+    if (oppInjured.length > 0) {
+      const list = oppInjured.map(p => `${p.name} (${formatInjuryStatus(p.status)})`).join(', ');
+      insights.push({
+        id: 'injury-opp',
+        label: 'Opponent Injuries',
+        severity: 'positive',
+        icon: Zap,
+        text: oppInjured.length === 1
+          ? `${opponentName}'s starter ${oppInjured[0].name} (${oppInjured[0].position}) is listed as ${formatInjuryStatus(oppInjured[0].status)}.`
+          : `${opponentName} has ${oppInjured.length} starters with injury designations: ${list}.`,
+      });
+    }
+  }
+
+  return insights.slice(0, 6);
+}
+
+/** Severity tint classes for an insight row (neutral palette + existing semantic colors, no shadows) */
+function edgeSeverityStyles(severity: EdgeSeverity, isDarkMode: boolean): { container: string; icon: string; label: string } {
+  switch (severity) {
+    case 'positive':
+      return {
+        container: isDarkMode ? 'bg-green-500/10 border-green-500/30' : 'bg-green-50 border-green-200',
+        icon: 'text-green-500',
+        label: isDarkMode ? 'text-green-400' : 'text-green-700',
+      };
+    case 'warning':
+      return {
+        container: isDarkMode ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-yellow-50 border-yellow-200',
+        icon: 'text-yellow-500',
+        label: isDarkMode ? 'text-yellow-400' : 'text-yellow-700',
+      };
+    case 'negative':
+      return {
+        container: isDarkMode ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200',
+        icon: 'text-red-500',
+        label: isDarkMode ? 'text-red-400' : 'text-red-700',
+      };
+  }
 }
 
 export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
@@ -168,6 +403,18 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
 
   const yourAdvantages = positionComparison.filter(p => p.diff > 1).length;
   const oppAdvantages = positionComparison.filter(p => p.diff < -1).length;
+
+  // FilmRoom Edge Analysis — deterministic insights from the matchup payload (no AI)
+  const edgeInsights = buildEdgeInsights({
+    hasMatchup,
+    isComplete,
+    opponentName,
+    positionComparison,
+    yourRoster: roster ?? [],
+    oppRoster: hasMatchup ? (matchup?.opponent?.roster ?? []) : [],
+    yourTotal,
+    opponentTotal,
+  });
 
   // No roster state - show message to sync
   if (!hasValidData && !matchupLoading) {
@@ -326,6 +573,46 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
               <div className="text-lg font-bold text-red-500">{oppAdvantages}</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* FilmRoom Edge Analysis */}
+      <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className={`p-3 sm:p-6 border-b flex items-center gap-3 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${isDarkMode ? 'bg-blue-500/10 border-blue-500/30' : 'bg-blue-50 border-blue-200'}`}>
+            <Zap className="w-4 h-4 text-blue-500" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 className={`font-bold text-sm sm:text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom Edge Analysis</h2>
+            <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              {isComplete ? 'What decided this matchup' : 'Data-driven reads from projections, lineups, and injury reports'}
+            </p>
+          </div>
+        </div>
+        <div className="p-3 sm:p-6">
+          {edgeInsights.length === 0 ? (
+            <div className={`text-center py-8 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+              <Target className="w-8 h-8 mx-auto mb-2" aria-hidden="true" />
+              <p className="text-sm">No standout edges detected yet.</p>
+              <p className="text-xs mt-1">Insights appear once projections, lineups, and injury data are synced.</p>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {edgeInsights.map(insight => {
+                const styles = edgeSeverityStyles(insight.severity, isDarkMode);
+                const Icon = insight.icon;
+                return (
+                  <li key={insight.id} className={`rounded-lg border p-3 flex items-start gap-3 ${styles.container}`}>
+                    <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${styles.icon}`} aria-hidden="true" />
+                    <div className="min-w-0">
+                      <div className={`text-[10px] font-semibold uppercase tracking-wider mb-0.5 ${styles.label}`}>{insight.label}</div>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{insight.text}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </div>
 
