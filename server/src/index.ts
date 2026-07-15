@@ -6,6 +6,7 @@ import * as schema from './db/schema';
 
 // Import utilities
 import { cleanupExpiredRateLimits } from './middleware/rateLimit';
+import { snapshotRankHistory } from './services/draftRankings';
 
 // Import routes
 import { authRoutes } from './routes/auth';
@@ -286,6 +287,17 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-players');
     await callSync('/api/admin/sync-news');
     await callSync('/api/admin/sync-games');
+
+    // Snapshot current draft rankings into rank_history for movement deltas
+    // and trend sparklines. Idempotent per UTC day (existence check + unique
+    // index), so retried cron runs are no-ops.
+    try {
+      const db = drizzle(env.DB, { schema });
+      const snap = await snapshotRankHistory(db);
+      console.log(`[cron] rank-history snapshot: ${snap.alreadySnapshotted ? 'already snapshotted today' : `${snap.inserted} rows inserted`}`);
+    } catch (err) {
+      console.error('[cron] rank-history snapshot failed:', err);
+    }
   } else if (event.cron === '0 */4 * * *') {
     // Every 4 hours: sync stats, projections, and odds for current week only (not all 18)
     // This keeps us within subrequest limits while keeping data fresh
@@ -321,8 +333,12 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // count per batch.
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'half-ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'ppr', superflex: true });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'half-ppr', superflex: true });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'half-ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr', superflex: true });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'half-ppr', superflex: true });
   } else if (event.cron === '15 * * * *') {
     // Hourly: drain any ranking batches that have ended. Cheap no-op when
     // there are no pending batches.

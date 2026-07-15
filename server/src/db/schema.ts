@@ -726,6 +726,8 @@ export const draftRankings = sqliteTable('draft_rankings', {
   adpDelta: real('adp_delta'), // rank - ADP (negative = value, positive = reach)
   rationale: text('rationale').notNull(), // AI-generated 1-2 sentence blurb
   analysis: text('analysis'), // AI-generated detailed player analysis (strengths, risks, outlook)
+  ceilingRank: integer('ceiling_rank'), // AI best-case overall rank (lower number = better)
+  floorRank: integer('floor_rank'), // AI worst-case overall rank (higher number = worse)
   seasonYear: integer('season_year').notNull(),
   generatedAt: integer('generated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
@@ -739,6 +741,37 @@ export const draftRankingsRelations = relations(draftRankings, ({ one }) => ({
 
 export type DraftRanking = typeof draftRankings.$inferSelect;
 export type NewDraftRanking = typeof draftRankings.$inferInsert;
+
+// ============================================
+// RANK HISTORY
+// ============================================
+// Daily snapshots of draft_rankings, used to compute rank movement
+// (1d/7d/30d deltas) and trend sparklines. One row per player per
+// variant per snapshot date; the unique index makes the daily
+// snapshot job idempotent.
+
+export const rankHistory = sqliteTable('rank_history', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
+  superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
+  overallRank: integer('overall_rank').notNull(),
+  positionRank: integer('position_rank').notNull(),
+  seasonYear: integer('season_year').notNull(),
+  snapshotDate: text('snapshot_date').notNull(), // 'YYYY-MM-DD' (UTC)
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  rankHistoryUnique: uniqueIndex('rank_history_unique').on(table.playerId, table.scoringFormat, table.superflex, table.rankingType, table.snapshotDate),
+  rankHistoryVariantIdx: index('idx_rank_history_variant').on(table.rankingType, table.scoringFormat, table.superflex, table.seasonYear, table.snapshotDate),
+}));
+
+export const rankHistoryRelations = relations(rankHistory, ({ one }) => ({
+  player: one(nflPlayers, { fields: [rankHistory.playerId], references: [nflPlayers.id] }),
+}));
+
+export type RankHistory = typeof rankHistory.$inferSelect;
+export type NewRankHistory = typeof rankHistory.$inferInsert;
 
 // ============================================
 // RANKING BATCH JOBS

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, desc, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { cached } from '../utils/cache';
 import { authMiddleware } from '../middleware/auth';
@@ -62,19 +62,88 @@ draftRankingsRoutes.get('/', async (c) => {
       },
     });
 
-    return rankings.map(r => ({
-      id: r.id,
-      overallRank: r.overallRank,
-      positionRank: r.positionRank,
-      tier: r.tier,
-      projectedPoints: r.projectedPoints,
-      adp: r.adp,
-      adpDelta: r.adpDelta,
-      rationale: r.rationale,
-      analysis: r.analysis,
-      generatedAt: r.generatedAt,
-      player: r.player,
-    }));
+    // ── Rank history (batched — two queries for ALL players, never N+1) ──
+    // 1) Distinct snapshot dates for this variant (a handful of strings).
+    // 2) History rows for just the dates we need: the last 4 snapshots (for
+    //    the trend sparkline) plus the reference snapshots for the 1d/7d/30d
+    //    movement deltas.
+    const variantHistoryFilter = and(
+      eq(schema.rankHistory.rankingType, rankingType),
+      eq(schema.rankHistory.scoringFormat, scoringFormat),
+      eq(schema.rankHistory.superflex, superflex),
+      eq(schema.rankHistory.seasonYear, season),
+    );
+    const dateRows = await db
+      .selectDistinct({ snapshotDate: schema.rankHistory.snapshotDate })
+      .from(schema.rankHistory)
+      .where(variantHistoryFilter)
+      .orderBy(desc(schema.rankHistory.snapshotDate))
+      .limit(45);
+    const datesDesc = dateRows.map(r => r.snapshotDate);
+
+    // Last 4 snapshots, oldest first (sparkline reads left → right).
+    const recentDates = datesDesc.slice(0, 4).reverse();
+
+    // Movement reference dates: the most recent snapshot at least N days old.
+    // 'YYYY-MM-DD' strings compare correctly lexicographically.
+    const dateNDaysAgo = (n: number) =>
+      new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const refDateFor = (n: number): string | null =>
+      datesDesc.find(d => d <= dateNDaysAgo(n)) ?? null;
+    const d1Date = refDateFor(1);
+    const d7Date = refDateFor(7);
+    const d30Date = refDateFor(30);
+
+    const neededDates = [...new Set([d1Date, d7Date, d30Date, ...recentDates].filter(
+      (d): d is string => d !== null,
+    ))];
+
+    // playerId|date → overallRank
+    const rankByPlayerDate = new Map<string, number>();
+    if (neededDates.length > 0) {
+      const historyRows = await db.query.rankHistory.findMany({
+        columns: { playerId: true, snapshotDate: true, overallRank: true },
+        where: and(variantHistoryFilter, inArray(schema.rankHistory.snapshotDate, neededDates)),
+      });
+      for (const row of historyRows) {
+        rankByPlayerDate.set(`${row.playerId}|${row.snapshotDate}`, row.overallRank);
+      }
+    }
+
+    return rankings.map(r => {
+      // Movement delta = past rank − current rank, so positive = the player
+      // moved UP the board (rank number went down = improved).
+      const deltaFrom = (date: string | null): number | null => {
+        if (!date) return null;
+        const past = rankByPlayerDate.get(`${r.playerId}|${date}`);
+        return past != null ? past - r.overallRank : null;
+      };
+      const recentRanks = recentDates
+        .map(d => rankByPlayerDate.get(`${r.playerId}|${d}`))
+        .filter((rank): rank is number => rank != null);
+
+      return {
+        id: r.id,
+        overallRank: r.overallRank,
+        positionRank: r.positionRank,
+        tier: r.tier,
+        projectedPoints: r.projectedPoints,
+        adp: r.adp,
+        adpDelta: r.adpDelta,
+        rationale: r.rationale,
+        analysis: r.analysis,
+        ceilingRank: r.ceilingRank,
+        floorRank: r.floorRank,
+        recentRanks,
+        movement: {
+          d1: deltaFrom(d1Date),
+          d7: deltaFrom(d7Date),
+          d30: deltaFrom(d30Date),
+        },
+        generatedAt: r.generatedAt,
+        player: r.player,
+      };
+    });
   });
 
   return c.json({
@@ -100,6 +169,7 @@ interface AskBody {
   /** Variant selectors — the server builds the ranking context from these. */
   type?: string;
   scoring?: string;
+  superflex?: boolean;
   season?: number;
 }
 
@@ -159,6 +229,7 @@ draftRankingsRoutes.post('/ask', authMiddleware, rateLimit(20, 60_000), async (c
 
   const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty_rookie';
   const scoringFormat = (body.scoring || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
+  const superflex = body.superflex === true;
   const season = body.season || new Date().getFullYear();
   if (!['redraft', 'dynasty_rookie'].includes(rankingType)) {
     return c.json({ error: 'Invalid ranking type' }, 400);
@@ -195,7 +266,7 @@ draftRankingsRoutes.post('/ask', authMiddleware, rateLimit(20, 60_000), async (c
     where: and(
       eq(schema.draftRankings.rankingType, rankingType),
       eq(schema.draftRankings.scoringFormat, scoringFormat),
-      eq(schema.draftRankings.superflex, false),
+      eq(schema.draftRankings.superflex, superflex),
       eq(schema.draftRankings.seasonYear, season),
     ),
     orderBy: asc(schema.draftRankings.overallRank),
