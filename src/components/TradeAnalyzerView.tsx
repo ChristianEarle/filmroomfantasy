@@ -22,6 +22,7 @@ import {
   Shield,
   MessageCircle,
   Wand2,
+  Info,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -51,7 +52,15 @@ interface TradeAsset {
   team?: string;
   /** Which team this asset goes TO (team id). Required for 3+ team trades. */
   destinationTeamId?: number;
+  /** For pick assets acquired via trade: the pick's original owner, for display. */
+  originalOwnerName?: string;
 }
+
+/** Ordinal label for a draft round: 1 → "1st", 2 → "2nd", 3 → "3rd", 4 → "4th"… */
+const pickOrdinal = (round: number | string) => {
+  const r = String(round);
+  return r === '1' ? '1st' : r === '2' ? '2nd' : r === '3' ? '3rd' : `${r}th`;
+};
 
 interface TeamGrade {
   team: string;
@@ -103,6 +112,14 @@ interface RosterPlayer {
   byeWeek: number | null;
 }
 
+interface TeamDraftPickInfo {
+  year: number;
+  round: number;
+  originalOwnerId: string;
+  originalOwnerName: string | null;
+  isNative: boolean;
+}
+
 interface MyRoster {
   teamId: string;
   teamName: string;
@@ -112,6 +129,8 @@ interface MyRoster {
     bench: RosterPlayer[];
     ir: RosterPlayer[];
   };
+  /** Owned draft picks (dynasty/keeper leagues); empty/absent for redraft. */
+  picks?: TeamDraftPickInfo[];
 }
 
 interface ChatTurn {
@@ -385,12 +404,10 @@ function DraftPickInput({
   const [round, setRound] = useState('1');
 
   const handleAdd = () => {
-    const ordinal =
-      round === '1' ? '1st' : round === '2' ? '2nd' : round === '3' ? '3rd' : `${round}th`;
     onAdd({
       id: `pick-${year}-${round}-${Date.now()}`,
       type: 'pick',
-      name: `${year} ${ordinal} Round Pick`,
+      name: `${year} ${pickOrdinal(round)} Round Pick`,
     });
   };
 
@@ -488,6 +505,11 @@ function AssetChip({
             {asset.team}
           </p>
         )}
+        {isPick && asset.originalOwnerName && (
+          <p className={`fr-text-10 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            via {asset.originalOwnerName}
+          </p>
+        )}
       </div>
       {showDestination && otherTeams && otherTeams.length > 0 && onDestinationChange && (
         <div className="flex items-center gap-1">
@@ -533,6 +555,105 @@ function AssetChip({
   );
 }
 
+// ── Draft Picks Row ────────────────────────────────────────────────────
+
+/**
+ * Collapsible chip row of a team's owned draft picks (dynasty/keeper
+ * leagues). Clicking a chip adds the pick to that side's assets with the
+ * same shape the year/round DraftPickInput produces. Renders nothing when
+ * the league has no synced pick inventory (redraft).
+ */
+function DraftPicksRow({
+  picks,
+  isDarkMode,
+  defaultExpanded,
+  sends,
+  onAddPick,
+}: {
+  picks: TeamDraftPickInfo[];
+  isDarkMode: boolean;
+  defaultExpanded: boolean;
+  sends: TradeAsset[];
+  onAddPick: (asset: TradeAsset) => void;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  if (picks.length === 0) return null;
+
+  const assetName = (p: TeamDraftPickInfo) => `${p.year} ${pickOrdinal(p.round)} Round Pick`;
+  const viaName = (p: TeamDraftPickInfo) =>
+    !p.isNative && p.originalOwnerName ? p.originalOwnerName : undefined;
+  // A pick is "already added" when this side holds a pick asset with the
+  // same year/round and the same origin (so two same-round picks with
+  // different original owners stay individually addable).
+  const isAdded = (p: TeamDraftPickInfo) =>
+    sends.some(
+      (a) =>
+        a.type === 'pick' &&
+        a.name === assetName(p) &&
+        (a.originalOwnerName ?? undefined) === viaName(p),
+    );
+
+  return (
+    <div className="mb-3">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className={`flex items-center gap-1.5 transition-colors ${
+          isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'
+        }`}
+      >
+        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        <span className="fr-text-10 uppercase fr-tracking-wider font-bold">Draft picks</span>
+        <span className="fr-text-10 font-semibold">{picks.length}</span>
+        <span
+          title="Exact slot resolves from final standings."
+          aria-label="Exact slot resolves from final standings."
+          className="inline-flex"
+        >
+          <Info className="w-3 h-3" />
+        </span>
+      </button>
+      {expanded && (
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {picks.map((p) => {
+            const added = isAdded(p);
+            return (
+              <button
+                key={`${p.year}-${p.round}-${p.originalOwnerId}`}
+                type="button"
+                disabled={added}
+                onClick={() => {
+                  const via = viaName(p);
+                  onAddPick({
+                    id: `pick-${p.year}-${p.round}-${Date.now()}`,
+                    type: 'pick',
+                    name: assetName(p),
+                    ...(via ? { originalOwnerName: via } : {}),
+                  });
+                }}
+                title={added ? 'Already in this trade' : `Add ${assetName(p)}`}
+                className={`px-2 py-0.5 rounded-md border fr-text-11 font-medium transition-colors ${
+                  added
+                    ? isDarkMode
+                      ? 'bg-slate-900/50 border-slate-800 text-slate-600 cursor-default'
+                      : 'bg-slate-50 border-slate-200 text-slate-300 cursor-default'
+                    : isDarkMode
+                    ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-blue-500 hover:text-blue-300'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-700'
+                }`}
+              >
+                {p.year} {pickOrdinal(p.round)}
+                {viaName(p) ? ` (via ${viaName(p)})` : ''}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Trade Team Card ────────────────────────────────────────────────────
 
 function TradeTeamCard({
@@ -543,6 +664,7 @@ function TradeTeamCard({
   isMultiTeam,
   isUserTeam,
   opponentOptions,
+  picks,
   onAddAsset,
   onRemoveAsset,
   onLabelChange,
@@ -560,6 +682,8 @@ function TradeTeamCard({
    * non-user cards when a league is selected.
    */
   opponentOptions?: Array<{ teamId: string; teamName: string }>;
+  /** Draft picks owned by this card's league team (dynasty/keeper only). */
+  picks?: TeamDraftPickInfo[];
   onAddAsset: (teamId: number, asset: TradeAsset) => void;
   onRemoveAsset: (teamId: number, assetId: string) => void;
   onLabelChange: (teamId: number, label: string) => void;
@@ -712,6 +836,17 @@ function TradeTeamCard({
             />
           ))}
         </div>
+      )}
+
+      {/* Owned draft picks (dynasty/keeper leagues) — click to add */}
+      {picks && picks.length > 0 && (
+        <DraftPicksRow
+          picks={picks}
+          isDarkMode={isDarkMode}
+          defaultExpanded={!!isUserTeam}
+          sends={team.sends}
+          onAddPick={(asset) => onAddAsset(team.id, asset)}
+        />
       )}
 
       {/* Spacer pushes search to bottom */}
@@ -1720,8 +1855,6 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
         userSendsPicks?: Array<{ year: number; round: number }>;
       };
       if (!rec || !rec.userSends || !rec.userReceives) return;
-      const pickOrdinal = (round: number) =>
-        round === 1 ? '1st' : round === 2 ? '2nd' : round === 3 ? '3rd' : `${round}th`;
       setTeamCount(2);
       setTeams([
         {
@@ -2484,6 +2617,16 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
               ? undefined
               : opponentOptions;
 
+          // Draft picks for a given card: the user's card reads from their
+          // roster; opponent cards resolve by matching the card label to a
+          // league team (the opponent picker sets the label to teamName).
+          const picksForCard = (i: number): TeamDraftPickInfo[] | undefined => {
+            if (i === 0) return myRoster?.picks;
+            const label = teams[i]?.label;
+            if (!label) return undefined;
+            return allLeagueTeams?.find((lt) => lt.teamName === label)?.picks;
+          };
+
           if (teamCount === 2) {
             return (
               <div className="fr-grid-teams">
@@ -2495,6 +2638,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                   allTeams={teams}
                   isMultiTeam={isMultiTeam}
                   isUserTeam
+                  picks={picksForCard(0)}
                   onAddAsset={handleAddAsset}
                   onRemoveAsset={handleRemoveAsset}
                   onLabelChange={handleLabelChange}
@@ -2519,6 +2663,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                   allTeams={teams}
                   isMultiTeam={isMultiTeam}
                   opponentOptions={opponentPickerProps(1)}
+                  picks={picksForCard(1)}
                   onAddAsset={handleAddAsset}
                   onRemoveAsset={handleRemoveAsset}
                   onLabelChange={handleLabelChange}
@@ -2544,6 +2689,7 @@ export function TradeAnalyzerView({ isDarkMode }: TradeAnalyzerViewProps) {
                   isMultiTeam={isMultiTeam}
                   isUserTeam={i === 0}
                   opponentOptions={opponentPickerProps(i)}
+                  picks={picksForCard(i)}
                   onAddAsset={handleAddAsset}
                   onRemoveAsset={handleRemoveAsset}
                   onLabelChange={handleLabelChange}

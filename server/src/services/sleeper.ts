@@ -4,6 +4,14 @@
  * Rate limit: ~1000 calls/minute. Players endpoint should be called at most once per day.
  */
 
+import { eq, sql } from 'drizzle-orm';
+import type { drizzle } from 'drizzle-orm/d1';
+import * as schema from '../db/schema';
+import { generateId } from '../utils/id';
+
+type DB = ReturnType<typeof drizzle<typeof schema>>;
+
+const SLEEPER_API_BASE = 'https://api.sleeper.app/v1';
 const SLEEPER_PLAYERS_URL = 'https://api.sleeper.app/v1/players/nfl';
 
 // Fantasy-relevant positions we want to store
@@ -233,6 +241,27 @@ export function isValidSleeperUser(obj: unknown): obj is {
   return typeof u.user_id === 'string';
 }
 
+/**
+ * Validates that a Sleeper traded-pick response entry has the expected shape.
+ * `roster_id` is the pick's ORIGINAL owner; `owner_id` is the CURRENT owner.
+ */
+export function isValidSleeperTradedPick(obj: unknown): obj is {
+  season: string | number;
+  round: number;
+  roster_id: number;
+  previous_owner_id?: number;
+  owner_id: number;
+} {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const p = obj as Record<string, unknown>;
+  return (
+    (typeof p.season === 'string' || typeof p.season === 'number') &&
+    typeof p.round === 'number' &&
+    typeof p.roster_id === 'number' &&
+    typeof p.owner_id === 'number'
+  );
+}
+
 /** Validates that a Sleeper matchup response entry has the expected shape. */
 export function isValidSleeperMatchup(obj: unknown): obj is {
   matchup_id: number | null;
@@ -323,4 +352,198 @@ export async function getMappedPlayers(): Promise<MappedPlayer[]> {
   }
 
   return mapped;
+}
+
+// ========================================
+// Draft-pick inventory sync (dynasty/keeper)
+// ========================================
+
+export interface DraftPickSyncStats {
+  /** Native pick rows seeded (upserted) this run. */
+  seeded: number;
+  /** Traded-pick overlay rows applied this run. */
+  traded: number;
+  /** Non-null when the sync was skipped entirely, with the reason. */
+  skipped: string | null;
+}
+
+/** How many draft years (current + future) we track pick ownership for. */
+const PICK_YEARS_TRACKED = 4;
+/** Fallback when Sleeper doesn't report draft rounds in league settings. */
+const DEFAULT_DRAFT_ROUNDS = 4;
+/** Upsert chunk size: 9 columns/row keeps us under D1's ~100 bound params. */
+const PICK_UPSERT_CHUNK = 10;
+
+/**
+ * Sync draft-pick ownership for a Sleeper dynasty/keeper league into
+ * `team_draft_picks`.
+ *
+ * Strategy (idempotent, delete-nothing):
+ *  1. Read league settings for draft rounds (default 4) + league type;
+ *     redraft leagues are skipped so they never surface pick chips.
+ *  2. Seed native ownership: every mapped team owns its own pick for the
+ *     current season year + 3 future years x every round. The seed resets
+ *     ownerId back to the original owner, so a pick whose trade was
+ *     reversed on Sleeper reverts to native before the overlay re-applies.
+ *  3. Overlay `/traded_picks`: each entry moves ownerId to the current
+ *     owner's team and marks acquiredVia='trade', matched on
+ *     (year, round, original owner roster_id) via the identity unique index.
+ *
+ * Roster mapping mirrors the league sync in routes/leagues.ts: Sleeper
+ * roster_id -> roster.owner_id (Sleeper user_id) -> teams.externalOwnerId.
+ */
+export async function syncDraftPicks(
+  db: DB,
+  leagueId: string,
+  externalLeagueId: string,
+): Promise<DraftPickSyncStats> {
+  const stats: DraftPickSyncStats = { seeded: 0, traded: 0, skipped: null };
+
+  // 1. League metadata: type, draft rounds, season
+  const leagueRes = await fetch(`${SLEEPER_API_BASE}/league/${externalLeagueId}`);
+  if (!leagueRes.ok) {
+    stats.skipped = `league metadata fetch failed (${leagueRes.status})`;
+    return stats;
+  }
+  const sleeperLeague = (await leagueRes.json()) as {
+    settings?: Record<string, number> | null;
+    season?: string | number;
+  } | null;
+  const settings = (sleeperLeague && typeof sleeperLeague === 'object' ? sleeperLeague.settings : null) || {};
+
+  // Sleeper settings.type: 0 redraft, 1 keeper, 2 dynasty. Future picks only
+  // exist as tradeable assets in keeper/dynasty leagues.
+  const sleeperType = Number(settings.type ?? 0);
+  if (sleeperType !== 1 && sleeperType !== 2) {
+    stats.skipped = 'redraft league — no future pick inventory';
+    return stats;
+  }
+
+  const rawRounds = Number(settings.draft_rounds);
+  const draftRounds =
+    Number.isInteger(rawRounds) && rawRounds > 0 ? Math.min(rawRounds, 10) : DEFAULT_DRAFT_ROUNDS;
+  const baseYear = Number(sleeperLeague?.season) || new Date().getFullYear();
+  const maxYear = baseYear + PICK_YEARS_TRACKED - 1;
+
+  // 2. Map Sleeper roster_id -> our team.id (roster.owner_id == teams.externalOwnerId)
+  const rostersRes = await fetch(`${SLEEPER_API_BASE}/league/${externalLeagueId}/rosters`);
+  if (!rostersRes.ok) {
+    stats.skipped = `rosters fetch failed (${rostersRes.status})`;
+    return stats;
+  }
+  const rosters = validateSleeperArray(
+    await rostersRes.json(),
+    isValidSleeperRoster,
+    'draft-pick rosters',
+  );
+  if (rosters.length === 0) {
+    stats.skipped = 'no valid rosters returned';
+    return stats;
+  }
+
+  const teams = await db.query.teams.findMany({
+    where: eq(schema.teams.leagueId, leagueId),
+    columns: { id: true, externalOwnerId: true },
+  });
+  const teamByExternalOwner = new Map<string, string>();
+  for (const t of teams) {
+    if (t.externalOwnerId) teamByExternalOwner.set(t.externalOwnerId, t.id);
+  }
+  const rosterIdToTeamId = new Map<number, string>();
+  for (const r of rosters) {
+    const teamId = teamByExternalOwner.get(String(r.owner_id));
+    if (teamId) rosterIdToTeamId.set(r.roster_id, teamId);
+  }
+  if (rosterIdToTeamId.size === 0) {
+    stats.skipped = 'no rosters could be mapped to teams (run a league sync first)';
+    return stats;
+  }
+
+  const now = new Date();
+  const upsertChunked = async (rows: schema.NewTeamDraftPick[]) => {
+    for (let i = 0; i < rows.length; i += PICK_UPSERT_CHUNK) {
+      await db
+        .insert(schema.teamDraftPicks)
+        .values(rows.slice(i, i + PICK_UPSERT_CHUNK))
+        .onConflictDoUpdate({
+          target: [
+            schema.teamDraftPicks.leagueId,
+            schema.teamDraftPicks.draftYear,
+            schema.teamDraftPicks.draftRound,
+            schema.teamDraftPicks.originalOwnerId,
+          ],
+          set: {
+            ownerId: sql`excluded.owner_id`,
+            acquiredVia: sql`excluded.acquired_via`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        });
+    }
+  };
+
+  // 3. Seed native ownership for every mapped team x year x round
+  const mappedTeamIds = Array.from(new Set(rosterIdToTeamId.values()));
+  const nativeRows: schema.NewTeamDraftPick[] = [];
+  for (let year = baseYear; year <= maxYear; year++) {
+    for (let round = 1; round <= draftRounds; round++) {
+      for (const teamId of mappedTeamIds) {
+        nativeRows.push({
+          id: generateId(),
+          leagueId,
+          ownerId: teamId,
+          originalOwnerId: teamId,
+          draftYear: year,
+          draftRound: round,
+          acquiredVia: 'native',
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+  }
+  await upsertChunked(nativeRows);
+  stats.seeded = nativeRows.length;
+
+  // 4. Overlay traded picks
+  const tradedRes = await fetch(`${SLEEPER_API_BASE}/league/${externalLeagueId}/traded_picks`);
+  if (!tradedRes.ok) {
+    // Seed succeeded; report the overlay failure without throwing so the
+    // caller's league sync isn't disrupted.
+    console.warn(`[sleeper] traded_picks fetch failed (${tradedRes.status}) for league ${leagueId}`);
+    return stats;
+  }
+  const tradedPicks = validateSleeperArray(
+    await tradedRes.json(),
+    isValidSleeperTradedPick,
+    'traded picks',
+  );
+
+  // Dedupe by pick identity, keeping the LAST entry per pick so multi-hop
+  // chains (A->B->C) collapse to the final owner.
+  const overlayByIdentity = new Map<string, schema.NewTeamDraftPick>();
+  for (const pick of tradedPicks) {
+    const year = Number(pick.season);
+    if (!Number.isInteger(year) || year < baseYear || year > maxYear) continue;
+    if (!Number.isInteger(pick.round) || pick.round < 1 || pick.round > draftRounds) continue;
+    const originalOwnerTeamId = rosterIdToTeamId.get(pick.roster_id);
+    const currentOwnerTeamId = rosterIdToTeamId.get(pick.owner_id);
+    if (!originalOwnerTeamId || !currentOwnerTeamId) continue;
+    overlayByIdentity.set(`${year}-${pick.round}-${originalOwnerTeamId}`, {
+      id: generateId(),
+      leagueId,
+      ownerId: currentOwnerTeamId,
+      originalOwnerId: originalOwnerTeamId,
+      draftYear: year,
+      draftRound: pick.round,
+      // A pick traded away and back reads as native again for display.
+      acquiredVia: currentOwnerTeamId === originalOwnerTeamId ? 'native' : 'trade',
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const overlayRows = Array.from(overlayByIdentity.values());
+  await upsertChunked(overlayRows);
+  stats.traded = overlayRows.length;
+
+  return stats;
 }
