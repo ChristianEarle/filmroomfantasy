@@ -83,14 +83,49 @@ export interface PlayerNews {
   player?: Player;
 }
 
+/** Aggregated season stats returned by GET /players when includeStats=true */
+export interface PlayerSeasonStats {
+  games: number;
+  gamesPlayed?: number;
+  fantasyPointsPPR: number;
+  fantasyPointsHalf: number;
+  fantasyPointsStd: number;
+  passYards: number;
+  passTDs: number;
+  rushYards: number;
+  rushTDs: number;
+  receptions: number;
+  receivingYards: number;
+  receivingTDs: number;
+  averageSnapPct?: number | null;
+}
+
+/** Enrichment fields the GET /players list endpoint adds when includeStats=true */
+export interface EnrichedPlayerFields {
+  avgPointsPPR?: number;
+  projectedPoints?: number;
+  weeklyProjectedPoints?: number;
+  isRostered?: boolean;
+  /**
+   * The player's last up-to-4 finalized weekly fantasy scores for the requested
+   * scoring format, most recent last. Empty when no finalized weeks exist.
+   */
+  recentWeeklyScores?: number[];
+  seasonStats?: PlayerSeasonStats;
+}
+
+export type EnrichedPlayer = Player & EnrichedPlayerFields;
+
 export interface PlayersResponse {
-  players: Player[];
+  players: EnrichedPlayer[];
   pagination: {
     page: number;
     limit: number;
     total: number;
     totalPages: number;
   };
+  weekComplete?: boolean;
+  pointsType?: 'actual' | 'projected';
 }
 
 export interface PlayerStatsResponse {
@@ -133,6 +168,14 @@ export const playerService = {
     status?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    /** Include seasonStats/avgPointsPPR/recentWeeklyScores enrichment */
+    includeStats?: boolean;
+    /** Omit week to get full-season aggregates */
+    week?: number;
+    season?: number;
+    scoringFormat?: 'ppr' | 'half-ppr' | 'standard';
+    leagueId?: string;
+    availableOnly?: boolean;
   }): Promise<PlayersResponse> => {
     const searchParams = new URLSearchParams();
     if (params) {

@@ -6,7 +6,12 @@ import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
 import { usePlayerProps, formatPropLine } from '../hooks/usePlayerProps';
 import { type APIPlayer, convertAPIPlayerToPlayer, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+import type { EnrichedPlayerFields } from '../services/players';
 import { AdUnit } from './AdUnit';
+import { Breadcrumb } from './shared/Breadcrumb';
+
+/** APIPlayer plus the sparkline history field threaded through services/players.ts */
+type BoardAPIPlayer = APIPlayer & Pick<EnrichedPlayerFields, 'recentWeeklyScores'>;
 
 // Memoized table row component to prevent unnecessary re-renders
 interface PlayerRowProps {
@@ -32,9 +37,13 @@ interface PlayerRowProps {
     gamesPlayed?: number;
   } | null;
   currentWeek: number;
+  /** Last up-to-4 finalized weekly scores from the API (most recent last) */
+  recentWeeklyScores?: number[];
+  /** True when the table shows full-season totals instead of a single week */
+  seasonMode?: boolean;
 }
 
-const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, isDarkMode, oddsData, pointsType = 'projected', propLine, isOwned = false, isExpanded = false, seasonStats, currentWeek }: PlayerRowProps) {
+const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, isDarkMode, oddsData, pointsType = 'projected', propLine, isOwned = false, isExpanded = false, seasonStats, currentWeek, recentWeeklyScores, seasonMode = false }: PlayerRowProps) {
   // Format odds display for this player's game
   const formatOdds = () => {
     if (!oddsData || oddsData.homeSpread === null || oddsData.total === null) {
@@ -171,34 +180,50 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
         </td>
       )}
 
-      {/* TREND (mini sparkline — deterministic from player id + delta direction) */}
+      {/* TREND (sparkline of the player's last finalized weekly scores; delta pill fallback) */}
       <td className="px-2 sm:px-4 py-3 sm:py-4 text-center hidden md:table-cell">
-        {(() => {
-          // Seeded pseudo-random points so the chart is stable across renders
-          let h = 2166136261;
-          for (let i = 0; i < player.id.length; i++) { h ^= player.id.charCodeAt(i); h = Math.imul(h, 16777619); }
-          const dir = player.weekChange >= 0 ? 1 : -1;
-          const pts: number[] = [];
-          for (let i = 0; i < 8; i++) {
-            const jitter = ((Math.sin(h + i * 9301) * 10000) % 1 + 1) % 1;
-            pts.push(50 + dir * (i / 7) * 25 + (jitter - 0.5) * 10);
-          }
-          const min = Math.min(...pts);
-          const max = Math.max(...pts);
-          const range = max - min || 1;
-          const w = 60, ht = 20;
-          const path = pts.map((p, i) => {
-            const x = (i / (pts.length - 1)) * w;
-            const y = ht - ((p - min) / range) * ht;
-            return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-          }).join(' ');
-          const color = player.weekChange >= 0 ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)';
-          return (
-            <svg width={w} height={ht} viewBox={`0 0 ${w} ${ht}`} className="inline-block overflow-visible">
-              <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          );
-        })()}
+        {recentWeeklyScores && recentWeeklyScores.length >= 2 ? (
+          (() => {
+            const pts = recentWeeklyScores;
+            const min = Math.min(...pts);
+            const max = Math.max(...pts);
+            const range = max - min || 1;
+            const w = 60, ht = 20;
+            const xFor = (i: number) => (i / (pts.length - 1)) * w;
+            const yFor = (p: number) => ht - ((p - min) / range) * ht;
+            const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(p).toFixed(1)}`).join(' ');
+            const rising = pts[pts.length - 1] >= pts[0];
+            const color = rising ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)';
+            return (
+              <svg
+                width={w}
+                height={ht}
+                viewBox={`0 0 ${w} ${ht}`}
+                className="inline-block overflow-visible"
+                role="img"
+                aria-label={`Last ${pts.length} weeks: ${pts.map((p) => p.toFixed(1)).join(', ')} pts`}
+              >
+                <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx={xFor(pts.length - 1)} cy={yFor(pts[pts.length - 1])} r={2} fill={color} />
+              </svg>
+            );
+          })()
+        ) : (
+          (() => {
+            // Not enough weekly history — fall back to the existing delta pill
+            const delta = pointsType === 'actual' && player.weeklyProjectedPoints !== undefined
+              ? player.projectedPoints - player.weeklyProjectedPoints
+              : player.weekChange;
+            return (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-sm font-bold tabular-nums ${
+                delta >= 0 ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500'
+              }`}>
+                {delta >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                {delta >= 0 ? '+' : ''}{delta.toFixed(1)}
+              </span>
+            );
+          })()
+        )}
       </td>
 
       {/* Chevron (rotates when expanded) */}
@@ -305,15 +330,17 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
             {/* Panel 3 — Week summary */}
             <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}>
               <div className={`fr-text-10 font-bold uppercase fr-tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
-                {pointsType === 'actual' ? 'WEEK SUMMARY' : 'PROJECTION'}
+                {seasonMode ? 'SEASON TOTAL' : pointsType === 'actual' ? 'WEEK SUMMARY' : 'PROJECTION'}
               </div>
               <div className={`text-2xl font-extrabold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 {player.projectedPoints.toFixed(1)}
               </div>
               <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {pointsType === 'actual' ? `${player.position} · Week ${currentWeek}` : `${player.position} · Proj Wk ${currentWeek}`}
+                {seasonMode
+                  ? `${player.position} · Full season`
+                  : pointsType === 'actual' ? `${player.position} · Week ${currentWeek}` : `${player.position} · Proj Wk ${currentWeek}`}
               </div>
-              {pointsType === 'actual' && player.weeklyProjectedPoints != null && (
+              {!seasonMode && pointsType === 'actual' && player.weeklyProjectedPoints != null && (
                 <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   Proj was <b className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{player.weeklyProjectedPoints.toFixed(1)}</b>
                 </div>
@@ -390,7 +417,8 @@ export function PlayerTable({
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [searchQuery, setSearchQuery] = useState('');
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
-  const [players, setPlayers] = useState<APIPlayer[]>([]);
+  const [fullSeason, setFullSeason] = useState(false);
+  const [players, setPlayers] = useState<BoardAPIPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalPlayers, setTotalPlayers] = useState(0);
@@ -403,7 +431,7 @@ export function PlayerTable({
 
   // Map converted Player.id -> raw APIPlayer.seasonStats for the expand panel
   const apiPlayerById = useMemo(() => {
-    const m = new Map<string, APIPlayer>();
+    const m = new Map<string, BoardAPIPlayer>();
     for (const p of players) m.set(p.id, p);
     return m;
   }, [players]);
@@ -439,16 +467,20 @@ export function PlayerTable({
     setLoading(true);
     setError(null);
     try {
+      // Full Season mode omits the week param — the API then returns
+      // season aggregates (seasonStats totals + avgPointsPPR per game).
       const params = new URLSearchParams({
         page: '1',
         limit: '500',
         includeStats: 'true',
-        sortBy: 'projectedPoints',
+        sortBy: fullSeason ? 'avgPointsPPR' : 'projectedPoints',
         sortOrder: 'desc',
-        week: String(currentWeek),
         season: String(seasonYear),
         scoringFormat,
       });
+      if (!fullSeason) {
+        params.set('week', String(currentWeek));
+      }
 
       if (selectedPosition !== 'ALL' && selectedPosition !== 'FLEX') {
         params.set('position', selectedPosition);
@@ -463,7 +495,7 @@ export function PlayerTable({
       }
 
       const response = await api.get<{
-        players?: APIPlayer[];
+        players?: BoardAPIPlayer[];
         pagination?: { page: number; limit: number; total: number; totalPages: number };
         weekComplete?: boolean;
         pointsType?: 'actual' | 'projected';
@@ -473,7 +505,8 @@ export function PlayerTable({
       const pagination = response?.pagination;
       setPlayers(playersList);
       setTotalPlayers(pagination?.total ?? playersList.length);
-      setPointsType(response?.pointsType ?? 'projected');
+      // Season totals are actuals but don't carry week-level proj/outcome context
+      setPointsType(fullSeason ? 'projected' : response?.pointsType ?? 'projected');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch players';
       setError(errorMessage);
@@ -481,7 +514,7 @@ export function PlayerTable({
     } finally {
       setLoading(false);
     }
-  }, [selectedPosition, league?.id, searchQuery, currentWeek, seasonYear, scoringFormat]);
+  }, [selectedPosition, league?.id, searchQuery, currentWeek, seasonYear, scoringFormat, fullSeason]);
 
   useEffect(() => {
     fetchPlayers();
@@ -523,7 +556,26 @@ export function PlayerTable({
     }
 
     // Convert to display format
-    const displayPlayers = filtered.map((p, i) => convertAPIPlayerToPlayer(p, i));
+    const displayPlayers = filtered.map((p, i) => {
+      const d = convertAPIPlayerToPlayer(p, i);
+      // Real week-over-week movement from the API's weekly history
+      const scores = p.recentWeeklyScores ?? [];
+      if (scores.length >= 2) {
+        d.weekChange = Math.round((scores[scores.length - 1] - scores[scores.length - 2]) * 10) / 10;
+      }
+      if (fullSeason) {
+        // Show season totals for the selected scoring format in the PTS column
+        const totals = p.seasonStats;
+        const total = selectedScoring === 'PPR'
+          ? totals?.fantasyPointsPPR
+          : selectedScoring === 'Half PPR'
+          ? totals?.fantasyPointsHalf
+          : totals?.fantasyPointsStd;
+        d.projectedPoints = Math.round((total ?? 0) * 10) / 10;
+        d.weeklyProjectedPoints = undefined;
+      }
+      return d;
+    });
 
     // Apply sorting
     const sorted = [...displayPlayers].sort((a, b) => {
@@ -550,7 +602,7 @@ export function PlayerTable({
 
     // Limit to top 12 for display
     return sorted.slice(0, 12);
-  }, [players, selectedPosition, searchQuery, sortField, sortDirection]);
+  }, [players, selectedPosition, searchQuery, sortField, sortDirection, fullSeason, selectedScoring]);
 
   // ── Weekly callouts (BOOM / BUST / WK MVP) ──
   // Only meaningful when viewing an actual (finalized) week — need
@@ -606,6 +658,9 @@ export function PlayerTable({
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
+      {/* Breadcrumb */}
+      <Breadcrumb section="Board" isDarkMode={isDarkMode} />
+
       {/* Page header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
@@ -621,7 +676,9 @@ export function PlayerTable({
               Player Rankings
             </h1>
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              {seasonYear} Season · Week {currentWeek} {pointsType === 'actual' ? '(Final)' : '(Projections)'} · {pointsType === 'actual' ? 'Actual points scored' : 'Projected points'}
+              {fullSeason
+                ? <>{seasonYear} Season · Full Season · Season total points</>
+                : <>{seasonYear} Season · Week {currentWeek} {pointsType === 'actual' ? '(Final)' : '(Projections)'} · {pointsType === 'actual' ? 'Actual points scored' : 'Projected points'}</>}
               {totalPlayers > 0 && <> · {totalPlayers} players</>}
             </p>
           </div>
@@ -649,7 +706,9 @@ export function PlayerTable({
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = `player-rankings-week${currentWeek}-${seasonYear}.csv`;
+              a.download = fullSeason
+                ? `player-rankings-season-${seasonYear}.csv`
+                : `player-rankings-week${currentWeek}-${seasonYear}.csv`;
               a.click();
               URL.revokeObjectURL(url);
             }}
@@ -700,12 +759,16 @@ export function PlayerTable({
           />
         </div>
 
-        {/* Week nav: prev / label / next + Full Season */}
-        <div className={`inline-flex items-center rounded-md border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        {/* Week nav: prev / label / next + Full Season toggle */}
+        <div
+          className={`inline-flex items-center rounded-md border transition-opacity ${
+            isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+          } ${fullSeason ? 'opacity-40' : ''}`}
+        >
           <button
             type="button"
             onClick={() => onWeekChange(Math.max(1, currentWeek - 1))}
-            disabled={currentWeek <= 1}
+            disabled={fullSeason || currentWeek <= 1}
             aria-label="Previous week"
             className={`px-2 py-1.5 disabled:opacity-40 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
           >
@@ -717,13 +780,27 @@ export function PlayerTable({
           <button
             type="button"
             onClick={() => onWeekChange(Math.min(18, currentWeek + 1))}
-            disabled={currentWeek >= 18}
+            disabled={fullSeason || currentWeek >= 18}
             aria-label="Next week"
             className={`px-2 py-1.5 disabled:opacity-40 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
         </div>
+        <button
+          type="button"
+          onClick={() => setFullSeason((v) => !v)}
+          aria-pressed={fullSeason}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${
+            fullSeason
+              ? 'bg-blue-600 text-white border-blue-600'
+              : isDarkMode
+              ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600'
+              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+          }`}
+        >
+          Full Season
+        </button>
       </div>
 
       {/* Boom / Bust / MVP callouts — only shown for finalized weeks */}
@@ -906,6 +983,8 @@ export function PlayerTable({
                         <p className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           {searchQuery.trim()
                             ? `No players found for "${searchQuery}"`
+                            : fullSeason
+                            ? `No player data available for the ${seasonYear} season`
                             : `No player data available for Week ${currentWeek}`}
                         </p>
                         <p className={`text-xs max-w-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -942,6 +1021,8 @@ export function PlayerTable({
                         isExpanded={expandedId === player.id}
                         seasonStats={apiPlayerById.get(player.id)?.seasonStats ?? null}
                         currentWeek={currentWeek}
+                        recentWeeklyScores={apiPlayerById.get(player.id)?.recentWeeklyScores}
+                        seasonMode={fullSeason}
                       />
                     );
                   })

@@ -201,15 +201,18 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
     }
 
     if (week !== undefined && weekComplete && includeStats && !availableOnly) {
-      // Past-week mode: players who played, sorted by actual fantasy pts
-      const ptsOrderCol = scoringFormat === 'standard' ? schema.playerWeeklyStats.fantasyPointsStd : scoringFormat === 'half-ppr' ? schema.playerWeeklyStats.fantasyPointsHalf : schema.playerWeeklyStats.fantasyPointsPPR;
-      const stats = await db.query.playerWeeklyStats.findMany({
+      // Past-week mode: players who played, sorted by actual fantasy pts.
+      // Fetch the trailing up-to-4-week window in a single batched query so we can
+      // also build recentWeeklyScores (sparkline history) with no per-player N+1.
+      const historyWeeks: number[] = [];
+      for (let w = Math.max(1, week - 3); w <= week; w++) historyWeeks.push(w);
+      const windowStats = await db.query.playerWeeklyStats.findMany({
         where: and(
-          eq(schema.playerWeeklyStats.week, week),
+          inArray(schema.playerWeeklyStats.week, historyWeeks),
           eq(schema.playerWeeklyStats.seasonYear, season)
         ),
-        orderBy: desc(ptsOrderCol),
       });
+      const stats = windowStats.filter(s => s.week === week);
       const played = (s: typeof stats[0]) => {
         // DEF: has defensive stats (no offensive involvement)
         const hasDefStats = (s.defSnaps ?? 0) > 0 || (s.sacks ?? 0) > 0 || (s.defInterceptions ?? 0) > 0 ||
@@ -228,6 +231,16 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       const ptsCol = scoringFormat === 'standard' ? 'fantasyPointsStd' : scoringFormat === 'half-ppr' ? 'fantasyPointsHalf' : 'fantasyPointsPPR';
       const playedStats = stats.filter(played);
       const playerIdsFromStats = [...new Set(playedStats.map(s => s.playerId))];
+
+      // Sparkline history: last up-to-4 finalized weekly scores per player,
+      // most recent last, in the requested scoring format.
+      const recentScoresByPlayer = new Map<string, number[]>();
+      const playedWindow = windowStats.filter(played).sort((a, b) => (a.week ?? 0) - (b.week ?? 0));
+      for (const s of playedWindow) {
+        const list = recentScoresByPlayer.get(s.playerId) || [];
+        list.push(Math.round((((s as any)[ptsCol] ?? 0) as number) * 10) / 10);
+        recentScoresByPlayer.set(s.playerId, list);
+      }
 
       if (playerIdsFromStats.length === 0) {
         return c.json({
@@ -335,6 +348,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           avgPointsPPR: pts,
           weeklyProjectedPoints: projPts,
           seasonStats,
+          recentWeeklyScores: recentScoresByPlayer.get(p.id) ?? [],
           isRostered: false as boolean,
         };
       });
@@ -463,9 +477,31 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         if (!projectionByPlayer.has(p.playerId)) projectionByPlayer.set(p.playerId, p);
       }
 
+      // Column key for the requested scoring format — used for sparkline history
+      const histPtsKey = scoringFormat === 'standard' ? 'fantasyPointsStd' : scoringFormat === 'half-ppr' ? 'fantasyPointsHalf' : 'fantasyPointsPPR';
+
       enrichedPlayers = players.map((player) => {
         const stats = statsByPlayer.get(player.id) || [];
         const isDef = player.position === 'DEF';
+
+        // Last up-to-4 finalized weekly scores (most recent last) for the requested
+        // scoring format. Derived from the season stats fetched above — no extra query.
+        // Weekly stat rows only exist for completed (finalized) weeks; when viewing an
+        // upcoming week, exclude that week itself.
+        const recentWeeklyScores = stats
+          .filter((s: any) => {
+            const active = isDef ||
+              (s.offSnaps ?? 0) > 0 || (s.defSnaps ?? 0) > 0 || (s.stSnaps ?? 0) > 0 ||
+              (s.passAttempts ?? 0) > 0 || (s.rushAttempts ?? 0) > 0 || (s.targets ?? 0) > 0 ||
+              (s.receptions ?? 0) > 0 || (s.fgAttempts ?? 0) > 0 || (s.xpAttempts ?? 0) > 0 ||
+              (s.sacks ?? 0) > 0 || (s.defInterceptions ?? 0) > 0;
+            if (!active) return false;
+            if (week === undefined) return true;
+            return weekComplete ? s.week <= week : s.week < week;
+          })
+          .sort((a: any, b: any) => (a.week ?? 0) - (b.week ?? 0))
+          .slice(-4)
+          .map((s: any) => Math.round(((s[histPtsKey] ?? 0) as number) * 10) / 10);
         const seasonStats = stats.reduce((acc, week) => {
           const played = isDef ||
             (week.offSnaps ?? 0) > 0 || (week.defSnaps ?? 0) > 0 || (week.stSnaps ?? 0) > 0 ||
@@ -537,6 +573,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           seasonStats: { ...ss, averageSnapPct: avgSnapPct },
           avgPointsPPR: avgPts,
           projectedPoints: projPts,
+          recentWeeklyScores,
           isRostered: rosteredPlayerIds.includes(player.id),
         };
       });
