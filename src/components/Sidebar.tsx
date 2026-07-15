@@ -18,7 +18,7 @@ interface MenuGroup {
 }
 
 interface SidebarProps {
-  activeView: SidebarView | 'Profile' | 'Login';
+  activeView: SidebarView | 'Profile' | 'Login' | (string & {});
   onViewChange: (view: SidebarView) => void;
   isDarkMode: boolean;
   isAuthenticated?: boolean;
