@@ -45,7 +45,7 @@ export function RegisterView({ onRegister, onSwitchToLogin, isDarkMode = true, e
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cooldown > 0) return;
+    if (isLoading || cooldown > 0) return;
     setError('');
     setIsLoading(true);
 
@@ -98,42 +98,46 @@ export function RegisterView({ onRegister, onSwitchToLogin, isDarkMode = true, e
         <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <form onSubmit={handleSubmit} className="space-y-6">
             {displayError && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{displayError}</div>
+              <div role="alert" className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{displayError}</div>
             )}
 
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Username</label>
+              <label htmlFor="register-username" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Username</label>
               <div className={inputWrap}>
                 <div className={iconSlot}><User className="h-5 w-5" strokeWidth={1.5} /></div>
-                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="johndoe" required />
+                <input id="register-username" name="username" type="text" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="johndoe" required />
               </div>
             </div>
 
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
+              <label htmlFor="register-email" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
               <div className={inputWrap}>
                 <div className={iconSlot}><Mail className="h-5 w-5" strokeWidth={1.5} /></div>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required />
+                <input id="register-email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required />
               </div>
             </div>
 
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Password</label>
+              <label htmlFor="register-password" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Password</label>
               <div className={inputWrap}>
                 <div className={iconSlot}><Lock className="h-5 w-5" strokeWidth={1.5} /></div>
                 <input
+                  id="register-password"
+                  name="password"
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className={`${inputClass} pr-2`}
                   placeholder="Create a password"
+                  aria-describedby="register-password-requirements"
                   required
                 />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}>
+                <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}>
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
-              <div className={`mt-4 rounded-lg border p-4 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+              <div id="register-password-requirements" className={`mt-4 rounded-lg border p-4 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                 <p className={`text-xs font-medium mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Password must include:</p>
                 <div className="space-y-3">
                   <PasswordRequirement met={hasMinLength} text="At least 8 characters" isDarkMode={isDarkMode} />

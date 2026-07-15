@@ -26,6 +26,7 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
   const [position, setPosition] = useState<DropdownPosition | null>(null);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { leagues, isLoading: leaguesLoading } = useLeaguesContext();
 
@@ -59,19 +60,28 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
     }
   }, [dropdownOpen, updatePosition]);
 
-  // Close dropdown on click outside
+  // Close dropdown on click outside or Escape (Escape returns focus to trigger)
   useEffect(() => {
     if (!dropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (triggerRef.current && !triggerRef.current.contains(e.target as Node)) {
         // Check if click is inside the portal dropdown
-        const dropdown = document.getElementById('league-dropdown-portal');
-        if (dropdown && dropdown.contains(e.target as Node)) return;
+        if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return;
         setDropdownOpen(false);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDropdownOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [dropdownOpen]);
 
   const selectedLeague = leagues.find(l => l.id === selectedLeagueId);
@@ -91,9 +101,19 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
     );
   }
 
+  const closeDropdownAndRefocus = () => {
+    setDropdownOpen(false);
+    // Dropdown unmounts on close; move focus back to the trigger so keyboard
+    // users aren't dropped at the top of the document.
+    triggerRef.current?.focus();
+  };
+
   const dropdownMenu = dropdownOpen && position ? createPortal(
     <div
+      ref={dropdownRef}
       id="league-dropdown-portal"
+      role="menu"
+      aria-label="Select league"
       className={`rounded-lg border shadow-lg overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
       style={{
         position: 'fixed',
@@ -112,11 +132,14 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
           {leagues.map((league) => (
             <button
               key={league.id}
+              type="button"
+              role="menuitem"
+              aria-current={league.id === selectedLeagueId ? 'true' : undefined}
               onClick={() => {
                 if (league.id !== selectedLeagueId) {
                   onLeagueSelect(league.id);
                 }
-                setDropdownOpen(false);
+                closeDropdownAndRefocus();
               }}
               className={`w-full px-3 py-2 text-left transition-colors flex items-center justify-between ${
                 league.id === selectedLeagueId
@@ -133,7 +156,7 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
                 </div>
               </div>
               {league.id === selectedLeagueId && (
-                <Check className="w-4 h-4 text-blue-500" />
+                <Check className="w-4 h-4 text-blue-500" aria-hidden="true" />
               )}
             </button>
           ))}
@@ -143,6 +166,8 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
       {/* Connect League Option */}
       <div className="p-2">
         <button
+          type="button"
+          role="menuitem"
           onClick={() => {
             // Check if free user is at limit
             if (userTier === 'free' && leagues.length >= 1) {
@@ -150,7 +175,7 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
             } else {
               onConnectLeague();
             }
-            setDropdownOpen(false);
+            closeDropdownAndRefocus();
           }}
           className={`w-full px-3 py-2 rounded-lg text-left transition-colors flex items-center gap-2 ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-100'}`}
         >
@@ -180,7 +205,7 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = (await response.json().catch(() => ({}))) as { error?: string };
         alert(error.error || 'Failed to create checkout session');
         return;
       }
@@ -201,7 +226,11 @@ export function LeagueManager({ isDarkMode, onLeagueSelect, selectedLeagueId, is
       <div className="mb-3">
         <button
           ref={triggerRef}
+          type="button"
           onClick={() => setDropdownOpen(!dropdownOpen)}
+          aria-expanded={dropdownOpen}
+          aria-haspopup="menu"
+          aria-controls={dropdownOpen ? 'league-dropdown-portal' : undefined}
           className={`w-full rounded-lg p-3 text-left transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'}`}
         >
           <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>

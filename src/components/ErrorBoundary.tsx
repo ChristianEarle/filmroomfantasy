@@ -4,6 +4,12 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 interface Props {
   children: ReactNode;
   isDarkMode?: boolean;
+  /**
+   * When any value in this array changes (e.g. the active view/route), a
+   * caught error is cleared so the boundary doesn't keep showing a stale
+   * fallback for a different screen after navigation.
+   */
+  resetKeys?: ReadonlyArray<unknown>;
 }
 
 interface State {
@@ -32,6 +38,19 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('Error caught by boundary:', error, errorInfo);
   }
 
+  public componentDidUpdate(prevProps: Props) {
+    // Reset a caught error when the reset keys change (e.g. user navigated
+    // to a different view) so the new content gets a fresh chance to render.
+    if (!this.state.hasError) return;
+    const prev = prevProps.resetKeys;
+    const next = this.props.resetKeys;
+    if (!prev || !next) return;
+    const changed = prev.length !== next.length || next.some((key, i) => !Object.is(key, prev[i]));
+    if (changed) {
+      this.setState({ hasError: false, error: null, retryCount: 0 });
+    }
+  }
+
   private handleReset = () => {
     this.setState(prev => ({
       hasError: false,
@@ -50,8 +69,8 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
-          <div className={`max-w-md w-full rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/10 flex items-center justify-center" role="alert">
+          <div role="alert" className={`max-w-md w-full rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/10 flex items-center justify-center">
               <AlertTriangle className="w-8 h-8 text-red-500" aria-hidden="true" />
             </div>
 
@@ -80,6 +99,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 </button>
               )}
               <button
+                type="button"
                 onClick={this.handleReload}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
               >

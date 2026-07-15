@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Clock, AlertCircle, FileText } from 'lucide-react';
 import { playerService } from '../services';
 import type { PlayerNews } from '../services';
-import { NewsSnippet } from './NewsSnippet';
+import { NewsSnippet, getSafeNewsUrl } from './NewsSnippet';
 
 interface NewsPanelProps {
   isDarkMode: boolean;
@@ -11,7 +11,8 @@ interface NewsPanelProps {
 function formatTimeAgo(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
+  // Clamp so slightly-future timestamps (clock skew) read as "Just now"
+  const diffMs = Math.max(0, now.getTime() - date.getTime());
   const diffMins = Math.floor(diffMs / (1000 * 60));
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -29,22 +30,29 @@ export function NewsPanel({ isDarkMode }: NewsPanelProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchNews = async () => {
       setIsLoading(true);
       setError(null);
 
       try {
         const response = await playerService.getAllNews(3);
+        if (cancelled) return;
         setNews(response.news);
       } catch {
+        if (cancelled) return;
         setError('Failed to load news');
         setNews([]);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     fetchNews();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -62,7 +70,7 @@ export function NewsPanel({ isDarkMode }: NewsPanelProps) {
           ))}
         </div>
       ) : error ? (
-        <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        <div role="alert" className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
           <AlertCircle className="w-4 h-4" aria-hidden="true" />
           <span>{error}</span>
         </div>
@@ -70,7 +78,9 @@ export function NewsPanel({ isDarkMode }: NewsPanelProps) {
         <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>No news available</p>
       ) : (
         <div className="space-y-4">
-          {news.slice(0, 3).map((item) => (
+          {news.slice(0, 3).map((item) => {
+            const articleUrl = item.isArticle ? getSafeNewsUrl(item.sourceUrl) : null;
+            return (
             <div key={item.id} className={`border-b pb-4 last:border-0 last:pb-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
               <div className="flex items-start justify-between gap-2 mb-1">
                 <span className="text-xs font-medium text-blue-500">
@@ -82,10 +92,14 @@ export function NewsPanel({ isDarkMode }: NewsPanelProps) {
                 </span>
               </div>
               <p className={`text-sm font-bold leading-relaxed ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-                {item.isArticle && item.sourceUrl ? (
-                  <a href={item.sourceUrl} className="hover:underline">
-                    {item.headline}
-                  </a>
+                {item.isArticle ? (
+                  articleUrl ? (
+                    <a href={articleUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                      {item.headline}
+                    </a>
+                  ) : (
+                    item.headline
+                  )
                 ) : (
                   <NewsSnippet item={item} />
                 )}
@@ -103,7 +117,8 @@ export function NewsPanel({ isDarkMode }: NewsPanelProps) {
                 </p>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
