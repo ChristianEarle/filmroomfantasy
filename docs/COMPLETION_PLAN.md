@@ -76,6 +76,31 @@ Migrations + `schema.ts` entries added centrally so Wave B streams never touch s
 - Refresh `TODO.md`/`BACKLOG.md` to ground truth (check off everything verified done).
 - Full verify (typecheck ×2, tests, build), commit per wave, push `claude/backlog-review-3om79s`, draft PR.
 
+## Data feeds roadmap (AI decision inputs)
+
+Already ingested: multi-source news (RSS/ESPN/Rotowire/Twitter + Haiku relevance), Vegas
+lines + movement snapshots, player props (market projections), Sleeper trending/transactions,
+FantasyCalc dynasty values, ESPN live scores, own matchup-grade engine, projection-accuracy history.
+
+To add, in value order (all feed `LeagueContextSnapshot`/prompt context via the existing
+cron → D1 table pattern):
+
+1. **Practice reports / injury designations** (DNP/Limited/Full progression) — nflverse
+   injuries dataset or ESPN injuries API (free). Highest-signal weekly feed for start/sit
+   and trade analysis; Sleeper only gives coarse status.
+2. **Usage/opportunity**: snap %, target share, route participation, red-zone touches,
+   carry share — nflverse weekly (free). Prerequisite for real "role change" AI takes.
+3. **Implied team totals** — derived from game odds already stored; compute and inject into
+   matchup/trade/rankings prompts (no new ingestion; folded into Wave B AI-platform stream).
+4. **Depth charts** — Sleeper already carries depth_chart fields on players we sync; store
+   and expose for handcuff/injury-fallout reasoning.
+5. **Weather** — Open-Meteo/NWS (free) keyed by stadium + kickoff for outdoor games.
+6. **Redraft ADP** (Sleeper/Underdog) — sharpens draft-rankings value deltas alongside
+   the existing dynasty values.
+7. **Pace/environment** (neutral pass rate, plays/game) — derivable from nflverse pbp; later.
+8. Also: feed the existing projection-accuracy history back into AI prompts ("props have
+   overshot this player 4 straight weeks") — differentiated, zero new ingestion.
+
 ## Agent charter (applies to every stream)
 
 - Touch only the files your stream owns; if you need a change in a shared file, return it as a note instead of editing.
