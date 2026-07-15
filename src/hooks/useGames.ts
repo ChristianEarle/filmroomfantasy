@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { gameService } from '../services';
 import type { NFLGame, GamesByDay, LiveScore, EspnScoreboardGame, TeamScheduleGame } from '../services';
 
@@ -10,23 +10,29 @@ export function useEspnScoreboard(week?: number, season?: number, seasonType?: n
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [espnUnavailable, setEspnUnavailable] = useState(false);
+  // Monotonic sequence so a slow response for an old week can't clobber
+  // the state of a newer request.
+  const fetchSeqRef = useRef(0);
 
   const fetchScoreboard = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     setError(null);
     setEspnUnavailable(false);
     try {
       const response = await gameService.getEspnScoreboard(week, season, seasonType);
+      if (seq !== fetchSeqRef.current) return;
       setGames(response.games);
       setWeekNum(response.week);
       setSeasonYear(response.season);
       setWeekLabel(response.weekLabel ?? `Week ${response.week}`);
       setEspnUnavailable(!!(response as Record<string, unknown>)._espnUnavailable);
     } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
       setError(err instanceof Error ? err : new Error('Failed to fetch scoreboard'));
       setGames([]);
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeqRef.current) setIsLoading(false);
     }
   }, [week, season, seasonType]);
 
@@ -42,18 +48,22 @@ export function useWeekGames(week: number, season?: number) {
   const [gamesByDay, setGamesByDay] = useState<GamesByDay>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const fetchSeqRef = useRef(0);
 
   const fetchGames = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     setError(null);
     try {
       const response = await gameService.getWeekGames(week, season);
+      if (seq !== fetchSeqRef.current) return;
       setGames(response.games);
       setGamesByDay(response.gamesByDay);
     } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
       setError(err instanceof Error ? err : new Error('Failed to fetch games'));
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeqRef.current) setIsLoading(false);
     }
   }, [week, season]);
 
@@ -72,26 +82,38 @@ export function useGame(gameId: string | null) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    // Reset stale data whenever the target game changes so the previous
+    // game's detail never flashes under a new id.
+    setGame(null);
+    setHomePlayers([]);
+    setAwayPlayers([]);
+    setError(null);
     if (!gameId) {
-      setGame(null);
+      setIsLoading(false);
       return;
     }
 
+    let cancelled = false;
     const fetchGame = async () => {
       setIsLoading(true);
       try {
         const response = await gameService.getGame(gameId);
+        if (cancelled) return;
         setGame(response.game);
         setHomePlayers(response.homePlayers);
         setAwayPlayers(response.awayPlayers);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err : new Error('Failed to fetch game'));
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     fetchGame();
+    return () => {
+      cancelled = true;
+    };
   }, [gameId]);
 
   return { game, homePlayers, awayPlayers, isLoading, error };
@@ -134,19 +156,26 @@ export function useUpcomingGames(limit?: number) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchGames = async () => {
       setIsLoading(true);
+      setError(null);
       try {
         const response = await gameService.getUpcomingGames(limit);
+        if (cancelled) return;
         setGames(response.games);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err : new Error('Failed to fetch upcoming games'));
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     fetchGames();
+    return () => {
+      cancelled = true;
+    };
   }, [limit]);
 
   return { games, isLoading, error };
@@ -158,24 +187,32 @@ export function useTeamSchedule(team: string | null, season?: number) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    setSchedule([]);
+    setError(null);
     if (!team) {
-      setSchedule([]);
+      setIsLoading(false);
       return;
     }
 
+    let cancelled = false;
     const fetchSchedule = async () => {
       setIsLoading(true);
       try {
         const response = await gameService.getTeamSchedule(team, season);
+        if (cancelled) return;
         setSchedule(response.schedule);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err : new Error('Failed to fetch schedule'));
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     fetchSchedule();
+    return () => {
+      cancelled = true;
+    };
   }, [team, season]);
 
   return { schedule, isLoading, error };
