@@ -1,10 +1,12 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock } from 'lucide-react';
+import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check } from 'lucide-react';
 import { Player } from '../App';
 import api from '../services/api';
 import { playerService } from '../services';
-import type { PlayerNews, MatchupGradeResponse } from '../services';
+import type { PlayerNews, MatchupGradeResponse, PlayerProjection } from '../services';
+import { useWatchlist } from '../hooks/useWatchlist';
+import { buildPlayerProfilePath } from '../utils/slug';
 import { NewsSnippet } from './NewsSnippet';
 
 
@@ -58,6 +60,20 @@ interface APIWeeklyStat {
 }
 
 
+/**
+ * Row returned by GET /players/:id/projections. The endpoint returns full DB rows,
+ * which include per-category projected stats beyond the base PlayerProjection type.
+ */
+type ProjectionRow = PlayerProjection & {
+  projPassYards?: number | null;
+  projPassTDs?: number | null;
+  projRushYards?: number | null;
+  projRushTDs?: number | null;
+  projReceptions?: number | null;
+  projRecYards?: number | null;
+  projRecTDs?: number | null;
+};
+
 function formatTimeAgo(dateString: string | Date): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -108,6 +124,62 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [propsData, setPropsData] = useState<any>(null);
   const [propsLoading, setPropsLoading] = useState(true);
   const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || 1);
+  const [projection, setProjection] = useState<ProjectionRow | null>(null);
+  const [projectionLoading, setProjectionLoading] = useState(true);
+
+  // Some callers pass richer player objects than App's Player interface declares.
+  const playerExtras = player as Player & { status?: string; externalId?: string };
+
+  // --- Quick actions: Watch + Share ---
+  const watchlist = useWatchlist();
+  const isWatched = watchlist.isWatched(player.id);
+  const [shareCopied, setShareCopied] = useState(false);
+
+  // Toggle watchlist; route logged-out users to login first (same gating as DraftRankingsView).
+  const handleToggleWatch = () => {
+    if (!watchlist.isAuthenticated) {
+      window.location.assign('/login');
+      return;
+    }
+    void watchlist.toggle(player.id);
+  };
+
+  // Copy the public profile URL; fall back to the native share sheet (mobile) when the clipboard is unavailable.
+  const handleShare = async () => {
+    const canonicalId = playerExtras.externalId ?? player.id;
+    const url = `${window.location.origin}${buildPlayerProfilePath(player.name, canonicalId)}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        setShareCopied(true);
+        window.setTimeout(() => setShareCopied(false), 2000);
+        return;
+      }
+    } catch {
+      // Clipboard blocked — fall through to the native share sheet.
+    }
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: player.name, url });
+      } catch {
+        // User dismissed the share sheet — nothing to do.
+      }
+    }
+  };
+
+  // Fetch the current-week stat-category projection when the card opens or the week changes.
+  useEffect(() => {
+    if (!player?.id) return;
+    let cancelled = false;
+    setProjectionLoading(true);
+    // The server stores 'half-ppr' (hyphen), while props use 'half_ppr'.
+    const format = (propsScoringFormat === 'half_ppr' ? 'half-ppr' : propsScoringFormat === 'standard' ? 'standard' : 'ppr');
+    playerService.getPlayerProjections(player.id, { week: selectedWeek, season: propsSeasonYear || 2025, format })
+      .then((res) => { if (!cancelled) setProjection((res.projections?.[0] as ProjectionRow) ?? null); })
+      .catch(() => { if (!cancelled) setProjection(null); })
+      .finally(() => { if (!cancelled) setProjectionLoading(false); });
+    return () => { cancelled = true; };
+  }, [player.id, selectedWeek, propsSeasonYear, propsScoringFormat]);
 
   // Fetch player props when card opens
   useEffect(() => {
@@ -236,7 +308,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   }, [player.id, selectedSeason, seasonOptions]);
 
   // Transform API weekly stats into game log format for each position
-  const apiGameLogs = useMemo(() => {
+  const apiGameLogs = useMemo((): any[] | null => {
     if (!weeklyStats?.length) return null;
     const pos = player.position === 'FLEX' ? 'WR' : (player.position || 'RB');
     const parseOpp = (opp: string | null | undefined) => {
@@ -381,14 +453,14 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                   <div>
                     <div className="flex items-center gap-2 sm:gap-3 mb-1 flex-wrap">
                       <h1 className={`text-lg sm:text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.name}</h1>
-                      {player.status && player.status !== 'active' && (
+                      {playerExtras.status && playerExtras.status !== 'active' && (
                         <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${
-                          player.status === 'injured_reserve' || player.status === 'out' ? 'bg-red-500/20 text-red-400' :
-                          player.status === 'questionable' ? 'bg-yellow-500/20 text-yellow-400' :
-                          player.status === 'doubtful' ? 'bg-orange-500/20 text-orange-400' :
+                          playerExtras.status === 'injured_reserve' || playerExtras.status === 'out' ? 'bg-red-500/20 text-red-400' :
+                          playerExtras.status === 'questionable' ? 'bg-yellow-500/20 text-yellow-400' :
+                          playerExtras.status === 'doubtful' ? 'bg-orange-500/20 text-orange-400' :
                           'bg-slate-500/20 text-slate-400'
                         }`}>
-                          {player.status === 'injured_reserve' ? 'IR' : player.status.toUpperCase()}
+                          {playerExtras.status === 'injured_reserve' ? 'IR' : playerExtras.status.toUpperCase()}
                         </span>
                       )}
                     </div>
@@ -406,11 +478,39 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                     </div>
                   </div>
                 </div>
-                {matchupGrade && (
-                  <span className="text-xs font-medium px-3 py-1.5 rounded-md border shrink-0" style={getGradeStyle(matchupGrade)} title={matchupData?.message || `${getMatchupGradeLabel(matchupGrade)} matchup`}>
-                    {matchupData?.opponent ? `vs ${matchupData.opponent} ` : 'Matchup '}{matchupGrade}
-                  </span>
-                )}
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  {/* Quick actions */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={handleToggleWatch}
+                      aria-pressed={isWatched}
+                      title={watchlist.isAuthenticated ? (isWatched ? 'Remove from watchlist' : 'Add to watchlist') : 'Sign in to add to your watchlist'}
+                      className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
+                        isWatched
+                          ? 'bg-rose-500/15 border-rose-500/40 text-rose-500 hover:bg-rose-500/25'
+                          : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      <Heart className={`w-3.5 h-3.5 ${isWatched ? 'fill-current' : ''}`} />
+                      <span className="hidden sm:inline">{isWatched ? 'Watching' : 'Watch'}</span>
+                    </button>
+                    <button
+                      onClick={handleShare}
+                      title="Copy link to public profile"
+                      className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
+                        isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+                      <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
+                    </button>
+                  </div>
+                  {matchupGrade && (
+                    <span className="text-xs font-medium px-3 py-1.5 rounded-md border" style={getGradeStyle(matchupGrade)} title={matchupData?.message || `${getMatchupGradeLabel(matchupGrade)} matchup`}>
+                      {matchupData?.opponent ? `vs ${matchupData.opponent} ` : 'Matchup '}{matchupGrade}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -667,6 +767,71 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                     </div>
                   </div>
                   )}
+
+                  {/* Projected stat-category breakdown for the selected week */}
+                  {(() => {
+                    const pos = player.position === 'FLEX' ? 'WR' : player.position;
+                    const fmtProj = (v: number | null | undefined) => (v == null ? null : Number(v).toFixed(1));
+                    const categoryRows: { label: string; value: string }[] = [];
+                    // alwaysShow keeps a position's core categories visible even at 0; secondary ones only show when projected.
+                    const pushRow = (label: string, v: number | null | undefined, alwaysShow = false) => {
+                      const f = fmtProj(v);
+                      if (f != null && (alwaysShow || Number(v) !== 0)) categoryRows.push({ label, value: f });
+                    };
+                    if (projection) {
+                      if (pos === 'QB') {
+                        pushRow('Passing Yards', projection.projPassYards, true);
+                        pushRow('Passing TDs', projection.projPassTDs, true);
+                        pushRow('Rushing Yards', projection.projRushYards);
+                        pushRow('Rushing TDs', projection.projRushTDs);
+                      } else if (pos === 'RB') {
+                        pushRow('Rushing Yards', projection.projRushYards, true);
+                        pushRow('Rushing TDs', projection.projRushTDs, true);
+                        pushRow('Receptions', projection.projReceptions);
+                        pushRow('Receiving Yards', projection.projRecYards);
+                        pushRow('Receiving TDs', projection.projRecTDs);
+                      } else if (pos === 'WR' || pos === 'TE') {
+                        pushRow('Receptions', projection.projReceptions, true);
+                        pushRow('Receiving Yards', projection.projRecYards, true);
+                        pushRow('Receiving TDs', projection.projRecTDs, true);
+                        pushRow('Rushing Yards', projection.projRushYards);
+                        pushRow('Rushing TDs', projection.projRushTDs);
+                      }
+                      // K / DEF projections have no per-category stat line — the total below still shows.
+                    }
+                    return (
+                      <div>
+                        <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Week {selectedWeek} Projection</h3>
+                        {projectionLoading ? (
+                          <div className={`animate-pulse rounded-lg h-24 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                        ) : !projection ? (
+                          <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No projection available for Week {selectedWeek}.</p>
+                          </div>
+                        ) : (
+                          <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                            <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Projected stat line • {scoringLabel}</p>
+                            <div className="space-y-0">
+                              {categoryRows.map((row) => (
+                                <BreakdownRow key={row.label} label={row.label} value={row.value} />
+                              ))}
+                              <div className="flex items-center justify-between py-3 bg-blue-500/10 -mx-4 px-4 rounded-lg mt-2">
+                                <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Projected {scoringLabel} Points</span>
+                                <span className="font-bold text-blue-400 text-lg">
+                                  {projection.projectedPoints != null ? projection.projectedPoints.toFixed(1) : '—'}
+                                  {projection.projectedPointsLow != null && projection.projectedPointsHigh != null && (
+                                    <span className={`ml-2 text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                      ({projection.projectedPointsLow.toFixed(1)}–{projection.projectedPointsHigh.toFixed(1)})
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
                 );
               })()}
