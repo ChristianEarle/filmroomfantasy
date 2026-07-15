@@ -676,32 +676,69 @@ export type NewPageView = typeof pageViews.$inferInsert;
 // to the stored one; matching fingerprints return the saved report
 // (no AI call), mismatches trigger a re-scout and upsert.
 
-export const teamScoutingReports = sqliteTable('team_scouting_reports', {
-  teamId: text('team_id')
-    .primaryKey()
-    .references(() => teams.id, { onDelete: 'cascade' }),
-  seasonYear: integer('season_year').notNull(),
-  currentWeek: integer('current_week').notNull(),
-  /** Stable hash of sorted rostered player IDs at generation time. */
-  rosterFingerprint: text('roster_fingerprint').notNull(),
-  window: text('window').notNull(),
-  /** JSON string: Record<string, string> (e.g. QB: 'B+', RB: 'A-') */
-  positionGradesJson: text('position_grades_json').notNull(),
-  /** JSON string: string[] */
-  topNeedsJson: text('top_needs_json').notNull(),
-  /** JSON string: string[] */
-  topStrengthsJson: text('top_strengths_json').notNull(),
-  summary: text('summary').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' })
-    .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer('updated_at', { mode: 'timestamp' })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+// The team_scouting_reports Drizzle definition was removed along with the
+// trade finder feature; the physical table still exists in D1 and can be
+// dropped in a future migration once the owner signs off.
 
-export type TeamScoutingReport = typeof teamScoutingReports.$inferSelect;
-export type NewTeamScoutingReport = typeof teamScoutingReports.$inferInsert;
+/** In-app notifications; dedupeKey makes sync-driven inserts idempotent. */
+export const notifications = sqliteTable('notifications', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(), // 'injury' | 'news' | 'waiver' | 'trade' | 'system'
+  title: text('title').notNull(),
+  body: text('body'),
+  playerId: text('player_id').references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  link: text('link'),
+  dedupeKey: text('dedupe_key'),
+  isRead: integer('is_read', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  notificationsDedupe: uniqueIndex('idx_notifications_dedupe').on(table.userId, table.dedupeKey),
+  notificationsUserCreated: index('idx_notifications_user_created').on(table.userId, table.createdAt),
+  notificationsUserUnread: index('idx_notifications_user_unread').on(table.userId, table.isRead),
+}));
+
+/**
+ * Draft pick ownership per league. Identity = (league, year, round,
+ * original owner); ownerId mutates as picks trade hands.
+ */
+export const teamDraftPicks = sqliteTable('team_draft_picks', {
+  id: text('id').primaryKey(),
+  leagueId: text('league_id').notNull().references(() => leagues.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
+  originalOwnerId: text('original_owner_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
+  draftYear: integer('draft_year').notNull(),
+  draftRound: integer('draft_round').notNull(),
+  acquiredVia: text('acquired_via').notNull().default('native'), // 'native' | 'trade'
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  teamDraftPicksIdentity: uniqueIndex('idx_team_draft_picks_identity')
+    .on(table.leagueId, table.draftYear, table.draftRound, table.originalOwnerId),
+  teamDraftPicksOwner: index('idx_team_draft_picks_owner').on(table.ownerId),
+  teamDraftPicksLeague: index('idx_team_draft_picks_league').on(table.leagueId),
+}));
+
+/** Cached per-player AI takes, one per (player, season, week). */
+export const playerAiAnalyses = sqliteTable('player_ai_analyses', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  week: integer('week').notNull(),
+  analysis: text('analysis').notNull(),
+  model: text('model').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  playerAiAnalysesIdentity: uniqueIndex('idx_player_ai_analyses_identity')
+    .on(table.playerId, table.seasonYear, table.week),
+}));
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+export type TeamDraftPick = typeof teamDraftPicks.$inferSelect;
+export type NewTeamDraftPick = typeof teamDraftPicks.$inferInsert;
+export type PlayerAiAnalysis = typeof playerAiAnalyses.$inferSelect;
+export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
 
 // ============================================
 // DRAFT RANKINGS
