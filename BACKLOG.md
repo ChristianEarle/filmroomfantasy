@@ -1,5 +1,17 @@
 # FilmRoom Fantasy Football - Development Backlog
 
+> **2026-07-16 completion sprint (PR #243):** a multi-agent pass closed most
+> of the remaining open items below — draft-rankings data infra (superflex,
+> rank history, ceiling/floor), real board sparklines + Full Season toggle,
+> Matchup Edge Analysis, PlayerCard projected breakdown + Watch/Share + AI
+> take, League Analyzer page, in-app notifications, Sleeper draft-pick
+> inventory, Anthropic prompt caching + `/players/ask` + per-player analysis,
+> per-player SEO static pages + sitemap, all remaining component audits,
+> UI cohesion steps 2–4, and the mobile pass (bottom nav). See
+> `docs/COMPLETION_PLAN.md` for the plan and `TODO.md` for what remains
+> (owner-blocked credentials, external data sources, premium roadmap).
+> Checkboxes below are historical; `TODO.md` is the live list.
+
 ---
 
 ## CRITICAL - Must Fix Before Launch
