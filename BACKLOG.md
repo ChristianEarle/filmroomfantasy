@@ -11,6 +11,11 @@
 > `docs/COMPLETION_PLAN.md` for the plan and `TODO.md` for what remains
 > (owner-blocked credentials, external data sources, premium roadmap).
 > Checkboxes below are historical; `TODO.md` is the live list.
+>
+> **Follow-up:** notifications now have email delivery (a digest cron via
+> the existing Resend integration), gated on the Settings notifications
+> toggle + verified email. Web push is still open, blocked on VAPID keys.
+> See `TODO.md` → "Shipped since the completion sprint".
 
 ---
 
