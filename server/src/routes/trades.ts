@@ -496,7 +496,7 @@ tradesRoutes.post(
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: 'claude-sonnet-5',
           max_tokens: 1024,
           // Static prompt with cache marker (content-block form). Note: this
           // prompt is small, so it may fall below the model's minimum

@@ -289,7 +289,7 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
         max_tokens: 1024,
         // Cached system block: instructions + the server-built rankings
         // context are byte-stable per variant (rankings regenerate at most

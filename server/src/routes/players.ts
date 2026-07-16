@@ -1202,7 +1202,7 @@ playerRoutes.get('/stats/available-years', optionalAuthMiddleware, async (c) => 
 // AI platform — per-player analysis + board-scoped Ask AI (Pro/Elite)
 // ---------------------------------------------------------------------------
 
-const AI_MODEL = 'claude-sonnet-4-6'; // same model as the trades follow-up call
+const AI_MODEL = 'claude-sonnet-5'; // same model as the trades follow-up call
 
 /**
  * Resolve the "current" NFL week for a season the same way the players list
