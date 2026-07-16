@@ -25,7 +25,7 @@ import { generateId } from '../utils/id';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
-const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+const ANTHROPIC_MODEL = 'claude-sonnet-5';
 // 200 redraft players × ~900 tokens each (rank + tier + projected points +
 // 1-sentence rationale + 3-5 sentence analysis + JSON scaffolding) easily
 // exceeds 32k, which silently truncates the model output mid-array. Sonnet
