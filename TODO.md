@@ -34,6 +34,16 @@ Deploy notes: migrations `0037`–`0041` auto-apply on merge; superflex +
 ceiling/floor data appears after the next Monday ranking batch; rank
 history accrues from the first daily cron.
 
+## Shipped since the completion sprint
+
+- Draft Rankings three-way split: `dynasty_rookie` is now two distinct
+  ranking types — `dynasty` (whole-player-pool, long-term asset value,
+  age-curve-aware AI prompt) and `rookie` (unchanged rookie-only ranking,
+  renamed for clarity). New `Dynasty`/`Rookie` pills in the UI, 12
+  `DEFAULT_VARIANTS` (was 8), migration `0042` renames existing
+  `dynasty_rookie` rows to `rookie`. Dynasty data appears after the next
+  Monday ranking batch.
+
 ---
 
 ## P0 — Owner action required (not code)
@@ -58,8 +68,6 @@ history accrues from the first daily cron.
 - [ ] **PlayerCard Alert/Pin/Compare actions** — deliberately skipped in
   the sprint (Watch/Share shipped). Compare could reuse the Draft
   Rankings compare-basket pattern.
-- [ ] **Redraft / Dynasty / Rookie three-way split** — backend still
-  bundles `dynasty_rookie`; splitting needs regeneration plumbing.
 
 ## P2 — Data feeds (see roadmap in docs/COMPLETION_PLAN.md)
 

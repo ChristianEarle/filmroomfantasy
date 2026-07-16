@@ -73,7 +73,7 @@ interface DraftRankingsViewProps {
 
 // ── Constants ───────────────────────────────────────────────────────
 
-type RankingType = 'redraft' | 'dynasty_rookie';
+type RankingType = 'redraft' | 'dynasty' | 'rookie';
 type ScoringFormat = 'ppr' | 'half-ppr' | 'standard';
 type PositionFilter = 'ALL' | 'QB' | 'RB' | 'WR' | 'TE';
 
@@ -88,7 +88,17 @@ const TIER_LABELS: Record<string, Record<number, string>> = {
     7: 'Late-Round Fliers',
     8: 'Deep Sleepers',
   },
-  dynasty_rookie: {
+  dynasty: {
+    1: 'Cornerstone Assets',
+    2: 'High-End Long-Term',
+    3: 'Strong Holds',
+    4: 'Solid Contributors',
+    5: 'Flex-Worthy Assets',
+    6: 'Speculative Holds',
+    7: 'Late-Round Stashes',
+    8: 'Deep Dynasty Depth',
+  },
+  rookie: {
     1: '1.01-level',
     2: 'Round 1',
     3: 'Early 2nd',
@@ -119,8 +129,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   const defaultScoring: ScoringFormat = (league?.scoringFormat as ScoringFormat) || 'ppr';
   const defaultSuperflex = (league as { hasSuperflex?: boolean } | null)?.hasSuperflex ?? false;
 
-  const [rankingView, setRankingView] = useState<'redraft' | 'dynasty'>('redraft');
-  const rankingType: RankingType = rankingView === 'redraft' ? 'redraft' : 'dynasty_rookie';
+  const [rankingType, setRankingType] = useState<RankingType>('redraft');
   const [scoringFormat, setScoringFormat] = useState<ScoringFormat>(defaultScoring);
   const [superflex, setSuperflex] = useState(defaultSuperflex);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>('ALL');
@@ -364,8 +373,9 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
       <div className="flex flex-wrap items-center gap-2">
         {/* Ranking view */}
         <div className="flex gap-1">
-          {pill(rankingView === 'redraft', () => setRankingView('redraft'), 'Redraft')}
-          {pill(rankingView === 'dynasty', () => setRankingView('dynasty'), 'Dynasty')}
+          {pill(rankingType === 'redraft', () => setRankingType('redraft'), 'Redraft')}
+          {pill(rankingType === 'dynasty', () => setRankingType('dynasty'), 'Dynasty')}
+          {pill(rankingType === 'rookie', () => setRankingType('rookie'), 'Rookie')}
         </div>
 
         <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
@@ -558,7 +568,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
 // ── Sub-components ──────────────────────────────────────────────────
 
 function EmptyState({ rankingType, superflex, isDarkMode }: { rankingType: RankingType; superflex: boolean; isDarkMode: boolean }) {
-  const label = rankingType === 'dynasty_rookie' ? 'Dynasty Rookie' : 'Redraft';
+  const label = rankingType === 'dynasty' ? 'Dynasty' : rankingType === 'rookie' ? 'Dynasty Rookie' : 'Redraft';
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <Medal className={`w-12 h-12 mb-4 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />

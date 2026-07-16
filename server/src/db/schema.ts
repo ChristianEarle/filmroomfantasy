@@ -752,7 +752,7 @@ export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
 export const draftRankings = sqliteTable('draft_rankings', {
   id: text('id').primaryKey(),
   playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
-  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty' | 'rookie'
   scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
   superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
   overallRank: integer('overall_rank').notNull(),
@@ -790,7 +790,7 @@ export type NewDraftRanking = typeof draftRankings.$inferInsert;
 export const rankHistory = sqliteTable('rank_history', {
   id: text('id').primaryKey(),
   playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
-  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty' | 'rookie'
   scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
   superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
   overallRank: integer('overall_rank').notNull(),

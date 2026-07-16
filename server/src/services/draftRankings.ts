@@ -8,7 +8,7 @@
  *
  * Flow:
  *  1. Weekly cron calls submitDraftRankingsBatch({ variants: [...] }).
- *  2. That builds one Claude request per variant (redraft/dynasty_rookie ×
+ *  2. That builds one Claude request per variant (redraft/dynasty/rookie ×
  *     ppr/half-ppr × 1-QB/superflex), wraps them in a single
  *     POST /v1/messages/batches submission, records a row in ranking_batch_jobs,
  *     and returns immediately.
@@ -40,10 +40,14 @@ const ANTHROPIC_BATCH_URL = 'https://api.anthropic.com/v1/messages/batches';
 // drafts (Josh Allen @ ADP 2.21 instead of ~20), which pollutes 1-QB
 // rankings badly.
 //
-// Dynasty rookie ADP comes from FantasyCalc (primary) — they publish
-// dynasty values that include rookies with age/prospect-adjusted ranks;
-// after filtering to rookies-only at write time we get a clean rookie
-// pecking order. MFL IS_KEEPER=R is kept as a fallback for rookies that
+// Dynasty ADP (all players, long-term asset value) comes straight from
+// FantasyCalc's overall dynasty rank — no rookie filter, no fallback
+// merge, since FC's dynasty pool has full veteran + rookie coverage.
+//
+// Rookie ADP comes from FantasyCalc (primary) — they publish dynasty
+// values that include rookies with age/prospect-adjusted ranks; after
+// filtering to rookies-only at write time we get a clean rookie pecking
+// order. MFL IS_KEEPER=R is kept as a fallback for rookies that
 // FantasyCalc doesn't cover yet (e.g. late-breaking rookies).
 
 /**
@@ -176,6 +180,25 @@ async function fetchFantasyCalcDynastyValues(
     console.error('[draftRankings] FantasyCalc dynasty fetch failed:', err);
     return new Map();
   }
+}
+
+/**
+ * Build a whole-player-pool dynasty ADP map straight from FantasyCalc's
+ * overall dynasty rank (1 = most valuable dynasty asset). Unlike the rookie
+ * map below, no re-indexing or MFL fallback is needed — FC's dynasty
+ * dataset already covers the full veteran + rookie pool.
+ */
+async function buildDynastyAdpMap(
+  scoringFormat: 'ppr' | 'half-ppr' | 'standard',
+  superflex: boolean,
+): Promise<Map<string, number>> {
+  const fcDynasty = await fetchFantasyCalcDynastyValues(scoringFormat, superflex);
+  const result = new Map<string, number>();
+  for (const [name, { rank }] of fcDynasty) {
+    result.set(name, rank);
+  }
+  console.log(`[draftRankings] Dynasty ADP: ${result.size} entries`);
+  return result;
 }
 
 /**
@@ -312,7 +335,7 @@ interface PlayerContext {
 
 async function buildPlayerContexts(
   db: DB,
-  rankingType: 'redraft' | 'dynasty_rookie',
+  rankingType: 'redraft' | 'dynasty' | 'rookie',
   scoringFormat: 'ppr' | 'half-ppr' | 'standard',
   seasonYear: number,
   adpByNormalizedName: Map<string, number>,
@@ -322,7 +345,10 @@ async function buildPlayerContexts(
     where: inArray(schema.nflPlayers.position, posFilter),
   });
 
-  let players = rankingType === 'dynasty_rookie'
+  // Rookie rankings scope to this year's incoming class; redraft and dynasty
+  // both rank the full active pool (dynasty just weighs long-term value
+  // instead of single-season points).
+  let players = rankingType === 'rookie'
     ? allPlayers.filter(p => p.yearsExp === 0)
     : allPlayers.filter(p => p.status !== 'inactive' && p.team !== 'FA');
 
@@ -458,7 +484,75 @@ IMPORTANT:
 - analysis: 3-5 sentences of real scouting — strengths, weaknesses, situation, fantasy outlook. This is the main value-add. Be specific: reference stats, scheme, coaching, age curves, injury history. "Elite volume" is lazy; "led NFL with 178 targets at age 24, now gets a healthy Dak back after relying on Cooper Rush for 6 games" is good.`;
 }
 
-function buildDynastyRookiePrompt(
+function buildDynastyPrompt(
+  players: PlayerContext[],
+  scoringFormat: string,
+  superflex: boolean,
+): string {
+  const playerLines = players
+    .filter(p => p.lastSeasonPoints !== null || p.adp !== null)
+    .sort((a, b) => (a.adp ?? 999) - (b.adp ?? 999))
+    .slice(0, 250)
+    .map(p => {
+      const ppg = p.lastSeasonPoints && p.lastSeasonGames
+        ? (p.lastSeasonPoints / p.lastSeasonGames).toFixed(1)
+        : 'N/A';
+      const newsStr = p.recentNews.length > 0 ? ` | News: ${p.recentNews.join('; ')}` : '';
+      return `${p.name} (${p.position}, ${p.team}) | Age: ${p.age ?? '?'} | Exp: ${p.yearsExp ?? '?'}yr | Status: ${p.status}${p.injuryNote ? ` (${p.injuryNote})` : ''} | Depth: ${p.depthChartOrder ?? '?'} | Last Season: ${p.lastSeasonPoints?.toFixed(1) ?? 'N/A'} pts in ${p.lastSeasonGames ?? 0} games (${ppg} ppg) | Dynasty ADP: ${p.adp ?? 'N/A'}${newsStr}`;
+    })
+    .join('\n');
+
+  return `You are an expert fantasy football dynasty analyst generating DYNASTY ${scoringFormat.toUpperCase()} rankings — a long-term asset-value ranking of the full player pool (not a single-season redraft ranking).${superflex ? ' This is a SUPERFLEX league — QBs hold their dynasty value far longer and rank much higher than in 1-QB.' : ' This is a 1-QB league — QB dynasty value is real but capped by scarcity of a single starting slot.'}
+
+TASK: Rank these players by long-term dynasty asset value — the combination of a player's expected production over the NEXT 3+ SEASONS, not just next year. Dynasty ADP is your primary anchor — stay within ±10 spots of Dynasty ADP unless you have a SPECIFIC, CONCRETE reason (age cliff, contract/opportunity change, injury with long recovery, coaching change altering scheme fit for multiple years).
+
+PLAYER DATA:
+${playerLines}
+
+RESPOND WITH ONLY VALID JSON — an array of objects, one per ranked player. Rank the top 200 players:
+[
+  {
+    "name": "Player Name",
+    "position": "QB|RB|WR|TE",
+    "overallRank": 1,
+    "positionRank": 1,
+    "tier": 1,
+    "projectedPoints": 320.5,
+    "ceilingRank": 1,
+    "floorRank": 8,
+    "rationale": "1 concise sentence summarizing dynasty value and age/opportunity outlook",
+    "analysis": "3-5 sentence detailed breakdown covering: age curve and remaining runway, situation/opportunity stability, injury/durability history, and long-term outlook vs redraft-only value. Reference specific ages, contract/depth-chart situations, and multi-year trends."
+  }
+]
+
+CEILING/FLOOR: ceilingRank is the player's realistic best-case dynasty rank if things break right (a number <= overallRank); floorRank is the realistic worst-case rank if age/situation turns (a number >= overallRank). Young ascending players get tighter ceiling bands; aging or crowded-situation players get wider floor bands. Both must be integers.
+
+DYNASTY-SPECIFIC VALUE RULES (critical — this is NOT a redraft ranking):
+- AGE IS A DIRECT INPUT, not a tiebreaker. A 24-year-old WR1 outranks a 30-year-old WR1 with similar current production, because dynasty value compounds over the RB/WR age cliff (typically 27-29) and the longer QB/TE prime.
+- RBs decline earliest and hardest — a 27+ year old RB, even an elite one, should be discounted relative to redraft value. A 22-23 year old RB in a good situation can outrank a same-production 28-year-old RB.
+- WRs and TEs age more gracefully — prime years often extend to 29-31.
+- QBs hold dynasty value longest (often into their mid-30s), which is why ${superflex ? 'SUPERFLEX dynasty startups spend early first-round picks on young QBs' : 'even in 1-QB, a young ascending QB1 is a top-15 dynasty asset despite modest redraft ADP'}.
+- Rookies and 2nd/3rd-year players with a clear opportunity path should rank ABOVE aging veterans with similar or even better current production, because dynasty value is about the next 3+ years, not just next year.
+- A player facing an imminent age cliff, declining role, or crowded backfield/depth chart should be marked DOWN from raw current production.
+
+TIER RULES (dynasty asset value):
+- Tier 1: Cornerstone assets — elite young players locked into their prime for years (top ~8-10)
+- Tier 2: High-end long-term assets (top ~20)
+- Tier 3: Strong dynasty holds (top ~40)
+- Tier 4: Solid contributors with real runway (top ~70)
+- Tier 5: Flex-worthy assets, moderate long-term value (top ~100)
+- Tier 6: Speculative holds — youth or role upside, unproven (top ~140)
+- Tier 7: Late-round dynasty stashes (top ~180)
+- Tier 8: Deep dynasty depth / aging veterans near their cliff (180+)
+
+IMPORTANT:
+- projectedPoints is this upcoming season's projected total for ${scoringFormat} scoring — informative context, but overallRank is driven by long-term dynasty value, not this number alone.
+- Deviating more than ±10 from Dynasty ADP requires a concrete age/situation/opportunity reason cited in the rationale.
+- rationale: 1 punchy sentence (shown inline in the rankings table)
+- analysis: 3-5 sentences of real dynasty scouting — age curve, situation stability, injury history, multi-year outlook. Be specific: "Age 24, entering his prime with a 3-year extension worth of target share locked in behind a stable young QB" is good. "Great player with upside" is worthless.`;
+}
+
+function buildRookiePrompt(
   players: PlayerContext[],
   scoringFormat: string,
   superflex: boolean,
@@ -532,7 +626,7 @@ IMPORTANT:
 // ── Batch submission ────────────────────────────────────────────────
 
 export interface RankingVariant {
-  rankingType: 'redraft' | 'dynasty_rookie';
+  rankingType: 'redraft' | 'dynasty' | 'rookie';
   scoringFormat: 'ppr' | 'half-ppr' | 'standard';
   superflex: boolean;
 }
@@ -553,7 +647,7 @@ export interface SubmitBatchResult {
 
 interface BatchVariantMeta {
   customId: string;
-  rankingType: 'redraft' | 'dynasty_rookie';
+  rankingType: 'redraft' | 'dynasty' | 'rookie';
   scoringFormat: 'ppr' | 'half-ppr' | 'standard';
   superflex: boolean;
 }
@@ -584,10 +678,13 @@ export async function submitDraftRankingsBatch(
     //  Redraft 1-QB → FantasyPros 1-QB ADP (MFL is dominated by superflex drafts)
     //  Redraft superflex → MFL ADP (their pool being superflex-dominated is
     //    exactly the anchor we want for SF variants)
-    //  Dynasty rookie → FantasyCalc dynasty values filtered to rookies
+    //  Dynasty → FantasyCalc dynasty values across the full player pool
+    //  Rookie → FantasyCalc dynasty values filtered to rookies
     //    (clean age/prospect-adjusted ranks) + MFL IS_KEEPER=R fallback
-    const adp = v.rankingType === 'dynasty_rookie'
+    const adp = v.rankingType === 'rookie'
       ? await buildRookieAdpMap(db, v.scoringFormat, v.superflex, seasonYear)
+      : v.rankingType === 'dynasty'
+      ? await buildDynastyAdpMap(v.scoringFormat, v.superflex)
       : v.superflex
       ? await fetchMFLADP(seasonYear, v.scoringFormat, 'N')
       : await fetchFantasyProsADP(v.scoringFormat);
@@ -598,7 +695,9 @@ export async function submitDraftRankingsBatch(
     }
     const prompt = v.rankingType === 'redraft'
       ? buildRedraftPrompt(contexts, v.scoringFormat, v.superflex)
-      : buildDynastyRookiePrompt(contexts, v.scoringFormat, v.superflex);
+      : v.rankingType === 'dynasty'
+      ? buildDynastyPrompt(contexts, v.scoringFormat, v.superflex)
+      : buildRookiePrompt(contexts, v.scoringFormat, v.superflex);
 
     const customId = variantCustomId(v);
     requests.push({
@@ -936,8 +1035,10 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
   // Re-fetch ADP for adpDelta so it reflects current ADP at write time
   // rather than what was in effect hours ago when the batch was submitted.
   // Same source routing as the submit path.
-  const adp = meta.rankingType === 'dynasty_rookie'
+  const adp = meta.rankingType === 'rookie'
     ? await buildRookieAdpMap(db, meta.scoringFormat, meta.superflex, seasonYear)
+    : meta.rankingType === 'dynasty'
+    ? await buildDynastyAdpMap(meta.scoringFormat, meta.superflex)
     : meta.superflex
     ? await fetchMFLADP(seasonYear, meta.scoringFormat, 'N')
     : await fetchFantasyProsADP(meta.scoringFormat);
@@ -1083,8 +1184,12 @@ export const DEFAULT_VARIANTS: RankingVariant[] = [
   { rankingType: 'redraft', scoringFormat: 'half-ppr', superflex: false },
   { rankingType: 'redraft', scoringFormat: 'ppr', superflex: true },
   { rankingType: 'redraft', scoringFormat: 'half-ppr', superflex: true },
-  { rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: false },
-  { rankingType: 'dynasty_rookie', scoringFormat: 'half-ppr', superflex: false },
-  { rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: true },
-  { rankingType: 'dynasty_rookie', scoringFormat: 'half-ppr', superflex: true },
+  { rankingType: 'dynasty', scoringFormat: 'ppr', superflex: false },
+  { rankingType: 'dynasty', scoringFormat: 'half-ppr', superflex: false },
+  { rankingType: 'dynasty', scoringFormat: 'ppr', superflex: true },
+  { rankingType: 'dynasty', scoringFormat: 'half-ppr', superflex: true },
+  { rankingType: 'rookie', scoringFormat: 'ppr', superflex: false },
+  { rankingType: 'rookie', scoringFormat: 'half-ppr', superflex: false },
+  { rankingType: 'rookie', scoringFormat: 'ppr', superflex: true },
+  { rankingType: 'rookie', scoringFormat: 'half-ppr', superflex: true },
 ];

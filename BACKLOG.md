@@ -11,6 +11,11 @@
 > `docs/COMPLETION_PLAN.md` for the plan and `TODO.md` for what remains
 > (owner-blocked credentials, external data sources, premium roadmap).
 > Checkboxes below are historical; `TODO.md` is the live list.
+>
+> **Follow-up:** the Draft Rankings `dynasty_rookie` type split into
+> `dynasty` (whole-player-pool, long-term asset value) and `rookie`
+> (unchanged rookie-only ranking). See `TODO.md` → "Shipped since the
+> completion sprint".
 
 ---
 
