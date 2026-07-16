@@ -130,15 +130,15 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
 
   return (
     <div
-      className={`fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950/80' : 'bg-black/20'}`}
+      className={`fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 ${isDarkMode ? 'bg-slate-950/80' : 'bg-black/20'}`}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
       aria-label={`${game.awayTeam} at ${game.homeTeam} game details`}
     >
-      <div ref={dialogRef} className={`rounded-2xl border w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <div ref={dialogRef} className={`rounded-2xl border w-full max-w-6xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
-        <div className={`border-b p-6 flex-shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+        <div className={`border-b p-4 sm:p-6 flex-shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
           <div className="flex items-start justify-between mb-4">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -158,7 +158,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               ref={closeButtonRef}
               onClick={onClose}
               aria-label="Close game details"
-              className={`transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+              className={`-m-2 p-2 rounded-lg transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50'}`}
             >
               <X className="w-6 h-6" />
             </button>
@@ -191,7 +191,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
         </div>
 
         {/* Content */}
-        <div className={`flex-1 overflow-y-auto p-6 relative ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+        <div className={`flex-1 overflow-y-auto p-4 sm:p-6 relative ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
           {isLoading && (
             <div className={`absolute inset-0 flex items-center justify-center z-10 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-100/80'}`} aria-live="polite">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />

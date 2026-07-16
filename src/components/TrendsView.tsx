@@ -305,7 +305,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
             aria-selected={activeTab === 'trending'}
             aria-controls="panel-trending"
             onClick={() => setActiveTab('trending')}
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-3 sm:py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'trending'
                 ? 'bg-blue-600 text-white'
                 : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -321,7 +321,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
             aria-selected={activeTab === 'projections'}
             aria-controls="panel-projections"
             onClick={() => setActiveTab('projections')}
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-3 sm:py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'projections'
                 ? 'bg-blue-600 text-white'
                 : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -337,7 +337,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
             aria-selected={activeTab === 'leaders'}
             aria-controls="panel-leaders"
             onClick={() => setActiveTab('leaders')}
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-3 sm:py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'leaders'
                 ? 'bg-blue-600 text-white'
                 : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -382,7 +382,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                       onClick={() => setLeadersWindow(w)}
                       aria-pressed={leadersWindow === w}
                       data-testid={`window-${w}`}
-                      className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
+                      className={`px-2.5 py-3 sm:py-1 text-xs rounded-lg transition-colors ${
                         leadersWindow === w
                           ? 'bg-blue-600 text-white'
                           : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -399,7 +399,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                       onClick={() => setLeadersPosFilter(p)}
                       aria-pressed={leadersPosFilter === p}
                       data-testid={`position-${p}`}
-                      className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
+                      className={`px-2.5 py-3 sm:py-1 text-xs rounded-lg transition-colors ${
                         leadersPosFilter === p
                           ? 'bg-blue-600 text-white'
                           : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -607,7 +607,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                     onClick={() => setProjFilter(filterKey)}
                     aria-pressed={projFilter === filterKey}
                     data-testid={`filter-${filterKey}`}
-                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                    className={`px-3 py-3 sm:py-1 text-xs rounded-lg transition-colors ${
                       projFilter === filterKey
                         ? 'bg-blue-600 text-white'
                         : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'

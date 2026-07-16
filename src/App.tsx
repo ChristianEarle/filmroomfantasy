@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
+import { BottomNav } from './components/BottomNav';
 import { PlayerTable } from './components/PlayerTable';
 import { NewsPanel } from './components/NewsPanel';
 import { BiggestMovers } from './components/BiggestMovers';
@@ -615,7 +616,7 @@ function AppContent() {
           <EmailVerificationBanner email={user.email} isDarkMode={isDarkMode} />
         )}
 
-        <main className={`flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
+        <main className={`flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 pb-20 sm:pb-20 md:pb-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
           <PageTransition viewKey={activeView}>
             {activeView === 'Home' ? (
               showLoginGate ? (
@@ -917,11 +918,22 @@ function AppContent() {
         </main>
       </div>
 
-      {/* Cookie consent banner — shown on first visit until user chooses */}
+      {/* Bottom tab bar — mobile only; Sidebar covers navigation at md+ */}
+      <BottomNav
+        activeView={activeView}
+        onViewChange={setActiveView}
+        onMoreClick={() => setSidebarOpen(true)}
+        isDarkMode={isDarkMode}
+      />
+
+      {/* Cookie consent banner — shown on first visit until user chooses.
+          mobile-bottom-nav-offset lifts it above the fixed BottomNav so the
+          two never overlap on small screens. */}
       <CookieConsentBanner
         isDarkMode={isDarkMode}
         onNavigate={(view) => setActiveView(view as any)}
         offsetForSidebar
+        className="mobile-bottom-nav-offset"
       />
 
       {/* Player Card Modal */}

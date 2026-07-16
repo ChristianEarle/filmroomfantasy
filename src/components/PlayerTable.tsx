@@ -661,7 +661,7 @@ export function PlayerTable({
     <button
       type="button"
       onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${
+      className={`px-3 py-3 sm:py-1.5 text-xs font-semibold rounded-md border transition-all ${
         active
           ? 'bg-blue-600 text-white border-blue-600'
           : isDarkMode
@@ -788,7 +788,7 @@ export function PlayerTable({
             onClick={() => onWeekChange(Math.max(1, currentWeek - 1))}
             disabled={fullSeason || currentWeek <= 1}
             aria-label="Previous week"
-            className={`px-2 py-1.5 disabled:opacity-40 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`px-3 py-3 sm:px-2 sm:py-1.5 disabled:opacity-40 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
@@ -800,7 +800,7 @@ export function PlayerTable({
             onClick={() => onWeekChange(Math.min(18, currentWeek + 1))}
             disabled={fullSeason || currentWeek >= 18}
             aria-label="Next week"
-            className={`px-2 py-1.5 disabled:opacity-40 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`px-3 py-3 sm:px-2 sm:py-1.5 disabled:opacity-40 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
@@ -809,7 +809,7 @@ export function PlayerTable({
           type="button"
           onClick={() => setFullSeason((v) => !v)}
           aria-pressed={fullSeason}
-          className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${
+          className={`px-3 py-3 sm:py-1.5 text-xs font-semibold rounded-md border transition-all ${
             fullSeason
               ? 'bg-blue-600 text-white border-blue-600'
               : isDarkMode

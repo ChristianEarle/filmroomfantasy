@@ -441,7 +441,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             )}
             <button
               onClick={handleClose}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-white hover:bg-slate-100 border border-slate-200'}`}
+              aria-label="Close player card"
+              className={`w-11 h-11 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-white hover:bg-slate-100 border border-slate-200'}`}
             >
               <X className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
             </button>

@@ -10,7 +10,7 @@ const positions = [
   { value: 'QB', label: 'Quarterback', color: 'bg-red-500' },
   { value: 'RB', label: 'Running Back', color: 'bg-green-500' },
   { value: 'WR', label: 'Wide Receiver', color: 'bg-blue-500' },
-  { value: 'TE', label: 'Tight End', color: 'bg-yellow-500' },
+  { value: 'TE', label: 'Tight End', color: 'bg-amber-500' },
   { value: 'K', label: 'Kicker', color: 'bg-amber-500' },
   { value: 'DEF', label: 'Defense', color: 'bg-indigo-500' },
 ];

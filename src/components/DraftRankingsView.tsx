@@ -924,9 +924,9 @@ function PlayerComparisonModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Player comparison">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4" role="dialog" aria-modal="true" aria-label="Player comparison">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className={`relative w-full max-w-4xl max-h-[85vh] overflow-auto rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <div className={`relative w-full max-w-4xl max-h-[95vh] sm:max-h-[85vh] overflow-auto rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className={`sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Compare players ({rankings.length})
@@ -935,7 +935,7 @@ function PlayerComparisonModal({
             type="button"
             onClick={onClose}
             aria-label="Close comparison"
-            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+            className={`inline-flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 rounded-lg border ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
           >
             <X className="w-4 h-4" />
           </button>
