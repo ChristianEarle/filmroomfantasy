@@ -34,6 +34,16 @@ Deploy notes: migrations `0037`–`0041` auto-apply on merge; superflex +
 ceiling/floor data appears after the next Monday ranking batch; rank
 history accrues from the first daily cron.
 
+## Shipped since the completion sprint
+
+- Season projections: new `GET /players/:id/season-projection` surfaces
+  the AI full-season point total that Draft Rankings' redraft batch
+  already generates (`draft_rankings.projectedPoints`) — no new model or
+  cron, just exposing existing data outside the Draft Rankings page.
+  Shown on PlayerCard's Averages tab alongside the existing week-derived
+  projection. Only covers the ~200 players the redraft batch ranks;
+  shows a graceful empty state for everyone else.
+
 ---
 
 ## P0 — Owner action required (not code)
@@ -53,8 +63,6 @@ history accrues from the first daily cron.
 
 - [ ] **Push notifications** — in-app notifications shipped; web push /
   email delivery (and waiver/trade/lineup-lock event types) remain.
-- [ ] **Season projections** — full-season projected totals per player;
-  current pipeline is weekly-props-derived only.
 - [ ] **PlayerCard Alert/Pin/Compare actions** — deliberately skipped in
   the sprint (Watch/Share shipped). Compare could reuse the Draft
   Rankings compare-basket pattern.
