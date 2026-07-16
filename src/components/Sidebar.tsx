@@ -57,7 +57,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
         { icon: Swords, label: 'Matchup', view: 'Matchup', comingSoon: false },
         { icon: ListPlus, label: 'Waivers', view: 'Waivers', comingSoon: false },
         { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs', comingSoon: false },
-        { icon: BarChart3, label: 'League Analyzer', view: 'LeagueAnalyzer', comingSoon: true },
+        { icon: BarChart3, label: 'League Analyzer', view: 'LeagueAnalyzer', comingSoon: false },
       ],
     },
     {
