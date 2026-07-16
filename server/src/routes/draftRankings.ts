@@ -4,7 +4,8 @@ import * as schema from '../db/schema';
 import { cached } from '../utils/cache';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
-import { sanitizePromptInput, getTodayKey, type ConversationTurn } from '../utils/prompt';
+import { sanitizePromptInput, getTodayKey, buildCachedSystemBlocks, type ConversationTurn } from '../utils/prompt';
+import { requireTier } from '../middleware/tier';
 import { generateId } from '../utils/id';
 import type { Env, Variables } from '../index';
 
@@ -200,7 +201,7 @@ CURRENT RANKINGS:
 ${contextBlock}`;
 }
 
-draftRankingsRoutes.post('/ask', authMiddleware, rateLimit(20, 60_000), async (c) => {
+draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), rateLimit(20, 60_000), async (c) => {
   const anthropicKey = c.env.ANTHROPIC_API_KEY;
   if (!anthropicKey) {
     return c.json({ error: 'AI is not configured. Missing API key.' }, 503);
@@ -210,12 +211,6 @@ draftRankingsRoutes.post('/ask', authMiddleware, rateLimit(20, 60_000), async (c
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const tier = user.subscriptionTier || 'free';
-  if (tier === 'free') {
-    return c.json(
-      { error: 'Ask AI requires a Pro or Elite subscription.', code: 'TIER_REQUIRED' },
-      403,
-    );
-  }
 
   let body: AskBody;
   try {
@@ -296,7 +291,13 @@ draftRankingsRoutes.post('/ask', authMiddleware, rateLimit(20, 60_000), async (c
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
-        system: buildDraftAskSystemPrompt(rankingType, scoringFormat, contextBlock),
+        // Cached system block: instructions + the server-built rankings
+        // context are byte-stable per variant (rankings regenerate at most
+        // daily), so multi-turn conversations and concurrent users on the
+        // same variant hit the prompt cache.
+        system: buildCachedSystemBlocks(
+          buildDraftAskSystemPrompt(rankingType, scoringFormat, contextBlock),
+        ),
         messages: [...recentHistory, { role: 'user', content: question }],
         temperature: 0.4,
       }),

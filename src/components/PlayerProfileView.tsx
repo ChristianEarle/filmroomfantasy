@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
-import { ArrowLeft, Calendar, Clock, TrendingUp, Sparkles } from 'lucide-react';
-import api from '../services/api';
+import { ArrowLeft, Calendar, Clock, TrendingUp, Sparkles, Lock } from 'lucide-react';
+import api, { ApiError } from '../services/api';
 import { playerService } from '../services';
 import type { PlayerNews, MatchupGradeResponse, Player as ApiPlayer } from '../services/players';
 import { PlayerAvatar } from './PlayerAvatar';
 import { NewsSnippet } from './NewsSnippet';
 import { SEO, getPlayerProfileSEOProps } from './SEO';
 import { buildPlayerProfilePath } from '../utils/slug';
+import { useAuth } from '../context/AuthContext';
 
 interface PlayerProfileViewProps {
   playerId: string;
@@ -125,6 +126,13 @@ export function PlayerProfileView({
   const [propsData, setPropsData] = useState<any>(null);
   const [propsLoading, setPropsLoading] = useState(true);
 
+  const { user, isAuthenticated } = useAuth();
+  const aiTier = (user?.subscriptionTier || 'free') as 'free' | 'pro' | 'elite';
+  const canViewAiTake = isAuthenticated && (aiTier === 'pro' || aiTier === 'elite');
+  const [aiTake, setAiTake] = useState<string | null>(null);
+  const [aiTakeLoading, setAiTakeLoading] = useState(false);
+  const [aiTakeError, setAiTakeError] = useState<string | null>(null);
+
   const week = currentWeek ?? 1;
   const season = seasonYear ?? new Date().getFullYear();
 
@@ -225,6 +233,26 @@ export function PlayerProfileView({
       .catch(() => { if (!cancelled) { setPropsData(null); setPropsLoading(false); } });
     return () => { cancelled = true; };
   }, [playerId, week, season]);
+
+  // Load AI take (Pro/Elite only — skip the call entirely for free/logged-out viewers)
+  useEffect(() => {
+    if (!playerId || !canViewAiTake) return;
+    let cancelled = false;
+    setAiTakeLoading(true);
+    setAiTakeError(null);
+    setAiTake(null);
+    playerService.getPlayerAnalysis(playerId, { week, season })
+      .then((res) => { if (!cancelled) setAiTake(res.analysis); })
+      .catch((err) => {
+        if (cancelled) return;
+        const message = err instanceof ApiError
+          ? err.message
+          : 'AI take is temporarily unavailable. Please try again shortly.';
+        setAiTakeError(message);
+      })
+      .finally(() => { if (!cancelled) setAiTakeLoading(false); });
+    return () => { cancelled = true; };
+  }, [playerId, canViewAiTake, week, season]);
 
   const bestWeek = useMemo(() => {
     if (!weeklyStats?.length) return null;
@@ -383,20 +411,49 @@ export function PlayerProfileView({
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left/main column */}
         <div className="lg:col-span-2 space-y-6">
-          {/* AI Take placeholder — wired in pass 2 */}
+          {/* AI Take */}
           <section className={`rounded-2xl border p-5 ${cardBg}`} aria-labelledby="ai-take-heading">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Sparkles className={`w-4 h-4 ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`} />
                 <h2 id="ai-take-heading" className={`text-sm font-semibold ${headingColor}`}>FilmRoom AI Take</h2>
               </div>
-              <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${isDarkMode ? 'border-purple-900/50 text-purple-300 bg-purple-950/30' : 'border-purple-200 text-purple-700 bg-purple-50'}`}>
-                Coming soon
-              </span>
+              {!canViewAiTake && (
+                <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${isDarkMode ? 'border-purple-900/50 text-purple-300 bg-purple-950/30' : 'border-purple-200 text-purple-700 bg-purple-50'}`}>
+                  Pro
+                </span>
+              )}
             </div>
-            <p className={`text-sm leading-relaxed ${bodyColor}`}>
-              AI-generated weekly analysis covering recent form, upcoming matchup, role/usage trends, and start/sit guidance — landing here next.
-            </p>
+            {!canViewAiTake ? (
+              <div className={`flex items-start gap-3 rounded-lg border px-4 py-4 ${isDarkMode ? 'border-purple-900/50 bg-purple-950/20' : 'border-purple-200 bg-purple-50'}`}>
+                <Lock className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`} />
+                <div className="min-w-0">
+                  <p className={`text-sm leading-relaxed ${bodyColor}`}>
+                    AI-generated weekly analysis covering recent form, upcoming matchup, and start/sit guidance is available for Pro and Elite members.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => window.location.assign(isAuthenticated ? '/pricing' : '/login')}
+                    className="mt-3 text-xs font-semibold px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+                  >
+                    {isAuthenticated ? 'Upgrade to Pro' : 'Sign in to unlock'}
+                  </button>
+                </div>
+              </div>
+            ) : aiTakeLoading ? (
+              <div className="space-y-2">
+                <div className={`animate-pulse h-3 rounded ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                <div className={`animate-pulse h-3 rounded w-5/6 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                <div className={`animate-pulse h-3 rounded w-4/6 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                <div className={`animate-pulse h-3 rounded w-3/6 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+              </div>
+            ) : aiTakeError ? (
+              <p className={`text-sm ${muted}`}>{aiTakeError}</p>
+            ) : aiTake ? (
+              <p className={`text-sm leading-relaxed whitespace-pre-wrap ${bodyColor}`}>{aiTake}</p>
+            ) : (
+              <p className={`text-sm ${muted}`}>No AI take available yet.</p>
+            )}
           </section>
 
           {/* Weekly stats table */}

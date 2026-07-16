@@ -68,6 +68,14 @@ export interface PlayerProjection {
   scoringFormat: string;
   weekRank?: number;
   positionRank?: number;
+  /** Per-category projected stats. GET /players/:id/projections returns full DB rows, which include these. */
+  projPassYards?: number | null;
+  projPassTDs?: number | null;
+  projRushYards?: number | null;
+  projRushTDs?: number | null;
+  projReceptions?: number | null;
+  projRecYards?: number | null;
+  projRecTDs?: number | null;
 }
 
 export interface PlayerNews {
@@ -138,6 +146,15 @@ export interface TrendingPlayer extends Player {
   trendDirection: 'up' | 'down';
   trendValue: number;
   ownedPct: number;
+}
+
+/** GET /players/:id/analysis — cached per-player AI take (Pro/Elite). */
+export interface PlayerAnalysisResponse {
+  analysis: string;
+  cached: boolean;
+  generatedAt: string;
+  season: number;
+  week: number;
 }
 
 export interface MatchupGradeResponse {
@@ -261,6 +278,25 @@ export const playerService = {
     const query = searchParams.toString();
     return api.get<MatchupGradeResponse>(
       `/players/${playerId}/matchup-grade${query ? `?${query}` : ''}`
+    );
+  },
+
+  // Get the cached/generated per-player AI take (Pro/Elite only — server enforces via requireTier)
+  getPlayerAnalysis: async (
+    playerId: string,
+    params?: { week?: number; season?: number }
+  ): Promise<PlayerAnalysisResponse> => {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.append(key, String(value));
+        }
+      });
+    }
+    const query = searchParams.toString();
+    return api.get<PlayerAnalysisResponse>(
+      `/players/${playerId}/analysis${query ? `?${query}` : ''}`
     );
   },
 };

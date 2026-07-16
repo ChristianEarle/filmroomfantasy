@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef, memo } from 'react';
 import { ChevronDown, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown, Search, Loader2, SearchX } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
 import { usePlayerProps, formatPropLine } from '../hooks/usePlayerProps';
@@ -9,6 +10,7 @@ import { type APIPlayer, convertAPIPlayerToPlayer, getEffectiveSeason, scoringTo
 import type { EnrichedPlayerFields } from '../services/players';
 import { AdUnit } from './AdUnit';
 import { Breadcrumb } from './shared/Breadcrumb';
+import { AiChatModal } from './AiChatModal';
 
 /** APIPlayer plus the sparkline history field threaded through services/players.ts */
 type BoardAPIPlayer = APIPlayer & Pick<EnrichedPlayerFields, 'recentWeeklyScores'>;
@@ -408,6 +410,7 @@ export function PlayerTable({
   isDarkMode,
 }: PlayerTableProps) {
   const { league, roster } = useLeagueContext();
+  const { user, isAuthenticated } = useAuth();
   // Owned-player ids — used to highlight rows the current user rosters.
   const ownedPlayerIds = useMemo(() => new Set((roster ?? []).map((r) => r.id)), [roster]);
   const scoringOptions: Array<'PPR' | 'Half PPR' | 'Standard'> = ['PPR', 'Half PPR', 'Standard'];
@@ -424,6 +427,21 @@ export function PlayerTable({
   const [totalPlayers, setTotalPlayers] = useState(0);
   const [pointsType, setPointsType] = useState<'actual' | 'projected'>('projected');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showAsk, setShowAsk] = useState(false);
+
+  // Ask AI is Pro/Elite only: route logged-out users to login, free tier to pricing
+  // (same gating pattern as DraftRankingsView's Ask AI).
+  const handleAskAi = useCallback(() => {
+    if (!isAuthenticated) {
+      window.location.assign('/login');
+      return;
+    }
+    if ((user?.subscriptionTier || 'free') === 'free') {
+      window.location.assign('/pricing');
+      return;
+    }
+    setShowAsk(true);
+  }, [isAuthenticated, user]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -721,8 +739,9 @@ export function PlayerTable({
           </button>
           <button
             type="button"
+            onClick={handleAskAi}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
-            title="Ask AI about rankings (coming soon)"
+            title="Ask AI about rankings"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" /></svg>
             Ask AI
@@ -1062,6 +1081,17 @@ export function PlayerTable({
           </div>
         )}
       </div>
+
+      <AiChatModal
+        isOpen={showAsk}
+        onClose={() => setShowAsk(false)}
+        isDarkMode={isDarkMode}
+        title="Ask AI — Player Rankings"
+        endpoint="/players/ask"
+        contextParams={{ scoringFormat, week: currentWeek, season: seasonYear }}
+        placeholder="e.g. Who should I start at FLEX this week?"
+        quickActions={['Best waiver targets this week?', 'Compare my top 2 RBs', 'Who has the best matchup?']}
+      />
     </div>
   );
 }

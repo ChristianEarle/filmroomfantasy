@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check } from 'lucide-react';
+import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Sparkles, Lock } from 'lucide-react';
 import { Player } from '../App';
-import api from '../services/api';
+import api, { ApiError } from '../services/api';
 import { playerService } from '../services';
 import type { PlayerNews, MatchupGradeResponse, PlayerProjection } from '../services';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { useAuth } from '../context/AuthContext';
 import { buildPlayerProfilePath } from '../utils/slug';
 import { NewsSnippet } from './NewsSnippet';
 
@@ -60,20 +61,6 @@ interface APIWeeklyStat {
 }
 
 
-/**
- * Row returned by GET /players/:id/projections. The endpoint returns full DB rows,
- * which include per-category projected stats beyond the base PlayerProjection type.
- */
-type ProjectionRow = PlayerProjection & {
-  projPassYards?: number | null;
-  projPassTDs?: number | null;
-  projRushYards?: number | null;
-  projRushTDs?: number | null;
-  projReceptions?: number | null;
-  projRecYards?: number | null;
-  projRecTDs?: number | null;
-};
-
 function formatTimeAgo(dateString: string | Date): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -124,7 +111,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [propsData, setPropsData] = useState<any>(null);
   const [propsLoading, setPropsLoading] = useState(true);
   const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || 1);
-  const [projection, setProjection] = useState<ProjectionRow | null>(null);
+  const [projection, setProjection] = useState<PlayerProjection | null>(null);
   const [projectionLoading, setProjectionLoading] = useState(true);
 
   // Some callers pass richer player objects than App's Player interface declares.
@@ -167,6 +154,33 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     }
   };
 
+  // --- FilmRoom AI Take (Pro/Elite) ---
+  const { user, isAuthenticated } = useAuth();
+  const aiTier = (user?.subscriptionTier || 'free') as 'free' | 'pro' | 'elite';
+  const canViewAiTake = isAuthenticated && (aiTier === 'pro' || aiTier === 'elite');
+  const [aiTake, setAiTake] = useState<string | null>(null);
+  const [aiTakeLoading, setAiTakeLoading] = useState(false);
+  const [aiTakeError, setAiTakeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!player?.id || !canViewAiTake) return;
+    let cancelled = false;
+    setAiTakeLoading(true);
+    setAiTakeError(null);
+    setAiTake(null);
+    playerService.getPlayerAnalysis(player.id, { week: propsCurrentWeek, season: propsSeasonYear })
+      .then((res) => { if (!cancelled) setAiTake(res.analysis); })
+      .catch((err) => {
+        if (cancelled) return;
+        const message = err instanceof ApiError
+          ? err.message
+          : 'AI take is temporarily unavailable. Please try again shortly.';
+        setAiTakeError(message);
+      })
+      .finally(() => { if (!cancelled) setAiTakeLoading(false); });
+    return () => { cancelled = true; };
+  }, [player.id, canViewAiTake, propsCurrentWeek, propsSeasonYear]);
+
   // Fetch the current-week stat-category projection when the card opens or the week changes.
   useEffect(() => {
     if (!player?.id) return;
@@ -175,7 +189,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     // The server stores 'half-ppr' (hyphen), while props use 'half_ppr'.
     const format = (propsScoringFormat === 'half_ppr' ? 'half-ppr' : propsScoringFormat === 'standard' ? 'standard' : 'ppr');
     playerService.getPlayerProjections(player.id, { week: selectedWeek, season: propsSeasonYear || 2025, format })
-      .then((res) => { if (!cancelled) setProjection((res.projections?.[0] as ProjectionRow) ?? null); })
+      .then((res) => { if (!cancelled) setProjection(res.projections?.[0] ?? null); })
       .catch(() => { if (!cancelled) setProjection(null); })
       .finally(() => { if (!cancelled) setProjectionLoading(false); });
     return () => { cancelled = true; };
@@ -1344,6 +1358,43 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
           {/* Right Sidebar */}
           <div className="space-y-4 sm:space-y-6">
+            {/* FilmRoom AI Take */}
+            <div className={`rounded-lg border p-4 sm:p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles className={`w-4 h-4 ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`} />
+                <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom AI Take</h3>
+              </div>
+              {!canViewAiTake ? (
+                <div className={`flex items-start gap-3 rounded-md border px-3 py-3 ${isDarkMode ? 'border-purple-900/50 bg-purple-950/20' : 'border-purple-200 bg-purple-50'}`}>
+                  <Lock className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`} />
+                  <div className="min-w-0">
+                    <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                      AI-generated weekly analysis — recent form, matchup context, and start/sit guidance.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => window.location.assign(isAuthenticated ? '/pricing' : '/login')}
+                      className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+                    >
+                      {isAuthenticated ? 'Upgrade to Pro' : 'Sign in to unlock'}
+                    </button>
+                  </div>
+                </div>
+              ) : aiTakeLoading ? (
+                <div className="space-y-2">
+                  <div className={`animate-pulse h-3 rounded ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                  <div className={`animate-pulse h-3 rounded w-5/6 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                  <div className={`animate-pulse h-3 rounded w-3/4 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                </div>
+              ) : aiTakeError ? (
+                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{aiTakeError}</p>
+              ) : aiTake ? (
+                <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{aiTake}</p>
+              ) : (
+                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No AI take available yet.</p>
+              )}
+            </div>
+
             {/* FilmRoom Insights */}
             <div className={`rounded-lg border p-4 sm:p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center gap-2 mb-4 flex-wrap">

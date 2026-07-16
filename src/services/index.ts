@@ -26,6 +26,7 @@ export type {
   PlayerStatsResponse,
   TrendingPlayer,
   MatchupGradeResponse,
+  PlayerAnalysisResponse,
 } from './players';
 export type { League, Team, Standing, LeagueDetails } from './leagues';
 export type { RosterSpot, TeamDetails, Roster, LineupMove } from './teams';
