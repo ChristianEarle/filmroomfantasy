@@ -2,6 +2,21 @@ import type { PlayerNews } from '../services';
 
 const MAX_LENGTH = 150;
 
+/**
+ * Returns a trimmed, validated http(s) URL, or null when the value is
+ * missing, uses another protocol (e.g. javascript:), or fails to parse.
+ */
+export function getSafeNewsUrl(rawUrl: string | null | undefined): string | null {
+  const url = rawUrl?.trim();
+  if (!url || !(url.startsWith('https://') || url.startsWith('http://'))) return null;
+  try {
+    new URL(url);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 interface NewsSnippetProps {
   item: Pick<PlayerNews, 'content' | 'headline' | 'sourceUrl' | 'aiSummary'>;
   className?: string;
@@ -12,19 +27,9 @@ export function NewsSnippet({ item, className = '' }: NewsSnippetProps) {
   const text = item.aiSummary || item.content || item.headline || '';
   const isLong = text.length > MAX_LENGTH;
   const displayText = isLong ? text.slice(0, MAX_LENGTH).trim() + '…' : text;
-  const sourceUrl = item.sourceUrl?.trim();
-  // Validate URL: must start with http(s):// and parse as a valid URL
-  let hasLink = false;
-  if (sourceUrl && (sourceUrl.startsWith('https://') || sourceUrl.startsWith('http://'))) {
-    try {
-      new URL(sourceUrl);
-      hasLink = true;
-    } catch {
-      hasLink = false;
-    }
-  }
+  const sourceUrl = getSafeNewsUrl(item.sourceUrl);
 
-  if (hasLink) {
+  if (sourceUrl) {
     return (
       <a
         href={sourceUrl}

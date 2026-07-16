@@ -201,7 +201,7 @@ export function SEO({ title, description, path, type = 'website', image, noindex
 
       {jsonLd && (
         <script type="application/ld+json">
-          {JSON.stringify(Array.isArray(jsonLd) ? jsonLd : jsonLd)}
+          {JSON.stringify(jsonLd)}
         </script>
       )}
     </Helmet>
@@ -445,15 +445,29 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
   return props;
 }
 
-/** Build per-player SEO props for the standalone profile page. */
+/** Build per-player SEO props for the standalone profile page.
+ *
+ * Title, description, and JSON-LD (Person with jobTitle/affiliation/memberOf —
+ * schema.org has no Athlete type) intentionally match the static shells
+ * emitted by scripts/generate-static-pages.js so the hydrated SPA route and
+ * the prebuilt page agree.
+ */
 export function getPlayerProfileSEOProps(player: {
   name: string;
   team?: string;
   position?: string;
   headshotUrl?: string | null;
+  externalId?: string | null;
   byeWeek?: number;
 }, profilePath: string): SEOProps {
-  const { name, team, position, headshotUrl } = player;
+  const { name, team, position, externalId } = player;
+  // Same Sleeper CDN fallback the backend uses when a stored headshot is
+  // missing (server/src/services/sleeper.ts) — keeps og:image / Person.image
+  // in sync with the static player pages.
+  const headshotUrl = player.headshotUrl
+    ?? (externalId && /^\d+$/.test(externalId)
+      ? `https://sleepercdn.com/content/nfl/players/${externalId}.jpg`
+      : null);
   const positionFull: Record<string, string> = {
     QB: 'Quarterback',
     RB: 'Running Back',

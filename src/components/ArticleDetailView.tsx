@@ -372,7 +372,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
                   className={`group text-left p-6 rounded-xl border transition-all ${
                     isDarkMode
                       ? 'bg-slate-900 border-slate-700 hover:border-slate-500'
-                      : 'bg-white border-slate-200'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
                   }`}
                 >
                   {raCat && (

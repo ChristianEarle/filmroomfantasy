@@ -4,7 +4,7 @@ import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
-import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+import { type APIPlayer, convertAPIPlayerToPlayer, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 
 const ALL_PLAYERS_PAGE_SIZE = 350;
 
@@ -21,7 +21,7 @@ interface AllPlayersViewProps {
   source: 'board' | 'waivers';
 }
 
-type SortField = 'rank' | 'name' | 'position' | 'projectedPoints' | 'weekChange';
+type SortField = 'rank' | 'name' | 'position' | 'projectedPoints';
 type SortDirection = 'asc' | 'desc';
 
 // Memoized row component — defined at module scope so React.memo works properly
@@ -125,9 +125,8 @@ export function AllPlayersView({
   const seasonYear = getEffectiveSeason(league?.seasonYear);
   const scoringFormat = scoringToFormat(selectedScoring);
 
-  // Fetch odds for the current week
-  const season = getDefaultSeason();
-  const { odds } = useOdds(currentWeek, season);
+  // Fetch odds for the current week — same effective season as the player data
+  const { odds } = useOdds(currentWeek, seasonYear);
 
   // Pre-build odds lookup map
   const oddsLookup = useMemo(() => {
@@ -139,10 +138,10 @@ export function AllPlayersView({
     return map;
   }, [odds]);
 
-  // Debounce search input
+  // Debounce search input (trimmed so whitespace-only input doesn't trigger a search)
   useEffect(() => {
     searchTimerRef.current = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
+      setDebouncedSearchQuery(searchQuery.trim());
     }, 300);
     return () => clearTimeout(searchTimerRef.current);
   }, [searchQuery]);
@@ -159,8 +158,13 @@ export function AllPlayersView({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showWeekDropdown]);
 
+  // Monotonic sequence number so an out-of-order (stale) response can't
+  // clobber the state written by a newer request when filters change quickly.
+  const fetchSeqRef = useRef(0);
+
   // Fetch players from API (week-specific: past weeks = actual pts, current = projections)
   const fetchPlayers = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -192,6 +196,8 @@ export function AllPlayersView({
         pagination?: { page: number; limit: number; total: number; totalPages: number };
       }>(`/players?${params.toString()}`);
 
+      if (seq !== fetchSeqRef.current) return; // a newer request superseded this one
+
       let playersList = Array.isArray(response?.players) ? response.players : [];
 
       // BUG-003: strict client-side filter to ensure results match search query
@@ -204,11 +210,14 @@ export function AllPlayersView({
 
       setPlayers(playersList);
     } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch players';
       setError(errorMessage);
       setPlayers([]);
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, [selectedPosition, league?.id, debouncedSearchQuery, currentWeek, seasonYear, scoringFormat]);
 
@@ -222,6 +231,14 @@ export function AllPlayersView({
     } else {
       setSortField(field);
       setSortDirection(field === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  // Keyboard operability for the clickable sort headers
+  const handleSortKeyDown = (field: SortField) => (e: React.KeyboardEvent<HTMLTableCellElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleSort(field);
     }
   };
 
@@ -250,11 +267,11 @@ export function AllPlayersView({
       filtered = filtered.filter(p => p.position === 'RB' || p.position === 'WR' || p.position === 'TE');
     }
 
-    // Convert to display format
+    // Convert to display format (fresh array from .map, safe to sort in place)
     const displayPlayers = filtered.map((p, i) => convertAPIPlayerToPlayer(p, i));
 
     // Apply sorting
-    return [...displayPlayers].sort((a, b) => {
+    return displayPlayers.sort((a, b) => {
       let comparison = 0;
       switch (sortField) {
         case 'rank':
@@ -268,9 +285,6 @@ export function AllPlayersView({
           break;
         case 'projectedPoints':
           comparison = a.projectedPoints - b.projectedPoints;
-          break;
-        case 'weekChange':
-          comparison = 0;
           break;
       }
       return sortDirection === 'asc' ? comparison : -comparison;
@@ -369,6 +383,7 @@ export function AllPlayersView({
               <button
                 onClick={() => setShowWeekDropdown(!showWeekDropdown)}
                 aria-expanded={showWeekDropdown}
+                aria-haspopup="listbox"
                 className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 <span className="text-xs">Wk {currentWeek}</span>
@@ -419,7 +434,7 @@ export function AllPlayersView({
               </button>
             </div>
           ) : loading ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-12" role="status">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" aria-label="Loading players" />
             </div>
           ) : (
@@ -428,7 +443,9 @@ export function AllPlayersView({
                 <tr className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   <th
                     scope="col"
+                    tabIndex={0}
                     onClick={() => handleSort('rank')}
+                    onKeyDown={handleSortKeyDown('rank')}
                     aria-sort={getAriaSortValue('rank')}
                     className={`text-left px-4 py-2 text-xs font-semibold cursor-pointer transition-colors w-12 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
@@ -439,7 +456,9 @@ export function AllPlayersView({
                   </th>
                   <th
                     scope="col"
+                    tabIndex={0}
                     onClick={() => handleSort('name')}
+                    onKeyDown={handleSortKeyDown('name')}
                     aria-sort={getAriaSortValue('name')}
                     className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
@@ -450,7 +469,9 @@ export function AllPlayersView({
                   </th>
                   <th
                     scope="col"
+                    tabIndex={0}
                     onClick={() => handleSort('position')}
+                    onKeyDown={handleSortKeyDown('position')}
                     aria-sort={getAriaSortValue('position')}
                     className={`text-left px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-14 hidden sm:table-cell ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >
@@ -462,7 +483,9 @@ export function AllPlayersView({
                   <th scope="col" className={`text-left px-3 py-2 text-xs font-semibold w-40 hidden md:table-cell ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>STATS</th>
                   <th
                     scope="col"
+                    tabIndex={0}
                     onClick={() => handleSort('projectedPoints')}
+                    onKeyDown={handleSortKeyDown('projectedPoints')}
                     aria-sort={getAriaSortValue('projectedPoints')}
                     className={`text-right px-3 py-2 text-xs font-semibold cursor-pointer transition-colors w-16 ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                   >

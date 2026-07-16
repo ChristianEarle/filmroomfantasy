@@ -46,6 +46,10 @@ function makeRanking(over: Record<string, any>): any {
     adpDelta: over.adpDelta ?? null,
     rationale: over.rationale ?? 'rationale',
     analysis: over.analysis ?? null,
+    ceilingRank: over.ceilingRank ?? null,
+    floorRank: over.floorRank ?? null,
+    recentRanks: over.recentRanks ?? [],
+    movement: over.movement ?? { d1: null, d7: null, d30: null },
     generatedAt: '2026-05-31T14:15:47.000Z',
     player: {
       id: over.id,
@@ -124,7 +128,7 @@ beforeEach(() => {
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe('DraftRankingsView — data fetching', () => {
-  it('requests the 1-QB redraft variant (superflex hardcoded off)', async () => {
+  it('requests the 1-QB redraft variant by default (superflex=0)', async () => {
     renderView();
     await loaded();
     const url = hoisted.mockGet.mock.calls[0][0] as string;
@@ -141,31 +145,109 @@ describe('DraftRankingsView — data fetching', () => {
       expect(urls.some(u => u.includes('type=dynasty_rookie'))).toBe(true);
     });
   });
-});
 
-describe('DraftRankingsView — no fabricated data', () => {
-  it('does not render the removed Trend (4wk) column', async () => {
+  it('refetches with superflex=1 when the Superflex toggle is switched on', async () => {
     renderView();
     await loaded();
-    expect(screen.queryByText(/4wk/i)).toBeNull();
-    expect(screen.queryByText('Trend')).toBeNull();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Superflex' }));
+    await waitFor(() => {
+      const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
+      expect(urls.some(u => u.includes('superflex=1'))).toBe(true);
+    });
   });
 
-  it('expanded row shows only Season Projection + AI Take, not the removed panels', async () => {
+  it('shows a Monday-generation empty state when the superflex variant has no rows', async () => {
+    renderView();
+    await loaded();
+    hoisted.mockGet.mockResolvedValue(response([]));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Superflex' }));
+    expect(await screen.findByText(/No Superflex Redraft Rankings Yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/weekly Monday ranking run/i)).toBeInTheDocument();
+  });
+});
+
+describe('DraftRankingsView — trend and movement use real data only', () => {
+  it('renders a Trend column but no sparkline when recentRanks is empty', async () => {
+    renderView();
+    await loaded();
+    expect(screen.getByText('Trend')).toBeInTheDocument();
+    expect(screen.queryByText(/4wk/i)).toBeNull();
+    // Fixtures have no rank history, so no sparkline is fabricated.
+    expect(screen.queryByTestId('trend-sparkline')).toBeNull();
+  });
+
+  it('renders a sparkline from recentRanks when history exists', async () => {
+    const withHistory = makeRanking({
+      id: 'a', overallRank: 1, position: 'QB', name: 'Josh Allen', team: 'BUF',
+      recentRanks: [4, 3, 2, 1],
+    });
+    hoisted.mockGet.mockResolvedValue(response([withHistory]));
+    renderView();
+    await loaded();
+    expect(screen.getByTestId('trend-sparkline')).toBeInTheDocument();
+  });
+
+  it('expanded row shows Season Projection, Rank Movement, and AI Take — removed fabricated fields stay gone', async () => {
     renderView();
     await loaded();
     expandRow('Josh Allen');
 
     expect(screen.getByText('Season Projection')).toBeInTheDocument();
+    expect(screen.getByText('Rank Movement')).toBeInTheDocument();
     expect(screen.getByText(/AI Take/)).toBeInTheDocument();
+
+    // No movement history in the fixture → honest empty text, no fake deltas.
+    expect(screen.getByText(/No rank history yet/i)).toBeInTheDocument();
+    expect(screen.queryByText('1d')).toBeNull();
+    expect(screen.queryByText('7d')).toBeNull();
+    expect(screen.queryByText('30d')).toBeNull();
 
     // Removed fabricated panels / fields must not reappear.
     expect(screen.queryByText('Draft Value')).toBeNull();
-    expect(screen.queryByText('Rank Movement')).toBeNull();
     expect(screen.queryByText('ECR')).toBeNull();
     expect(screen.queryByText('Best Ball ADP')).toBeNull();
-    expect(screen.queryByText('Ceiling / Floor')).toBeNull();
     expect(screen.queryByText('24h')).toBeNull();
+    expect(screen.queryByText('Preseason Open')).toBeNull();
+  });
+
+  it('shows 1d/7d/30d deltas only where snapshots exist, with direction styling', async () => {
+    const withMovement = makeRanking({
+      id: 'a', overallRank: 5, position: 'QB', name: 'Josh Allen', team: 'BUF',
+      movement: { d1: 3, d7: -2, d30: null },
+    });
+    hoisted.mockGet.mockResolvedValue(response([withMovement]));
+    renderView();
+    await loaded();
+    expandRow('Josh Allen');
+
+    // +3 = moved up the board (green), -2 = fell (red), 30d hidden (no snapshot).
+    expect(table().getByText('1d')).toBeInTheDocument();
+    expect(table().getByText('▲ 3')).toBeInTheDocument();
+    expect(table().getByText('7d')).toBeInTheDocument();
+    expect(table().getByText('▼ 2')).toBeInTheDocument();
+    expect(table().queryByText('30d')).toBeNull();
+    expect(table().queryByText(/No rank history yet/i)).toBeNull();
+  });
+
+  it('shows real ceiling/floor ranks when present', async () => {
+    const withRange = makeRanking({
+      id: 'a', overallRank: 3, position: 'QB', name: 'Josh Allen', team: 'BUF',
+      ceilingRank: 1, floorRank: 9,
+    });
+    hoisted.mockGet.mockResolvedValue(response([withRange]));
+    renderView();
+    await loaded();
+    expandRow('Josh Allen');
+    expect(table().getByText('Ceiling / Floor')).toBeInTheDocument();
+    expect(table().getByText('#1 / #9')).toBeInTheDocument();
+  });
+
+  it('falls back to the positionRank ± 3 estimate when ceiling/floor are null', async () => {
+    renderView();
+    await loaded();
+    expandRow("Ja'Marr Chase");
+    // positionRank 1 → max(1, 1-3)=WR1 ceiling, 1+3=WR4 floor, labelled est.
+    expect(table().getByText('WR1 / WR4 (est.)')).toBeInTheDocument();
   });
 });
 

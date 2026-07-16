@@ -5,7 +5,8 @@ import * as schema from '../db/schema';
 import type { Env, Variables } from '../index';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
-import { sanitizePromptInput, getTodayKey, type ConversationTurn } from '../utils/prompt';
+import { sanitizePromptInput, getTodayKey, buildCachedSystemBlocks, type ConversationTurn } from '../utils/prompt';
+import { requireTier } from '../middleware/tier';
 import {
   buildTradeContext,
   type LeagueSettings,
@@ -420,6 +421,7 @@ interface FollowUpBody {
 tradesRoutes.post(
   '/follow-up',
   authMiddleware,
+  requireTier('pro', 'AI follow-up'),
   rateLimit(20, 60_000),
   async (c) => {
     const anthropicKey = c.env.ANTHROPIC_API_KEY;
@@ -431,12 +433,6 @@ tradesRoutes.post(
     if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
     const tier = user.subscriptionTier || 'free';
-    if (tier === 'free') {
-      return c.json(
-        { error: 'Follow-up questions require a Pro or Elite subscription.', code: 'TIER_REQUIRED' },
-        403
-      );
-    }
 
     let body: FollowUpBody;
     try {
@@ -500,9 +496,12 @@ tradesRoutes.post(
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-5',
           max_tokens: 1024,
-          system: buildFollowUpSystemPrompt(),
+          // Static prompt with cache marker (content-block form). Note: this
+          // prompt is small, so it may fall below the model's minimum
+          // cacheable prefix — the marker is harmless either way.
+          system: buildCachedSystemBlocks(buildFollowUpSystemPrompt()),
           messages: [
             ...recentHistory,
             { role: 'user', content: question },

@@ -15,6 +15,7 @@ export function ForgotPasswordView({ onBackToLogin, isDarkMode = true }: ForgotP
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
     setError('');
     setIsLoading(true);
 
@@ -59,7 +60,7 @@ export function ForgotPasswordView({ onBackToLogin, isDarkMode = true }: ForgotP
 
         <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           {sent ? (
-            <div className="text-center py-4">
+            <div className="text-center py-4" role="status">
               <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
               <p className={`text-sm mb-6 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                 Check your inbox for the reset link. It expires in 1 hour.
@@ -74,14 +75,14 @@ export function ForgotPasswordView({ onBackToLogin, isDarkMode = true }: ForgotP
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
               {error && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{error}</div>
+                <div role="alert" className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{error}</div>
               )}
 
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
+                <label htmlFor="forgot-email" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
                 <div className={inputWrap}>
                   <div className={iconSlot}><Mail className="h-5 w-5" strokeWidth={1.5} /></div>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required />
+                  <input id="forgot-email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" aria-invalid={error ? true : undefined} required />
                 </div>
               </div>
 
@@ -124,6 +125,7 @@ export function ResetPasswordView({ token, onSuccess, isDarkMode = true }: Reset
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
     setError('');
 
     if (password.length < 8) {
@@ -191,38 +193,46 @@ export function ResetPasswordView({ token, onSuccess, isDarkMode = true }: Reset
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
               {error && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{error}</div>
+                <div role="alert" className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{error}</div>
               )}
 
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>New password</label>
+                <label htmlFor="reset-password" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>New password</label>
                 <div className={inputWrap}>
                   <div className={iconSlot}><Lock className="h-5 w-5" strokeWidth={1.5} /></div>
                   <input
+                    id="reset-password"
+                    name="new-password"
                     type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className={`${inputClass} pr-2`}
                     placeholder="At least 8 characters"
+                    aria-invalid={error ? true : undefined}
                     required
                     minLength={8}
                   />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}>
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}>
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Confirm password</label>
+                <label htmlFor="reset-confirm-password" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Confirm password</label>
                 <div className={inputWrap}>
                   <div className={iconSlot}><Lock className="h-5 w-5" strokeWidth={1.5} /></div>
                   <input
+                    id="reset-confirm-password"
+                    name="confirm-password"
                     type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     className={`${inputClass} pr-4`}
                     placeholder="Re-enter your password"
+                    aria-invalid={error ? true : undefined}
                     required
                     minLength={8}
                   />

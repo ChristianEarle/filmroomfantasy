@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
+import { requireTier } from '../middleware/tier';
 import { rateLimit } from '../middleware/rateLimit';
 import type { Env, Variables } from '../index';
 import { computeOutcome, computeRecordImpact } from '../services/tradeOutcomes';
@@ -828,7 +829,7 @@ tradeHistoryRoutes.post('/ingest/:leagueId', authMiddleware, async (c) => {
 
 // ── POST /grade/:tradeId — AI retroactive grading (Pro/Elite) ────────
 
-tradeHistoryRoutes.post('/grade/:tradeId', authMiddleware, async (c) => {
+tradeHistoryRoutes.post('/grade/:tradeId', authMiddleware, requireTier('pro', 'Retroactive AI grading'), async (c) => {
   const anthropicKey = c.env.ANTHROPIC_API_KEY;
   if (!anthropicKey) {
     return c.json({ error: 'AI grading is not configured.' }, 503);
@@ -838,17 +839,10 @@ tradeHistoryRoutes.post('/grade/:tradeId', authMiddleware, async (c) => {
   const db = c.get('db');
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
+  // requireTier guarantees pro/elite here; RETRO_GRADE_LIMITS still drives
+  // the per-tier daily cap below (free's 0 entry is unreachable now).
   const tier = user.subscriptionTier || 'free';
   const limit = RETRO_GRADE_LIMITS[tier] ?? 0;
-  if (limit === 0) {
-    return c.json(
-      {
-        error: 'Retroactive AI grading requires a Pro or Elite subscription.',
-        code: 'TIER_REQUIRED',
-      },
-      403
-    );
-  }
 
   // Daily usage gate
   if (limit !== Infinity) {
@@ -1114,7 +1108,7 @@ Provide your JSON analysis. Weight the ACTUAL OUTCOME block more heavily than th
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 2048,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],

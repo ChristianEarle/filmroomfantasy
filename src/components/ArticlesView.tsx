@@ -123,7 +123,7 @@ export function ArticlesView({ isDarkMode, onNavigate, onArticleSelect }: Articl
                 ? 'text-white'
                 : isDarkMode ? 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 border border-slate-700' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
             }`}
-            style={selectedCategory === key ? { background: color, boxShadow: `0 4px 14px ${color}40` } : undefined}
+            style={selectedCategory === key ? { background: color } : undefined}
           >
             {label}
           </button>
@@ -224,7 +224,7 @@ function FeaturedCard({ article, isDarkMode, onClick }: { article: ArticleData; 
       className={`group relative overflow-hidden rounded-2xl cursor-pointer transition-all duration-300 ${
         isDarkMode
           ? 'bg-slate-900 border border-slate-700 hover:border-slate-500'
-          : 'bg-white border border-slate-200'
+          : 'bg-white border border-slate-200 hover:border-slate-300'
       }`}
     >
       {/* Gradient accent bar */}
@@ -307,7 +307,7 @@ function ArticleCard({ article, isDarkMode, onClick }: { article: ArticleData; i
       className={`group relative overflow-hidden rounded-xl cursor-pointer transition-all duration-300 ${
         isDarkMode
           ? 'bg-slate-900 border border-slate-700 hover:border-slate-500'
-          : 'bg-white border border-slate-200'
+          : 'bg-white border border-slate-200 hover:border-slate-300'
       }`}
     >
       {/* Gradient accent */}

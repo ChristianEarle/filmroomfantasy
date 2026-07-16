@@ -15,15 +15,17 @@ const getStatusIndicator = (status: string | undefined) => {
   switch (status) {
     case 'questionable':
     case 'Q':
-      return <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" title="Questionable"></span>;
+      return <span role="img" aria-label="Questionable" className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" title="Questionable"></span>;
     case 'out':
     case 'O':
     case 'IR':
-    case 'injured_reserve':
-      return <span className="w-2 h-2 rounded-full bg-red-500" title={status === 'injured_reserve' || status === 'IR' ? 'IR' : 'Out'}></span>;
+    case 'injured_reserve': {
+      const label = status === 'injured_reserve' || status === 'IR' ? 'IR' : 'Out';
+      return <span role="img" aria-label={label} className="w-2 h-2 rounded-full bg-red-500" title={label}></span>;
+    }
     case 'doubtful':
     case 'D':
-      return <span className="w-2 h-2 rounded-full bg-orange-500" title="Doubtful"></span>;
+      return <span role="img" aria-label="Doubtful" className="w-2 h-2 rounded-full bg-orange-500" title="Doubtful"></span>;
     default:
       return null;
   }
@@ -31,6 +33,14 @@ const getStatusIndicator = (status: string | undefined) => {
 
 // Use shared calculateGrade as getMatchupGrade alias
 const getMatchupGrade = calculateGrade;
+
+// Explicit grade ordering for comparisons — naive string comparison mis-ranks
+// modifier grades (e.g. 'A' < 'A+' lexicographically, but A+ is the better grade).
+const GRADE_ORDER = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F'] as const;
+const gradeRank = (grade: string): number => {
+  const idx = (GRADE_ORDER as readonly string[]).indexOf(grade);
+  return idx === -1 ? GRADE_ORDER.length : idx;
+};
 
 export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   const { league, userTeam, viewedTeamId, setViewedTeamId, roster, rosterLoading, standings, allMatchups } = useLeagueContext();
@@ -42,6 +52,14 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
 
   // Get the currently viewed team from the league teams
   const viewedTeam = league?.teams?.find(t => t.id === viewedTeamId) || league?.teams?.[0];
+
+  // Sync the selected week once the league (and its current week) loads —
+  // the useState initializer only runs on mount, before the league arrives.
+  useEffect(() => {
+    if (league?.currentWeek) {
+      setSelectedWeek(league.currentWeek);
+    }
+  }, [league?.currentWeek]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -92,11 +110,10 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   const bench = sortByPosition(roster.filter(p => !p.isStarter));
 
   const starterProjection = starters.reduce((sum, p) => sum + (p.projectedPoints || 0), 0);
-  const totalPoints = roster.reduce((sum, p) => sum + (p.actualPoints || p.projectedPoints || 0), 0);
 
   // Calculate weekly points from real matchup data instead of fake averages
-  const weeklyPoints = (() => {
-    if (!viewedTeamId || !allMatchups?.length) return [];
+  const weeklyScores = (() => {
+    if (!viewedTeamId || !allMatchups?.length) return [] as { week: number; score: number }[];
     const teamScores: { week: number; score: number }[] = [];
     for (const m of allMatchups) {
       if (!m.isComplete) continue;
@@ -107,10 +124,9 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
       }
     }
     teamScores.sort((a, b) => a.week - b.week);
-    return teamScores.map(s => s.score);
+    return teamScores;
   })();
-  const gamesPlayed = viewedTeam ? Math.max(viewedTeam.wins + viewedTeam.losses + viewedTeam.ties, 1) : 0;
-  const avgPts = viewedTeam ? viewedTeam.pointsFor / gamesPlayed : 0;
+  const weeklyPoints = weeklyScores.map(s => s.score);
 
   // Get viewed team's standing
   const viewedTeamStanding = standings.find(s => s.teamId === viewedTeamId);
@@ -123,7 +139,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
     name: rosterPlayer.name,
     team: rosterPlayer.team,
     position: rosterPlayer.position as 'WR' | 'RB' | 'QB' | 'TE' | 'K' | 'DEF',
-    keyLine: `Proj: ${rosterPlayer.projectedPoints?.toFixed(1) || '0'} pts`,
+    keyLine: `Proj: ${(rosterPlayer.projectedPoints ?? 0).toFixed(1)} pts`,
     projectedPoints: rosterPlayer.projectedPoints || 0,
     weekChange: 0,
   });
@@ -136,7 +152,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
     ? bench.reduce((prev, current) => {
         const prevGrade = getMatchupGrade(prev.projectedPoints || 0, prev.position);
         const currentGrade = getMatchupGrade(current.projectedPoints || 0, current.position);
-        return currentGrade < prevGrade ? current : prev;
+        return gradeRank(currentGrade) < gradeRank(prevGrade) ? current : prev;
       })
     : null;
 
@@ -150,6 +166,8 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
             <div className="relative inline-block mb-1" ref={teamDropdownRef}>
               <button
                 onClick={() => setShowTeamDropdown(!showTeamDropdown)}
+                aria-expanded={showTeamDropdown}
+                aria-haspopup="listbox"
                 className={`text-lg sm:text-2xl font-bold flex items-center gap-2 hover:text-blue-500 transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
               >
                 {viewedTeam?.name || userTeam?.name || 'My Team'}
@@ -211,6 +229,8 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
             <div className="relative" ref={weekDropdownRef}>
               <button
                 onClick={() => setShowWeekDropdown(!showWeekDropdown)}
+                aria-expanded={showWeekDropdown}
+                aria-haspopup="listbox"
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors border ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
               >
                 <span className="text-sm font-medium">Week {selectedWeek}</span>
@@ -270,7 +290,16 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                     return (
                       <tr
                         key={player.id || index}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`${player.name}, ${player.position}, ${player.team}`}
                         onClick={() => onPlayerClick(convertToPlayer(player, index))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onPlayerClick(convertToPlayer(player, index));
+                          }
+                        }}
                         className={`border-b transition-colors cursor-pointer group ${isDarkMode ? 'border-slate-800 hover:bg-slate-800/70' : 'border-slate-100 hover:bg-slate-50'}`}
                       >
                         <td className="px-2 sm:px-4 py-2 sm:py-3">
@@ -412,65 +441,73 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
             </div>
 
             {/* Simple Line Chart */}
-            <div className="relative h-32">
-              <svg className="w-full h-full" viewBox="0 0 280 120" preserveAspectRatio="none">
-                {/* Grid lines */}
-                <line x1="0" y1="30" x2="280" y2="30" stroke={isDarkMode ? '#334155' : '#e2e8f0'} strokeWidth="1" opacity="0.3" />
-                <line x1="0" y1="60" x2="280" y2="60" stroke={isDarkMode ? '#334155' : '#e2e8f0'} strokeWidth="1" opacity="0.3" />
-                <line x1="0" y1="90" x2="280" y2="90" stroke={isDarkMode ? '#334155' : '#e2e8f0'} strokeWidth="1" opacity="0.3" />
+            {weeklyPoints.length === 0 ? (
+              <div className={`h-32 flex items-center justify-center text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                No completed games yet
+              </div>
+            ) : (
+              <>
+                <div className="relative h-32">
+                  <svg className="w-full h-full" viewBox="0 0 280 120" preserveAspectRatio="none">
+                    {/* Grid lines */}
+                    <line x1="0" y1="30" x2="280" y2="30" stroke={isDarkMode ? '#334155' : '#e2e8f0'} strokeWidth="1" opacity="0.3" />
+                    <line x1="0" y1="60" x2="280" y2="60" stroke={isDarkMode ? '#334155' : '#e2e8f0'} strokeWidth="1" opacity="0.3" />
+                    <line x1="0" y1="90" x2="280" y2="90" stroke={isDarkMode ? '#334155' : '#e2e8f0'} strokeWidth="1" opacity="0.3" />
 
-                {/* Gradient fill */}
-                <defs>
-                  <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <polygon
-                  points={`0,110 ${weeklyPoints.map((point, i) => {
-                    const x = (i / (weeklyPoints.length - 1)) * 280;
-                    const y = 110 - ((point / maxPoint) * 90);
-                    return `${x},${y}`;
-                  }).join(' ')} 280,110`}
-                  fill="url(#chartGradient)"
-                />
+                    {/* Gradient fill */}
+                    <defs>
+                      <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <polygon
+                      points={`0,110 ${weeklyPoints.map((point, i) => {
+                        const x = (i / Math.max(weeklyPoints.length - 1, 1)) * 280;
+                        const y = 110 - ((point / maxPoint) * 90);
+                        return `${x},${y}`;
+                      }).join(' ')} 280,110`}
+                      fill="url(#chartGradient)"
+                    />
 
-                {/* Line chart */}
-                <polyline
-                  points={weeklyPoints.map((point, i) => {
-                    const x = (i / (weeklyPoints.length - 1)) * 280;
-                    const y = 110 - ((point / maxPoint) * 90);
-                    return `${x},${y}`;
-                  }).join(' ')}
-                  fill="none"
-                  stroke="#3b82f6"
-                  strokeWidth="2"
-                />
-
-                {/* Points */}
-                {weeklyPoints.map((point, i) => {
-                  const x = (i / (weeklyPoints.length - 1)) * 280;
-                  const y = 110 - ((point / maxPoint) * 90);
-                  return (
-                    <circle
-                      key={i}
-                      cx={x}
-                      cy={y}
-                      r="4"
-                      fill="#3b82f6"
-                      stroke={isDarkMode ? '#1e293b' : '#ffffff'}
+                    {/* Line chart */}
+                    <polyline
+                      points={weeklyPoints.map((point, i) => {
+                        const x = (i / Math.max(weeklyPoints.length - 1, 1)) * 280;
+                        const y = 110 - ((point / maxPoint) * 90);
+                        return `${x},${y}`;
+                      }).join(' ')}
+                      fill="none"
+                      stroke="#3b82f6"
                       strokeWidth="2"
                     />
-                  );
-                })}
-              </svg>
-            </div>
 
-            {/* Week labels */}
-            <div className="flex items-center justify-between mt-2 text-xs text-slate-500">
-              <span>Week 1</span>
-              <span>Week {weeklyPoints.length}</span>
-            </div>
+                    {/* Points */}
+                    {weeklyPoints.map((point, i) => {
+                      const x = (i / Math.max(weeklyPoints.length - 1, 1)) * 280;
+                      const y = 110 - ((point / maxPoint) * 90);
+                      return (
+                        <circle
+                          key={weeklyScores[i].week}
+                          cx={x}
+                          cy={y}
+                          r="4"
+                          fill="#3b82f6"
+                          stroke={isDarkMode ? '#1e293b' : '#ffffff'}
+                          strokeWidth="2"
+                        />
+                      );
+                    })}
+                  </svg>
+                </div>
+
+                {/* Week labels */}
+                <div className="flex items-center justify-between mt-2 text-xs text-slate-500">
+                  <span>Week {weeklyScores[0].week}</span>
+                  <span>Week {weeklyScores[weeklyScores.length - 1].week}</span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Season Stats */}

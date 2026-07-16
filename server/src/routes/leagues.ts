@@ -9,6 +9,7 @@ import {
   isValidSleeperUser,
   isValidSleeperMatchup,
   validateSleeperArray,
+  syncDraftPicks,
 } from '../services/sleeper';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
@@ -456,7 +457,14 @@ leagueRoutes.post('/connect', connectRateLimit, authMiddleware, async (c) => {
       return c.json({ error: 'Invalid external ID' }, 400);
     }
 
-    // Check league limit for free users (max 1 league)
+    // Check league limit for free users (max 1 league).
+    // NOTE: intentionally NOT converted to the shared requireTier middleware
+    // (middleware/tier.ts). requireTier is a blanket minimum-tier gate that
+    // rejects free users outright with 403 { code: 'TIER_REQUIRED' }; this
+    // gate is count-based custom logic buried mid-handler — free users may
+    // connect exactly one league — and responds 402
+    // { code: 'LEAGUE_LIMIT_EXCEEDED' }, which the frontend handles as a
+    // distinct upsell path. Swapping it in would change behavior.
     if (user.subscriptionTier === 'free') {
       const userLeagues = await db.query.leagueMembers.findMany({
         where: eq(schema.leagueMembers.userId, user.id),
@@ -1729,6 +1737,24 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         console.error('Trade ingest failed (non-blocking):', e);
       }
 
+      // Draft-pick inventory (dynasty/keeper leagues only — redraft skips
+      // inside the service). Try/caught so a pick-sync failure never fails
+      // the league sync. Non-Sleeper platforms never reach this branch.
+      let draftPicksSynced = 0;
+      try {
+        const pickStats = await syncDraftPicks(db, league.id, league.externalId);
+        if (pickStats.skipped) {
+          console.log(`[sleeper sync] Draft pick sync skipped for league ${league.id}: ${pickStats.skipped}`);
+        } else {
+          draftPicksSynced = pickStats.seeded;
+          console.log(
+            `[sleeper sync] Draft picks synced for league ${league.id}: ${pickStats.seeded} seeded, ${pickStats.traded} traded overlays`
+          );
+        }
+      } catch (e) {
+        console.error('Draft pick sync failed (non-blocking):', e);
+      }
+
       // If we couldn't pin the user to a Sleeper roster, surface a warning so
       // the UI can prompt them to set their Sleeper username (otherwise their
       // "my team" view will be empty even though the league synced fine).
@@ -1747,6 +1773,7 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         projectionsImported,
         propsProjections: propsProjectionsCount,
         tradesIngested,
+        draftPicksSynced,
         userTeamMatched: userRosterAssigned,
         warning: userMatchWarning,
       });

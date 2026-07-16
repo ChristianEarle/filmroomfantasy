@@ -86,6 +86,7 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
   };
 
   const handleSaveAccount = async () => {
+    if (accountLoading) return;
     setAccountError('');
 
     // Client-side validation
@@ -103,8 +104,8 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
       return;
     }
 
-    // Check if anything changed
-    const emailChanged = editEmail.toLowerCase() !== user?.email;
+    // Check if anything changed (emails are case-insensitive)
+    const emailChanged = editEmail.toLowerCase() !== user?.email?.toLowerCase();
     const usernameChanged = editUsername !== user?.username;
     if (!emailChanged && !usernameChanged) {
       setEditingAccount(false);
@@ -159,32 +160,36 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
           </div>
 
           {accountError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-              <AlertCircle className="h-4 w-4 shrink-0" />
+            <div role="alert" className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+              <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
               {accountError}
             </div>
           )}
           {accountSaved && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-sm">
-              <Check className="h-4 w-4 shrink-0" />
+            <div role="status" className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-sm">
+              <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
               Account updated
             </div>
           )}
 
           <div className="space-y-4">
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
+              <label htmlFor="profile-email" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
               {editingAccount ? (
                 <div className={inputWrap}>
                   <div className={`flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                     <Mail className="h-5 w-5" strokeWidth={1.5} />
                   </div>
                   <input
+                    id="profile-email"
+                    name="email"
                     type="email"
+                    autoComplete="email"
                     value={editEmail}
                     onChange={(e) => setEditEmail(e.target.value)}
                     className={inputClass}
                     placeholder="you@example.com"
+                    aria-invalid={accountError ? true : undefined}
                   />
                 </div>
               ) : (
@@ -203,18 +208,22 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
               )}
             </div>
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Username</label>
+              <label htmlFor="profile-username" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Username</label>
               {editingAccount ? (
                 <div className={inputWrap}>
                   <div className={`flex h-full w-11 shrink-0 items-center justify-center rounded-l-[7px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                     <span className={`text-base font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>@</span>
                   </div>
                   <input
+                    id="profile-username"
+                    name="username"
                     type="text"
+                    autoComplete="username"
                     value={editUsername}
                     onChange={(e) => setEditUsername(e.target.value)}
                     className={inputClass}
                     placeholder="username"
+                    aria-invalid={accountError ? true : undefined}
                   />
                 </div>
               ) : (
@@ -301,8 +310,8 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
           </div>
 
           {portalError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-              <AlertCircle className="h-4 w-4 shrink-0" />
+            <div role="alert" className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+              <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
               {portalError}
             </div>
           )}

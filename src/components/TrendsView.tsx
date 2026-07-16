@@ -65,6 +65,8 @@ interface RecentLeadersResponse {
 
 type ActiveTab = 'trending' | 'projections' | 'leaders';
 
+const TAB_ORDER: ActiveTab[] = ['trending', 'projections', 'leaders'];
+
 const VALID_POSITIONS = new Set<Player['position']>(['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'FLEX']);
 const TREND_WINDOW = 'Last 14 days';
 const FILTER_OPTIONS = ['All', 'Up', 'Down'] as const;
@@ -279,15 +281,31 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className={`px-6 py-3 flex items-center gap-2 ${isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50'}`} role="tablist">
+        {/* Tabs — roving tabindex + arrow-key navigation per the ARIA tabs pattern */}
+        <div
+          className={`px-6 py-3 flex items-center gap-2 ${isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50'}`}
+          role="tablist"
+          aria-label="Trends views"
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            const idx = TAB_ORDER.indexOf(activeTab);
+            const next = e.key === 'ArrowRight'
+              ? TAB_ORDER[(idx + 1) % TAB_ORDER.length]
+              : TAB_ORDER[(idx + TAB_ORDER.length - 1) % TAB_ORDER.length];
+            setActiveTab(next);
+            document.getElementById(`tab-${next}`)?.focus();
+          }}
+        >
           <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>View:</span>
           <button
             role="tab"
+            id="tab-trending"
+            tabIndex={activeTab === 'trending' ? 0 : -1}
             aria-selected={activeTab === 'trending'}
             aria-controls="panel-trending"
             onClick={() => setActiveTab('trending')}
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-3 sm:py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'trending'
                 ? 'bg-blue-600 text-white'
                 : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -298,10 +316,12 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
           </button>
           <button
             role="tab"
+            id="tab-projections"
+            tabIndex={activeTab === 'projections' ? 0 : -1}
             aria-selected={activeTab === 'projections'}
             aria-controls="panel-projections"
             onClick={() => setActiveTab('projections')}
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-3 sm:py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'projections'
                 ? 'bg-blue-600 text-white'
                 : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -312,10 +332,12 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
           </button>
           <button
             role="tab"
+            id="tab-leaders"
+            tabIndex={activeTab === 'leaders' ? 0 : -1}
             aria-selected={activeTab === 'leaders'}
             aria-controls="panel-leaders"
             onClick={() => setActiveTab('leaders')}
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-3 sm:py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'leaders'
                 ? 'bg-blue-600 text-white'
                 : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -342,7 +364,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
       {/* Leaders tab is checked first so the global loader (driven by the trending fetch) doesn't mask the leaders panel during initial mount. */}
       {activeTab === 'leaders' ? (
         /* Leaders Tab — Recent Best Performers with window + position toggles */
-        <div id="panel-leaders" role="tabpanel" className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div id="panel-leaders" role="tabpanel" aria-labelledby="tab-leaders" className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <div className={`px-6 py-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -360,7 +382,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                       onClick={() => setLeadersWindow(w)}
                       aria-pressed={leadersWindow === w}
                       data-testid={`window-${w}`}
-                      className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
+                      className={`px-2.5 py-3 sm:py-1 text-xs rounded-lg transition-colors ${
                         leadersWindow === w
                           ? 'bg-blue-600 text-white'
                           : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -377,7 +399,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                       onClick={() => setLeadersPosFilter(p)}
                       aria-pressed={leadersPosFilter === p}
                       data-testid={`position-${p}`}
-                      className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
+                      className={`px-2.5 py-3 sm:py-1 text-xs rounded-lg transition-colors ${
                         leadersPosFilter === p
                           ? 'bg-blue-600 text-white'
                           : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -395,10 +417,17 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" role="status" aria-label="Loading recent leaders" />
             </div>
           ) : leadersError ? (
-            <div className={`p-12 text-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            <div className={`p-12 text-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} role="alert">
               <Trophy className="w-8 h-8 mx-auto mb-2 opacity-50" />
               <p className="text-sm">{leadersError}</p>
-              <p className="text-xs mt-1">Try refreshing or come back later.</p>
+              <button
+                onClick={fetchLeaders}
+                className={`mt-3 px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                Try Again
+              </button>
             </div>
           ) : leaders.length === 0 ? (
             <div className={`p-12 text-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -465,7 +494,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
         </div>
       ) : activeTab === 'trending' ? (
         /* Trending Tab — two-column: Most Added / Most Dropped */
-        <div id="panel-trending" role="tabpanel" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div id="panel-trending" role="tabpanel" aria-labelledby="tab-trending" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Most Added */}
           <div className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
             <div className={`px-6 py-4 border-b flex items-center gap-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
@@ -564,7 +593,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
         </div>
       ) : (
         /* Projections Tab — biggest movers */
-        <div id="panel-projections" role="tabpanel" className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div id="panel-projections" role="tabpanel" aria-labelledby="tab-projections" className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <div className={`px-6 py-4 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
             <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               Biggest Projection Movers{currentWeek ? ` — Week ${currentWeek}` : ''}
@@ -578,7 +607,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                     onClick={() => setProjFilter(filterKey)}
                     aria-pressed={projFilter === filterKey}
                     data-testid={`filter-${filterKey}`}
-                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                    className={`px-3 py-3 sm:py-1 text-xs rounded-lg transition-colors ${
                       projFilter === filterKey
                         ? 'bg-blue-600 text-white'
                         : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'

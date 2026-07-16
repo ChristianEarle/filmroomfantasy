@@ -2529,6 +2529,31 @@ html {
   }
 }
 
+/* Bottom tab bar (BottomNav.tsx): mobile only, hidden at md+ where the
+   persistent Sidebar takes over navigation. iOS safe-area inset is added as
+   extra bottom padding so the tab labels never sit under the home indicator. */
+.bottom-nav-mobile {
+  display: block;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (min-width: 768px) {
+  .bottom-nav-mobile {
+    display: none;
+  }
+}
+
+/* Total reserved height for the bottom nav (56px bar + safe area), used to
+   pad scrollable content and to reposition other fixed bottom elements
+   (e.g. the cookie consent banner) so nothing overlaps it on mobile. */
+.mobile-bottom-nav-offset {
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  .mobile-bottom-nav-offset {
+    bottom: 0;
+  }
+}
+
 /* Cookie banner: full width on mobile, offset by sidebar (w-64 = 16rem) on md+ */
 .cookie-banner-sidebar-offset {
   left: 0;
@@ -2539,12 +2564,20 @@ html {
   }
 }
 
-/* Explicit z-index layers for the cookie banner, mobile backdrop, and the
-   mobile-open sidebar. Only .z-50 is present in the compiled Tailwind bundle,
-   so we define the other tiers here to keep stacking predictable:
-     banner   (70) < backdrop (75) < mobile-open sidebar (80).
+/* Explicit z-index layers for the bottom nav, cookie banner, mobile backdrop,
+   and the mobile-open sidebar. Only .z-50 is present in the compiled
+   Tailwind bundle, so we define the other tiers here to keep stacking
+   predictable:
+     bottom nav (40) < banner (70) < backdrop (75) < mobile-open sidebar (80).
+   The bottom nav sits below Tailwind's .z-50 (used by all modal overlays —
+   PlayerCard, GameDetailModal, AiChatModal, UpgradeModal, the compare
+   modal) so a full-screen modal always renders above/over it instead of the
+   tab bar poking through on top of modal content.
    The sidebar needs its own class (not Tailwind's .z-50) so the mobile
    backdrop at z-75 never ends up on top of it and swallowing taps. */
+.z-mobile-bottomnav {
+  z-index: 40;
+}
 .z-cookie-banner {
   z-index: 70;
 }

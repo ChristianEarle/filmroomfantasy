@@ -39,6 +39,10 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
   const seasonYear = getEffectiveSeason(league?.seasonYear);
 
   useEffect(() => {
+    // Guard against out-of-order responses when league/week/season change
+    // while a previous fetch is still in flight.
+    let cancelled = false;
+
     const fetchData = async () => {
       setLoading(true);
       setError(null);
@@ -52,6 +56,7 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
           `/players?page=1&limit=5&includeStats=true&week=${currentWeek}&season=${seasonYear}&sortBy=projectedPoints&sortOrder=desc${league?.id ? `&leagueId=${league.id}` : ''}`
         );
 
+        if (cancelled) return;
         const weekComplete = weekCheckResponse?.pointsType === 'actual' || weekCheckResponse?.weekComplete === true;
         setIsWeekComplete(weekComplete);
 
@@ -61,6 +66,7 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
             `/players?page=1&limit=350&includeStats=true&week=${currentWeek}&season=${seasonYear}&scoringFormat=ppr${league?.id ? `&leagueId=${league.id}` : ''}`
           );
 
+          if (cancelled) return;
           const players = allPlayersResponse.players || [];
 
           // Calculate actual vs projected for this week
@@ -105,6 +111,7 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
             `/players/projection-movements?week=${currentWeek}&season=${seasonYear}&scoringFormat=ppr&limit=5`
           );
 
+          if (cancelled) return;
           if (response.movements?.length) {
             setMoversData(response.movements);
             return;
@@ -114,6 +121,7 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
           const fallback = await api.get<{ players: APIPlayer[] }>(
             `/players?page=1&limit=10&includeStats=true&week=${currentWeek}&season=${seasonYear}&sortBy=projectedPoints&sortOrder=desc${league?.id ? `&leagueId=${league.id}` : ''}`
           );
+          if (cancelled) return;
           const topPlayers = (fallback.players || [])
             .filter((p: APIPlayer) => p.projectedPoints > 0)
             .slice(0, 3);
@@ -127,15 +135,19 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
           })));
         }
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to load data');
         setMoversData([]);
         setPerformersData([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchData();
+    return () => {
+      cancelled = true;
+    };
   }, [league?.id, currentWeek, seasonYear]);
 
   return (
@@ -150,11 +162,11 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
       </p>
 
       {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-500" aria-label="Loading data" />
+        <div className="flex items-center justify-center py-8" role="status" aria-label="Loading data">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-500" aria-hidden="true" />
         </div>
       ) : error ? (
-        <div className={`text-center py-8 ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>
+        <div role="alert" className={`text-center py-8 ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>
           <p className="text-sm">{error}</p>
         </div>
       ) : isWeekComplete ? (
