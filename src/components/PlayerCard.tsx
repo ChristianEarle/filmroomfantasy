@@ -1,14 +1,16 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Sparkles, Lock } from 'lucide-react';
+import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Plus, Sparkles, Lock } from 'lucide-react';
 import { Player } from '../App';
 import api, { ApiError } from '../services/api';
 import { playerService } from '../services';
 import type { PlayerNews, MatchupGradeResponse, PlayerProjection } from '../services';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { useCompareBasket } from '../hooks/useCompareBasket';
 import { useAuth } from '../context/AuthContext';
 import { buildPlayerProfilePath } from '../utils/slug';
 import { NewsSnippet } from './NewsSnippet';
+import { PlayerCompareModal } from './PlayerCompareModal';
 
 
 
@@ -153,6 +155,20 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
       }
     }
   };
+
+  // --- Quick action: Compare ---
+  const compare = useCompareBasket();
+  const isComparing = compare.isInBasket(player.id);
+  const [showCompareModal, setShowCompareModal] = useState(false);
+
+  const handleToggleCompare = () => {
+    compare.toggle({ id: player.id, name: player.name, position: player.position, team: player.team });
+  };
+
+  // Close the comparison modal automatically once the basket is emptied.
+  useEffect(() => {
+    if (compare.basket.length === 0) setShowCompareModal(false);
+  }, [compare.basket.length]);
 
   // --- FilmRoom AI Take (Pro/Elite) ---
   const { user, isAuthenticated } = useAuth();
@@ -519,11 +535,32 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
                       <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
                     </button>
+                    <button
+                      onClick={handleToggleCompare}
+                      aria-pressed={isComparing}
+                      title={isComparing ? 'Remove from comparison' : `Add to comparison (up to ${compare.max})`}
+                      className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
+                        isComparing
+                          ? 'bg-blue-500/15 border-blue-500/40 text-blue-500 hover:bg-blue-500/25'
+                          : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      {isComparing ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                      <span className="hidden sm:inline">{isComparing ? 'Added' : 'Compare'}</span>
+                    </button>
                   </div>
                   {matchupGrade && (
                     <span className="text-xs font-medium px-3 py-1.5 rounded-md border" style={getGradeStyle(matchupGrade)} title={matchupData?.message || `${getMatchupGradeLabel(matchupGrade)} matchup`}>
                       {matchupData?.opponent ? `vs ${matchupData.opponent} ` : 'Matchup '}{matchupGrade}
                     </span>
+                  )}
+                  {compare.basket.length >= 2 && (
+                    <button
+                      onClick={() => setShowCompareModal(true)}
+                      className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-colors ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+                    >
+                      View comparison ({compare.basket.length}) →
+                    </button>
                   )}
                 </div>
               </div>
@@ -1492,6 +1529,16 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           </div>
         </div>
       </div>
+      {showCompareModal && (
+        <PlayerCompareModal
+          players={compare.basket}
+          isDarkMode={isDarkMode}
+          seasonYear={propsSeasonYear}
+          scoringFormat={scoringFormat}
+          onClose={() => setShowCompareModal(false)}
+          onRemove={compare.remove}
+        />
+      )}
     </div>,
     document.body
   );

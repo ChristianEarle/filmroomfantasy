@@ -11,6 +11,10 @@
 > `docs/COMPLETION_PLAN.md` for the plan and `TODO.md` for what remains
 > (owner-blocked credentials, external data sources, premium roadmap).
 > Checkboxes below are historical; `TODO.md` is the live list.
+>
+> **Follow-up:** PlayerCard gained a Compare quick action (client-only
+> compare basket + side-by-side season-stat modal). See `TODO.md` →
+> "Shipped since the completion sprint".
 
 ---
 
