@@ -24,6 +24,13 @@ interface DraftRankingPlayer {
   externalId: string | null;
 }
 
+interface RankMovement {
+  /** Past rank − current rank; positive = moved up the board (improved). */
+  d1: number | null;
+  d7: number | null;
+  d30: number | null;
+}
+
 interface DraftRanking {
   id: string;
   overallRank: number;
@@ -34,6 +41,13 @@ interface DraftRanking {
   adpDelta: number | null;
   rationale: string;
   analysis: string | null;
+  /** AI best-case overall rank (lower = better); null until generated. */
+  ceilingRank?: number | null;
+  /** AI worst-case overall rank; null until generated. */
+  floorRank?: number | null;
+  /** Last 4 daily snapshots' overall rank, oldest first; empty when no history. */
+  recentRanks?: number[];
+  movement?: RankMovement;
   generatedAt: string;
   player: DraftRankingPlayer;
 }
@@ -103,10 +117,12 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
 
   // Derive defaults from connected league
   const defaultScoring: ScoringFormat = (league?.scoringFormat as ScoringFormat) || 'ppr';
+  const defaultSuperflex = (league as { hasSuperflex?: boolean } | null)?.hasSuperflex ?? false;
 
   const [rankingView, setRankingView] = useState<'redraft' | 'dynasty'>('redraft');
   const rankingType: RankingType = rankingView === 'redraft' ? 'redraft' : 'dynasty_rookie';
   const [scoringFormat, setScoringFormat] = useState<ScoringFormat>(defaultScoring);
+  const [superflex, setSuperflex] = useState(defaultSuperflex);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedRationale, setExpandedRationale] = useState<string | null>(null);
@@ -166,11 +182,10 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     setLoading(true);
     setError(null);
     try {
-      // Superflex variants aren't generated yet (tracked in TODO.md backlog);
-      // always request the 1-QB variant so dynasty never lands on an empty result.
+      const sf = superflex ? '1' : '0';
       const season = new Date().getFullYear();
       const data = await api.get<DraftRankingsResponse>(
-        `/draft-rankings?type=${rankingType}&scoring=${scoringFormat}&superflex=0&season=${season}`,
+        `/draft-rankings?type=${rankingType}&scoring=${scoringFormat}&superflex=${sf}&season=${season}`,
       );
       setRankings(data.rankings);
       setGeneratedAt(data.meta.generatedAt);
@@ -181,18 +196,18 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     } finally {
       setLoading(false);
     }
-  }, [rankingType, scoringFormat]);
+  }, [rankingType, scoringFormat, superflex]);
 
   useEffect(() => {
     fetchRankings();
   }, [fetchRankings]);
 
   // A comparison only makes sense within one variant, so reset the basket when
-  // the ranking type or scoring format changes.
+  // the ranking type, scoring format, or superflex setting changes.
   useEffect(() => {
     setCompareList([]);
     setShowCompare(false);
-  }, [rankingType, scoringFormat]);
+  }, [rankingType, scoringFormat, superflex]);
 
   // Close the modal automatically once the basket is emptied.
   useEffect(() => {
@@ -326,7 +341,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
             onClick={() =>
               downloadRankingsCsv(
                 filteredRankings,
-                `draft-rankings-${rankingType}-${scoringFormat}-${new Date().getFullYear()}.csv`,
+                `draft-rankings-${rankingType}-${scoringFormat}${superflex ? '-superflex' : ''}-${new Date().getFullYear()}.csv`,
               )
             }
           >
@@ -372,6 +387,25 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
             </span>
           ))}
         </div>
+
+        <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+
+        {/* Superflex toggle */}
+        <label className={`inline-flex items-center gap-2 cursor-pointer select-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+          <input type="checkbox" checked={superflex} onChange={() => setSuperflex(v => !v)} className="sr-only" />
+          <span
+            className={`relative inline-block w-8 h-4 rounded-full transition-colors ${
+              superflex ? 'bg-blue-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                superflex ? 'translate-x-4' : 'translate-x-0'
+              }`}
+            />
+          </span>
+          <span className="text-xs font-semibold">Superflex</span>
+        </label>
 
         {watchlist.isAuthenticated && (
           <>
@@ -453,7 +487,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
           <p className={`text-sm ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>{error}</p>
         </div>
       ) : rankings.length === 0 ? (
-        <EmptyState rankingType={rankingType} isDarkMode={isDarkMode} />
+        <EmptyState rankingType={rankingType} superflex={superflex} isDarkMode={isDarkMode} />
       ) : filteredRankings.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20">
           <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -471,6 +505,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
             <span className="text-right w-14 sm:w-20">Proj</span>
             <span className="hidden sm:inline text-right" style={{ width: '60px' }}>ADP</span>
             <span className="flex justify-center w-[72px] sm:w-[90px]">Value</span>
+            <span className="hidden md:inline text-center" style={{ width: '64px' }}>Trend</span>
             <span className="hidden sm:inline text-center" style={{ width: '40px' }}>Age</span>
             <span className="hidden sm:inline" style={{ width: '16px' }} />
           </div>
@@ -512,7 +547,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
         isDarkMode={isDarkMode}
         title="Ask AI about the draft"
         endpoint="/draft-rankings/ask"
-        contextParams={{ type: rankingType, scoring: scoringFormat, season: new Date().getFullYear() }}
+        contextParams={{ type: rankingType, scoring: scoringFormat, superflex, season: new Date().getFullYear() }}
         placeholder="e.g. Who should I draft at pick 5?"
         quickActions={['Who are the top 3 RBs?', 'Best value in round 5?', 'Should I draft a QB early?']}
       />
@@ -522,16 +557,127 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
 
 // ── Sub-components ──────────────────────────────────────────────────
 
-function EmptyState({ rankingType, isDarkMode }: { rankingType: RankingType; isDarkMode: boolean }) {
+function EmptyState({ rankingType, superflex, isDarkMode }: { rankingType: RankingType; superflex: boolean; isDarkMode: boolean }) {
+  const label = rankingType === 'dynasty_rookie' ? 'Dynasty Rookie' : 'Redraft';
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <Medal className={`w-12 h-12 mb-4 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
       <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-        No {rankingType === 'dynasty_rookie' ? 'Dynasty Rookie' : 'Redraft'} Rankings Yet
+        No {superflex ? `Superflex ${label}` : label} Rankings Yet
       </h3>
       <p className={`text-sm max-w-md ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-        Rankings are generated by our AI and updated periodically. Check back soon for the latest rankings.
+        {superflex
+          ? 'Superflex rankings are generated in the weekly Monday ranking run and will appear here after the next run. In the meantime, switch Superflex off to view 1-QB rankings.'
+          : 'Rankings are generated by our AI and updated periodically. Check back soon for the latest rankings.'}
       </p>
+    </div>
+  );
+}
+
+/**
+ * Tiny inline SVG sparkline of a player's recent snapshot ranks (oldest →
+ * newest). The y-axis is inverted so a falling rank number (improvement)
+ * draws as an upward line. Renders nothing with fewer than 2 points, so
+ * players without history simply show an empty cell.
+ */
+function TrendSparkline({ ranks, isDarkMode }: { ranks: number[] | undefined; isDarkMode: boolean }) {
+  if (!ranks || ranks.length < 2) return null;
+  const w = 60;
+  const h = 20;
+  const pad = 2;
+  const min = Math.min(...ranks);
+  const max = Math.max(...ranks);
+  const span = max - min || 1;
+  const points = ranks
+    .map((rank, i) => {
+      const x = pad + (i * (w - pad * 2)) / (ranks.length - 1);
+      // Lower rank = better = higher on the chart.
+      const y = pad + ((rank - min) / span) * (h - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  const first = ranks[0];
+  const last = ranks[ranks.length - 1];
+  const stroke = last < first
+    ? '#10b981' // improved (rank number fell)
+    : last > first
+    ? '#ef4444' // worsened
+    : isDarkMode ? '#64748b' : '#94a3b8'; // flat
+  return (
+    <svg
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      data-testid="trend-sparkline"
+      aria-hidden="true"
+      className="overflow-visible"
+    >
+      <polyline
+        points={points}
+        fill="none"
+        stroke={stroke}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Expanded-row panel: 1d/7d/30d rank movement (from daily rank_history
+ * snapshots; deltas without a snapshot are hidden) plus the AI ceiling/floor
+ * range. When the real ceiling/floor columns are null (rankings generated
+ * before the columns existed), falls back to the positionRank ± 3
+ * approximation, labelled as an estimate.
+ */
+function RankMovementPanel({ ranking, isDarkMode }: { ranking: DraftRanking; isDarkMode: boolean }) {
+  const p = ranking.player;
+  const m = ranking.movement;
+  const deltas = [
+    { label: '1d', delta: m?.d1 },
+    { label: '7d', delta: m?.d7 },
+    { label: '30d', delta: m?.d30 },
+  ].filter((row): row is { label: string; delta: number } => row.delta != null);
+
+  const hasRealRange = ranking.ceilingRank != null && ranking.floorRank != null;
+  const ceilingFloorText = hasRealRange
+    ? `#${ranking.ceilingRank} / #${ranking.floorRank}`
+    : `${p.position}${Math.max(1, ranking.positionRank - 3)} / ${p.position}${ranking.positionRank + 3} (est.)`;
+
+  return (
+    <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+      <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        Rank Movement
+      </h4>
+      <div className="space-y-1.5">
+        {deltas.length > 0 ? (
+          deltas.map(({ label, delta }) => {
+            // Positive delta = past rank − current rank > 0 = the rank number
+            // went DOWN = the player moved up the board (improved).
+            const color = delta > 0
+              ? 'text-emerald-500'
+              : delta < 0
+              ? 'text-red-500'
+              : isDarkMode ? 'text-slate-300' : 'text-slate-600';
+            const text = delta > 0 ? `▲ ${delta}` : delta < 0 ? `▼ ${Math.abs(delta)}` : '—';
+            return (
+              <div key={label} className="flex justify-between text-sm">
+                <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
+                <span className={`font-bold ${color}`}>{text}</span>
+              </div>
+            );
+          })
+        ) : (
+          <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            No rank history yet — movement tracking starts after the next daily snapshot.
+          </p>
+        )}
+        <div className="flex justify-between text-sm">
+          <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Ceiling / Floor</span>
+          <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{ceilingFloorText}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -648,6 +794,11 @@ function PlayerRow({
           {valueBadge}
         </div>
 
+        {/* Trend sparkline (last 4 daily snapshots) */}
+        <div className="hidden md:flex items-center justify-center" style={{ width: '64px' }}>
+          <TrendSparkline ranks={ranking.recentRanks} isDarkMode={isDarkMode} />
+        </div>
+
         {/* Age */}
         <div className="hidden sm:block text-center" style={{ width: '40px' }}>
           <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
@@ -663,7 +814,7 @@ function PlayerRow({
         )}
       </div>
 
-      {/* Expanded detail — 4-column grid */}
+      {/* Expanded detail — panel grid */}
       {isExpanded && (
         <div className={`px-4 pb-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
@@ -691,8 +842,11 @@ function PlayerRow({
               )}
             </div>
 
+            {/* Rank Movement + Ceiling/Floor */}
+            <RankMovementPanel ranking={ranking} isDarkMode={isDarkMode} />
+
             {/* AI Take */}
-            <div className={`p-3 rounded-lg border flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+            <div className={`p-3 rounded-lg border flex flex-col md:col-span-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
               <h4 className={`fr-text-10 uppercase fr-tracking-wider font-bold mb-2 flex items-center gap-1.5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                 <MessageSquare className="w-3 h-3" />
                 FilmRoom AI Take
@@ -770,9 +924,9 @@ function PlayerComparisonModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Player comparison">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4" role="dialog" aria-modal="true" aria-label="Player comparison">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className={`relative w-full max-w-4xl max-h-[85vh] overflow-auto rounded-2xl border shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <div className={`relative w-full max-w-4xl max-h-[95vh] sm:max-h-[85vh] overflow-auto rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className={`sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Compare players ({rankings.length})
@@ -781,7 +935,7 @@ function PlayerComparisonModal({
             type="button"
             onClick={onClose}
             aria-label="Close comparison"
-            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+            className={`inline-flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 rounded-lg border ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
           >
             <X className="w-4 h-4" />
           </button>

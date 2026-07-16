@@ -201,7 +201,7 @@ export function AdminView({ isDarkMode }: AdminViewProps) {
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
               activeTab === tab.id
-                ? 'bg-blue-600 text-white shadow-sm'
+                ? 'bg-blue-600 text-white'
                 : isDarkMode
                   ? 'text-slate-400 hover:text-white hover:bg-slate-800'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white'

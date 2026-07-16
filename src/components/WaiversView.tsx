@@ -1,9 +1,9 @@
 import { User, Loader2, RefreshCw, Search } from 'lucide-react';
 import { Player } from '../App';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
-import { getEffectiveSeason } from '../utils/playerUtils';
+import { getEffectiveSeason, type APIPlayer } from '../utils/playerUtils';
 
 interface WaiversViewProps {
   onPlayerClick: (player: Player) => void;
@@ -11,32 +11,8 @@ interface WaiversViewProps {
   isDarkMode: boolean;
 }
 
-interface AvailablePlayer {
-  id: string;
-  name: string;
-  team: string;
-  position: string;
-  status: string;
-  byeWeek: number | null;
-  headshotUrl?: string | null;
-  avgPointsPPR: number;
-  projectedPoints: number;
-  isRostered: boolean;
-  seasonStats?: {
-    gamesPlayed?: number;
-    games: number;
-    fantasyPointsPPR: number;
-    fantasyPointsHalf: number;
-    fantasyPointsStd: number;
-    passYards: number;
-    passTDs: number;
-    rushYards: number;
-    rushTDs: number;
-    receptions: number;
-    receivingYards: number;
-    receivingTDs: number;
-  };
-}
+// Shape returned by the /players endpoint — shared with AllPlayersView
+type AvailablePlayer = APIPlayer;
 
 export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversViewProps) {
   const { league, userTeam } = useLeagueContext();
@@ -78,7 +54,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
     const stats = player.seasonStats;
     if (!stats) return player.avgPointsPPR || 0;
     const gp = stats.gamesPlayed ?? stats.games;
-    if (gp === 0) return 0;
+    if (!gp) return 0; // guard 0/undefined — avoids division producing NaN/Infinity
     if (selectedScoring === 'Half PPR') {
       return Math.round((stats.fantasyPointsHalf / gp) * 10) / 10;
     }
@@ -88,8 +64,13 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
     return Math.round((stats.fantasyPointsPPR / gp) * 10) / 10;
   }, [selectedScoring]);
 
+  // Monotonic sequence number so an out-of-order (stale) response can't
+  // clobber the state written by a newer request when filters change quickly.
+  const fetchSeqRef = useRef(0);
+
   // Fetch players from API
   const fetchPlayers = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -124,15 +105,20 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
         pointsType?: 'actual' | 'projected';
       }>(`/players?${params.toString()}`);
 
+      if (seq !== fetchSeqRef.current) return; // a newer request superseded this one
+
       const playersList = Array.isArray(response?.players) ? response.players : [];
       setPlayers(playersList);
       setPointsType(response?.pointsType ?? 'projected');
     } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch players';
       setError(errorMessage);
       setPlayers([]);
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, [selectedPosition, league?.id, currentWeek, seasonYear, scoringFormat, debouncedSearch]);
 
@@ -194,9 +180,10 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                 <button
                   onClick={fetchPlayers}
                   disabled={loading}
+                  aria-label="Refresh players"
                   className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
                 >
-                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
                 </button>
               </div>
               <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -210,10 +197,11 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
               <div className="flex items-center gap-2 sm:gap-3 mt-3 sm:mt-4 flex-wrap">
                 {/* Search */}
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Search:</span>
+                  <label htmlFor="waivers-search" className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Search:</label>
                   <div className={`flex items-center rounded-lg px-3 gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-                    <Search className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+                    <Search className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} aria-hidden="true" />
                     <input
+                      id="waivers-search"
                       type="text"
                       placeholder="Player or team..."
                       value={searchQuery}
@@ -232,6 +220,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                     <button
                       key={option}
                       onClick={() => setSelectedScoring(option)}
+                      aria-pressed={selectedScoring === option}
                       className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                         selectedScoring === option
                           ? 'bg-blue-600 text-white'
@@ -254,6 +243,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                     <button
                       key={position}
                       onClick={() => setSelectedPosition(position)}
+                      aria-pressed={selectedPosition === position}
                       className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                         selectedPosition === position
                           ? 'bg-blue-600 text-white'
@@ -390,14 +380,17 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                   {league?.waiverType === 'faab' ? 'FAAB Budget' : 'Resets weekly'}
                 </div>
               </div>
-              {league?.waiverType === 'faab' && userTeam && (
-                <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                  <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FAAB Remaining</div>
-                  <div className={`text-2xl font-bold text-green-500`}>
-                    ${userTeam?.faabBudget ?? league?.waiverBudget ?? 100}
+              {league?.waiverType === 'faab' && userTeam && (() => {
+                const faabRemaining = userTeam.faabBudget ?? league?.waiverBudget;
+                return (
+                  <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className={`text-xs mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>FAAB Remaining</div>
+                    <div className="text-2xl font-bold text-green-500">
+                      {faabRemaining != null ? `$${faabRemaining}` : '—'}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </div>
 
@@ -431,7 +424,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
               ))}
               {sortedPlayers.length === 0 && !loading && (
                 <p className={`text-sm text-center py-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                  Sync your league to see available players
+                  {error ? 'Players could not be loaded' : 'Sync your league to see available players'}
                 </p>
               )}
             </div>

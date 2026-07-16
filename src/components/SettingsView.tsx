@@ -742,7 +742,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
             role="dialog"
             aria-modal="true"
             aria-labelledby="connect-league-title"
-            className={`rounded-lg max-w-lg w-full overflow-hidden shadow-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}
+            className={`rounded-lg max-w-lg w-full overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}
           >
             {/* Modal Header */}
             <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>

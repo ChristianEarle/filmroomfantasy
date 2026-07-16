@@ -9,6 +9,8 @@ interface CookieConsentBannerProps {
    * (16rem / w-64) so it doesn't overlap the sidebar on md+ screens.
    */
   offsetForSidebar?: boolean;
+  /** Extra classes applied to the outer fixed container (e.g. to reposition it above the mobile bottom nav). */
+  className?: string;
 }
 
 /**
@@ -24,7 +26,7 @@ interface CookieConsentBannerProps {
  * The banner listens for a global `fr:open-cookie-preferences` event so
  * footer links can re-open it after the user has dismissed it.
  */
-export function CookieConsentBanner({ isDarkMode, onNavigate, offsetForSidebar = false }: CookieConsentBannerProps) {
+export function CookieConsentBanner({ isDarkMode, onNavigate, offsetForSidebar = false, className = '' }: CookieConsentBannerProps) {
   const [visible, setVisible] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
   const [analyticsOn, setAnalyticsOn] = useState(true);
@@ -91,7 +93,7 @@ export function CookieConsentBanner({ isDarkMode, onNavigate, offsetForSidebar =
       role="dialog"
       aria-labelledby="cookie-banner-title"
       aria-describedby="cookie-banner-description"
-      className={`fixed right-0 bottom-0 z-cookie-banner ${offsetForSidebar ? 'cookie-banner-sidebar-offset' : 'left-0'} ${bg} border-t ${border} shadow-2xl`}
+      className={`fixed right-0 bottom-0 z-cookie-banner ${offsetForSidebar ? 'cookie-banner-sidebar-offset' : 'left-0'} ${bg} border-t ${border} ${className}`}
     >
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
         {!showPreferences ? (

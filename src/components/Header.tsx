@@ -2,6 +2,7 @@ import { Search, User, Loader2, Menu, Bell, ChevronDown, Check } from 'lucide-re
 import { useState, useRef, useEffect } from 'react';
 import { Player } from '../App';
 import { usePlayerSearch } from '../hooks';
+import { useNotifications, formatRelativeTime, NotificationItem } from '../hooks/useNotifications';
 import { useLeaguesContext } from '../context/LeaguesContext';
 import { useLeagueContext } from '../context/LeagueContext';
 
@@ -19,6 +20,11 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
   const searchRef = useRef<HTMLDivElement>(null);
   const [leagueDropdownOpen, setLeagueDropdownOpen] = useState(false);
   const leagueDropdownRef = useRef<HTMLDivElement>(null);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const bellButtonRef = useRef<HTMLButtonElement>(null);
+
+  const { items: notifItems, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
 
   const { leagues } = useLeaguesContext();
   const { selectedLeagueId, setSelectedLeagueId } = useLeagueContext();
@@ -35,6 +41,44 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [leagueDropdownOpen]);
+
+  // Close notifications dropdown on click outside
+  useEffect(() => {
+    if (!notifOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [notifOpen]);
+
+  // Escape closes the notifications dropdown and returns focus to the bell
+  useEffect(() => {
+    if (!notifOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setNotifOpen(false);
+        bellButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [notifOpen]);
+
+  const handleNotificationClick = (n: NotificationItem) => {
+    if (!n.isRead) void markRead(n.id);
+    setNotifOpen(false);
+    if (n.link && window.location.pathname !== n.link) {
+      // The app routes off pushState + popstate (see App.tsx), so fire a
+      // synthetic popstate to make it pick up the new URL.
+      window.history.pushState({}, '', n.link);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else {
+      bellButtonRef.current?.focus();
+    }
+  };
 
   // Use the API search hook
   const { results: searchResults, isSearching, search, clearResults } = usePlayerSearch();
@@ -114,7 +158,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
             </button>
 
             {leagueDropdownOpen && (
-              <div className={`absolute top-full right-0 mt-1 w-64 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div className={`absolute top-full right-0 mt-1 w-64 rounded-lg border z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                 <div className={`px-3 py-2 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   <span className={`text-xs font-medium uppercase tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Switch League</span>
                 </div>
@@ -187,7 +231,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
           )}
 
           {searchOpen && (searchResults.length > 0 || (searchQuery.length >= 2 && !isSearching) || (searchQuery.length > 0 && searchQuery.length < 2)) && (
-            <div role="listbox" aria-label="Player search results" className={`absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div role="listbox" aria-label="Player search results" className={`absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 rounded-lg border z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               {searchResults.length > 0 && (
                 <div className="max-h-96 overflow-y-auto">
                   {searchResults.map((player) => (
@@ -246,14 +290,98 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
         </div>
 
         {isAuthenticated && (
-          <div className="relative">
+          <div ref={notifRef} className="relative">
             <button
-              aria-label="Notifications"
-              className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
-              title="Notifications coming soon"
+              ref={bellButtonRef}
+              onClick={() => setNotifOpen(!notifOpen)}
+              aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+              aria-haspopup="menu"
+              aria-expanded={notifOpen}
+              aria-controls="header-notifications-menu"
+              className={`relative w-10 h-10 flex items-center justify-center rounded-lg transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
             >
-              <Bell className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+              <Bell aria-hidden="true" className={`w-5 h-5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+              {unreadCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[10px] font-semibold flex items-center justify-center leading-none"
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
+
+            {notifOpen && (
+              <div
+                id="header-notifications-menu"
+                role="menu"
+                aria-label="Notifications"
+                className={`absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 rounded-xl border z-50 overflow-hidden ${isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}
+              >
+                <div className={`px-4 py-2.5 flex items-center justify-between border-b ${isDarkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-neutral-500">
+                    Notifications
+                  </span>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={() => void markAllRead()}
+                      className="text-xs font-medium text-blue-500 hover:text-blue-600 transition-colors duration-150 rounded focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                    >
+                      Mark all as read
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-96 overflow-y-auto">
+                  {notifItems.length === 0 ? (
+                    <div className="px-4 py-10 text-center">
+                      <p className={`text-sm ${isDarkMode ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                        {notifLoading ? 'Loading notifications…' : 'No notifications yet'}
+                      </p>
+                      {!notifLoading && (
+                        <p className={`text-xs mt-1 ${isDarkMode ? 'text-neutral-600' : 'text-neutral-400'}`}>
+                          Injury alerts for your rostered and watched players will show up here.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    notifItems.map((n) => (
+                      <button
+                        key={n.id}
+                        role="menuitem"
+                        onClick={() => handleNotificationClick(n)}
+                        className={`w-full px-4 py-3 text-left transition-colors duration-150 border-b last:border-b-0 flex items-start gap-2.5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus-visible:outline-none ${isDarkMode ? 'border-neutral-800 hover:bg-neutral-800' : 'border-neutral-200 hover:bg-neutral-50'}`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${n.isRead ? 'bg-transparent' : 'bg-blue-500'}`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span
+                            className={`block text-sm truncate ${
+                              n.isRead
+                                ? `font-medium ${isDarkMode ? 'text-neutral-400' : 'text-neutral-500'}`
+                                : `font-semibold ${isDarkMode ? 'text-white' : 'text-neutral-900'}`
+                            }`}
+                          >
+                            {n.title}
+                          </span>
+                          {n.body && (
+                            <span className="block text-xs mt-0.5 line-clamp-2 text-neutral-500">
+                              {n.body}
+                            </span>
+                          )}
+                          <span className={`block text-[11px] mt-1 ${isDarkMode ? 'text-neutral-600' : 'text-neutral-400'}`}>
+                            {formatRelativeTime(n.createdAt)}
+                          </span>
+                        </span>
+                        {!n.isRead && <span className="sr-only">Unread</span>}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

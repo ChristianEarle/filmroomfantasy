@@ -68,6 +68,14 @@ export interface PlayerProjection {
   scoringFormat: string;
   weekRank?: number;
   positionRank?: number;
+  /** Per-category projected stats. GET /players/:id/projections returns full DB rows, which include these. */
+  projPassYards?: number | null;
+  projPassTDs?: number | null;
+  projRushYards?: number | null;
+  projRushTDs?: number | null;
+  projReceptions?: number | null;
+  projRecYards?: number | null;
+  projRecTDs?: number | null;
 }
 
 export interface PlayerNews {
@@ -83,14 +91,49 @@ export interface PlayerNews {
   player?: Player;
 }
 
+/** Aggregated season stats returned by GET /players when includeStats=true */
+export interface PlayerSeasonStats {
+  games: number;
+  gamesPlayed?: number;
+  fantasyPointsPPR: number;
+  fantasyPointsHalf: number;
+  fantasyPointsStd: number;
+  passYards: number;
+  passTDs: number;
+  rushYards: number;
+  rushTDs: number;
+  receptions: number;
+  receivingYards: number;
+  receivingTDs: number;
+  averageSnapPct?: number | null;
+}
+
+/** Enrichment fields the GET /players list endpoint adds when includeStats=true */
+export interface EnrichedPlayerFields {
+  avgPointsPPR?: number;
+  projectedPoints?: number;
+  weeklyProjectedPoints?: number;
+  isRostered?: boolean;
+  /**
+   * The player's last up-to-4 finalized weekly fantasy scores for the requested
+   * scoring format, most recent last. Empty when no finalized weeks exist.
+   */
+  recentWeeklyScores?: number[];
+  seasonStats?: PlayerSeasonStats;
+}
+
+export type EnrichedPlayer = Player & EnrichedPlayerFields;
+
 export interface PlayersResponse {
-  players: Player[];
+  players: EnrichedPlayer[];
   pagination: {
     page: number;
     limit: number;
     total: number;
     totalPages: number;
   };
+  weekComplete?: boolean;
+  pointsType?: 'actual' | 'projected';
 }
 
 export interface PlayerStatsResponse {
@@ -103,6 +146,15 @@ export interface TrendingPlayer extends Player {
   trendDirection: 'up' | 'down';
   trendValue: number;
   ownedPct: number;
+}
+
+/** GET /players/:id/analysis — cached per-player AI take (Pro/Elite). */
+export interface PlayerAnalysisResponse {
+  analysis: string;
+  cached: boolean;
+  generatedAt: string;
+  season: number;
+  week: number;
 }
 
 export interface MatchupGradeResponse {
@@ -133,6 +185,14 @@ export const playerService = {
     status?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    /** Include seasonStats/avgPointsPPR/recentWeeklyScores enrichment */
+    includeStats?: boolean;
+    /** Omit week to get full-season aggregates */
+    week?: number;
+    season?: number;
+    scoringFormat?: 'ppr' | 'half-ppr' | 'standard';
+    leagueId?: string;
+    availableOnly?: boolean;
   }): Promise<PlayersResponse> => {
     const searchParams = new URLSearchParams();
     if (params) {
@@ -218,6 +278,25 @@ export const playerService = {
     const query = searchParams.toString();
     return api.get<MatchupGradeResponse>(
       `/players/${playerId}/matchup-grade${query ? `?${query}` : ''}`
+    );
+  },
+
+  // Get the cached/generated per-player AI take (Pro/Elite only — server enforces via requireTier)
+  getPlayerAnalysis: async (
+    playerId: string,
+    params?: { week?: number; season?: number }
+  ): Promise<PlayerAnalysisResponse> => {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.append(key, String(value));
+        }
+      });
+    }
+    const query = searchParams.toString();
+    return api.get<PlayerAnalysisResponse>(
+      `/players/${playerId}/analysis${query ? `?${query}` : ''}`
     );
   },
 };

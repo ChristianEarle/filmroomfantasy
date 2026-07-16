@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
+import { BottomNav } from './components/BottomNav';
 import { PlayerTable } from './components/PlayerTable';
 import { NewsPanel } from './components/NewsPanel';
 import { BiggestMovers } from './components/BiggestMovers';
@@ -56,6 +57,7 @@ const DisclaimerView = lazyWithReload(() => import('./components/DisclaimerView'
 const AccessibilityView = lazyWithReload(() => import('./components/AccessibilityView').then(m => ({ default: m.AccessibilityView })));
 const AcceptableUseView = lazyWithReload(() => import('./components/AcceptableUseView').then(m => ({ default: m.AcceptableUseView })));
 const DraftRankingsView = lazyWithReload(() => import('./components/DraftRankingsView').then(m => ({ default: m.DraftRankingsView })));
+const LeagueAnalyzerView = lazyWithReload(() => import('./components/LeagueAnalyzerView').then(m => ({ default: m.LeagueAnalyzerView })));
 const PlayerProfileView = lazyWithReload(() => import('./components/PlayerProfileView').then(m => ({ default: m.PlayerProfileView })));
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
@@ -614,7 +616,7 @@ function AppContent() {
           <EmailVerificationBanner email={user.email} isDarkMode={isDarkMode} />
         )}
 
-        <main className={`flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
+        <main className={`flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 pb-20 sm:pb-20 md:pb-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
           <PageTransition viewKey={activeView}>
             {activeView === 'Home' ? (
               showLoginGate ? (
@@ -695,7 +697,7 @@ function AppContent() {
                 />
               </Suspense>
             ) : activeView === 'Trends' ? (
-              <ErrorBoundary isDarkMode={isDarkMode}>
+              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                 <Suspense fallback={suspenseFallback}>
                   <TrendsView
                     onPlayerClick={handlePlayerClick}
@@ -711,7 +713,7 @@ function AppContent() {
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode}>
+                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}>
                     <PlayoffPredictorView isDarkMode={isDarkMode} />
                   </Suspense>
@@ -789,7 +791,17 @@ function AppContent() {
             ) : activeView === 'DraftRankings' ? (
               <Suspense fallback={suspenseFallback}><DraftRankingsView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
             ) : activeView === 'LeagueAnalyzer' ? (
-              <ComingSoonView title="League Analyzer" description="Deep dive into your league with power rankings, strength of schedule analysis, and roster composition breakdowns." icon="league" isDarkMode={isDarkMode} />
+              showLoginGate ? (
+                <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
+              ) : showSyncGate ? (
+                <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
+              ) : (
+                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                  <Suspense fallback={suspenseFallback}>
+                    <LeagueAnalyzerView isDarkMode={isDarkMode} />
+                  </Suspense>
+                </ErrorBoundary>
+              )
             ) : activeView === 'TradeAnalyzer' ? (
               <Suspense fallback={suspenseFallback}><TradeAnalyzerShell isDarkMode={isDarkMode} /></Suspense>
             ) : activeView === 'Admin' ? (
@@ -906,11 +918,22 @@ function AppContent() {
         </main>
       </div>
 
-      {/* Cookie consent banner — shown on first visit until user chooses */}
+      {/* Bottom tab bar — mobile only; Sidebar covers navigation at md+ */}
+      <BottomNav
+        activeView={activeView}
+        onViewChange={setActiveView}
+        onMoreClick={() => setSidebarOpen(true)}
+        isDarkMode={isDarkMode}
+      />
+
+      {/* Cookie consent banner — shown on first visit until user chooses.
+          mobile-bottom-nav-offset lifts it above the fixed BottomNav so the
+          two never overlap on small screens. */}
       <CookieConsentBanner
         isDarkMode={isDarkMode}
         onNavigate={(view) => setActiveView(view as any)}
         offsetForSidebar
+        className="mobile-bottom-nav-offset"
       />
 
       {/* Player Card Modal */}

@@ -24,6 +24,14 @@ interface RosterPlayerOut {
   depthChartOrder: number | null;
 }
 
+interface TeamPickOut {
+  year: number;
+  round: number;
+  originalOwnerId: string;
+  originalOwnerName: string | null;
+  isNative: boolean;
+}
+
 interface TeamRosterOut {
   teamId: string;
   teamName: string;
@@ -37,11 +45,49 @@ interface TeamRosterOut {
     bench: RosterPlayerOut[];
     ir: RosterPlayerOut[];
   };
+  /** Draft picks currently owned by this team, sorted by year then round.
+   *  Empty for leagues with no synced pick inventory (redraft). */
+  picks: TeamPickOut[];
+}
+
+/**
+ * Fetch every draft pick in a league in ONE query and group by current
+ * owner, joining original-owner names in memory from the teams the routes
+ * already loaded. Keeps the /all route free of per-team pick queries.
+ */
+async function fetchLeaguePicksByOwner(
+  db: ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>,
+  leagueId: string,
+  teams: Array<{ id: string; name: string }>
+): Promise<Map<string, TeamPickOut[]>> {
+  const rows = await db.query.teamDraftPicks.findMany({
+    where: eq(schema.teamDraftPicks.leagueId, leagueId),
+  });
+  const nameById = new Map(teams.map((t) => [t.id, t.name]));
+  const byOwner = new Map<string, TeamPickOut[]>();
+  for (const r of rows) {
+    const out: TeamPickOut = {
+      year: r.draftYear,
+      round: r.draftRound,
+      originalOwnerId: r.originalOwnerId,
+      originalOwnerName: nameById.get(r.originalOwnerId) ?? null,
+      // A pick traded away and back is native again for display purposes.
+      isNative: r.ownerId === r.originalOwnerId,
+    };
+    const list = byOwner.get(r.ownerId);
+    if (list) list.push(out);
+    else byOwner.set(r.ownerId, [out]);
+  }
+  for (const list of byOwner.values()) {
+    list.sort((a, b) => a.year - b.year || a.round - b.round);
+  }
+  return byOwner;
 }
 
 async function buildTeamRoster(
   db: ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>,
-  teamId: string
+  teamId: string,
+  picks: TeamPickOut[] = []
 ): Promise<TeamRosterOut | null> {
   const team = await db.query.teams.findFirst({
     where: eq(schema.teams.id, teamId),
@@ -113,6 +159,7 @@ async function buildTeamRoster(
     pointsFor: team.pointsFor,
     pointsAgainst: team.pointsAgainst,
     roster: { starters, bench, ir },
+    picks,
   };
 }
 
@@ -158,7 +205,8 @@ rostersRoutes.get('/:leagueId/mine', authMiddleware, async (c) => {
     return c.json({ error: 'No team found for user in this league' }, 404);
   }
 
-  const out = await buildTeamRoster(db, userTeam.id);
+  const picksByOwner = await fetchLeaguePicksByOwner(db, leagueId, allTeams);
+  const out = await buildTeamRoster(db, userTeam.id, picksByOwner.get(userTeam.id) ?? []);
   if (!out) return c.json({ error: 'Team not found' }, 404);
 
   return c.json({ team: out });
@@ -188,9 +236,12 @@ rostersRoutes.get('/:leagueId/all', authMiddleware, async (c) => {
     where: eq(schema.teams.leagueId, leagueId),
   });
 
+  // One query for the whole league's pick inventory (no per-team N+1)
+  const picksByOwner = await fetchLeaguePicksByOwner(db, leagueId, allTeams);
+
   const results: TeamRosterOut[] = [];
   for (const t of allTeams) {
-    const out = await buildTeamRoster(db, t.id);
+    const out = await buildTeamRoster(db, t.id, picksByOwner.get(t.id) ?? []);
     if (out) results.push(out);
   }
 

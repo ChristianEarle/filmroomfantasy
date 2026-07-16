@@ -7,6 +7,7 @@ import type { Game } from '../types/game';
 function formatGameTime(isoString: string): string {
   try {
     const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return isoString;
     return d.toLocaleString('en-US', {
       weekday: 'short',
       month: 'short',
@@ -53,65 +54,91 @@ function handlePlayerKeyDown(e: React.KeyboardEvent, player: Player, onPlayerCli
   }
 }
 
-export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: GameDetailModalProps) {
-  const { game: apiGame, homePlayers: apiHome, awayPlayers: apiAway, isLoading, error } = useGame(game.id);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
+// Group players by position
+function groupByPosition(players: Player[]): Record<string, Player[]> {
+  const grouped: Record<string, Player[]> = {
+    QB: [],
+    RB: [],
+    WR: [],
+    TE: [],
+    K: [],
+    DEF: [],
+    Other: [],
+  };
 
-  // Auto-focus close button on mount
+  players.forEach(player => {
+    if (grouped[player.position]) {
+      grouped[player.position].push(player);
+    } else {
+      grouped['Other'].push(player);
+    }
+  });
+
+  return grouped;
+}
+
+const FOCUSABLE_SELECTOR =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: GameDetailModalProps) {
+  const { homePlayers: apiHome, awayPlayers: apiAway, isLoading, error } = useGame(game.id);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Auto-focus close button on mount; restore focus to the opener on unmount
   useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButtonRef.current?.focus();
+    return () => previouslyFocused?.focus();
   }, []);
 
-  // Close on Escape key
+  // Escape to close + focus trap (Tab cycles within the dialog)
   useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const focusables = root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !root.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !root.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // Use API players (real data from DB)
-  const awayPlayers: Player[] = apiAway.map(toAppPlayer);
-  const homePlayers: Player[] = apiHome.map(toAppPlayer);
-
-  // Group players by position
-  const groupByPosition = (players: Player[]) => {
-    const grouped: Record<string, Player[]> = {
-      QB: [],
-      RB: [],
-      WR: [],
-      TE: [],
-      K: [],
-      DEF: [],
-      Other: [],
-    };
-
-    players.forEach(player => {
-      if (grouped[player.position]) {
-        grouped[player.position].push(player);
-      } else {
-        grouped['Other'].push(player);
-      }
-    });
-
-    return grouped;
-  };
+  // Use API players (real data from DB) — memoized so grouping isn't rebuilt every render
+  const awayPlayers: Player[] = useMemo(() => apiAway.map(toAppPlayer), [apiAway]);
+  const homePlayers: Player[] = useMemo(() => apiHome.map(toAppPlayer), [apiHome]);
 
   const awayPlayersByPosition = useMemo(() => groupByPosition(awayPlayers), [awayPlayers]);
   const homePlayersByPosition = useMemo(() => groupByPosition(homePlayers), [homePlayers]);
 
   return (
     <div
-      className={`fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950/80' : 'bg-black/20'}`}
+      className={`fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 ${isDarkMode ? 'bg-slate-950/80' : 'bg-black/20'}`}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
       aria-label={`${game.awayTeam} at ${game.homeTeam} game details`}
     >
-      <div className={`rounded-2xl border shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <div ref={dialogRef} className={`rounded-2xl border w-full max-w-6xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
-        <div className={`border-b p-6 flex-shrink-0 ${isDarkMode ? 'bg-gradient-to-r from-slate-800 to-slate-900 border-slate-700' : 'bg-gradient-to-r from-slate-50 to-white border-slate-200'}`}>
+        <div className={`border-b p-4 sm:p-6 flex-shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
           <div className="flex items-start justify-between mb-4">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -131,7 +158,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               ref={closeButtonRef}
               onClick={onClose}
               aria-label="Close game details"
-              className={`transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+              className={`-m-2 p-2 rounded-lg transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50'}`}
             >
               <X className="w-6 h-6" />
             </button>
@@ -142,12 +169,14 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
             <div className={`rounded-lg px-4 py-2 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
               <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Spread:</span>{' '}
               <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                {game.favoredTeam === 'home' ? game.homeTeamLogo : game.awayTeamLogo} -{game.spread}
+                {game.spread != null
+                  ? `${game.favoredTeam === 'home' ? game.homeTeamLogo : game.awayTeamLogo} -${game.spread}`
+                  : '—'}
               </span>
             </div>
             <div className={`rounded-lg px-4 py-2 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
               <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Over/Under:</span>{' '}
-              <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.overUnder || '—'}</span>
+              <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{game.overUnder ?? '—'}</span>
             </div>
             {game.weather && (
               <div className={`rounded-lg px-4 py-2 border flex items-center gap-2 ${isDarkMode ? 'bg-sky-900/30 border-sky-800/50' : 'bg-sky-50 border-sky-200'}`}>
@@ -162,7 +191,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
         </div>
 
         {/* Content */}
-        <div className={`flex-1 overflow-y-auto p-6 relative ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+        <div className={`flex-1 overflow-y-auto p-4 sm:p-6 relative ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
           {isLoading && (
             <div className={`absolute inset-0 flex items-center justify-center z-10 ${isDarkMode ? 'bg-slate-950/80' : 'bg-slate-100/80'}`} aria-live="polite">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -183,7 +212,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
           {/* Team Headers */}
           <div className="grid grid-cols-2 gap-6 mb-4">
             {/* Away Team Header */}
-            <div className={`rounded-lg p-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
+            <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
@@ -194,7 +223,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
                     <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Away Team</div>
                   </div>
                 </div>
-                {game.favoredTeam === 'away' && (
+                {game.favoredTeam === 'away' && game.spread != null && (
                   <div className="text-right">
                     <div className="text-sm font-bold text-green-500">-{game.spread}</div>
                     <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
@@ -204,7 +233,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
             </div>
 
             {/* Home Team Header */}
-            <div className={`rounded-lg p-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
+            <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
@@ -215,7 +244,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
                     <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Home Team</div>
                   </div>
                 </div>
-                {game.favoredTeam === 'home' && (
+                {game.favoredTeam === 'home' && game.spread != null && (
                   <div className="text-right">
                     <div className="text-sm font-bold text-green-500">-{game.spread}</div>
                     <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Favored</div>
@@ -239,7 +268,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
                     const awayPlayer = awayGroup[i];
                     const homePlayer = homeGroup[i];
                     return (
-                      <div key={i} className="grid grid-cols-2 gap-6">
+                      <div key={`${awayPlayer?.id ?? 'empty'}-${homePlayer?.id ?? 'empty'}`} className="grid grid-cols-2 gap-6">
                         {/* Away player slot */}
                         {awayPlayer ? (
                           <div
@@ -247,7 +276,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
                             tabIndex={0}
                             onClick={() => onPlayerClick(awayPlayer)}
                             onKeyDown={(e) => handlePlayerKeyDown(e, awayPlayer, onPlayerClick)}
-                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600' : 'bg-white border-slate-300 hover:border-blue-500 hover:bg-slate-50'}`}
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
@@ -272,7 +301,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
                             tabIndex={0}
                             onClick={() => onPlayerClick(homePlayer)}
                             onKeyDown={(e) => handlePlayerKeyDown(e, homePlayer, onPlayerClick)}
-                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600' : 'bg-white border-slate-300 hover:border-blue-500 hover:bg-slate-50'}`}
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1">

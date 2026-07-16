@@ -18,7 +18,7 @@ interface MenuGroup {
 }
 
 interface SidebarProps {
-  activeView: SidebarView | 'Profile' | 'Login';
+  activeView: SidebarView | 'Profile' | 'Login' | (string & {});
   onViewChange: (view: SidebarView) => void;
   isDarkMode: boolean;
   isAuthenticated?: boolean;
@@ -57,7 +57,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
         { icon: Swords, label: 'Matchup', view: 'Matchup', comingSoon: false },
         { icon: ListPlus, label: 'Waivers', view: 'Waivers', comingSoon: false },
         { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs', comingSoon: false },
-        { icon: BarChart3, label: 'League Analyzer', view: 'LeagueAnalyzer', comingSoon: true },
+        { icon: BarChart3, label: 'League Analyzer', view: 'LeagueAnalyzer', comingSoon: false },
       ],
     },
     {
@@ -112,7 +112,7 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
       onClick={() => handleNavClick(item.view)}
       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
         item.view === activeView
-          ? 'bg-blue-600 text-white shadow-sm'
+          ? 'bg-blue-600 text-white'
           : isDarkMode
             ? 'text-slate-400 hover:bg-slate-800 hover:text-white'
             : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'

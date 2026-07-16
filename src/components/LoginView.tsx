@@ -45,7 +45,7 @@ export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDar
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cooldown > 0) return;
+    if (isLoading || cooldown > 0) return;
     setError('');
     setIsLoading(true);
 
@@ -94,20 +94,20 @@ export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDar
         <div className={`border rounded-lg p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <form onSubmit={handleSubmit} className="space-y-6">
             {displayError && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{displayError}</div>
+              <div role="alert" className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{displayError}</div>
             )}
 
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
+              <label htmlFor="login-email" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email address</label>
               <div className={inputWrap}>
                 <div className={iconSlot}><Mail className="h-5 w-5" strokeWidth={1.5} /></div>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required />
+                <input id="login-email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" aria-invalid={displayError ? true : undefined} required />
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className={`text-sm font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Password</label>
+                <label htmlFor="login-password" className={`text-sm font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Password</label>
                 {onForgotPassword && (
                   <button type="button" onClick={onForgotPassword} className="text-xs text-blue-500 hover:text-blue-400 transition-colors">Forgot password?</button>
                 )}
@@ -115,14 +115,18 @@ export function LoginView({ onLogin, onSwitchToRegister, onForgotPassword, isDar
               <div className={inputWrap}>
                 <div className={iconSlot}><Lock className="h-5 w-5" strokeWidth={1.5} /></div>
                 <input
+                  id="login-password"
+                  name="password"
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className={`${inputClass} pr-2`}
                   placeholder="Enter your password"
+                  aria-invalid={displayError ? true : undefined}
                   required
                 />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}>
+                <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className={`flex h-full w-10 shrink-0 items-center justify-center rounded-r-[7px] ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} transition-colors`}>
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>

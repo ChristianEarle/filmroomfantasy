@@ -40,7 +40,7 @@ export function UpgradeModal({
 
   return (
     <div
-      className={`fixed inset-0 flex items-center justify-center p-4 z-50 ${
+      className={`fixed inset-0 flex items-center justify-center p-2 sm:p-4 z-50 ${
         isOpen ? 'bg-black/50 backdrop-blur-sm' : 'pointer-events-none'
       }`}
       onClick={(e) => {
@@ -48,16 +48,17 @@ export function UpgradeModal({
       }}
     >
       <div
-        className={`w-full max-w-md rounded-xl border ${
+        className={`relative w-full max-w-md max-h-[95vh] overflow-y-auto rounded-xl border ${
           isDarkMode
-            ? 'bg-slate-900 border-slate-700 shadow-xl'
-            : 'bg-white border-slate-200 shadow-2xl'
+            ? 'bg-slate-900 border-slate-700'
+            : 'bg-white border-slate-200'
         } p-6`}
       >
         {/* Close button */}
         <button
           onClick={onClose}
-          className={`absolute top-4 right-4 p-2 rounded-lg transition-colors ${
+          aria-label="Close upgrade dialog"
+          className={`absolute top-4 right-4 p-2.5 sm:p-2 rounded-lg transition-colors ${
             isDarkMode
               ? 'hover:bg-slate-800 text-slate-400'
               : 'hover:bg-slate-100 text-slate-500'

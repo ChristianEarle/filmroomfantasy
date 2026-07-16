@@ -67,7 +67,7 @@ export function ArticleEditor({ isDarkMode }: ArticleEditorProps) {
   const [playerSearch, setPlayerSearch] = useState('');
   const [playerResults, setPlayerResults] = useState<LinkedPlayer[]>([]);
   const [playerSearching, setPlayerSearching] = useState(false);
-  const playerSearchTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const playerSearchTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const cardBg = isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200';
   const textPrimary = isDarkMode ? 'text-white' : 'text-slate-900';

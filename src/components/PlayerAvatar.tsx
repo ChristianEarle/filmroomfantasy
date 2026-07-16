@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, memo } from 'react';
 
 function getInitials(name: string): string {
   if (!name || !name.trim()) return '?';
@@ -34,14 +34,12 @@ export const PlayerAvatar = memo(function PlayerAvatar({
 }: PlayerAvatarProps) {
   const safeName = name || 'Unknown Player';
   const url = headshotUrl || imageUrl;
-  const [imgError, setImgError] = useState(false);
+  // Track WHICH url failed rather than a boolean: a new url (e.g. a different
+  // player, or a corrected headshot) is retried automatically without needing
+  // an effect-based reset that briefly renders the wrong state.
+  const [erroredUrl, setErroredUrl] = useState<string | null>(null);
 
-  // Reset error state when URL changes (e.g. different player)
-  useEffect(() => {
-    setImgError(false);
-  }, [url]);
-
-  const showImage = url && !imgError;
+  const showImage = url && erroredUrl !== url;
 
   if (showImage) {
     return (
@@ -50,7 +48,7 @@ export const PlayerAvatar = memo(function PlayerAvatar({
         alt={`${safeName} headshot`}
         className={className}
         loading="lazy"
-        onError={() => setImgError(true)}
+        onError={() => setErroredUrl(url)}
       />
     );
   }

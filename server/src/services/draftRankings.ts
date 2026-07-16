@@ -8,8 +8,8 @@
  *
  * Flow:
  *  1. Weekly cron calls submitDraftRankingsBatch({ variants: [...] }).
- *  2. That builds one Claude request per variant (redraft-ppr, redraft-half-ppr,
- *     dynasty-rookie-ppr, dynasty-rookie-half-ppr), wraps them in a single
+ *  2. That builds one Claude request per variant (redraft/dynasty_rookie ×
+ *     ppr/half-ppr × 1-QB/superflex), wraps them in a single
  *     POST /v1/messages/batches submission, records a row in ranking_batch_jobs,
  *     and returns immediately.
  *  3. An hourly cron calls processPendingBatches(), which polls
@@ -18,7 +18,7 @@
  *     them into draft_rankings.
  */
 
-import { eq, and, desc, inArray, gte, or } from 'drizzle-orm';
+import { eq, and, desc, inArray, gte, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
@@ -418,10 +418,14 @@ RESPOND WITH ONLY VALID JSON — an array of objects, one per ranked player. Ran
     "positionRank": 1,
     "tier": 1,
     "projectedPoints": 320.5,
+    "ceilingRank": 1,
+    "floorRank": 8,
     "rationale": "1 concise sentence summarizing rank and ADP value",
     "analysis": "3-5 sentence detailed breakdown covering: key strengths, primary risks/concerns, situation/opportunity outlook, and fantasy upside/ceiling vs floor. Reference specific stats, coaching changes, depth chart battles, or scheme fit."
   }
 ]
+
+CEILING/FLOOR: ceilingRank is the player's realistic best-case OVERALL finish this season (a number <= overallRank); floorRank is the realistic worst-case finish among draftable players (a number >= overallRank). The spread should reflect volatility: proven, injury-free workhorses get a tight band (e.g. rank 5, ceiling 2, floor 10); boom/bust or injury-prone profiles get a wide band (e.g. rank 30, ceiling 12, floor 70). Both must be integers.
 
 POSITIONAL VALUE BY ROUND (critical — 1-QB format${superflex ? ' does NOT apply because this is SUPERFLEX — QBs ARE top-tier picks' : ''}):
 Starting lineup: 1 QB, 2 RB, 3 WR, 1 TE, 1 FLEX (RB/WR/TE). Because you start only ONE QB, raw QB points DO NOT translate to draft value — positional scarcity dominates. A QB projected for 330 pts belongs in Round 5-7, NOT Round 2, because every team needs one QB and waiting loses you <40 pts vs the elite QBs.
@@ -492,10 +496,14 @@ RESPOND WITH ONLY VALID JSON — rank the top 60 rookies:
     "positionRank": 1,
     "tier": 1,
     "projectedPoints": null,
+    "ceilingRank": 1,
+    "floorRank": 6,
     "rationale": "1 concise sentence on rookie draft value",
     "analysis": "3-5 sentence breakdown covering: NFL draft capital (round/pick), landing spot (scheme, coaching, OL/run-game quality, QB play for pass-catchers), path to touches year 1 (who's ahead, competition, aging vets in front), college profile (production, athletic testing, age-adjusted metrics), and year-1 vs long-term dynasty outlook."
   }
 ]
+
+CEILING/FLOOR: ceilingRank is the rookie's realistic best-case rank within this rookie class if things break right (a number <= overallRank); floorRank is the realistic worst-case rank (a number >= overallRank). Wide bands for raw/situation-dependent prospects, tight bands for high-capital rookies with locked-in roles. Both must be integers.
 
 RANKING PRIORITIES (in order):
 1. **NFL draft capital** — Round 1 picks get the most opportunity, runway, and coaching investment. A Round 1 WR almost always outperforms a Round 3 WR even if the Round 3 prospect has better college tape. Day 3 picks (Round 4+) are dart throws regardless of college production.
@@ -573,11 +581,15 @@ export async function submitDraftRankingsBatch(
 
   for (const v of variants) {
     // ADP source per ranking type:
-    //  Redraft → FantasyPros 1-QB ADP (MFL is dominated by superflex drafts)
+    //  Redraft 1-QB → FantasyPros 1-QB ADP (MFL is dominated by superflex drafts)
+    //  Redraft superflex → MFL ADP (their pool being superflex-dominated is
+    //    exactly the anchor we want for SF variants)
     //  Dynasty rookie → FantasyCalc dynasty values filtered to rookies
     //    (clean age/prospect-adjusted ranks) + MFL IS_KEEPER=R fallback
     const adp = v.rankingType === 'dynasty_rookie'
       ? await buildRookieAdpMap(db, v.scoringFormat, v.superflex, seasonYear)
+      : v.superflex
+      ? await fetchMFLADP(seasonYear, v.scoringFormat, 'N')
       : await fetchFantasyProsADP(v.scoringFormat);
     const contexts = await buildPlayerContexts(db, v.rankingType, v.scoringFormat, seasonYear, adp);
     if (contexts.length === 0) {
@@ -866,6 +878,13 @@ interface WriteVariantResult {
   error?: string;
 }
 
+/** Coerce a model-emitted rank to a positive integer, or null if unusable. */
+function sanitizeRank(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  return rounded >= 1 ? rounded : null;
+}
+
 async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVariantResult> {
   const { db, meta, rawText, seasonYear } = args;
 
@@ -897,6 +916,8 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
     positionRank: number;
     tier: number;
     projectedPoints: number | null;
+    ceilingRank?: number | null;
+    floorRank?: number | null;
     rationale: string;
     analysis?: string;
   }>;
@@ -917,6 +938,8 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
   // Same source routing as the submit path.
   const adp = meta.rankingType === 'dynasty_rookie'
     ? await buildRookieAdpMap(db, meta.scoringFormat, meta.superflex, seasonYear)
+    : meta.superflex
+    ? await fetchMFLADP(seasonYear, meta.scoringFormat, 'N')
     : await fetchFantasyProsADP(meta.scoringFormat);
   const contexts = await buildPlayerContexts(
     db, meta.rankingType, meta.scoringFormat, seasonYear, adp,
@@ -946,6 +969,13 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
       continue;
     }
     seenPlayerIds.add(player.id);
+    // Sanitize ceiling/floor: integers >= 1, and ceiling must be the better
+    // (smaller) number — swap if the model reversed them.
+    let ceilingRank = sanitizeRank(r.ceilingRank);
+    let floorRank = sanitizeRank(r.floorRank);
+    if (ceilingRank != null && floorRank != null && ceilingRank > floorRank) {
+      [ceilingRank, floorRank] = [floorRank, ceilingRank];
+    }
     rows.push({
       id: generateId(),
       playerId: player.id,
@@ -960,6 +990,8 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
       adpDelta: player.adp != null ? r.overallRank - player.adp : null,
       rationale: r.rationale || '',
       analysis: r.analysis || null,
+      ceilingRank,
+      floorRank,
       seasonYear,
       generatedAt: now,
     });
@@ -999,11 +1031,60 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
   return { ok: true, count: rows.length };
 }
 
+// ── Rank history snapshots ──────────────────────────────────────────
+
+export interface SnapshotRankHistoryResult {
+  inserted: number;
+  alreadySnapshotted: boolean;
+}
+
+/**
+ * Snapshot the current draft_rankings into rank_history, once per UTC day.
+ * A single INSERT..SELECT copies every variant's rows in one statement, so
+ * this stays cheap regardless of how many variants exist. Idempotent two
+ * ways: an existence check on today's date short-circuits re-runs, and the
+ * unique index + INSERT OR IGNORE protects against races. Snapshots older
+ * than 90 days are pruned to bound table growth (movement deltas only look
+ * back 30 days).
+ */
+export async function snapshotRankHistory(db: DB): Promise<SnapshotRankHistoryResult> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const existing = await db.query.rankHistory.findFirst({
+    columns: { id: true },
+    where: eq(schema.rankHistory.snapshotDate, today),
+  });
+  if (existing) {
+    return { inserted: 0, alreadySnapshotted: true };
+  }
+
+  const result = await db.run(sql`
+    INSERT OR IGNORE INTO rank_history (
+      id, player_id, ranking_type, scoring_format, superflex,
+      overall_rank, position_rank, season_year, snapshot_date, created_at
+    )
+    SELECT
+      lower(hex(randomblob(16))), player_id, ranking_type, scoring_format, superflex,
+      overall_rank, position_rank, season_year, ${today}, unixepoch()
+    FROM draft_rankings
+  `);
+
+  await db.run(sql`DELETE FROM rank_history WHERE snapshot_date < date('now', '-90 days')`);
+
+  const inserted = (result as { meta?: { changes?: number } })?.meta?.changes ?? 0;
+  console.log(`[draftRankings] Snapshotted ${inserted} rank_history rows for ${today}`);
+  return { inserted, alreadySnapshotted: false };
+}
+
 // ── Default variants helper ─────────────────────────────────────────
 
 export const DEFAULT_VARIANTS: RankingVariant[] = [
   { rankingType: 'redraft', scoringFormat: 'ppr', superflex: false },
   { rankingType: 'redraft', scoringFormat: 'half-ppr', superflex: false },
+  { rankingType: 'redraft', scoringFormat: 'ppr', superflex: true },
+  { rankingType: 'redraft', scoringFormat: 'half-ppr', superflex: true },
   { rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: false },
   { rankingType: 'dynasty_rookie', scoringFormat: 'half-ppr', superflex: false },
+  { rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: true },
+  { rankingType: 'dynasty_rookie', scoringFormat: 'half-ppr', superflex: true },
 ];
