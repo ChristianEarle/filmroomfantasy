@@ -1431,7 +1431,6 @@ ${newsBlock}`;
             max_tokens: 600,
             system: buildCachedSystemBlocks(PLAYER_ANALYSIS_SYSTEM_PROMPT),
             messages: [{ role: 'user', content: dataBlock }],
-            temperature: 0.4,
           }),
           signal: AbortSignal.timeout(30000),
         });
@@ -1678,7 +1677,6 @@ playerRoutes.post(
             buildPlayersAskSystemPrompt(week, season, scoringLabel, contextBlock),
           ),
           messages: [...recentHistory, { role: 'user', content: question }],
-          temperature: 0.4,
         }),
         signal: AbortSignal.timeout(30000),
       });

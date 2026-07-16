@@ -427,7 +427,6 @@ Respond with the JSON schema described in the system prompt.`;
         max_tokens: 2048,
         system: systemBlocks,
         messages: [{ role: 'user', content: userMessage }],
-        temperature: 0.3,
       }),
       signal: AbortSignal.timeout(45000),
     });
