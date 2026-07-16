@@ -50,8 +50,8 @@ export function UpgradeModal({
       <div
         className={`w-full max-w-md rounded-xl border ${
           isDarkMode
-            ? 'bg-slate-900 border-slate-700 shadow-xl'
-            : 'bg-white border-slate-200 shadow-2xl'
+            ? 'bg-slate-900 border-slate-700'
+            : 'bg-white border-slate-200'
         } p-6`}
       >
         {/* Close button */}

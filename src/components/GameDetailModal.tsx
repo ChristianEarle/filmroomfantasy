@@ -136,9 +136,9 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
       aria-modal="true"
       aria-label={`${game.awayTeam} at ${game.homeTeam} game details`}
     >
-      <div ref={dialogRef} className={`rounded-2xl border shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <div ref={dialogRef} className={`rounded-2xl border w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
-        <div className={`border-b p-6 flex-shrink-0 ${isDarkMode ? 'bg-gradient-to-r from-slate-800 to-slate-900 border-slate-700' : 'bg-gradient-to-r from-slate-50 to-white border-slate-200'}`}>
+        <div className={`border-b p-6 flex-shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
           <div className="flex items-start justify-between mb-4">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -212,7 +212,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
           {/* Team Headers */}
           <div className="grid grid-cols-2 gap-6 mb-4">
             {/* Away Team Header */}
-            <div className={`rounded-lg p-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
+            <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
@@ -233,7 +233,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
             </div>
 
             {/* Home Team Header */}
-            <div className={`rounded-lg p-4 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
+            <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
@@ -276,7 +276,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
                             tabIndex={0}
                             onClick={() => onPlayerClick(awayPlayer)}
                             onKeyDown={(e) => handlePlayerKeyDown(e, awayPlayer, onPlayerClick)}
-                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600' : 'bg-white border-slate-300 hover:border-blue-500 hover:bg-slate-50'}`}
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
@@ -301,7 +301,7 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
                             tabIndex={0}
                             onClick={() => onPlayerClick(homePlayer)}
                             onKeyDown={(e) => handlePlayerKeyDown(e, homePlayer, onPlayerClick)}
-                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600 hover:shadow-lg hover:shadow-blue-900/10' : 'bg-white border-slate-300 hover:border-blue-500 hover:shadow-md hover:bg-slate-50'}`}
+                            className={`rounded-lg p-4 border transition-all cursor-pointer group ${isDarkMode ? 'bg-slate-900 border-slate-700 hover:border-blue-600' : 'bg-white border-slate-300 hover:border-blue-500 hover:bg-slate-50'}`}
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1">

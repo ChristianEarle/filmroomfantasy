@@ -81,10 +81,9 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
           ? 'border-slate-800 hover:bg-slate-800'
           : 'border-slate-100 hover:bg-slate-50'
       }`}
-      style={isOwned ? { boxShadow: 'inset 3px 0 0 rgb(59, 130, 246)' } : undefined}
     >
       {/* # */}
-      <td className="px-2 sm:px-4 md:px-6 py-3 sm:py-4">
+      <td className={`px-2 sm:px-4 md:px-6 py-3 sm:py-4 ${isOwned ? 'border-l-[3px] border-l-blue-500' : ''}`}>
         <span className={`font-medium text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.rank}</span>
       </td>
 

@@ -26,11 +26,11 @@ export function PlayerList({ searchQuery, selectedPosition, onPlayerSelect, sele
       QB: 'bg-red-500',
       RB: 'bg-green-500',
       WR: 'bg-blue-500',
-      TE: 'bg-purple-500',
-      K: 'bg-amber-500',
-      DEF: 'bg-indigo-500',
+      TE: 'bg-amber-500',
+      K: 'bg-purple-500',
+      DEF: 'bg-slate-500',
     };
-    return colors[position] || 'bg-gray-500';
+    return colors[position] || 'bg-slate-500';
   };
 
   return (
@@ -39,7 +39,7 @@ export function PlayerList({ searchQuery, selectedPosition, onPlayerSelect, sele
         <h2 className="text-white">
           {filteredPlayers.length} Player{filteredPlayers.length !== 1 ? 's' : ''} Found
         </h2>
-        <div className="flex items-center gap-2 text-purple-300 text-sm">
+        <div className="flex items-center gap-2 text-slate-400 text-sm">
           <TrendingUp className="w-4 h-4" />
           <span>Sorted by Points</span>
         </div>
@@ -52,13 +52,13 @@ export function PlayerList({ searchQuery, selectedPosition, onPlayerSelect, sele
             onClick={() => onPlayerSelect(player)}
             className={`w-full text-left p-4 rounded-lg transition-all ${
               selectedPlayer?.id === player.id
-                ? 'bg-purple-500/40 border-2 border-purple-400 scale-[1.02]'
-                : 'bg-black/40 backdrop-blur-sm border border-purple-500/20 hover:bg-purple-500/20 hover:border-purple-400/50'
+                ? 'bg-blue-500/15 border-2 border-blue-500'
+                : 'bg-slate-900 border border-slate-800 hover:border-slate-700'
             }`}
           >
             <div className="flex items-center gap-4">
               {/* Player Avatar */}
-              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-purple-400/50 flex-shrink-0 bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-full overflow-hidden border border-slate-700 flex-shrink-0 bg-slate-800 flex items-center justify-center">
                 <span className="text-white text-lg font-bold">
                   {player.name.split(' ').map(n => n[0]).join('')}
                 </span>
@@ -74,7 +74,7 @@ export function PlayerList({ searchQuery, selectedPosition, onPlayerSelect, sele
                     <TrendingDown className="w-4 h-4 text-red-400" />
                   ) : null}
                 </div>
-                <div className="flex items-center gap-2 text-sm text-purple-300">
+                <div className="flex items-center gap-2 text-sm text-slate-400">
                   <span className={`px-2 py-0.5 ${getPositionColor(player.position)} text-white rounded text-xs`}>
                     {player.position}
                   </span>
@@ -86,15 +86,15 @@ export function PlayerList({ searchQuery, selectedPosition, onPlayerSelect, sele
 
               {/* Points */}
               <div className="text-right">
-                <div className="text-2xl text-purple-400">{player.projectedPoints.toFixed(1)}</div>
-                <div className="text-xs text-purple-300">proj pts</div>
+                <div className="text-2xl text-blue-400">{player.projectedPoints.toFixed(1)}</div>
+                <div className="text-xs text-slate-400">proj pts</div>
               </div>
             </div>
           </button>
         ))}
 
         {filteredPlayers.length === 0 && (
-          <div className="text-center py-12 text-purple-300">
+          <div className="text-center py-12 text-slate-400">
             <p>No players found matching your criteria.</p>
           </div>
         )}

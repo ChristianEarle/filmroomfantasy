@@ -97,7 +97,7 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
             role="dialog"
             aria-modal="true"
             aria-labelledby="feedback-dialog-title"
-            className={`relative w-full max-w-md rounded-lg shadow-2xl overflow-hidden ${
+            className={`relative w-full max-w-md rounded-lg overflow-hidden ${
               isDarkMode ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'
             }`}
           >
@@ -358,7 +358,7 @@ export function FeedbackWidget({ isDarkMode, currentPage, embedded = false }: Fe
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className={`fixed bottom-6 right-6 z-40 p-4 rounded-full shadow-lg transition-all hover:scale-105 ${
+        className={`fixed bottom-6 right-6 z-40 p-4 rounded-full transition-all hover:scale-105 ${
           isDarkMode ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
         }`}
         aria-label="Send Feedback"
