@@ -607,7 +607,6 @@ export async function submitDraftRankingsBatch(
         model: ANTHROPIC_MODEL,
         max_tokens: MAX_TOKENS,
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
       },
     });
     metas.push({
