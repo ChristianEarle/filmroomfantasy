@@ -2507,7 +2507,14 @@ html {
   }
 }
 
-/* Sidebar open state (mobile overlay) */
+/* Sidebar open state (mobile overlay).
+   Height is pinned via dvh (not just top:0/bottom:0) so the drawer always
+   fills the real visible viewport, even while Safari's address bar is
+   animating in/out — otherwise the page behind it "bleeds" through a gap
+   at the top or bottom edge during that transition. Safe-area padding
+   keeps the logo/nav/League Manager content clear of a notch or the home
+   indicator; the fixed background still extends underneath since padding
+   is inside the background's paint area. */
 .sidebar-open {
   display: flex;
   flex-direction: column;
@@ -2515,6 +2522,9 @@ html {
   top: 0;
   bottom: 0;
   left: 0;
+  height: 100dvh;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   /* Above the cookie consent banner (z-[70]) so it covers it on mobile. */
   z-index: 80;
 }
@@ -2583,6 +2593,10 @@ html {
 }
 .z-mobile-backdrop {
   z-index: 75;
+  /* Pin to the real visible viewport (see .sidebar-open) so the backdrop
+     never leaves a gap at the top/bottom edge while Safari's address bar
+     animates, which would let the page behind it bleed through. */
+  height: 100dvh;
 }
 .z-mobile-sidebar {
   z-index: 80;
