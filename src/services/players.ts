@@ -18,6 +18,8 @@ export interface Player {
   headshotUrl?: string;
   age?: number;
   yearsExp?: number;
+  /** Position depth chart order within the player's team (1 = starter), synced from Sleeper. */
+  depthChartOrder?: number | null;
 }
 
 export interface PlayerWeeklyStats {

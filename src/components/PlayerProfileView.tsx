@@ -54,7 +54,6 @@ interface PlayerDetail extends ApiPlayer {
   height?: string;
   weight?: number;
   college?: string;
-  depthChartOrder?: number;
 }
 
 function formatTimeAgo(dateString: string | Date): string {
@@ -358,6 +357,12 @@ export function PlayerProfileView({
               <span className="font-semibold">{player.team}</span>
               <span className={muted}>•</span>
               <span className="font-semibold">{position}</span>
+              {player.depthChartOrder != null && ['QB', 'RB', 'WR', 'TE'].includes(position) && (
+                <>
+                  <span className={muted}>•</span>
+                  <span className="font-semibold">{position}{player.depthChartOrder}</span>
+                </>
+              )}
               {player.jerseyNumber != null && (
                 <>
                   <span className={muted}>•</span>
