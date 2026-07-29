@@ -31,7 +31,7 @@ jobs:
         run: npm run build
 
   backend:
-    name: Backend (Type-check)
+    name: Backend (Type-check & Tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +49,10 @@ jobs:
       - name: Type-check
         working-directory: server
         run: npx tsc --noEmit
+
+      - name: Test
+        working-directory: server
+        run: npm test
 
   deploy:
     name: Deploy to Cloudflare
