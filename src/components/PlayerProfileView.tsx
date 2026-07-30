@@ -54,7 +54,12 @@ interface PlayerDetail extends ApiPlayer {
   height?: string;
   weight?: number;
   college?: string;
-  depthChartOrder?: number;
+}
+
+function ordinal(n: number): string {
+  const suffixes = ['th', 'st', 'nd', 'rd'];
+  const rem = n % 100;
+  return `${n}${suffixes[(rem - 20) % 10] || suffixes[rem] || suffixes[0]}`;
 }
 
 function formatTimeAgo(dateString: string | Date): string {
@@ -379,6 +384,7 @@ export function PlayerProfileView({
               {player.weight != null && <span><span className={`font-semibold ${bodyColor}`}>{player.weight}</span> lbs</span>}
               {player.college && <span><span className={`font-semibold ${bodyColor}`}>{player.college}</span></span>}
               {player.yearsExp != null && <span><span className={`font-semibold ${bodyColor}`}>{player.yearsExp}</span> yrs exp</span>}
+              {player.depthChartOrder != null && <span><span className={`font-semibold ${bodyColor}`}>{ordinal(player.depthChartOrder)}</span> on depth chart</span>}
             </div>
 
             {player.injuryNote && (

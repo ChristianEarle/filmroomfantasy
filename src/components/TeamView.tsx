@@ -397,6 +397,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                           </div>
                           <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                             {player.team} • {player.position}
+                            {player.depthChartOrder != null ? ` • Depth #${player.depthChartOrder}` : ''}
                             {avgPoints ? ` • Avg: ${avgPoints.toFixed(1)}` : ''}
                           </div>
                         </div>
