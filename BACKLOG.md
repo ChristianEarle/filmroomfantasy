@@ -287,7 +287,7 @@
 ## LOW - Future Enhancements
 
 - [ ] **Trends based on player prop movements** - Show player trends driven by betting prop line movements (over/under, anytime TD, yardage props) throughout the week.
-- [ ] **Email collection for newsletter** - Add an email signup form for a weekly fantasy football newsletter with waiver targets, start/sit advice, and injury updates.
+- [x] **Email collection for newsletter** - Signup form in the site footer, `POST /newsletter/subscribe` stores to `newsletter_subscribers`. Capture-only; actually sending the weekly digest is a follow-up.
 - [ ] **Ad integration** - Evaluate and integrate non-intrusive ad placements (sidebar banners, interstitial between views) for free-tier monetization.
 
 ---
