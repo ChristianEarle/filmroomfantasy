@@ -740,6 +740,21 @@ export type NewTeamDraftPick = typeof teamDraftPicks.$inferInsert;
 export type PlayerAiAnalysis = typeof playerAiAnalyses.$inferSelect;
 export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
 
+// Cached AI post-game recaps, generated at most once per game and shared
+// by every viewer.
+export const gameAiRecaps = sqliteTable('game_ai_recaps', {
+  id: text('id').primaryKey(),
+  gameId: text('game_id').notNull().references(() => nflGames.id, { onDelete: 'cascade' }),
+  recap: text('recap').notNull(),
+  model: text('model').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  gameAiRecapsIdentity: uniqueIndex('idx_game_ai_recaps_game').on(table.gameId),
+}));
+
+export type GameAiRecap = typeof gameAiRecaps.$inferSelect;
+export type NewGameAiRecap = typeof gameAiRecaps.$inferInsert;
+
 // ============================================
 // DRAFT RANKINGS
 // ============================================
