@@ -13,6 +13,7 @@ export interface APIPlayer {
   projectedPoints: number;
   weeklyProjectedPoints?: number;
   isRostered: boolean;
+  depthChartOrder?: number | null;
   seasonStats?: {
     games: number;
     gamesPlayed?: number;
@@ -74,6 +75,7 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
     weekChange: 0,
     weeklyProjectedPoints: player.weeklyProjectedPoints,
     headshotUrl: player.headshotUrl ?? null,
+    depthChartOrder: player.depthChartOrder ?? null,
   };
 }
 

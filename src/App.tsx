@@ -190,6 +190,7 @@ export interface Player {
   weekChange: number;
   weeklyProjectedPoints?: number;
   headshotUrl?: string | null;
+  depthChartOrder?: number | null;
 }
 
 // URL path <-> view mapping for client-side routing (BUG-001/002 fix)
