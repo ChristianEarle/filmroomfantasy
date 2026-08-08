@@ -65,7 +65,10 @@ history accrues from the first daily cron.
 
 - [ ] Practice reports / injury designations (nflverse or ESPN, free)
 - [ ] Usage data: snap %, target share, red-zone touches (nflverse, free)
-- [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
+- [x] Depth charts — `depthChartOrder` (already synced from Sleeper into
+  `nfl_players`) is now exposed on the players list/detail API and the team
+  roster API, and surfaced in PlayerCard, the Board (PlayerTable), and
+  TeamView as e.g. "RB2" for QB/RB/WR/TE.
 - [ ] Weather for outdoor games (Open-Meteo/NWS, free)
 - [ ] Redraft ADP (Sleeper/Underdog)
 - [ ] Feed projection-accuracy history back into AI prompts

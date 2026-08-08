@@ -4,6 +4,7 @@ import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 
 import { sortByPosition } from '../utils/rosterPositions';
+import { formatPositionWithDepth } from '../utils/playerUtils';
 import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
 
 interface TeamViewProps {
@@ -142,6 +143,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
     keyLine: `Proj: ${(rosterPlayer.projectedPoints ?? 0).toFixed(1)} pts`,
     projectedPoints: rosterPlayer.projectedPoints || 0,
     weekChange: 0,
+    depthChartOrder: rosterPlayer.depthChartOrder,
   });
 
   // Calculate max point for chart scaling
@@ -319,7 +321,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                                   {getStatusIndicator(player.status)}
                                 </div>
                                 <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                  {player.team} • {player.position}
+                                  {player.team} • {formatPositionWithDepth(player.position, player.depthChartOrder)}
                                   {player.seasonStats?.gamesPlayed ?? player.seasonStats?.games ? ` • ${(player.seasonStats?.gamesPlayed ?? player.seasonStats?.games)} GP` : ''}
                                 </div>
                               </div>
@@ -396,7 +398,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                             {getStatusIndicator(player.status)}
                           </div>
                           <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                            {player.team} • {player.position}
+                            {player.team} • {formatPositionWithDepth(player.position, player.depthChartOrder)}
                             {avgPoints ? ` • Avg: ${avgPoints.toFixed(1)}` : ''}
                           </div>
                         </div>

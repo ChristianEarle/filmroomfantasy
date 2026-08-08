@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
 import { usePlayerProps, formatPropLine } from '../hooks/usePlayerProps';
-import { type APIPlayer, convertAPIPlayerToPlayer, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+import { type APIPlayer, convertAPIPlayerToPlayer, formatPositionWithDepth, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 import type { EnrichedPlayerFields } from '../services/players';
 import { AdUnit } from './AdUnit';
 import { Breadcrumb } from './shared/Breadcrumb';
@@ -99,7 +99,7 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
             )}
           </div>
           <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-            {player.team} · {player.position}
+            {player.team} · {formatPositionWithDepth(player.position, player.depthChartOrder)}
             {oddsDisplay && (
               <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                 {oddsDisplay}

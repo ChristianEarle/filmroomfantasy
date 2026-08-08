@@ -13,6 +13,7 @@ export interface APIPlayer {
   projectedPoints: number;
   weeklyProjectedPoints?: number;
   isRostered: boolean;
+  depthChartOrder?: number | null;
   seasonStats?: {
     games: number;
     gamesPlayed?: number;
@@ -31,6 +32,17 @@ export interface APIPlayer {
 
 /** Valid fantasy positions */
 const VALID_POSITIONS = new Set<Player['position']>(['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'FLEX']);
+
+/** Positions where depth chart order is meaningful to display (e.g. "RB2"). */
+const DEPTH_CHART_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE']);
+
+/**
+ * Format a position with its depth chart order for skill positions (e.g. "RB2"),
+ * falling back to the bare position when the order is unknown or not applicable.
+ */
+export function formatPositionWithDepth(position: string, depthChartOrder?: number | null): string {
+  return depthChartOrder && DEPTH_CHART_POSITIONS.has(position) ? `${position}${depthChartOrder}` : position;
+}
 
 /**
  * Convert an API player to the app's display Player format.
@@ -74,6 +86,7 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
     weekChange: 0,
     weeklyProjectedPoints: player.weeklyProjectedPoints,
     headshotUrl: player.headshotUrl ?? null,
+    depthChartOrder: player.depthChartOrder ?? null,
   };
 }
 
