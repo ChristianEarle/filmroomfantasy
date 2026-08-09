@@ -68,7 +68,10 @@ history accrues from the first daily cron.
 - [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
 - [ ] Weather for outdoor games (Open-Meteo/NWS, free)
 - [ ] Redraft ADP (Sleeper/Underdog)
-- [ ] Feed projection-accuracy history back into AI prompts
+- [x] Feed projection-accuracy history back into AI prompts —
+  `services/projections.ts` computes season-to-date MAE + positional bias
+  from `playerProjections`/`playerWeeklyStats` (6h cache), appended to the
+  per-player AI take system prompt in `routes/players.ts`
 
 ## P3 — Blocked on external data sources / platform sync
 

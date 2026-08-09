@@ -14,7 +14,7 @@ import {
   buildCachedSystemBlocks,
   type ConversationTurn,
 } from '../utils/prompt';
-import { buildProjectionsFromProps } from '../services/projections';
+import { buildProjectionsFromProps, getProjectionAccuracySummary } from '../services/projections';
 import type { Env, Variables } from '../index';
 
 // Rate limits for player routes
@@ -1242,8 +1242,10 @@ async function resolvePlayerRow(db: any, idParam: string) {
   return db.query.nflPlayers.findFirst({ where: eq(lookupColumn, idParam) });
 }
 
-// Static instructions for the per-player AI take. Byte-identical across all
-// requests so the cache_control marker in buildCachedSystemBlocks applies.
+// Static instructions for the per-player AI take. A projection-accuracy note
+// (see getProjectionAccuracySummary) is appended at call time — it only
+// changes a few times a day, so the cache_control marker in
+// buildCachedSystemBlocks still gets Anthropic cache hits between refreshes.
 const PLAYER_ANALYSIS_SYSTEM_PROMPT = `You are FilmRoom's fantasy football analyst writing a concise weekly "AI take" on a single NFL player for fantasy managers.
 
 You will receive a data block from our live database: player bio, season stats to date, recent weekly fantasy scores, the current-week projection, the upcoming opponent, Vegas game context (spread, total, implied team total), and recent news headlines.
@@ -1419,6 +1421,11 @@ ${newsBlock}`;
       // ── Generate via Anthropic (30s timeout, graceful 503 on failure) ──
       let analysis: string;
       try {
+        const accuracyNote = await getProjectionAccuracySummary(db);
+        const systemPrompt = accuracyNote
+          ? `${PLAYER_ANALYSIS_SYSTEM_PROMPT}\n\n${accuracyNote}`
+          : PLAYER_ANALYSIS_SYSTEM_PROMPT;
+
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -1429,7 +1436,7 @@ ${newsBlock}`;
           body: JSON.stringify({
             model: AI_MODEL,
             max_tokens: 600,
-            system: buildCachedSystemBlocks(PLAYER_ANALYSIS_SYSTEM_PROMPT),
+            system: buildCachedSystemBlocks(systemPrompt),
             messages: [{ role: 'user', content: dataBlock }],
           }),
           signal: AbortSignal.timeout(30000),

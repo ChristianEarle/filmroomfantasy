@@ -1,8 +1,8 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gt } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import type { PlayerProps } from '../db/schema';
 import { generateId } from '../utils/id';
-import { invalidateCache } from '../utils/cache';
+import { cached, invalidateCache } from '../utils/cache';
 
 /**
  * Convert player prop lines (from sportsbooks) into projected fantasy points.
@@ -426,4 +426,82 @@ export async function generateProjectionsFromProps(
 
   console.log(`[projections] Generated ${generated}, updated ${updated} from ${projections.length} player prop lines`);
   return { generated, updated };
+}
+
+/**
+ * Compare this season's PPR projections against what actually happened, so AI
+ * prompts can calibrate their confidence instead of treating a projection as
+ * gospel. Only counts player-weeks where the player actually took a snap
+ * (offSnaps > 0) — otherwise byes/inactives would pad the sample with
+ * trivially "accurate" 0-vs-0 rows.
+ */
+async function computeProjectionAccuracySummary(db: any): Promise<string | null> {
+  const now = new Date();
+  // NFL season spans Sep–Feb; Jan/Feb still belongs to the season that started
+  // the previous calendar year.
+  const seasonYear = now.getMonth() <= 1 ? now.getFullYear() - 1 : now.getFullYear();
+
+  const rows = await db
+    .select({
+      position: schema.nflPlayers.position,
+      projected: schema.playerProjections.projectedPoints,
+      actual: schema.playerWeeklyStats.fantasyPointsPPR,
+    })
+    .from(schema.playerProjections)
+    .innerJoin(
+      schema.playerWeeklyStats,
+      and(
+        eq(schema.playerProjections.playerId, schema.playerWeeklyStats.playerId),
+        eq(schema.playerProjections.week, schema.playerWeeklyStats.week),
+        eq(schema.playerProjections.seasonYear, schema.playerWeeklyStats.seasonYear)
+      )
+    )
+    .innerJoin(schema.nflPlayers, eq(schema.nflPlayers.id, schema.playerProjections.playerId))
+    .where(
+      and(
+        eq(schema.playerProjections.seasonYear, seasonYear),
+        eq(schema.playerProjections.scoringFormat, 'ppr'),
+        gt(schema.playerWeeklyStats.offSnaps, 0)
+      )
+    );
+
+  if (rows.length < 20) return null; // not enough finalized weeks yet to say anything meaningful
+
+  let sumAbsError = 0;
+  const byPosition = new Map<string, { sumError: number; count: number }>();
+  for (const row of rows) {
+    const projected = row.projected ?? 0;
+    const actual = row.actual ?? 0;
+    const error = actual - projected; // positive = player outperformed projection
+    sumAbsError += Math.abs(error);
+
+    const bucket = byPosition.get(row.position) ?? { sumError: 0, count: 0 };
+    bucket.sumError += error;
+    bucket.count += 1;
+    byPosition.set(row.position, bucket);
+  }
+
+  const meanAbsError = sumAbsError / rows.length;
+  const biasNotes = [...byPosition.entries()]
+    .filter(([, v]) => v.count >= 10)
+    .map(([position, v]) => {
+      const avgBias = v.sumError / v.count;
+      if (Math.abs(avgBias) < 0.5) return null;
+      const direction = avgBias > 0 ? 'under-projected' : 'over-projected';
+      return `${position} ${direction} by ${Math.abs(avgBias).toFixed(1)} pts/gm on average`;
+    })
+    .filter((n): n is string => n != null);
+
+  return `Season ${seasonYear} projection accuracy so far (${rows.length} player-weeks, PPR): mean absolute error ${meanAbsError.toFixed(1)} pts/gm.${
+    biasNotes.length ? ` Positional bias observed — ${biasNotes.join('; ')}.` : ''
+  } Treat projections as a directional estimate, not a guarantee.`;
+}
+
+/**
+ * Cached wrapper (6h TTL) around computeProjectionAccuracySummary — the
+ * underlying join is cheap but there's no reason to recompute it on every
+ * AI request when the input data only changes a few times a day.
+ */
+export async function getProjectionAccuracySummary(db: any): Promise<string | null> {
+  return cached('projection-accuracy-summary', 6 * 60 * 60 * 1000, () => computeProjectionAccuracySummary(db));
 }
