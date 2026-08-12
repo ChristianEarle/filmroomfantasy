@@ -330,9 +330,10 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
     await callSync('/api/admin/sync-projections', { week: currentWeek });
 
-    // Sync current odds during NFL season
+    // Sync current odds and outdoor-stadium weather forecasts during NFL season
     if (currentWeek <= 18) {
       await callSync('/api/admin/sync-odds');
+      await callSync('/api/admin/sync-weather');
     }
   } else if (event.cron === '0 */6 * * *') {
     // Every 6 hours: sync all news sources

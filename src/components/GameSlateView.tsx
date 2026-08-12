@@ -382,6 +382,8 @@ export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateView
                   <span className={`text-sm ${isDarkMode ? 'text-sky-200' : 'text-sky-800'}`}>
                     {game.weather.displayValue}
                     {game.weather.temperature != null && ` • ${game.weather.temperature}°F`}
+                    {game.weather.windMph != null && ` • ${game.weather.windMph} mph wind`}
+                    {game.weather.precipChance != null && game.weather.precipChance > 0 && ` • ${game.weather.precipChance}% precip`}
                   </span>
                 </div>
               )}
