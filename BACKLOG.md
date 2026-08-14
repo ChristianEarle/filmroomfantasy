@@ -263,10 +263,10 @@
 - [x] **Audit SettingsView + FeedbackWidget** - Fixed 33 issues
 - [x] **Audit PlayoffPredictorView** - Fixed 18 issues (ties in records, findIndex guards, dynamic playoff weeks, memoization, tied scores, ARIA tabs, aria-labels, error display, unused vars)
 - [x] **Audit TradeHistoryView** - Fixed 11 issues (fetchAll race condition w/ cancellation token, handleIngest/handleGrade stale-league races, double fetch on league change, ingestNotice/error persistence across league switches, defensive seasons sort, dead callerTeamId field, dead aiAnalysis optional fields, label htmlFor, aria-pressed on season tabs, aria-expanded + aria-label on trade row expand button, clearing expanded set on league change)
+- [x] **Audit WaiversView** - Fixed 3 issues (main table rows were mouse-only — clicking opened the player modal but there was no keyboard path in; added `role="button"`/`tabIndex`/`aria-label`/`onKeyDown` matching the pattern already used in AllPlayersView/PlayerTable; added missing `scope="col"` on table headers; the local `convertToPlayer` had drifted from the shared `convertAPIPlayerToPlayer` in `utils/playerUtils.ts` and was missing the dual-threat-QB rushing-stats fix, so QB rushing production silently didn't show in the modal keyLine when opened from Waivers — brought it back in parity, kept the scoring-format-aware avg fallback since the shared helper doesn't support that)
 
 **Views — Not yet audited:**
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
-- [ ] **Audit WaiversView** - Waiver claims, player search, bid management
 - [ ] **Audit GameSlateView + GameDetailModal** - NFL schedule, live scores, game detail overlay
 - [ ] **Audit TrendsView** - Roster trends, projection movers
 - [ ] **Audit AllPlayersView** - Full player list with filters, pagination
