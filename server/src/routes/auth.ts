@@ -378,6 +378,7 @@ authRoutes.get('/me', authMiddleware, async (c) => {
       hasPassword: !!user.passwordHash,
       subscriptionTier: user.subscriptionTier ?? 'free',
       subscriptionExpiresAt: user.subscriptionExpiresAt ?? null,
+      subscriptionCancelAtPeriodEnd: user.subscriptionCancelAtPeriodEnd ?? false,
       role: user.role ?? 'user',
       emailVerifiedAt: user.emailVerifiedAt ?? null,
     },

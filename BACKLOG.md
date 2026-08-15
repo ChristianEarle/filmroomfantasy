@@ -263,6 +263,7 @@
 - [x] **Audit SettingsView + FeedbackWidget** - Fixed 33 issues
 - [x] **Audit PlayoffPredictorView** - Fixed 18 issues (ties in records, findIndex guards, dynamic playoff weeks, memoization, tied scores, ARIA tabs, aria-labels, error display, unused vars)
 - [x] **Audit TradeHistoryView** - Fixed 11 issues (fetchAll race condition w/ cancellation token, handleIngest/handleGrade stale-league races, double fetch on league change, ingestNotice/error persistence across league switches, defensive seasons sort, dead callerTeamId field, dead aiAnalysis optional fields, label htmlFor, aria-pressed on season tabs, aria-expanded + aria-label on trade row expand button, clearing expanded set on league change)
+- [x] **Audit ProfileView** - Fixed a real bug where cancelling a subscription only recorded the "cancelled, access until X" state in local component state — reloading the page lost it and showed a misleading "Renews {date}" message for an already-cancelled plan. Added a persisted `subscriptionCancelAtPeriodEnd` flag on `users` (migration `0042`), kept in sync from Stripe on our own `/billing/cancel` call and from the `customer.subscription.updated`/`.deleted` webhooks (so portal-initiated cancel/reactivate stays correct too), and switched ProfileView to read it via `refreshUser()` instead of local-only state.
 
 **Views — Not yet audited:**
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
@@ -270,7 +271,6 @@
 - [ ] **Audit GameSlateView + GameDetailModal** - NFL schedule, live scores, game detail overlay
 - [ ] **Audit TrendsView** - Roster trends, projection movers
 - [ ] **Audit AllPlayersView** - Full player list with filters, pagination
-- [ ] **Audit ProfileView** - User profile, password change, Google link status
 - [ ] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth
 - [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
 

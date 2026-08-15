@@ -10,16 +10,19 @@ interface ProfileViewProps {
 }
 
 export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: ProfileViewProps) {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, refreshUser } = useAuth();
   // Subscription management
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState('');
   const [cancelLoading, setCancelLoading] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [cancelledUntil, setCancelledUntil] = useState<string | null>(null);
 
   const tier = user?.subscriptionTier || 'free';
   const isPaid = tier === 'pro' || tier === 'elite';
+  // Persisted server-side, so this survives a page reload — unlike local
+  // component state, which would otherwise lose the cancellation notice and
+  // show a misleading "Renews {date}" message for an already-cancelled plan.
+  const isCancelled = !!user?.subscriptionCancelAtPeriodEnd;
 
   const handleManageSubscription = async () => {
     setPortalError('');
@@ -39,8 +42,8 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
     setPortalError('');
     setCancelLoading(true);
     try {
-      const response = await api.post<{ cancelled: boolean; accessUntil: string }>('/billing/cancel', {});
-      setCancelledUntil(response.accessUntil);
+      await api.post<{ cancelled: boolean; accessUntil: string }>('/billing/cancel', {});
+      await refreshUser(); // picks up the persisted subscriptionCancelAtPeriodEnd flag
       setShowCancelConfirm(false);
     } catch (err) {
       setPortalError(err instanceof Error ? err.message : 'Failed to cancel subscription');
@@ -318,9 +321,9 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
 
           {isPaid ? (
             <div className="space-y-3">
-              {cancelledUntil ? (
+              {isCancelled && user?.subscriptionExpiresAt ? (
                 <p className={`text-xs ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>
-                  Subscription cancelled. You have access until {new Date(cancelledUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+                  Subscription cancelled. You have access until {new Date(user.subscriptionExpiresAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
                 </p>
               ) : user?.subscriptionExpiresAt ? (
                 <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -342,7 +345,7 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
                   <>Manage subscription</>
                 )}
               </button>
-              {!cancelledUntil && (
+              {!isCancelled && (
                 <>
                   {showCancelConfirm ? (
                     <div className={`p-3 rounded-lg border space-y-3 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
