@@ -153,6 +153,11 @@ export const nflPlayers = sqliteTable('nfl_players', {
   status: text('status').notNull().default('active'), // 'active' | 'injured_reserve' | 'out' | 'questionable' | 'doubtful'
   injuryNote: text('injury_note'),
   injuryBodyPart: text('injury_body_part'),
+  // Weekly practice-participation report (nflverse), distinct from the
+  // real-time game-status designation above.
+  practiceStatus: text('practice_status'), // 'DNP' | 'Limited' | 'Full'
+  practiceStatusWeek: integer('practice_status_week'),
+  practiceStatusSeason: integer('practice_status_season'),
   headshotUrl: text('headshot_url'),
   age: integer('age'),
   height: text('height'),
