@@ -292,6 +292,7 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-players');
     await callSync('/api/admin/sync-news');
     await callSync('/api/admin/sync-games');
+    await callSync('/api/admin/sync-practice-reports');
 
     // Fan fresh injury news out to in-app notifications for rostered/watched
     // players. Idempotent (dedupe keys), and failures never break the sync.

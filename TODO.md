@@ -63,8 +63,16 @@ history accrues from the first daily cron.
 
 ## P2 — Data feeds (see roadmap in docs/COMPLETION_PLAN.md)
 
-- [ ] Practice reports / injury designations (nflverse or ESPN, free)
+- [x] Practice reports / injury designations (nflverse, free) — daily cron
+  (`POST /admin/sync-practice-reports`) pulls nflverse's public injuries
+  CSV, matches rows to players by normalized name + team, and stores each
+  player's latest weekly practice status (DNP/Limited/Full) on
+  `nfl_players`. Surfaced on the standalone player profile page next to
+  the existing injury note, gated to the current week so stale reports
+  don't linger. AllPlayersView/PlayerCard badges are a follow-up.
 - [ ] Usage data: snap %, target share, red-zone touches (nflverse, free)
+  — snap % already ships (`averageSnapPct`); target share and red-zone
+  touches remain.
 - [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
 - [ ] Weather for outdoor games (Open-Meteo/NWS, free)
 - [ ] Redraft ADP (Sleeper/Underdog)

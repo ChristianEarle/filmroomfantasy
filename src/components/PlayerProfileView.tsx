@@ -381,10 +381,20 @@ export function PlayerProfileView({
               {player.yearsExp != null && <span><span className={`font-semibold ${bodyColor}`}>{player.yearsExp}</span> yrs exp</span>}
             </div>
 
-            {player.injuryNote && (
+            {(player.injuryNote || (player.practiceStatus && player.practiceStatusWeek === week && player.practiceStatusSeason === season)) && (
               <div className={`mt-4 text-sm rounded-lg border px-3 py-2 ${isDarkMode ? 'bg-red-950/30 border-red-900/50 text-red-200' : 'bg-red-50 border-red-200 text-red-800'}`}>
-                <span className="font-semibold">{player.injuryBodyPart ? `${player.injuryBodyPart}: ` : 'Injury: '}</span>
-                {player.injuryNote}
+                {player.injuryNote && (
+                  <div>
+                    <span className="font-semibold">{player.injuryBodyPart ? `${player.injuryBodyPart}: ` : 'Injury: '}</span>
+                    {player.injuryNote}
+                  </div>
+                )}
+                {player.practiceStatus && player.practiceStatusWeek === week && player.practiceStatusSeason === season && (
+                  <div className={player.injuryNote ? 'mt-1' : ''}>
+                    <span className="font-semibold">Practice (Wk {player.practiceStatusWeek}): </span>
+                    {player.practiceStatus === 'DNP' ? 'Did not participate' : `${player.practiceStatus} participation`}
+                  </div>
+                )}
               </div>
             )}
           </div>
