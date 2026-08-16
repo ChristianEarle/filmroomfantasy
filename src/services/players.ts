@@ -15,6 +15,9 @@ export interface Player {
   status: 'active' | 'injured_reserve' | 'out' | 'questionable' | 'doubtful';
   injuryNote?: string;
   injuryBodyPart?: string;
+  practiceStatus?: 'DNP' | 'Limited' | 'Full' | null;
+  practiceStatusWeek?: number | null;
+  practiceStatusSeason?: number | null;
   headshotUrl?: string;
   age?: number;
   yearsExp?: number;

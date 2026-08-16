@@ -6,8 +6,11 @@ import { fetchTwitterTweets } from '../services/twitter';
 import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
+import { normalizePlayerName } from '../utils/playerNames';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
 import { generateProjectionsFromProps } from '../services/projections';
+import { fetchLatestPracticeReports } from '../services/practiceReports';
+import { getNflSeasonContext } from '../services/espn';
 import {
   submitDraftRankingsBatch,
   processPendingBatches,
@@ -189,6 +192,88 @@ adminRoutes.post('/sync-players', async (c) => {
     });
   } catch (err) {
     console.error('Sync players error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-practice-reports
+ * Fetches nflverse's free public injuries dataset and stores each player's
+ * latest weekly practice-participation status (DNP/Limited/Full) — a
+ * data point Sleeper's player sync doesn't provide. Matches rows to our
+ * players by normalized name + team since nflverse keys on gsis_id, which
+ * we don't store. Returns null-safe "no data yet" for a season whose file
+ * hasn't been published (offseason / very early preseason).
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ */
+adminRoutes.post('/sync-practice-reports', async (c) => {
+  const db = c.get('db');
+
+  try {
+    c.header('Content-Type', 'application/json');
+    const body = await c.req.json().catch(() => ({} as { season?: number }));
+    const season = body.season ?? getNflSeasonContext().season;
+
+    const reports = await fetchLatestPracticeReports(season);
+    if (reports === null) {
+      return c.json({
+        success: true,
+        message: `No practice report data published yet for ${season}`,
+        updated: 0,
+        unmatched: 0,
+      });
+    }
+
+    const players = await db.query.nflPlayers.findMany({
+      columns: { id: true, name: true, team: true },
+    });
+    const playerByKey = new Map<string, string>();
+    for (const p of players) {
+      playerByKey.set(`${normalizePlayerName(p.name)}|${p.team}`, p.id);
+    }
+
+    let unmatched = 0;
+    const matches: { id: string; practiceStatus: string | null; week: number }[] = [];
+    for (const report of reports) {
+      const playerId = playerByKey.get(report.matchKey);
+      if (!playerId) {
+        unmatched++;
+        continue;
+      }
+      matches.push({ id: playerId, practiceStatus: report.practiceStatus, week: report.week });
+    }
+
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < matches.length; i += BATCH_SIZE) {
+      const batch = matches.slice(i, i + BATCH_SIZE);
+      const statements = batch.map((m) =>
+        db
+          .update(schema.nflPlayers)
+          .set({
+            practiceStatus: m.practiceStatus,
+            practiceStatusWeek: m.week,
+            practiceStatusSeason: season,
+          })
+          .where(eq(schema.nflPlayers.id, m.id))
+      );
+      await db.batch(statements as any);
+    }
+
+    return c.json({
+      success: true,
+      message: `Practice report sync completed for ${season}`,
+      updated: matches.length,
+      unmatched,
+      total: reports.length,
+    });
+  } catch (err) {
+    console.error('Sync practice reports error:', err);
     return c.json(
       {
         error: 'Sync failed',
