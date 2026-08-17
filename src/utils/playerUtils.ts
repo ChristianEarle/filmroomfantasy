@@ -108,3 +108,18 @@ export function scoringToFormat(scoring: 'PPR' | 'Half PPR' | 'Standard'): strin
 
 /** NFL regular season weeks */
 export const NFL_WEEKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] as const;
+
+/** Max players that can sit in the PlayerCard compare tray at once (mirrors Draft Rankings' basket). */
+export const MAX_COMPARE_PLAYERS = 4;
+
+/**
+ * Add/remove a player from a compare list by id. No-ops past `MAX_COMPARE_PLAYERS`
+ * so callers can always pass the result straight back into state.
+ */
+export function toggleComparePlayer(list: Player[], player: Player, max = MAX_COMPARE_PLAYERS): Player[] {
+  if (list.some((p) => p.id === player.id)) {
+    return list.filter((p) => p.id !== player.id);
+  }
+  if (list.length >= max) return list;
+  return [...list, player];
+}

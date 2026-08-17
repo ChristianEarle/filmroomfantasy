@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Sparkles, Lock } from 'lucide-react';
+import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Sparkles, Lock, GitCompare } from 'lucide-react';
 import { Player } from '../App';
 import api, { ApiError } from '../services/api';
 import { playerService } from '../services';
@@ -24,6 +24,12 @@ interface PlayerCardProps {
   scoringFormat?: string;
   /** Optional handler — when set, the modal shows a "View full profile" CTA that navigates to the standalone player page. */
   onViewFullProfile?: (player: { id: string; name: string }) => void;
+  /** Whether this player is currently in the compare tray. Omit to hide the Compare quick action. */
+  isInCompare?: boolean;
+  /** Toggles this player in/out of the compare tray. */
+  onToggleCompare?: () => void;
+  /** True when the compare tray is full and this player isn't already in it — disables the button. */
+  compareFull?: boolean;
 }
 
 interface APIWeeklyStat {
@@ -80,7 +86,7 @@ const statText = (isDarkMode: boolean) => isDarkMode ? 'text-slate-300' : 'text-
 const statMuted = (isDarkMode: boolean) => isDarkMode ? 'text-slate-400' : 'text-slate-700';
 const colBorder = (isDarkMode: boolean) => isDarkMode ? 'border-r border-slate-600' : 'border-r border-slate-200';
 
-export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeasonYear, currentWeek: propsCurrentWeek, scoringFormat: propsScoringFormat, onViewFullProfile }: PlayerCardProps) {
+export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeasonYear, currentWeek: propsCurrentWeek, scoringFormat: propsScoringFormat, onViewFullProfile, isInCompare, onToggleCompare, compareFull }: PlayerCardProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'props' | 'breakdown' | 'history'>('props');
 
@@ -519,6 +525,22 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
                       <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
                     </button>
+                    {onToggleCompare && (
+                      <button
+                        onClick={onToggleCompare}
+                        aria-pressed={isInCompare}
+                        disabled={!isInCompare && compareFull}
+                        title={isInCompare ? 'Remove from comparison' : compareFull ? 'Compare tray is full (4 max)' : 'Add to comparison'}
+                        className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                          isInCompare
+                            ? 'bg-blue-500/15 border-blue-500/40 text-blue-500 hover:bg-blue-500/25'
+                            : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        <GitCompare className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">{isInCompare ? 'Comparing' : 'Compare'}</span>
+                      </button>
+                    )}
                   </div>
                   {matchupGrade && (
                     <span className="text-xs font-medium px-3 py-1.5 rounded-md border" style={getGradeStyle(matchupGrade)} title={matchupData?.message || `${getMatchupGradeLabel(matchupGrade)} matchup`}>

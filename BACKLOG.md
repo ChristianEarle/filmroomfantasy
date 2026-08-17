@@ -141,7 +141,7 @@
 ## MEDIUM - Feature Completion
 
 ### Player Card
-- [ ] **Bring back quick actions on player cards** - Re-add the Quick Action buttons (Alert, Pin, Compare, Share) with real functionality. Previously removed because they were non-functional stubs.
+- [ ] **Bring back quick actions on player cards** - Re-add the Quick Action buttons (Alert, Pin, Compare, Share) with real functionality. Previously removed because they were non-functional stubs. Watch/Share/Compare shipped; Alert/Pin remain. Compare adds the player to a floating comparison tray (`PlayerComparisonDrawer`), mirroring the Draft Rankings compare-basket pattern.
 - [ ] **FilmRoom Insights working** - Wire up the FilmRoom Insights section on player cards to display real analysis data.
 - [x] **Matchup grade working** - Real matchup grade based on opponent defense's last 5 games performance against the player's position. Compares fantasy points allowed to league average, grades A+ through D-. Backend endpoint `GET /players/:id/matchup-grade` with per-game breakdown. PlayerCard shows grade badge, detailed insights with per-week breakdown chips, and league-average comparison.
 - [ ] **Projection breakdown working** - Show a real breakdown of projected points by stat category (pass yards, rush yards, receptions, TDs, etc.).
