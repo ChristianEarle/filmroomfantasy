@@ -153,7 +153,23 @@ Required GitHub repository secret:
 | `SYNC_SECRET` | Yes | `wrangler secret` | Admin endpoint auth key |
 | `OPENAI_API_KEY` | No | `wrangler secret` | AI news relevance filtering |
 | `GOOGLE_CLIENT_ID` | No | `wrangler secret` | Google OAuth (public, safe in vars) |
-| `YAHOO_CLIENT_ID` | No | `wrangler secret` | Yahoo Fantasy integration |
-| `YAHOO_CLIENT_SECRET` | No | `wrangler secret` | Yahoo Fantasy integration |
+| `YAHOO_CLIENT_ID` | No | `wrangler secret` | Yahoo Fantasy integration (see note) |
+| `YAHOO_CLIENT_SECRET` | No | `wrangler secret` | Yahoo Fantasy integration (see note) |
 | `ENVIRONMENT` | Yes | `wrangler.toml [vars]` | `development` or `production` |
 | `CLOUDFLARE_API_TOKEN` | Yes | GitHub Secrets | For CI/CD deployment |
+
+> **Note on Yahoo:** the two `YAHOO_*` secrets are optional only in the sense
+> that the worker boots without them. The **Yahoo tile is always shown in the
+> Connect League modal**, so on a deploy that lacks them every user who clicks
+> Yahoo gets `503 Yahoo OAuth is not configured` from
+> `POST /api/yahoo/auth-url`. Set both secrets, or expect that error:
+>
+> ```bash
+> wrangler secret put YAHOO_CLIENT_ID --env production
+> wrangler secret put YAHOO_CLIENT_SECRET --env production
+> ```
+>
+> Also set `YAHOO_REDIRECT_URI` if the worker answers on more than one
+> hostname — Yahoo only whitelists the single callback URL registered on the
+> app at https://developer.yahoo.com/apps/, and the token exchange fails if
+> the callback sent at authorize time differs from the one sent at exchange time.

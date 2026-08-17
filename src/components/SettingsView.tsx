@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLeaguesContext } from '../context/LeaguesContext';
 import { leagueConnectService, sleeperApi, yahooApi, PlatformError, type Platform, type ExternalLeague } from '../services';
 import { authService } from '../services';
-import { API_ORIGIN } from '../services/api';
+import { API_ORIGIN, ApiError } from '../services/api';
 import { UpgradeModal } from './UpgradeModal';
 import type { ScoringFormat } from '../services/auth';
 
@@ -171,6 +171,30 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     return err instanceof Error ? err.message : fallback;
   };
 
+  // Map a Yahoo API failure to a user-readable string. The server distinguishes
+  // "OAuth isn't configured on this deploy" (503) from "your Yahoo session died"
+  // (401 + YAHOO_REAUTH_REQUIRED); collapsing both into a generic retry message
+  // sends users in circles retrying something that can never succeed.
+  const yahooErrorMessage = (err: unknown, fallback: string): string => {
+    if (err instanceof ApiError) {
+      const code = (err.data as { code?: string } | undefined)?.code;
+      if (err.status === 503) {
+        return 'Yahoo connection is unavailable right now — this server is missing its Yahoo OAuth credentials. Please try another platform or contact support.';
+      }
+      if (code === 'YAHOO_REAUTH_REQUIRED') {
+        return 'Your Yahoo session expired. Please connect your Yahoo account again.';
+      }
+      if (code === 'YAHOO_NOT_CONNECTED') {
+        return 'Yahoo account not connected. Please authorize Yahoo first.';
+      }
+      if (err.status === 429) {
+        return 'Too many Yahoo requests. Please wait a few minutes and try again.';
+      }
+      if (err.message) return err.message;
+    }
+    return err instanceof Error ? err.message : fallback;
+  };
+
   const handleCloseModal = () => {
     setShowConnectModal(false);
     resetModal();
@@ -251,8 +275,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
             if (yahooFetchedLeagues.length === 0) {
               setYahooError('No NFL leagues found on your Yahoo account.');
             }
-          } catch {
-            setYahooError('Failed to fetch Yahoo leagues. Please try again.');
+          } catch (err) {
+            setYahooError(yahooErrorMessage(err, 'Failed to fetch Yahoo leagues. Please try again.'));
           } finally {
             setLoadingYahooLeagues(false);
           }
@@ -283,8 +307,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
         }
       }, 500);
       yahooPollRef.current = pollTimer;
-    } catch {
-      setYahooError('Failed to start Yahoo authorization. Please try again.');
+    } catch (err) {
+      setYahooError(yahooErrorMessage(err, 'Failed to start Yahoo authorization. Please try again.'));
       setConnectionStep('select-platform');
     }
   };
@@ -800,6 +824,16 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                       </button>
                     ))}
                   </div>
+
+                  {/* Yahoo OAuth can fail before the popup ever opens (server
+                      missing credentials, rate limit, expired session). That
+                      path returns here, so the error has to render here too. */}
+                  {yahooError && (
+                    <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      {yahooError}
+                    </div>
+                  )}
                 </div>
               )}
 
