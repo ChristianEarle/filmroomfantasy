@@ -47,6 +47,15 @@ async function verifyOAuthState(state: string, secret: string): Promise<string> 
   return payload.sub;
 }
 
+// Yahoo normally returns expires_in, but a missing or non-numeric value would
+// make `Date.now() + expires_in * 1000` NaN — an Invalid Date that fails every
+// later expiry comparison, so the token is refreshed on every single request.
+// Fall back to Yahoo's standard 1-hour access token lifetime.
+function expiresInSeconds(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 3600;
+}
+
 // Refresh Yahoo access token using refresh token
 async function refreshYahooToken(
   refreshToken: string,
@@ -102,16 +111,29 @@ async function getYahooToken(
     env.YAHOO_CLIENT_SECRET
   );
 
-  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000);
+  const newExpiresAt = new Date(Date.now() + expiresInSeconds(tokens.expires_in) * 1000);
 
   await db.update(schema.users).set({
     yahooAccessToken: tokens.access_token,
-    yahooRefreshToken: tokens.refresh_token,
+    // OAuth refresh responses are not required to carry a new refresh token.
+    // Writing an absent one through would null the column and permanently
+    // break the connection, with no way back except a full re-authorization.
+    yahooRefreshToken: tokens.refresh_token || user.yahooRefreshToken,
     yahooTokenExpiresAt: newExpiresAt,
     updatedAt: new Date(),
   }).where(eq(schema.users.id, user.id));
 
   return tokens.access_token;
+}
+
+// Carries the HTTP status alongside the message so callers can branch on the
+// real status instead of pattern-matching the response body. Message format is
+// unchanged, so existing generic `catch` handlers keep working.
+class YahooApiError extends Error {
+  constructor(public status: number, body: string) {
+    super(`Yahoo API error (${status}): ${body}`);
+    this.name = 'YahooApiError';
+  }
 }
 
 // Make an authenticated Yahoo Fantasy API request
@@ -123,7 +145,7 @@ async function yahooApiFetch(accessToken: string, path: string): Promise<any> {
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Yahoo API error (${res.status}): ${errText}`);
+    throw new YahooApiError(res.status, errText);
   }
 
   return res.json();
@@ -221,7 +243,7 @@ yahooRoutes.get('/callback', yahooCallbackRateLimit, async (c) => {
 
   // Store tokens on the user
   const db = c.get('db');
-  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
+  const expiresAt = new Date(Date.now() + expiresInSeconds(tokens.expires_in) * 1000);
 
   await db.update(schema.users).set({
     yahooAccessToken: tokens.access_token,
@@ -268,8 +290,13 @@ yahooRoutes.get('/leagues', yahooReadRateLimit, authMiddleware, async (c) => {
     console.error('Yahoo leagues fetch error:', error);
 
     // Refresh failures + 401s mean the saved tokens are dead — clear them so
-    // the UI re-prompts OAuth instead of silently failing forever.
-    const isAuthErr = /401|unauthorized|invalid_grant|refresh failed/i.test(msg);
+    // the UI re-prompts OAuth instead of silently failing forever. Match on the
+    // real HTTP status where we have it: the old body regex also matched a "401"
+    // appearing anywhere in an unrelated 5xx payload (Yahoo ids are numeric),
+    // which wiped valid tokens on a transient Yahoo outage.
+    const isAuthErr =
+      (error instanceof YahooApiError && error.status === 401) ||
+      (!(error instanceof YahooApiError) && /unauthorized|invalid_grant|refresh failed/i.test(msg));
     if (isAuthErr) {
       try {
         await db.update(schema.users).set({
