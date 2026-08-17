@@ -277,11 +277,18 @@ yahooRoutes.get('/leagues', yahooReadRateLimit, authMiddleware, async (c) => {
 
     // Fetch user's NFL fantasy leagues. `;out=settings` pulls each league's
     // stat_modifiers inline so scoring format can be derived without an extra
-    // per-league round trip.
-    const data = await yahooApiFetch(
-      accessToken,
-      '/users;use_login=1/games;game_keys=nfl/leagues;out=settings'
-    );
+    // per-league round trip. Scoring detection is a nice-to-have and the sync
+    // re-derives it later, so never let the sub-resource cost us the league
+    // list itself: if Yahoo rejects `out`, fall back to the plain collection.
+    const LEAGUES_PATH = '/users;use_login=1/games;game_keys=nfl/leagues';
+    let data: any;
+    try {
+      data = await yahooApiFetch(accessToken, `${LEAGUES_PATH};out=settings`);
+    } catch (outErr) {
+      if (outErr instanceof YahooApiError && outErr.status === 401) throw outErr;
+      console.warn('Yahoo leagues fetch with ;out=settings failed, retrying without it:', outErr);
+      data = await yahooApiFetch(accessToken, LEAGUES_PATH);
+    }
 
     // Parse Yahoo's nested response structure
     const leagues = parseYahooLeagues(data);
@@ -348,10 +355,15 @@ const YAHOO_STAT_ID_RECEPTIONS = 11;
 // Derive our scoring bucket from a Yahoo league settings node. Yahoo allows any
 // per-reception value, so map to the nearest of the three formats we store.
 // Accepts either the raw `settings` node (array or object) from the API.
-export function parseYahooScoringFormat(settingsNode: any): 'ppr' | 'half_ppr' | 'standard' {
+//
+// Returns null when the modifiers are absent entirely — "we could not tell"
+// is distinct from "receptions score nothing". Callers must not persist a
+// guess over a known-good value: an absent payload would otherwise silently
+// rewrite a correct PPR league to standard on every sync.
+export function parseYahooScoringFormat(settingsNode: any): 'ppr' | 'half_ppr' | 'standard' | null {
   const settings = Array.isArray(settingsNode) ? settingsNode[0] : settingsNode;
   const stats = settings?.stat_modifiers?.stats;
-  if (!Array.isArray(stats)) return 'standard';
+  if (!Array.isArray(stats)) return null;
 
   for (const entry of stats) {
     const stat = entry?.stat;
@@ -424,7 +436,7 @@ function parseYahooLeagues(data: any): Array<{
             // Requires the `;out=settings` sub-resource on the leagues request;
             // without it there are no stat_modifiers and this falls back to
             // 'standard'. The league sync re-derives it from full settings.
-            scoringFormat: parseYahooScoringFormat(leagueArr[1]?.settings),
+            scoringFormat: parseYahooScoringFormat(leagueArr[1]?.settings) ?? 'standard',
             currentWeek: parseInt(l.current_week) || 1,
           });
         }

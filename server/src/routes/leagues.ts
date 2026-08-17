@@ -2033,9 +2033,12 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       // Update league metadata. Scoring format is re-derived here from the full
       // settings payload so leagues connected before stat_modifiers were read
       // (which all imported as 'standard') get corrected on their next sync.
+      // A null result means the modifiers were missing from the payload — keep
+      // the stored value rather than overwriting a correct one with a guess.
+      const derivedScoringFormat = parseYahooScoringFormat(settings);
       await db.update(schema.leagues).set({
         teamCount: teamsImported || league.teamCount,
-        scoringFormat: parseYahooScoringFormat(settings),
+        ...(derivedScoringFormat ? { scoringFormat: derivedScoringFormat } : {}),
         updatedAt: new Date(),
       }).where(eq(schema.leagues.id, league.id));
 
