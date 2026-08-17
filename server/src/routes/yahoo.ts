@@ -275,10 +275,12 @@ yahooRoutes.get('/leagues', yahooReadRateLimit, authMiddleware, async (c) => {
   try {
     const accessToken = await getYahooToken(db, freshUser, c.env);
 
-    // Fetch user's NFL fantasy leagues
+    // Fetch user's NFL fantasy leagues. `;out=settings` pulls each league's
+    // stat_modifiers inline so scoring format can be derived without an extra
+    // per-league round trip.
     const data = await yahooApiFetch(
       accessToken,
-      '/users;use_login=1/games;game_keys=nfl/leagues'
+      '/users;use_login=1/games;game_keys=nfl/leagues;out=settings'
     );
 
     // Parse Yahoo's nested response structure
@@ -338,6 +340,36 @@ yahooRoutes.post('/disconnect', yahooAuthRateLimit, authMiddleware, async (c) =>
 // HELPERS
 // ============================================
 
+// Yahoo stat id for receptions. PPR-ness lives in the league's stat_modifiers,
+// not in scoring_type — scoring_type describes the *format* (head-to-head vs
+// roto vs total points) and says nothing about whether receptions score.
+const YAHOO_STAT_ID_RECEPTIONS = 11;
+
+// Derive our scoring bucket from a Yahoo league settings node. Yahoo allows any
+// per-reception value, so map to the nearest of the three formats we store.
+// Accepts either the raw `settings` node (array or object) from the API.
+export function parseYahooScoringFormat(settingsNode: any): 'ppr' | 'half_ppr' | 'standard' {
+  const settings = Array.isArray(settingsNode) ? settingsNode[0] : settingsNode;
+  const stats = settings?.stat_modifiers?.stats;
+  if (!Array.isArray(stats)) return 'standard';
+
+  for (const entry of stats) {
+    const stat = entry?.stat;
+    if (!stat) continue;
+    if (Number(stat.stat_id) !== YAHOO_STAT_ID_RECEPTIONS) continue;
+
+    const value = Number(stat.value);
+    if (!Number.isFinite(value) || value <= 0) return 'standard';
+    // Nearest bucket: >=0.75 full PPR, >=0.25 half PPR, else standard.
+    if (value >= 0.75) return 'ppr';
+    if (value >= 0.25) return 'half_ppr';
+    return 'standard';
+  }
+
+  // No reception modifier at all means receptions score nothing.
+  return 'standard';
+}
+
 // Parse Yahoo's deeply nested league response into flat objects
 function parseYahooLeagues(data: any): Array<{
   externalId: string;
@@ -389,7 +421,10 @@ function parseYahooLeagues(data: any): Array<{
             name: l.name || `Yahoo League`,
             seasonYear: parseInt(l.season) || new Date().getFullYear(),
             teamCount: parseInt(l.num_teams) || 12,
-            scoringFormat: l.scoring_type === 'headpoint' ? 'ppr' : 'standard',
+            // Requires the `;out=settings` sub-resource on the leagues request;
+            // without it there are no stat_modifiers and this falls back to
+            // 'standard'. The league sync re-derives it from full settings.
+            scoringFormat: parseYahooScoringFormat(leagueArr[1]?.settings),
             currentWeek: parseInt(l.current_week) || 1,
           });
         }

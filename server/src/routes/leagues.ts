@@ -1787,7 +1787,7 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
   // Handle Yahoo sync
   if (league.platform === 'yahoo' && league.externalId) {
     try {
-      const { getYahooToken, yahooApiFetch } = await import('./yahoo');
+      const { getYahooToken, yahooApiFetch, parseYahooScoringFormat } = await import('./yahoo');
 
       // Get fresh user for latest Yahoo tokens
       const freshUser = await db.query.users.findFirst({
@@ -2030,9 +2030,12 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         console.error('Yahoo matchup sync error (non-fatal):', matchupErr);
       }
 
-      // Update league metadata
+      // Update league metadata. Scoring format is re-derived here from the full
+      // settings payload so leagues connected before stat_modifiers were read
+      // (which all imported as 'standard') get corrected on their next sync.
       await db.update(schema.leagues).set({
         teamCount: teamsImported || league.teamCount,
+        scoringFormat: parseYahooScoringFormat(settings),
         updatedAt: new Date(),
       }).where(eq(schema.leagues.id, league.id));
 
