@@ -1,10 +1,51 @@
 import { useState, useEffect, useRef } from 'react';
 import { User, TrendingUp, ArrowUpDown, Star, Sparkles, Trophy, Target, ChevronDown, AlertCircle, Loader2 } from 'lucide-react';
 import { Player } from '../App';
-import { useLeagueContext } from '../context/LeagueContext';
+import { useLeagueContext, type RosterPlayer } from '../context/LeagueContext';
+import api from '../services/api';
 
 import { sortByPosition } from '../utils/rosterPositions';
 import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
+
+interface WeekRosterSpot {
+  slot: string;
+  player: {
+    id: string;
+    name: string;
+    team: string;
+    position: string;
+    projectedPoints?: number;
+    actualPoints?: number;
+    lastWeekPoints?: number;
+    status?: string;
+    injuryNote?: string;
+    injuryBodyPart?: string;
+    byeWeek?: number;
+    headshotUrl?: string;
+    imageUrl?: string;
+    seasonStats?: RosterPlayer['seasonStats'];
+  };
+}
+
+function mapWeekRosterSpot(spot: WeekRosterSpot, isStarter: boolean): RosterPlayer {
+  return {
+    id: spot.player.id,
+    name: spot.player.name,
+    team: spot.player.team,
+    position: spot.player.position,
+    slot: spot.slot,
+    isStarter,
+    projectedPoints: spot.player.projectedPoints || 0,
+    actualPoints: spot.player.actualPoints,
+    lastWeekPoints: spot.player.lastWeekPoints,
+    status: spot.player.status,
+    injuryNote: spot.player.injuryNote,
+    injuryBodyPart: spot.player.injuryBodyPart,
+    byeWeek: spot.player.byeWeek,
+    imageUrl: spot.player.headshotUrl || spot.player.imageUrl,
+    seasonStats: spot.player.seasonStats || undefined,
+  };
+}
 
 interface TeamViewProps {
   onPlayerClick: (player: Player) => void;
@@ -50,6 +91,13 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   const teamDropdownRef = useRef<HTMLDivElement>(null);
   const weekDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Roster re-fetched for `selectedWeek` specifically. The shared `roster` from
+  // LeagueContext always reflects the league's *current* week and is used by
+  // other views (HomeView, MatchupView, ...), so a week-scoped view is kept
+  // local here rather than overwriting that shared state.
+  const [weekRoster, setWeekRoster] = useState<RosterPlayer[] | null>(null);
+  const lastFetchedTeamRef = useRef<string | null>(null);
+
   // Get the currently viewed team from the league teams
   const viewedTeam = league?.teams?.find(t => t.id === viewedTeamId) || league?.teams?.[0];
 
@@ -60,6 +108,41 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
       setSelectedWeek(league.currentWeek);
     }
   }, [league?.currentWeek]);
+
+  // Fetch the roster's stats/projections for the selected week (the week
+  // dropdown was previously decorative — it never affected the data shown).
+  useEffect(() => {
+    if (!viewedTeamId || !selectedWeek) {
+      setWeekRoster(null);
+      return;
+    }
+    // Clear stale data on team switch so the view falls back to the
+    // context's roster (already being refreshed for the new team) instead of
+    // briefly showing the previous team's players under the new team's header.
+    if (viewedTeamId !== lastFetchedTeamRef.current) {
+      setWeekRoster(null);
+    }
+    lastFetchedTeamRef.current = viewedTeamId;
+    let cancelled = false;
+    api.get<{ roster: { starters: WeekRosterSpot[]; bench: WeekRosterSpot[] } }>(`/teams/${viewedTeamId}/roster?week=${selectedWeek}`)
+      .then((response) => {
+        if (cancelled) return;
+        const players: RosterPlayer[] = [
+          ...(response.roster.starters || []).filter(s => s.player).map(s => mapWeekRosterSpot(s, true)),
+          ...(response.roster.bench || []).filter(s => s.player).map(s => mapWeekRosterSpot(s, false)),
+        ];
+        setWeekRoster(players);
+      })
+      .catch(() => {
+        // Leave weekRoster as-is; the effective roster below falls back to the
+        // context's current-week roster on failure.
+      });
+    return () => { cancelled = true; };
+  }, [viewedTeamId, selectedWeek]);
+
+  // Prefer the week-scoped fetch once it lands; fall back to the context's
+  // current-week roster while it's loading (avoids a blank flash on mount).
+  const effectiveRoster = weekRoster ?? roster;
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -106,8 +189,8 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
     );
   }
 
-  const starters = sortByPosition(roster.filter(p => p.isStarter));
-  const bench = sortByPosition(roster.filter(p => !p.isStarter));
+  const starters = sortByPosition(effectiveRoster.filter(p => p.isStarter));
+  const bench = sortByPosition(effectiveRoster.filter(p => !p.isStarter));
 
   const starterProjection = starters.reduce((sum, p) => sum + (p.projectedPoints || 0), 0);
 
@@ -133,7 +216,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   const standingRank = viewedTeamStanding?.rank || standings.findIndex(s => s.teamId === viewedTeamId) + 1 || '-';
 
   // Convert roster player to Player interface for modal
-  const convertToPlayer = (rosterPlayer: typeof roster[0], index: number): Player => ({
+  const convertToPlayer = (rosterPlayer: RosterPlayer, index: number): Player => ({
     id: rosterPlayer.id,
     rank: index + 1,
     name: rosterPlayer.name,
