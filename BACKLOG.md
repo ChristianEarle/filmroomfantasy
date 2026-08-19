@@ -271,7 +271,7 @@
 - [ ] **Audit TrendsView** - Roster trends, projection movers
 - [ ] **Audit AllPlayersView** - Full player list with filters, pagination
 - [ ] **Audit ProfileView** - User profile, password change, Google link status
-- [ ] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth
+- [x] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth. Found and fixed a real bug: switching between the Login/Register/Forgot-password screens didn't clear the previous screen's error banner, so a stale "invalid password" message could reappear on a fresh form the user hadn't touched yet. Password-complexity policy (register requires uppercase+number, reset-password only enforces 8 chars) and progressive-cooldown persistence are noted as pre-existing product decisions, not addressed here.
 - [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
 
 **Shared Components — Not yet audited:**
