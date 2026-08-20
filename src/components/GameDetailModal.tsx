@@ -81,7 +81,7 @@ const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: GameDetailModalProps) {
-  const { homePlayers: apiHome, awayPlayers: apiAway, isLoading, error } = useGame(game.id);
+  const { homePlayers: apiHome, awayPlayers: apiAway, isLoading, error, refetch } = useGame(game.id);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -200,7 +200,13 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
           {error && (
             <div className={`mb-4 p-4 rounded-lg flex items-center gap-3 ${isDarkMode ? 'bg-red-900/20 border border-red-700 text-red-300' : 'bg-red-50 border border-red-200 text-red-700'}`} role="alert" aria-live="assertive">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm">{error.message}</p>
+              <p className="text-sm flex-1">{error.message}</p>
+              <button
+                onClick={() => refetch()}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex-shrink-0 ${isDarkMode ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300' : 'bg-red-100 hover:bg-red-200 text-red-700'}`}
+              >
+                Try Again
+              </button>
             </div>
           )}
           {!isLoading && !error && awayPlayers.length === 0 && homePlayers.length === 0 && (
