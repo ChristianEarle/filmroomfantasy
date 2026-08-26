@@ -1718,6 +1718,205 @@ playerRoutes.post(
   },
 );
 
+// NOTE: single-segment static routes (/props, /projection-accuracy, etc.) must
+// be registered before the /:id catch-all below — Hono matches in registration
+// order, so a static route registered after /:id would be permanently shadowed
+// by it (see server/src/routes/games.ts for the same bug, fixed the same way).
+
+// Get props for all players in a week (for rankings/table view)
+playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const week = parseInt(c.req.query('week') || '1', 10);
+  const season = parseInt(c.req.query('season') || '2025', 10);
+  const position = c.req.query('position')?.toUpperCase();
+
+  if (!week || week < 1 || week > 18) {
+    return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
+  }
+
+  try {
+    // Get all props for this week
+    const allProps = await db.query.playerProps.findMany({
+      where: and(
+        eq(schema.playerProps.week, week),
+        eq(schema.playerProps.season, season)
+      ),
+      orderBy: [
+        asc(schema.playerProps.playerName),
+        asc(schema.playerProps.market),
+      ],
+    });
+
+    // Group by player
+    const propsByPlayer: Record<string, any> = {};
+    for (const prop of allProps) {
+      if (!propsByPlayer[prop.playerName]) {
+        propsByPlayer[prop.playerName] = {
+          playerName: prop.playerName,
+          externalId: prop.playerExternalId,
+          team: prop.homeTeam, // Will be overwritten if we find the player
+          position: 'UNK',
+          props: {},
+        };
+      }
+
+      const marketKey = prop.market.replace('player_', '').replace('_', '');
+      if (!propsByPlayer[prop.playerName].props[marketKey]) {
+        propsByPlayer[prop.playerName].props[marketKey] = {
+          line: prop.overPoint || prop.underPoint,
+          overPrice: prop.overPrice,
+          underPrice: prop.underPrice,
+          yesPrice: prop.yesPrice,
+          noPrice: prop.noPrice,
+        };
+      }
+    }
+
+    // Enrich with player info
+    const playerNames = Object.keys(propsByPlayer);
+    if (playerNames.length > 0) {
+      const players = await db.query.nflPlayers.findMany({
+        where: inArray(schema.nflPlayers.name, playerNames),
+      });
+
+      const playerMap = new Map(players.map(p => [p.name, p]));
+      for (const [name, propData] of Object.entries(propsByPlayer)) {
+        const player = playerMap.get(name);
+        if (player) {
+          propData.team = player.team;
+          propData.position = player.position;
+          propData.externalId = player.externalId;
+        }
+      }
+    }
+
+    // Filter by position if requested
+    let result = Object.values(propsByPlayer);
+    if (position) {
+      result = result.filter((p: any) => p.position === position);
+    }
+
+    return c.json({
+      week,
+      season,
+      position: position || null,
+      count: result.length,
+      players: result,
+    });
+  } catch (error) {
+    console.error('Get all props error:', error);
+    return c.json({ error: 'Failed to fetch props' }, 500);
+  }
+});
+
+// GET /api/players/projection-accuracy
+// Returns top over/underperformers for a specific week
+playerRoutes.get('/projection-accuracy', async (c) => {
+  const db = c.get('db');
+  const week = parseInt(c.req.query('week') || '1');
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
+  const scoringFormatParam = c.req.query('scoringFormat') || 'ppr';
+
+  try {
+    // Get all projections for this week/season
+    const projections = await db.query.playerProjections.findMany({
+      where: and(
+        eq(schema.playerProjections.week, week),
+        eq(schema.playerProjections.seasonYear, season),
+        eq(schema.playerProjections.scoringFormat, scoringFormatParam === 'half_ppr' || scoringFormatParam === 'half-ppr' ? 'half-ppr' : 'ppr')
+      ),
+    });
+
+    // Get actual stats for this week
+    const stats = await db.query.playerWeeklyStats.findMany({
+      where: and(
+        eq(schema.playerWeeklyStats.week, week),
+        eq(schema.playerWeeklyStats.seasonYear, season)
+      ),
+    });
+
+    // Get game for this week to find all teams playing
+    const games = await db.query.nflGames.findMany({
+      where: and(
+        eq(schema.nflGames.week, week),
+        eq(schema.nflGames.seasonYear, season)
+      ),
+    });
+
+    // Get odds for all games this week
+    const weekOdds = await db.query.gameOdds.findMany({
+      where: and(
+        eq(schema.gameOdds.week, week),
+        eq(schema.gameOdds.season, season)
+      ),
+    });
+
+    // Build comparison data
+    const comparisons = [];
+    for (const proj of projections) {
+      const stat = stats.find(s => s.playerId === proj.playerId);
+      if (!stat) continue; // Only include players with actual stats
+
+      const player = await db.query.nflPlayers.findFirst({
+        where: eq(schema.nflPlayers.id, proj.playerId),
+      });
+
+      if (!player) continue;
+
+      const actual = stat.fantasyPointsPPR || 0;
+      const diff = actual - proj.projectedPoints;
+
+      // Find odds context for this player's team
+      const game = games.find(g => g.homeTeam === player.team || g.awayTeam === player.team);
+      let spread: number | null = null;
+      let total: number | null = null;
+
+      if (game) {
+        const odds = weekOdds.find(o => o.gameId === game.id);
+        if (odds) {
+          if (odds.homeTeam === player.team && odds.homePoint !== null) {
+            spread = odds.homePoint;
+          } else if (odds.awayTeam === player.team && odds.awayPoint !== null) {
+            spread = odds.awayPoint;
+          }
+          if (odds.overPoint !== null) {
+            total = odds.overPoint;
+          }
+        }
+      }
+
+      comparisons.push({
+        playerId: player.id,
+        name: player.name,
+        team: player.team,
+        position: player.position,
+        projected: Math.round(proj.projectedPoints * 10) / 10,
+        actual: Math.round(actual * 10) / 10,
+        diff: Math.round(diff * 10) / 10,
+        gameSpread: spread !== null ? Math.round(spread * 10) / 10 : null,
+        gameTotal: total !== null ? Math.round(total * 10) / 10 : null,
+      });
+    }
+
+    // Sort by overperformance (largest positive diff first), limit results
+    const sorted = comparisons
+      .sort((a, b) => b.diff - a.diff)
+      .slice(0, limit);
+
+    return c.json({
+      week,
+      season,
+      scoringFormat: scoringFormatParam,
+      count: sorted.length,
+      players: sorted,
+    });
+  } catch (error) {
+    console.error('Weekly accuracy error:', error);
+    return c.json({ error: 'Failed to fetch weekly accuracy data' }, 500);
+  }
+});
+
 // Get player details
 playerRoutes.get('/:id', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
@@ -2174,92 +2373,6 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
   } catch (error) {
     console.error('Get player props error:', error);
     return c.json({ error: 'Failed to fetch player props' }, 500);
-  }
-});
-
-// Get props for all players in a week (for rankings/table view)
-playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
-  const db = c.get('db');
-  const week = parseInt(c.req.query('week') || '1', 10);
-  const season = parseInt(c.req.query('season') || '2025', 10);
-  const position = c.req.query('position')?.toUpperCase();
-
-  if (!week || week < 1 || week > 18) {
-    return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
-  }
-
-  try {
-    // Get all props for this week
-    const allProps = await db.query.playerProps.findMany({
-      where: and(
-        eq(schema.playerProps.week, week),
-        eq(schema.playerProps.season, season)
-      ),
-      orderBy: [
-        asc(schema.playerProps.playerName),
-        asc(schema.playerProps.market),
-      ],
-    });
-
-    // Group by player
-    const propsByPlayer: Record<string, any> = {};
-    for (const prop of allProps) {
-      if (!propsByPlayer[prop.playerName]) {
-        propsByPlayer[prop.playerName] = {
-          playerName: prop.playerName,
-          externalId: prop.playerExternalId,
-          team: prop.homeTeam, // Will be overwritten if we find the player
-          position: 'UNK',
-          props: {},
-        };
-      }
-
-      const marketKey = prop.market.replace('player_', '').replace('_', '');
-      if (!propsByPlayer[prop.playerName].props[marketKey]) {
-        propsByPlayer[prop.playerName].props[marketKey] = {
-          line: prop.overPoint || prop.underPoint,
-          overPrice: prop.overPrice,
-          underPrice: prop.underPrice,
-          yesPrice: prop.yesPrice,
-          noPrice: prop.noPrice,
-        };
-      }
-    }
-
-    // Enrich with player info
-    const playerNames = Object.keys(propsByPlayer);
-    if (playerNames.length > 0) {
-      const players = await db.query.nflPlayers.findMany({
-        where: inArray(schema.nflPlayers.name, playerNames),
-      });
-
-      const playerMap = new Map(players.map(p => [p.name, p]));
-      for (const [name, propData] of Object.entries(propsByPlayer)) {
-        const player = playerMap.get(name);
-        if (player) {
-          propData.team = player.team;
-          propData.position = player.position;
-          propData.externalId = player.externalId;
-        }
-      }
-    }
-
-    // Filter by position if requested
-    let result = Object.values(propsByPlayer);
-    if (position) {
-      result = result.filter((p: any) => p.position === position);
-    }
-
-    return c.json({
-      week,
-      season,
-      position: position || null,
-      count: result.length,
-      players: result,
-    });
-  } catch (error) {
-    console.error('Get all props error:', error);
-    return c.json({ error: 'Failed to fetch props' }, 500);
   }
 });
 
@@ -2776,113 +2889,5 @@ playerRoutes.get('/:id/projection-accuracy', async (c) => {
   } catch (error) {
     console.error('Projection accuracy error:', error);
     return c.json({ error: 'Failed to calculate projection accuracy' }, 500);
-  }
-});
-
-// GET /api/players/projection-accuracy
-// Returns top over/underperformers for a specific week
-playerRoutes.get('/projection-accuracy', async (c) => {
-  const db = c.get('db');
-  const week = parseInt(c.req.query('week') || '1');
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
-  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
-  const scoringFormatParam = c.req.query('scoringFormat') || 'ppr';
-
-  try {
-    // Get all projections for this week/season
-    const projections = await db.query.playerProjections.findMany({
-      where: and(
-        eq(schema.playerProjections.week, week),
-        eq(schema.playerProjections.seasonYear, season),
-        eq(schema.playerProjections.scoringFormat, scoringFormatParam === 'half_ppr' || scoringFormatParam === 'half-ppr' ? 'half-ppr' : 'ppr')
-      ),
-    });
-
-    // Get actual stats for this week
-    const stats = await db.query.playerWeeklyStats.findMany({
-      where: and(
-        eq(schema.playerWeeklyStats.week, week),
-        eq(schema.playerWeeklyStats.seasonYear, season)
-      ),
-    });
-
-    // Get game for this week to find all teams playing
-    const games = await db.query.nflGames.findMany({
-      where: and(
-        eq(schema.nflGames.week, week),
-        eq(schema.nflGames.seasonYear, season)
-      ),
-    });
-
-    // Get odds for all games this week
-    const weekOdds = await db.query.gameOdds.findMany({
-      where: and(
-        eq(schema.gameOdds.week, week),
-        eq(schema.gameOdds.season, season)
-      ),
-    });
-
-    // Build comparison data
-    const comparisons = [];
-    for (const proj of projections) {
-      const stat = stats.find(s => s.playerId === proj.playerId);
-      if (!stat) continue; // Only include players with actual stats
-
-      const player = await db.query.nflPlayers.findFirst({
-        where: eq(schema.nflPlayers.id, proj.playerId),
-      });
-
-      if (!player) continue;
-
-      const actual = stat.fantasyPointsPPR || 0;
-      const diff = actual - proj.projectedPoints;
-
-      // Find odds context for this player's team
-      const game = games.find(g => g.homeTeam === player.team || g.awayTeam === player.team);
-      let spread: number | null = null;
-      let total: number | null = null;
-
-      if (game) {
-        const odds = weekOdds.find(o => o.gameId === game.id);
-        if (odds) {
-          if (odds.homeTeam === player.team && odds.homePoint !== null) {
-            spread = odds.homePoint;
-          } else if (odds.awayTeam === player.team && odds.awayPoint !== null) {
-            spread = odds.awayPoint;
-          }
-          if (odds.overPoint !== null) {
-            total = odds.overPoint;
-          }
-        }
-      }
-
-      comparisons.push({
-        playerId: player.id,
-        name: player.name,
-        team: player.team,
-        position: player.position,
-        projected: Math.round(proj.projectedPoints * 10) / 10,
-        actual: Math.round(actual * 10) / 10,
-        diff: Math.round(diff * 10) / 10,
-        gameSpread: spread !== null ? Math.round(spread * 10) / 10 : null,
-        gameTotal: total !== null ? Math.round(total * 10) / 10 : null,
-      });
-    }
-
-    // Sort by overperformance (largest positive diff first), limit results
-    const sorted = comparisons
-      .sort((a, b) => b.diff - a.diff)
-      .slice(0, limit);
-
-    return c.json({
-      week,
-      season,
-      scoringFormat: scoringFormatParam,
-      count: sorted.length,
-      players: sorted,
-    });
-  } catch (error) {
-    console.error('Weekly accuracy error:', error);
-    return c.json({ error: 'Failed to fetch weekly accuracy data' }, 500);
   }
 });
