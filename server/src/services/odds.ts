@@ -1,3 +1,5 @@
+import { getNflSeasonContext } from './espn';
+
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 /** Strip API key from URLs before logging to prevent credential leakage */
@@ -172,6 +174,7 @@ export function parseOddsResponse(
 ): ParsedOdds[] {
   const parsed: ParsedOdds[] = [];
   const timestamp = snapshotTime || new Date().toISOString();
+  const season = getNflSeasonContext().season;
 
   for (const game of games) {
     const homeTeamAbbr = teamNameToAbbr(game.home_team);
@@ -190,7 +193,7 @@ export function parseOddsResponse(
           bookmaker: bookmaker.key,
           market: market.key,
           snapshot_time: timestamp,
-          season: 2025,
+          season,
           week,
         };
 

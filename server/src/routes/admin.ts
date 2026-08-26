@@ -1434,24 +1434,28 @@ adminRoutes.post('/sync-odds', async (c) => {
     let inserted = 0;
     let skipped = 0;
 
-    // Fetch all existing games to map to game IDs
+    // Fetch all existing games to map to game IDs (week/season come from the
+    // matched game record, not the odds payload — see historical bug where
+    // parseOddsResponse's guessed week/season silently mismatched the DB).
     const existingGames = await db.query.nflGames.findMany({
       columns: {
         id: true,
         homeTeam: true,
         awayTeam: true,
+        week: true,
+        seasonYear: true,
       },
     });
     const gameMap = new Map(
-      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g.id])
+      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g])
     );
 
     const BATCH_SIZE = 50;
     const statements: any[] = [];
 
     for (const odds of parsed) {
-      const gameId = gameMap.get(odds.game_id);
-      if (!gameId) {
+      const game = gameMap.get(odds.game_id);
+      if (!game) {
         skipped++;
         continue;
       }
@@ -1459,7 +1463,7 @@ adminRoutes.post('/sync-odds', async (c) => {
       statements.push(
         db.insert(schema.gameOdds).values({
           id: odds.id,
-          gameId,
+          gameId: game.id,
           sportKey: odds.sport_key,
           homeTeam: odds.home_team,
           awayTeam: odds.away_team,
@@ -1475,8 +1479,8 @@ adminRoutes.post('/sync-odds', async (c) => {
           overPrice: odds.over_price ?? null,
           underPrice: odds.under_price ?? null,
           snapshotTime: odds.snapshot_time,
-          season: odds.season,
-          week: odds.week ?? null,
+          season: game.seasonYear,
+          week: game.week,
           createdAt: new Date(),
         }).onConflictDoNothing()
       );
@@ -1552,24 +1556,28 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
     let inserted = 0;
     let skipped = 0;
 
-    // Fetch all existing games to map to game IDs
+    // Fetch all existing games to map to game IDs (week/season come from the
+    // matched game record, not the odds payload — see historical bug where
+    // parseOddsResponse's guessed week/season silently mismatched the DB).
     const existingGames = await db.query.nflGames.findMany({
       columns: {
         id: true,
         homeTeam: true,
         awayTeam: true,
+        week: true,
+        seasonYear: true,
       },
     });
     const gameMap = new Map(
-      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g.id])
+      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g])
     );
 
     const BATCH_SIZE = 50;
     const statements: any[] = [];
 
     for (const odds of parsed) {
-      const gameId = gameMap.get(odds.game_id);
-      if (!gameId) {
+      const game = gameMap.get(odds.game_id);
+      if (!game) {
         skipped++;
         continue;
       }
@@ -1577,7 +1585,7 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
       statements.push(
         db.insert(schema.gameOdds).values({
           id: odds.id,
-          gameId,
+          gameId: game.id,
           sportKey: odds.sport_key,
           homeTeam: odds.home_team,
           awayTeam: odds.away_team,
@@ -1593,8 +1601,8 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
           overPrice: odds.over_price ?? null,
           underPrice: odds.under_price ?? null,
           snapshotTime: odds.snapshot_time,
-          season: odds.season,
-          week: odds.week ?? null,
+          season: game.seasonYear,
+          week: game.week,
           createdAt: new Date(),
         }).onConflictDoNothing()
       );
