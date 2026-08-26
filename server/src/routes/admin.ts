@@ -6,7 +6,7 @@ import { fetchTwitterTweets } from '../services/twitter';
 import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
-import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
+import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr } from '../services/odds';
 import { generateProjectionsFromProps } from '../services/projections';
 import {
   submitDraftRankingsBatch,
@@ -1709,15 +1709,26 @@ adminRoutes.post('/sync-player-props', async (c) => {
       const games = oddsData.games || [];
       snapshotTime = oddsData.timestamp || snapshotTime;
 
-      // Filter to valid games
-      const now = new Date();
-      const maxFutureTime = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      // The Odds API's odds feed returns events for the whole season, not
+      // just this week, and carries no week field of its own — so match
+      // each event against our own schedule for the requested week/season
+      // instead of guessing from a date window. Trusting a raw list position
+      // previously let an unrelated week's game get labeled and stored as
+      // this week's data (see PR fixing this).
+      const weekGames = await db.query.nflGames.findMany({
+        where: and(
+          eq(schema.nflGames.week, week),
+          eq(schema.nflGames.seasonYear, seasonYear)
+        ),
+        columns: { homeTeam: true, awayTeam: true },
+      });
+      const weekTeamPairs = new Set(weekGames.map(g => `${g.awayTeam}_${g.homeTeam}`));
       const validGames = games.filter((game) => {
-        const commenceTime = new Date(game.commence_time);
-        return commenceTime <= maxFutureTime;
-      }).slice(0, 16);
+        const pair = `${teamNameToAbbr(game.away_team)}_${teamNameToAbbr(game.home_team)}`;
+        return weekTeamPairs.has(pair);
+      });
 
-      console.log(`Starting player props sync for week ${week}, found ${games.length} games, ${validGames.length} valid`);
+      console.log(`Starting player props sync for week ${week}, found ${games.length} events, ${validGames.length} match this week's schedule`);
 
       // If gameIndex is specified, fetch only that game
       if (typeof gameIndex === 'number' && gameIndex >= 0 && gameIndex < validGames.length) {
