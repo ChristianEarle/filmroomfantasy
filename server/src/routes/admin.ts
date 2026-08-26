@@ -1670,7 +1670,8 @@ adminRoutes.post('/sync-player-props', async (c) => {
 
   const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string; season?: number; snapshotTime?: string; skipProjections?: boolean }>();
   const { week, date, gameIndex, eventId } = body;
-  const seasonYear = body.season || 2025;
+  const { getNflSeasonContext } = await import('../services/espn');
+  const seasonYear = body.season || getNflSeasonContext().season;
   const providedSnapshotTime = body.snapshotTime;
 
   if (!week || week < 1 || week > 18) {
@@ -1789,7 +1790,7 @@ adminRoutes.post('/sync-player-props', async (c) => {
             yesPrice: prop.yes_price ?? null,
             noPrice: prop.no_price ?? null,
             snapshotTime: prop.snapshot_time,
-            season: 2025,
+            season: seasonYear,
             week,
             homeTeam: prop.home_team,
             awayTeam: prop.away_team,
