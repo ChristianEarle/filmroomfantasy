@@ -7,6 +7,7 @@ import { NewsPanel } from './components/NewsPanel';
 import { BiggestMovers } from './components/BiggestMovers';
 import { RosterBoardPanel } from './components/RosterBoardPanel';
 import { PlayerCard } from './components/PlayerCard';
+import { CompareBar } from './components/CompareBar';
 import type { Game } from './types/game';
 import { GameDetailModal } from './components/GameDetailModal';
 import { SEO, getSEOPropsForView } from './components/SEO';
@@ -935,6 +936,9 @@ function AppContent() {
         offsetForSidebar
         className="mobile-bottom-nav-offset"
       />
+
+      {/* Compare basket — populated via the Compare quick action on PlayerCard */}
+      <CompareBar isDarkMode={isDarkMode} />
 
       {/* Player Card Modal */}
       {selectedPlayer && (

@@ -55,9 +55,13 @@ history accrues from the first daily cron.
   email delivery (and waiver/trade/lineup-lock event types) remain.
 - [ ] **Season projections** — full-season projected totals per player;
   current pipeline is weekly-props-derived only.
-- [ ] **PlayerCard Alert/Pin/Compare actions** — deliberately skipped in
-  the sprint (Watch/Share shipped). Compare could reuse the Draft
-  Rankings compare-basket pattern.
+- [x] **PlayerCard Compare action** — client-side compare basket (up to 4
+  players, `useCompare` hook + `PlayerComparisonModal`), reusing the Draft
+  Rankings compare-basket pattern, triggered from a new Compare quick
+  action next to Watch/Share.
+- [ ] **PlayerCard Alert/Pin actions** — still stubs; Alert overlaps with
+  the push-notifications gap above, Pin overlaps with the existing
+  watchlist ("Watch").
 - [ ] **Redraft / Dynasty / Rookie three-way split** — backend still
   bundles `dynasty_rookie`; splitting needs regeneration plumbing.
 

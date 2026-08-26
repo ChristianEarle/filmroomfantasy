@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Sparkles, Lock } from 'lucide-react';
+import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Sparkles, Lock, GitCompare } from 'lucide-react';
 import { Player } from '../App';
 import api, { ApiError } from '../services/api';
 import { playerService } from '../services';
 import type { PlayerNews, MatchupGradeResponse, PlayerProjection } from '../services';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { useCompare } from '../hooks/useCompare';
 import { useAuth } from '../context/AuthContext';
 import { buildPlayerProfilePath } from '../utils/slug';
 import { NewsSnippet } from './NewsSnippet';
@@ -117,9 +118,11 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   // Some callers pass richer player objects than App's Player interface declares.
   const playerExtras = player as Player & { status?: string; externalId?: string };
 
-  // --- Quick actions: Watch + Share ---
+  // --- Quick actions: Watch + Compare + Share ---
   const watchlist = useWatchlist();
   const isWatched = watchlist.isWatched(player.id);
+  const compare = useCompare();
+  const isComparing = compare.isInCompare(player.id);
   const [shareCopied, setShareCopied] = useState(false);
 
   // Toggle watchlist; route logged-out users to login first (same gating as DraftRankingsView).
@@ -508,6 +511,26 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                     >
                       <Heart className={`w-3.5 h-3.5 ${isWatched ? 'fill-current' : ''}`} />
                       <span className="hidden sm:inline">{isWatched ? 'Watching' : 'Watch'}</span>
+                    </button>
+                    <button
+                      onClick={() => compare.toggleCompare(player)}
+                      disabled={!isComparing && compare.compareList.length >= compare.maxCompare}
+                      aria-pressed={isComparing}
+                      title={
+                        isComparing
+                          ? 'Remove from comparison'
+                          : compare.compareList.length >= compare.maxCompare
+                            ? `You can compare up to ${compare.maxCompare} players at a time`
+                            : 'Add to comparison'
+                      }
+                      className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                        isComparing
+                          ? 'bg-blue-500/15 border-blue-500/40 text-blue-500 hover:bg-blue-500/25'
+                          : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      <GitCompare className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{isComparing ? 'Comparing' : 'Compare'}</span>
                     </button>
                     <button
                       onClick={handleShare}
