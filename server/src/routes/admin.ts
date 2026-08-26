@@ -47,7 +47,7 @@ adminRoutes.use('*', async (c, next) => {
     }
   }
 
-  await adminAuthMiddleware(c, next);
+  return adminAuthMiddleware(c, next);
 });
 
 /**

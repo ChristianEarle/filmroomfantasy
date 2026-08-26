@@ -84,7 +84,7 @@ adminStatsRoutes.use('*', async (c, next) => {
     }
   }
 
-  await adminAuthMiddleware(c, next);
+  return adminAuthMiddleware(c, next);
 });
 
 adminStatsRoutes.get('/stats', async (c) => {
