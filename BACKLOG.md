@@ -275,7 +275,14 @@
 - [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
 
 **Shared Components — Not yet audited:**
-- [ ] **Audit Sidebar** - Navigation, responsive collapse, active state
+- [x] **Audit Sidebar** - Fixed a real bug: resizing/rotating past the `md`
+  breakpoint while the mobile drawer was open left it stuck as a
+  `position: fixed` overlay with no way to dismiss it (the click-outside
+  backdrop is `md:hidden`) — now force-closes via a `matchMedia` listener.
+  Also brought the mobile drawer up to the same modal pattern used
+  elsewhere in the app (Escape to close, Tab focus trap, focus restored on
+  close) and added `aria-current`/`aria-expanded`/`aria-controls`/nav
+  `aria-label` for screen readers.
 - [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
 - [ ] **Audit PlayerAvatar** - Image loading, fallback initials
 - [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget
