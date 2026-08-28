@@ -68,7 +68,14 @@ history accrues from the first daily cron.
 - [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
 - [ ] Weather for outdoor games (Open-Meteo/NWS, free)
 - [ ] Redraft ADP (Sleeper/Underdog)
-- [ ] Feed projection-accuracy history back into AI prompts
+- [x] **Feed projection-accuracy history back into AI prompts** — the
+  per-player AI analysis endpoint (`GET /players/:id/analysis`) now
+  computes each completed week's actual-vs-projected PPR diff for the
+  season and includes a summary line (hit rate within 3 pts, average
+  diff, over/underperform tendency) in the data block sent to Anthropic,
+  so the AI take can weigh how reliable this week's projection is likely
+  to be. Other AI prompts (draft rankings rationale, trade analyzer) are
+  not yet covered.
 
 ## P3 — Blocked on external data sources / platform sync
 
