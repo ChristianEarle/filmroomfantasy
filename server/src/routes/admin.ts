@@ -937,7 +937,11 @@ adminRoutes.post('/sync-games', async (c) => {
                 overUnder: existing.overUnder ?? null,
               });
             }
-            await db.update(schema.nflGames).set(values).where(eq(schema.nflGames.id, row.id));
+            // ESPN doesn't report weather for future outdoor games — don't
+            // clobber a forecast already synced by /sync-weather.
+            const updateValues: Record<string, any> = { ...values };
+            if (updateValues.weather == null && existing.weather) delete updateValues.weather;
+            await db.update(schema.nflGames).set(updateValues).where(eq(schema.nflGames.id, row.id));
             updated++;
           } else {
             await db.insert(schema.nflGames).values(values);
@@ -959,6 +963,65 @@ adminRoutes.post('/sync-games', async (c) => {
     });
   } catch (err) {
     console.error('Sync games error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-weather
+ * Fetches free Open-Meteo forecasts (temperature, wind, precipitation
+ * chance) for upcoming outdoor games and merges them into the `weather`
+ * JSON column on nfl_games. Indoor-stadium teams and games more than ~15
+ * days out are skipped — they keep the generic Indoor/Outdoor fallback.
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ */
+adminRoutes.post('/sync-weather', async (c) => {
+  const db = c.get('db');
+
+  try {
+    const { fetchStadiumForecast, isIndoorStadium } = await import('../services/weather');
+    const now = new Date();
+
+    const games = await db.query.nflGames.findMany({
+      where: eq(schema.nflGames.isComplete, false),
+      columns: { id: true, homeTeam: true, gameTime: true },
+    });
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const game of games) {
+      const gameTime = game.gameTime instanceof Date ? game.gameTime : new Date(game.gameTime);
+      if (gameTime < now || isIndoorStadium(game.homeTeam)) {
+        skipped++;
+        continue;
+      }
+      const forecast = await fetchStadiumForecast(game.homeTeam, gameTime);
+      if (!forecast) {
+        skipped++;
+        continue;
+      }
+      await db
+        .update(schema.nflGames)
+        .set({ weather: JSON.stringify(forecast) })
+        .where(eq(schema.nflGames.id, game.id));
+      updated++;
+    }
+
+    return c.json({
+      success: true,
+      message: 'Weather sync completed',
+      updated,
+      skipped,
+    });
+  } catch (err) {
+    console.error('Sync weather error:', err);
     return c.json(
       {
         error: 'Sync failed',

@@ -108,7 +108,7 @@ export interface EspnSlateGame {
   favoredTeam: 'home' | 'away';
   overUnder: number | null;
   tvNetwork: string;
-  weather: { displayValue: string; temperature?: number } | null;
+  weather: { displayValue: string; temperature?: number; windMph?: number; precipChance?: number } | null;
   homeScore?: number;
   awayScore?: number;
   status?: string;

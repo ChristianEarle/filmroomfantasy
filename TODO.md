@@ -66,7 +66,10 @@ history accrues from the first daily cron.
 - [ ] Practice reports / injury designations (nflverse or ESPN, free)
 - [ ] Usage data: snap %, target share, red-zone touches (nflverse, free)
 - [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
-- [ ] Weather for outdoor games (Open-Meteo/NWS, free)
+- [x] Weather for outdoor games (Open-Meteo, free) — `POST /api/admin/sync-weather`
+  fetches temperature/wind/precip-chance forecasts for upcoming outdoor
+  games and merges them into `nfl_games.weather`; runs on the existing
+  4-hour cron during the season. Surfaced on GameSlateView + GameDetailModal.
 - [ ] Redraft ADP (Sleeper/Underdog)
 - [ ] Feed projection-accuracy history back into AI prompts
 

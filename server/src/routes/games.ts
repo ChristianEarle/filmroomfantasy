@@ -47,6 +47,9 @@ async function persistGamesToDb(
       if (values.tvNetwork == null && existing.tvNetwork) delete values.tvNetwork;
       if (values.spread == null && existing.spread != null) delete values.spread;
       if (values.overUnder == null && existing.overUnder != null) delete values.overUnder;
+      // ...and ESPN reports no weather for future outdoor games — don't clobber
+      // a forecast already synced by /sync-weather.
+      if (values.weather == null && existing.weather) delete values.weather;
       await db.update(schema.nflGames).set(values).where(eq(schema.nflGames.id, row.id));
     } else {
       await db.insert(schema.nflGames).values(values);
@@ -64,7 +67,7 @@ function normalizeTeam(abbrev: string): string {
 
 // Helper: map a DB game row to the slate API response shape
 function dbGameToSlateGame(g: any) {
-  let weather = g.weather ? (JSON.parse(g.weather) as { displayValue: string; temperature?: number }) : null;
+  let weather = g.weather ? (JSON.parse(g.weather) as { displayValue: string; temperature?: number; windMph?: number; precipChance?: number }) : null;
   const gameTime = new Date(g.gameTime);
   const nowMs = Date.now();
   const kickoffMs = gameTime.getTime();
@@ -411,6 +414,27 @@ gameRoutes.get('/espn/scoreboard', espnProxyRateLimit, optionalAuthMiddleware, a
     );
     const db = c.get('db');
     await persistGamesToDb(db, dbRows);
+
+    // ESPN reports no weather for most future games — overlay any forecast
+    // already synced by /sync-weather (Open-Meteo) for games missing one.
+    const missingWeatherIds = games.filter(g => !g.weather).map(g => g.id);
+    if (missingWeatherIds.length > 0) {
+      const stored = await db.query.nflGames.findMany({
+        where: inArray(schema.nflGames.id, missingWeatherIds),
+        columns: { id: true, weather: true },
+      });
+      const weatherById = new Map(stored.map(r => [r.id, r.weather]));
+      for (const g of games) {
+        const raw = weatherById.get(g.id);
+        if (!g.weather && raw) {
+          try {
+            g.weather = JSON.parse(raw);
+          } catch {
+            // Malformed stored weather — leave as null.
+          }
+        }
+      }
+    }
 
     return c.json({
       week: w,

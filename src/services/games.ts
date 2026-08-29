@@ -32,6 +32,8 @@ export interface EspnScoreboardGame {
     temperature?: number;
     highTemperature?: number;
     conditionId?: string;
+    windMph?: number;
+    precipChance?: number;
   } | null;
   homeScore?: number;
   awayScore?: number;
