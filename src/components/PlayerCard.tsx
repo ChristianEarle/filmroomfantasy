@@ -8,6 +8,7 @@ import type { PlayerNews, MatchupGradeResponse, PlayerProjection } from '../serv
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useAuth } from '../context/AuthContext';
 import { buildPlayerProfilePath } from '../utils/slug';
+import { formatPositionWithDepth } from '../utils/playerUtils';
 import { NewsSnippet } from './NewsSnippet';
 
 
@@ -116,6 +117,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
   // Some callers pass richer player objects than App's Player interface declares.
   const playerExtras = player as Player & { status?: string; externalId?: string };
+
+  const depthChartLabel = formatPositionWithDepth(player.position, player.depthChartOrder);
 
   // --- Quick actions: Watch + Share ---
   const watchlist = useWatchlist();
@@ -480,7 +483,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       )}
                     </div>
                     <div className={`flex items-center gap-1.5 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <span>{player.team} • {player.position} •</span>
+                      <span>{player.team} • {depthChartLabel} •</span>
                       <select
                         value={selectedWeek}
                         onChange={(e) => setSelectedWeek(Number(e.target.value))}
