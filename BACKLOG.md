@@ -265,7 +265,17 @@
 - [x] **Audit TradeHistoryView** - Fixed 11 issues (fetchAll race condition w/ cancellation token, handleIngest/handleGrade stale-league races, double fetch on league change, ingestNotice/error persistence across league switches, defensive seasons sort, dead callerTeamId field, dead aiAnalysis optional fields, label htmlFor, aria-pressed on season tabs, aria-expanded + aria-label on trade row expand button, clearing expanded set on league change)
 
 **Views — Not yet audited:**
-- [ ] **Audit TeamView** - Roster display, player cards, team stats
+- [x] **Audit TeamView** - Roster display, player cards, team stats. Fixed:
+  the Week selector dropdown was decorative — it updated its own label but
+  never affected the starters/bench data shown (AVG/LAST/PROJ, matchup
+  grades). `GET /teams/:id/roster` now accepts a `week` query param (was
+  hardcoded to the league's current week), and the roster's "current week"
+  projection lookup was silently ignoring the week filter entirely (it took
+  whatever projection row sorted latest, which could be a future week's).
+  `TeamView` now re-fetches a week-scoped roster locally when the selector
+  changes, without touching the shared `LeagueContext` roster state that
+  other views (HomeView, MatchupView) depend on staying pinned to the
+  current week.
 - [ ] **Audit WaiversView** - Waiver claims, player search, bid management
 - [ ] **Audit GameSlateView + GameDetailModal** - NFL schedule, live scores, game detail overlay
 - [ ] **Audit TrendsView** - Roster trends, projection movers

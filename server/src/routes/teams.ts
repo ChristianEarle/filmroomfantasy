@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, lte } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
@@ -257,35 +257,41 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
   const scoringFormat = team.league?.scoringFormat || 'ppr';
   const currentWeek = team.league?.currentWeek || 1;
 
+  // Optional ?week= override so the roster can be viewed for a week other than
+  // the league's current one. Falls back to currentWeek to preserve prior behavior.
+  const weekParam = parseInt(c.req.query('week') || '', 10);
+  const requestedWeek = Number.isFinite(weekParam) && weekParam >= 1 && weekParam <= 22 ? weekParam : currentWeek;
+
   // Enrich roster with stats and projections
   const enrichedRoster = await Promise.all(roster.map(async (r) => {
     // Get season stats
     const seasonStats = await getPlayerStatsSummary(db, r.player.id, seasonYear, r.player.position);
 
-    // Get current projection
+    // Get the requested week's projection
     const projection = await db.query.playerProjections.findFirst({
       where: and(
         eq(schema.playerProjections.playerId, r.player.id),
         eq(schema.playerProjections.seasonYear, seasonYear),
-        eq(schema.playerProjections.scoringFormat, scoringFormat)
+        eq(schema.playerProjections.scoringFormat, scoringFormat),
+        eq(schema.playerProjections.week, requestedWeek)
       ),
-      orderBy: desc(schema.playerProjections.week),
     });
 
-    // Get current week's actual stats
+    // Get the requested week's actual stats
     const currentWeekStats = await db.query.playerWeeklyStats.findFirst({
       where: and(
         eq(schema.playerWeeklyStats.playerId, r.player.id),
         eq(schema.playerWeeklyStats.seasonYear, seasonYear),
-        eq(schema.playerWeeklyStats.week, currentWeek)
+        eq(schema.playerWeeklyStats.week, requestedWeek)
       ),
     });
 
-    // Get most recent week's stats (for "Last Week" display)
+    // Get the most recent stats strictly before the requested week (for "Last Week" display)
     const lastWeekStats = await db.query.playerWeeklyStats.findFirst({
       where: and(
         eq(schema.playerWeeklyStats.playerId, r.player.id),
-        eq(schema.playerWeeklyStats.seasonYear, seasonYear)
+        eq(schema.playerWeeklyStats.seasonYear, seasonYear),
+        lte(schema.playerWeeklyStats.week, requestedWeek - 1)
       ),
       orderBy: desc(schema.playerWeeklyStats.week),
     });
@@ -320,9 +326,9 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
           receivingYards: seasonStats.receivingYards,
           receivingTDs: seasonStats.receivingTDs,
         } : null,
-        // Current week projection
+        // Requested week's projection
         projectedPoints: projection?.projectedPoints || 0,
-        // Current week actual points
+        // Requested week's actual points
         actualPoints: currentWeekStats
           ? (scoringFormat === 'ppr'
             ? currentWeekStats.fantasyPointsPPR
@@ -351,6 +357,7 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
 
   return c.json({
     roster: {
+      week: requestedWeek,
       starters,
       bench,
       projectedTotal: Math.round(projectedTotal * 10) / 10,
