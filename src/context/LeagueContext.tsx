@@ -69,6 +69,8 @@ export interface RosterPlayer {
   byeWeek?: number;
   imageUrl?: string;
   lastWeekPoints?: number;
+  /** Position within the team's depth chart (1 = starter-most). Sparse — Sleeper doesn't populate it for every player. */
+  depthChartOrder?: number | null;
   seasonStats?: {
     games: number;
     gamesPlayed?: number;
@@ -336,6 +338,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
           byeWeek?: number;
           headshotUrl?: string;
           imageUrl?: string;
+          depthChartOrder?: number | null;
           seasonStats?: RosterPlayer['seasonStats'];
         };
       }
@@ -357,6 +360,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
         injuryBodyPart: spot.player.injuryBodyPart,
         byeWeek: spot.player.byeWeek,
         imageUrl: spot.player.headshotUrl || spot.player.imageUrl,
+        depthChartOrder: spot.player.depthChartOrder ?? null,
         seasonStats: spot.player.seasonStats || undefined,
       });
 
