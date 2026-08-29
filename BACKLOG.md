@@ -263,11 +263,11 @@
 - [x] **Audit SettingsView + FeedbackWidget** - Fixed 33 issues
 - [x] **Audit PlayoffPredictorView** - Fixed 18 issues (ties in records, findIndex guards, dynamic playoff weeks, memoization, tied scores, ARIA tabs, aria-labels, error display, unused vars)
 - [x] **Audit TradeHistoryView** - Fixed 11 issues (fetchAll race condition w/ cancellation token, handleIngest/handleGrade stale-league races, double fetch on league change, ingestNotice/error persistence across league switches, defensive seasons sort, dead callerTeamId field, dead aiAnalysis optional fields, label htmlFor, aria-pressed on season tabs, aria-expanded + aria-label on trade row expand button, clearing expanded set on league change)
+- [x] **Audit GameSlateView + GameDetailModal** - Fixed 2 issues: `useGame` fetched a game's detail once on mount and never again, so a modal left open through kickoff or the final whistle stayed frozen on pregame projections instead of showing live/final stats (added a 30s visibility-aware live poll, same pattern GameSlateView already used, with a background-fetch flag so it doesn't flash the loading spinner); the player-fetch error state had no way to recover short of closing and reopening the modal (added a "Try Again" button wired to the hook's new `refetch`). Added `useGames.test.ts` covering the polling/refetch behavior.
 
 **Views — Not yet audited:**
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
 - [ ] **Audit WaiversView** - Waiver claims, player search, bid management
-- [ ] **Audit GameSlateView + GameDetailModal** - NFL schedule, live scores, game detail overlay
 - [ ] **Audit TrendsView** - Roster trends, projection movers
 - [ ] **Audit AllPlayersView** - Full player list with filters, pagination
 - [ ] **Audit ProfileView** - User profile, password change, Google link status
