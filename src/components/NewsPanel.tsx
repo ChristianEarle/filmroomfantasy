@@ -25,7 +25,7 @@ function formatTimeAgo(dateString: string): string {
 }
 
 export function NewsPanel({ isDarkMode }: NewsPanelProps) {
-  const [news, setNews] = useState<(PlayerNews & { source?: string; isArticle?: boolean; players?: Array<{ id: string; name: string; position: string; team: string }> })[]>([]);
+  const [news, setNews] = useState<PlayerNews[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,7 +60,7 @@ export function NewsPanel({ isDarkMode }: NewsPanelProps) {
       <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>News & Notes</h3>
 
       {isLoading ? (
-        <div className="space-y-4">
+        <div className="space-y-4" role="status" aria-label="Loading news">
           {[1, 2, 3].map((i) => (
             <div key={i} className={`animate-pulse border-b pb-4 last:border-0 last:pb-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
               <div className={`h-3 w-16 rounded mb-2 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
@@ -78,7 +78,7 @@ export function NewsPanel({ isDarkMode }: NewsPanelProps) {
         <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>No news available</p>
       ) : (
         <div className="space-y-4">
-          {news.slice(0, 3).map((item) => {
+          {news.map((item) => {
             const articleUrl = item.isArticle ? getSafeNewsUrl(item.sourceUrl) : null;
             return (
             <div key={item.id} className={`border-b pb-4 last:border-0 last:pb-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>

@@ -80,7 +80,9 @@ export interface PlayerProjection {
 
 export interface PlayerNews {
   id: string;
-  playerId: string;
+  // Aggregated feeds (GET /players/news) mix in FilmRoom articles, which can
+  // link to zero or several players — playerId is null in that case.
+  playerId: string | null;
   headline: string;
   content: string;
   source?: string;
@@ -89,6 +91,9 @@ export interface PlayerNews {
   impactLevel?: 'high' | 'medium' | 'low';
   publishedAt: string;
   player?: Player;
+  // Present only on GET /players/news items sourced from published articles.
+  isArticle?: boolean;
+  players?: Array<{ id: string; name: string; position: string; team: string }>;
 }
 
 /** Aggregated season stats returned by GET /players when includeStats=true */

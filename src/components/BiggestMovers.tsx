@@ -53,7 +53,7 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
           weekComplete?: boolean;
           pointsType?: 'actual' | 'projected';
         }>(
-          `/players?page=1&limit=5&includeStats=true&week=${currentWeek}&season=${seasonYear}&sortBy=projectedPoints&sortOrder=desc${league?.id ? `&leagueId=${league.id}` : ''}`
+          `/players?page=1&limit=1&includeStats=true&week=${currentWeek}&season=${seasonYear}&sortBy=projectedPoints&sortOrder=desc${league?.id ? `&leagueId=${league.id}` : ''}`
         );
 
         if (cancelled) return;
@@ -74,9 +74,11 @@ export function BiggestMovers({ currentWeek, isDarkMode }: BiggestMoversProps) {
           // and weeklyProjectedPoints = the real pre-game projection
           const performers: PerformerData[] = players
             .filter((p: APIPlayer) => {
-              const actual = p.seasonStats?.fantasyPointsPPR || 0;
+              // Only require a projection — a real zero-point outing (e.g. a
+              // player who left with an injury) is the most extreme kind of
+              // underperformer and should still show up here.
               const projected = p.weeklyProjectedPoints || 0;
-              return actual > 0 && projected > 0;
+              return projected > 0;
             })
             .map((p: APIPlayer) => {
               const projected = p.weeklyProjectedPoints || 0;

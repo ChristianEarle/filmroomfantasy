@@ -263,6 +263,7 @@
 - [x] **Audit SettingsView + FeedbackWidget** - Fixed 33 issues
 - [x] **Audit PlayoffPredictorView** - Fixed 18 issues (ties in records, findIndex guards, dynamic playoff weeks, memoization, tied scores, ARIA tabs, aria-labels, error display, unused vars)
 - [x] **Audit TradeHistoryView** - Fixed 11 issues (fetchAll race condition w/ cancellation token, handleIngest/handleGrade stale-league races, double fetch on league change, ingestNotice/error persistence across league switches, defensive seasons sort, dead callerTeamId field, dead aiAnalysis optional fields, label htmlFor, aria-pressed on season tabs, aria-expanded + aria-label on trade row expand button, clearing expanded set on league change)
+- [x] **Audit NewsPanel + NewsSnippet + BiggestMovers** - Fixed 5 issues (BiggestMovers dropped real zero-point bust performances from Over/Under Performers via a stray `actual > 0` filter; trimmed a discarded-data probe request from limit=5 to limit=1; NewsPanel loading skeleton lacked a `role="status"` announcement for screen readers; removed a redundant post-fetch `.slice(0, 3)`; `PlayerNews` type didn't reflect that the aggregated feed's `playerId` can be null and can carry `isArticle`/`players`, so NewsPanel had to re-declare the shape inline instead of using the shared type)
 
 **Views — Not yet audited:**
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
@@ -278,7 +279,6 @@
 - [ ] **Audit Sidebar** - Navigation, responsive collapse, active state
 - [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
 - [ ] **Audit PlayerAvatar** - Image loading, fallback initials
-- [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget
 - [ ] **Audit ErrorBoundary** - Error catch/display, recovery
 - [ ] **Audit App.tsx** - Routing, state management, context wiring, page transitions
 
