@@ -40,7 +40,7 @@ async function createOAuthState(userId: string, secret: string): Promise<string>
 // Verify the state parameter and extract userId
 async function verifyOAuthState(state: string, secret: string): Promise<string> {
   const key = new TextEncoder().encode(secret);
-  const { payload } = await jwtVerify(state, key);
+  const { payload } = await jwtVerify(state, key, { algorithms: ['HS256'] });
   if (payload.purpose !== 'yahoo_oauth' || !payload.sub) {
     throw new Error('Invalid OAuth state');
   }

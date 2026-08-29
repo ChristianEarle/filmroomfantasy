@@ -3,6 +3,7 @@ import { ArrowLeft, Loader2, Clock, User, ChevronRight, BookOpen, TrendingUp, Za
 import { api } from '../services/api';
 import { ARTICLE_CATEGORIES } from '../data/articles';
 import { SEO } from './SEO';
+import { sanitizeArticleHtml } from '../utils/sanitizeHtml';
 
 interface ArticleDetailViewProps {
   slug: string;
@@ -310,7 +311,7 @@ export function ArticleDetailView({ slug, isDarkMode, onBack, onArticleSelect, o
       <div
         ref={contentRef}
         className="article-content"
-        dangerouslySetInnerHTML={{ __html: article.content }}
+        dangerouslySetInnerHTML={{ __html: sanitizeArticleHtml(article.content) }}
       />
 
       {/* Tags */}

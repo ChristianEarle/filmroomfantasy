@@ -91,16 +91,6 @@ export const leagueService = {
     return api.put<{ league: League }>(`/leagues/${leagueId}`, data);
   },
 
-  // Join a league
-  joinLeague: async (
-    leagueId: string,
-    teamName?: string
-  ): Promise<{ message: string; teamId: string }> => {
-    return api.post<{ message: string; teamId: string }>(`/leagues/${leagueId}/join`, {
-      teamName,
-    });
-  },
-
   // Get league standings
   getStandings: async (leagueId: string): Promise<{ standings: Standing[] }> => {
     return api.get<{ standings: Standing[] }>(`/leagues/${leagueId}/standings`);
