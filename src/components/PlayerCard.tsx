@@ -480,7 +480,13 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       )}
                     </div>
                     <div className={`flex items-center gap-1.5 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <span>{player.team} • {player.position} •</span>
+                      <span>
+                        {player.team} • {player.position}
+                        {player.depthChartOrder != null && ['QB', 'RB', 'WR', 'TE'].includes(player.position) && (
+                          <> ({player.position}{player.depthChartOrder})</>
+                        )}
+                        {' '}•
+                      </span>
                       <select
                         value={selectedWeek}
                         onChange={(e) => setSelectedWeek(Number(e.target.value))}
