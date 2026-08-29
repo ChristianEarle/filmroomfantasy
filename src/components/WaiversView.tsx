@@ -140,7 +140,11 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
     if (player.seasonStats) {
       const stats = player.seasonStats;
       if (player.position === 'QB') {
-        keyLine = `${stats.passYards} yds, ${stats.passTDs} TD`;
+        // Include rushing stats for dual-threat QBs so points are explainable
+        // (matches convertAPIPlayerToPlayer in utils/playerUtils.ts).
+        const rushPart = stats.rushYards > 0 ? `, ${stats.rushYards} rush` : '';
+        const rushTDPart = stats.rushTDs > 0 ? `, ${stats.rushTDs} rTD` : '';
+        keyLine = `${stats.passYards} yds, ${stats.passTDs} TD${rushPart}${rushTDPart}`;
       } else if (player.position === 'RB') {
         keyLine = `${stats.rushYards} rush, ${stats.receivingYards} rec`;
       } else if (player.position === 'WR' || player.position === 'TE') {
@@ -286,12 +290,12 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className={`border-b ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                      <th className={`px-6 py-4 text-xs font-medium w-12 text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>#</th>
-                      <th className={`px-4 py-4 text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Player</th>
-                      <th className={`px-4 py-4 text-xs font-medium w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Pos</th>
-                      <th className={`px-4 py-4 text-xs font-medium text-right w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>GP</th>
-                      <th className={`px-4 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Avg</th>
-                      <th className={`px-6 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      <th scope="col" className={`px-6 py-4 text-xs font-medium w-12 text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>#</th>
+                      <th scope="col" className={`px-4 py-4 text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Player</th>
+                      <th scope="col" className={`px-4 py-4 text-xs font-medium w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Pos</th>
+                      <th scope="col" className={`px-4 py-4 text-xs font-medium text-right w-16 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>GP</th>
+                      <th scope="col" className={`px-4 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Avg</th>
+                      <th scope="col" className={`px-6 py-4 text-xs font-medium text-right w-20 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {pointsType === 'actual' ? 'Pts' : 'Proj'}
                       </th>
                     </tr>
@@ -305,7 +309,16 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                       return (
                         <tr
                           key={player.id}
+                          tabIndex={0}
+                          role="button"
+                          aria-label={`${player.name}, ${player.position}, ${player.team}`}
                           onClick={() => onPlayerClick(convertToPlayer(player, index))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              onPlayerClick(convertToPlayer(player, index));
+                            }
+                          }}
                           className={`group cursor-pointer transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
                         >
                           <td className={`px-6 py-4 text-sm text-center font-mono ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
