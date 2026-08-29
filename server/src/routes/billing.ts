@@ -302,6 +302,7 @@ billingRoutes.post('/create-portal', authMiddleware, async (c) => {
 // Cancels the user's subscription at the end of the current billing period
 billingRoutes.post('/cancel', authMiddleware, async (c) => {
   const user = c.get('user');
+  const db = c.get('db');
 
   if (!user) {
     return c.json({ error: 'Not authenticated' }, 401);
@@ -339,6 +340,11 @@ billingRoutes.post('/cancel', authMiddleware, async (c) => {
     }
 
     const sub = await cancelResponse.json() as { cancel_at_period_end: boolean; current_period_end: number };
+
+    await db
+      .update(schema.users)
+      .set({ subscriptionCancelAtPeriodEnd: true })
+      .where(eq(schema.users.id, user.id));
 
     return c.json({
       cancelled: true,
@@ -441,6 +447,7 @@ billingRoutes.post('/webhook', async (c) => {
               subscriptionExpiresAt: new Date(
                 Date.now() + 365 * 24 * 60 * 60 * 1000
               ).toISOString(),
+              subscriptionCancelAtPeriodEnd: false,
             })
             .where(eq(schema.users.id, user.id));
           console.log(`[billing] User ${user.id} upgraded to ${tier}`);
@@ -456,9 +463,12 @@ billingRoutes.post('/webhook', async (c) => {
       const subStatus = event.data.object.status;
 
       if (customerId && (subStatus === 'active' || subStatus === 'trialing')) {
-        // Re-fetch subscription to get updated tier
+        // Re-fetch subscription to get updated tier and cancellation state.
+        // This webhook fires for portal-initiated cancel/reactivate too, not
+        // just our own /billing/cancel endpoint, so it's the source of truth.
         const subscriptionId = event.data.object.id;
         let tier = 'pro';
+        let cancelAtPeriodEnd = false;
         if (subscriptionId && stripeSecretKey) {
           try {
             const subResponse = await fetch(
@@ -471,11 +481,13 @@ billingRoutes.post('/webhook', async (c) => {
             if (subResponse.ok) {
               const sub = await subResponse.json() as {
                 items?: { data?: { price?: { id: string } }[] };
+                cancel_at_period_end?: boolean;
               };
               const priceId = sub.items?.data?.[0]?.price?.id;
               if (priceId && PRICE_TO_TIER[priceId]) {
                 tier = PRICE_TO_TIER[priceId];
               }
+              cancelAtPeriodEnd = sub.cancel_at_period_end ?? false;
             }
           } catch (err) {
             console.error('[billing] Failed to fetch subscription on update:', err);
@@ -490,9 +502,9 @@ billingRoutes.post('/webhook', async (c) => {
         if (users.length > 0) {
           await db
             .update(schema.users)
-            .set({ subscriptionTier: tier })
+            .set({ subscriptionTier: tier, subscriptionCancelAtPeriodEnd: cancelAtPeriodEnd })
             .where(eq(schema.users.id, users[0].id));
-          console.log(`[billing] User ${users[0].id} subscription updated to ${tier}`);
+          console.log(`[billing] User ${users[0].id} subscription updated to ${tier} (cancelAtPeriodEnd=${cancelAtPeriodEnd})`);
         }
       }
     }
@@ -515,6 +527,7 @@ billingRoutes.post('/webhook', async (c) => {
               subscriptionTier: 'free',
               stripeSubscriptionId: null,
               subscriptionExpiresAt: null,
+              subscriptionCancelAtPeriodEnd: false,
             })
             .where(eq(schema.users.id, user.id));
           console.log(`[billing] User ${user.id} subscription cancelled, reverted to free`);

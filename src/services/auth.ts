@@ -17,6 +17,7 @@ export interface User {
   hasPassword?: boolean;
   subscriptionTier?: 'free' | 'pro' | 'elite';
   subscriptionExpiresAt?: string;
+  subscriptionCancelAtPeriodEnd?: boolean;
   role?: 'user' | 'admin';
   /** ISO timestamp; null/undefined means email not yet verified. */
   emailVerifiedAt?: string | null;
