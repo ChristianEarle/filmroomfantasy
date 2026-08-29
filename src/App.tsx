@@ -7,6 +7,9 @@ import { NewsPanel } from './components/NewsPanel';
 import { BiggestMovers } from './components/BiggestMovers';
 import { RosterBoardPanel } from './components/RosterBoardPanel';
 import { PlayerCard } from './components/PlayerCard';
+import { PlayerComparisonDrawer } from './components/PlayerComparisonDrawer';
+import { GitCompare } from 'lucide-react';
+import { toggleComparePlayer, MAX_COMPARE_PLAYERS } from './utils/playerUtils';
 import type { Game } from './types/game';
 import { GameDetailModal } from './components/GameDetailModal';
 import { SEO, getSEOPropsForView } from './components/SEO';
@@ -276,6 +279,15 @@ function AppContent() {
   const [selectedPosition, setSelectedPosition] = useState<string>('ALL');
   const [currentWeek, setCurrentWeek] = useState(1);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const [compareList, setCompareList] = useState<Player[]>([]);
+  const [showCompare, setShowCompare] = useState(false);
+  const toggleCompare = useCallback((player: Player) => {
+    setCompareList((prev) => toggleComparePlayer(prev, player));
+  }, []);
+  // Auto-hide the drawer once the tray empties out (e.g. removing the last player from it).
+  useEffect(() => {
+    if (compareList.length === 0) setShowCompare(false);
+  }, [compareList.length]);
 
   // Sync currentWeek when league data arrives or league changes
   useEffect(() => {
@@ -946,6 +958,30 @@ function AppContent() {
           currentWeek={currentWeek}
           scoringFormat={league?.scoringFormat}
           onViewFullProfile={handleOpenPlayerProfile}
+          isInCompare={compareList.some((p) => p.id === selectedPlayer.id)}
+          onToggleCompare={() => toggleCompare(selectedPlayer)}
+          compareFull={compareList.length >= MAX_COMPARE_PLAYERS}
+        />
+      )}
+
+      {/* Floating compare tray trigger — appears once a player has been added from PlayerCard */}
+      {compareList.length > 0 && !showCompare && (
+        <button
+          type="button"
+          onClick={() => setShowCompare(true)}
+          className="fixed right-4 bottom-20 md:bottom-4 z-40 flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
+        >
+          <GitCompare className="w-4 h-4" />
+          Compare ({compareList.length})
+        </button>
+      )}
+
+      {showCompare && compareList.length > 0 && (
+        <PlayerComparisonDrawer
+          players={compareList}
+          isDarkMode={isDarkMode}
+          onClose={() => setShowCompare(false)}
+          onRemove={toggleCompare}
         />
       )}
 
