@@ -644,6 +644,17 @@ export const userFeedback = sqliteTable('user_feedback', {
 });
 
 // ============================================
+// NEWSLETTER
+// ============================================
+
+export const newsletterSubscribers = sqliteTable('newsletter_subscribers', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  source: text('source'), // Where the signup happened, e.g. 'footer'
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// ============================================
 // PAGE VIEWS & ANALYTICS
 // ============================================
 

@@ -94,8 +94,11 @@ history accrues from the first daily cron.
   untouched by the cohesion sweep (unbounded blast radius).
 - [ ] **Server-side test harness** — zero backend tests exist; vitest
   covers frontend only.
-- [ ] **Newsletter email capture**, **ad integration** (monetization
-  experiments).
+- [x] **Newsletter email capture** — signup form in the site footer
+  (`POST /newsletter/subscribe`), stores to `newsletter_subscribers`.
+  Capture-only for now; actually sending the weekly digest is a
+  follow-up.
+- [ ] **Ad integration** (monetization experiments).
 
 ## P6 — Premium roadmap (unchanged)
 
