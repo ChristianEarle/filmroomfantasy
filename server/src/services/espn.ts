@@ -41,6 +41,102 @@ export function getTeamDisplayName(abbrev: string): string {
 const INDOOR_TEAMS = new Set(['NO', 'DET', 'MIN', 'LV', 'IND', 'ATL', 'DAL', 'HOU', 'ARI']);
 
 /**
+ * Home stadium coordinates for every NFL team, used to fetch a real
+ * temperature/condition forecast (via Open-Meteo, no API key required) for
+ * upcoming outdoor games that ESPN hasn't populated `weather` for yet
+ * (ESPN only fills that in close to kickoff).
+ */
+const STADIUM_COORDS: Record<string, { lat: number; lon: number }> = {
+  ARI: { lat: 33.5276, lon: -112.2626 }, ATL: { lat: 33.7554, lon: -84.4008 },
+  BAL: { lat: 39.2780, lon: -76.6227 }, BUF: { lat: 42.7738, lon: -78.7870 },
+  CAR: { lat: 35.2258, lon: -80.8528 }, CHI: { lat: 41.8623, lon: -87.6167 },
+  CIN: { lat: 39.0955, lon: -84.5161 }, CLE: { lat: 41.5061, lon: -81.6995 },
+  DAL: { lat: 32.7473, lon: -97.0945 }, DEN: { lat: 39.7439, lon: -105.0201 },
+  DET: { lat: 42.3400, lon: -83.0456 }, GB: { lat: 44.5013, lon: -88.0622 },
+  HOU: { lat: 29.6847, lon: -95.4107 }, IND: { lat: 39.7601, lon: -86.1639 },
+  JAX: { lat: 30.3239, lon: -81.6373 }, KC: { lat: 39.0489, lon: -94.4839 },
+  LAC: { lat: 33.9535, lon: -118.3392 }, LAR: { lat: 33.9535, lon: -118.3392 },
+  LV: { lat: 36.0909, lon: -115.1833 }, MIA: { lat: 25.9580, lon: -80.2389 },
+  MIN: { lat: 44.9737, lon: -93.2577 }, NE: { lat: 42.0909, lon: -71.2643 },
+  NO: { lat: 29.9511, lon: -90.0812 }, NYG: { lat: 40.8135, lon: -74.0745 },
+  NYJ: { lat: 40.8135, lon: -74.0745 }, PHI: { lat: 39.9008, lon: -75.1675 },
+  PIT: { lat: 40.4468, lon: -80.0158 }, SEA: { lat: 47.5952, lon: -122.3316 },
+  SF: { lat: 37.4032, lon: -121.9698 }, TB: { lat: 27.9759, lon: -82.5033 },
+  TEN: { lat: 36.1665, lon: -86.7713 }, WAS: { lat: 38.9077, lon: -76.8645 },
+  WSH: { lat: 38.9077, lon: -76.8645 },
+};
+
+// Open-Meteo WMO weather codes -> short display strings the frontend's
+// WeatherIcon component already knows how to render (matches on substrings
+// like "rain", "snow", "clear"/"sunny").
+function weatherCodeToDisplay(code: number): string {
+  if (code === 0) return 'Clear';
+  if (code <= 3) return 'Partly Cloudy';
+  if (code === 45 || code === 48) return 'Foggy';
+  if (code >= 51 && code <= 67) return 'Rain';
+  if (code >= 71 && code <= 86) return 'Snow';
+  if (code >= 95) return 'Thunderstorms';
+  return 'Cloudy';
+}
+
+/**
+ * Fetch a forecast temperature/condition for a team's home stadium at a
+ * given game time from Open-Meteo (free, no API key). Open-Meteo only
+ * forecasts ~16 days out, so this naturally returns null for games too far
+ * in the future — callers should keep their existing "Outdoor" fallback.
+ */
+async function fetchStadiumForecast(
+  homeTeamAbbrev: string,
+  gameTime: Date
+): Promise<{ displayValue: string; temperature: number } | null> {
+  const coords = STADIUM_COORDS[homeTeamAbbrev];
+  if (!coords) return null;
+
+  try {
+    const dateStr = gameTime.toISOString().slice(0, 10);
+    const params = new URLSearchParams({
+      latitude: String(coords.lat),
+      longitude: String(coords.lon),
+      hourly: 'temperature_2m,weathercode',
+      temperature_unit: 'fahrenheit',
+      timezone: 'UTC',
+      start_date: dateStr,
+      end_date: dateStr,
+    });
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json() as {
+      hourly?: { time: string[]; temperature_2m: number[]; weathercode: number[] };
+    };
+    const hourly = data.hourly;
+    if (!hourly?.time?.length) return null;
+
+    // Find the hourly slot closest to kickoff
+    const targetMs = gameTime.getTime();
+    let bestIdx = 0;
+    let bestDiff = Infinity;
+    for (let i = 0; i < hourly.time.length; i++) {
+      const diff = Math.abs(new Date(`${hourly.time[i]}Z`).getTime() - targetMs);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIdx = i;
+      }
+    }
+
+    const temperature = hourly.temperature_2m[bestIdx];
+    const code = hourly.weathercode[bestIdx];
+    if (temperature == null || code == null) return null;
+
+    return { displayValue: weatherCodeToDisplay(code), temperature: Math.round(temperature) };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Determine the current NFL season year and phase based on the calendar date.
  * ESPN season types: '1' = preseason, '2' = regular season, '3' = postseason.
  *
@@ -183,14 +279,17 @@ function loadStaticSchedule(
 /**
  * Parse ESPN events array into our game/dbRow format.
  */
-function parseEspnEvents(
+async function parseEspnEvents(
   events: any[],
   resolvedWeek: number,
   s: number,
   st: string
-): { games: EspnSlateGame[]; dbRows: EspnGameRow[] } {
+): Promise<{ games: EspnSlateGame[]; dbRows: EspnGameRow[] }> {
   const games: EspnSlateGame[] = [];
   const dbRows: EspnGameRow[] = [];
+  // (eventIndex, homeAbbrev, gameTime) for upcoming outdoor games ESPN hasn't
+  // populated weather for yet — fetched in parallel after the main pass.
+  const forecastTargets: { index: number; homeAbbrev: string; gameTime: Date }[] = [];
 
   for (const ev of events) {
     const comp = ev.competitions?.[0];
@@ -221,6 +320,12 @@ function parseEspnEvents(
         : isFinalOrPast
           ? { displayValue: 'Outdoor' }
           : null;
+
+    // Upcoming outdoor game with no weather from ESPN yet — try a real
+    // forecast from Open-Meteo. Recorded now, filled in after the loop.
+    if (weatherObj == null && !isIndoor && !isFinalOrPast) {
+      forecastTargets.push({ index: games.length, homeAbbrev, gameTime: new Date(ev.date) });
+    }
 
     const gameTime = new Date(ev.date);
     const statusName = ev.status?.type?.name;
@@ -269,6 +374,18 @@ function parseEspnEvents(
       weather: weatherObj ? JSON.stringify(weatherObj) : null,
       homeScore: home?.score != null ? parseInt(String(home.score), 10) : undefined,
       awayScore: away?.score != null ? parseInt(String(away.score), 10) : undefined,
+    });
+  }
+
+  if (forecastTargets.length > 0) {
+    const forecasts = await Promise.allSettled(
+      forecastTargets.map(t => fetchStadiumForecast(t.homeAbbrev, t.gameTime))
+    );
+    forecasts.forEach((result, i) => {
+      if (result.status !== 'fulfilled' || !result.value) return;
+      const { index } = forecastTargets[i];
+      games[index].weather = result.value;
+      dbRows[index].weather = JSON.stringify(result.value);
     });
   }
 
@@ -367,14 +484,14 @@ export async function fetchEspnScoreboard(
   // 1. Try week-based ESPN endpoint (works for current/active season)
   const weekResult = await fetchEspnByWeek(week, s, st);
   if (weekResult && weekResult.events.length > 0) {
-    const parsed = parseEspnEvents(weekResult.events, weekResult.resolvedWeek, s, st);
+    const parsed = await parseEspnEvents(weekResult.events, weekResult.resolvedWeek, s, st);
     return { ...parsed, week: weekResult.resolvedWeek, season: s, source: 'espn' };
   }
 
   // 2. Week-based failed (ESPN returns 500 for completed seasons) — try date-range endpoint
   const dateResult = await fetchEspnByDateRange(weekNum, s, st);
   if (dateResult && dateResult.events.length > 0) {
-    const parsed = parseEspnEvents(dateResult.events, weekNum, s, st);
+    const parsed = await parseEspnEvents(dateResult.events, weekNum, s, st);
     return { ...parsed, week: weekNum, season: s, source: 'espn' };
   }
 
