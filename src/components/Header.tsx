@@ -20,6 +20,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
   const searchRef = useRef<HTMLDivElement>(null);
   const [leagueDropdownOpen, setLeagueDropdownOpen] = useState(false);
   const leagueDropdownRef = useRef<HTMLDivElement>(null);
+  const leagueButtonRef = useRef<HTMLButtonElement>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const bellButtonRef = useRef<HTMLButtonElement>(null);
@@ -66,6 +67,19 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [notifOpen]);
+
+  // Escape closes the league switcher dropdown and returns focus to its trigger
+  useEffect(() => {
+    if (!leagueDropdownOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLeagueDropdownOpen(false);
+        leagueButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [leagueDropdownOpen]);
 
   const handleNotificationClick = (n: NotificationItem) => {
     if (!n.isRead) void markRead(n.id);
@@ -148,17 +162,27 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
         {isAuthenticated && leagues.length > 1 && (
           <div ref={leagueDropdownRef} className="relative">
             <button
+              ref={leagueButtonRef}
               onClick={() => setLeagueDropdownOpen(!leagueDropdownOpen)}
+              aria-label="Switch league"
+              aria-haspopup="menu"
+              aria-expanded={leagueDropdownOpen}
+              aria-controls="header-league-menu"
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-700'}`}
             >
               <span className="max-w-[120px] sm:max-w-[180px] truncate font-medium">
                 {selectedLeague?.name || 'Select League'}
               </span>
-              <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${leagueDropdownOpen ? 'rotate-180' : ''} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+              <ChevronDown aria-hidden="true" className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${leagueDropdownOpen ? 'rotate-180' : ''} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
             </button>
 
             {leagueDropdownOpen && (
-              <div className={`absolute top-full right-0 mt-1 w-64 rounded-lg border z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div
+                id="header-league-menu"
+                role="menu"
+                aria-label="Switch league"
+                className={`absolute top-full right-0 mt-1 w-64 rounded-lg border z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+              >
                 <div className={`px-3 py-2 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   <span className={`text-xs font-medium uppercase tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Switch League</span>
                 </div>
@@ -166,11 +190,14 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                   {leagues.map((league) => (
                     <button
                       key={league.id}
+                      role="menuitem"
+                      aria-current={league.id === selectedLeagueId ? 'true' : undefined}
                       onClick={() => {
                         if (league.id !== selectedLeagueId) {
                           setSelectedLeagueId(league.id);
                         }
                         setLeagueDropdownOpen(false);
+                        leagueButtonRef.current?.focus();
                       }}
                       className={`w-full px-3 py-2.5 text-left transition-colors flex items-center justify-between ${
                         league.id === selectedLeagueId
@@ -187,7 +214,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                         </div>
                       </div>
                       {league.id === selectedLeagueId && (
-                        <Check className="w-4 h-4 flex-shrink-0 text-blue-500 ml-2" />
+                        <Check aria-hidden="true" className="w-4 h-4 flex-shrink-0 text-blue-500 ml-2" />
                       )}
                     </button>
                   ))}
@@ -210,6 +237,13 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                   placeholder="Search players..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setSearchOpen(false);
+                      setSearchQuery('');
+                      clearResults();
+                    }
+                  }}
                   style={{ paddingLeft: '2.625rem', paddingRight: '0.75rem' }}
                   className={`w-48 sm:w-64 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
                   autoFocus
@@ -237,6 +271,8 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                   {searchResults.map((player) => (
                     <button
                       key={player.id}
+                      role="option"
+                      aria-selected="false"
                       onClick={() => {
                         onPlayerClick(convertToPlayer(player));
                         setSearchOpen(false);
