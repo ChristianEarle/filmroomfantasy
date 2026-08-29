@@ -22,7 +22,9 @@
     "sync:espn": "node scripts/sync-espn-news.mjs",
     "sync:rotowire": "node scripts/sync-rotowire-news.mjs",
     "backfill": "node scripts/backfill-season.mjs",
-    "db:stats-sample": "node scripts/print-stats-sample.mjs"
+    "db:stats-sample": "node scripts/print-stats-sample.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "drizzle-orm": "^0.32.0",
@@ -33,6 +35,7 @@
     "@cloudflare/workers-types": "^4.20260305.1",
     "drizzle-kit": "^0.23.0",
     "typescript": "^5.5.0",
+    "vitest": "^2.1.8",
     "wrangler": "^4.70.0"
   }
 }

@@ -92,8 +92,12 @@ history accrues from the first daily cron.
   modal + AI take cover this; inline expand is a UX preference.
 - [ ] **De-shadow vendored `src/components/ui/*` primitives** — left
   untouched by the cohesion sweep (unbounded blast radius).
-- [ ] **Server-side test harness** — zero backend tests exist; vitest
-  covers frontend only.
+- [x] **Server-side test harness** — added `vitest` to `server/` (Node
+  environment, no Miniflare pool needed) with unit tests for the
+  pure-logic modules: PPR/half-PPR/standard scoring, password hashing,
+  player-name normalization, the NFL calendar helper, the D1 chunked-fetch
+  helper, and the in-memory TTL cache. CI's backend job now runs
+  `npm test` alongside the existing type-check.
 - [ ] **Newsletter email capture**, **ad integration** (monetization
   experiments).
 
