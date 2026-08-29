@@ -269,7 +269,16 @@
 - [ ] **Audit WaiversView** - Waiver claims, player search, bid management
 - [ ] **Audit GameSlateView + GameDetailModal** - NFL schedule, live scores, game detail overlay
 - [ ] **Audit TrendsView** - Roster trends, projection movers
-- [ ] **Audit AllPlayersView** - Full player list with filters, pagination
+- [x] **Audit AllPlayersView** - Full player list with filters, pagination.
+  Fixed: the "Load More" pagination was missing entirely — the view always
+  fetched only the first `ALL_PLAYERS_PAGE_SIZE` (350) players sorted by
+  projected points and silently discarded the API's `pagination.total`,
+  so any player ranked below the cutoff (very common — the position/status
+  universe regularly exceeds 350) was unreachable via search or scroll on
+  this view. Added incremental "Load More" fetching plus a visible
+  "X of Y players" count, and fixed a latent type bug where the error
+  state's Retry button passed its click `MouseEvent` into `fetchPlayers`
+  as the `pageNum`/`append` args.
 - [ ] **Audit ProfileView** - User profile, password change, Google link status
 - [ ] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth
 - [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
