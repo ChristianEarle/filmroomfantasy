@@ -85,8 +85,9 @@ history accrues from the first daily cron.
 - [ ] **Global AI chat assistant** — persistent bubble reusing
   `AiChatModal` against a league-context endpoint; per-surface Ask AI
   (board, draft rankings) shipped and covers most of the value.
-- [ ] **AI post-game recaps** — cron on `gameStatus === 'final'`,
-  cache per game; surface on GameDetailModal + matchup recap.
+- [x] **AI post-game recaps** — `GET /games/:id/recap` (Pro/Elite), cached
+  per game, generated on-demand from final score + top performers.
+  Surfaced on GameDetailModal; matchup-page recap still open.
 - [ ] **ROS rankings** — new ranking type projecting rest-of-season value.
 - [ ] **Expanded player row on the board** (inline stat breakdown) — the
   modal + AI take cover this; inline expand is a UX preference.

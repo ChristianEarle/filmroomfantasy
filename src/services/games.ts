@@ -106,6 +106,13 @@ export interface TeamScheduleGame extends NFLGame {
   opponent: string;
 }
 
+/** GET /games/:id/recap — cached AI post-game recap (Pro/Elite). */
+export interface GameRecapResponse {
+  recap: string;
+  cached: boolean;
+  generatedAt: string;
+}
+
 // Games API functions
 export const gameService = {
   // Get games for a week
@@ -131,6 +138,11 @@ export const gameService = {
   // Get player props for a game
   getGameProps: async (gameId: string): Promise<GameProps> => {
     return api.get<GameProps>(`/games/${gameId}/props`);
+  },
+
+  // Get AI post-game recap (Pro/Elite, cached per game)
+  getGameRecap: async (gameId: string): Promise<GameRecapResponse> => {
+    return api.get<GameRecapResponse>(`/games/${gameId}/recap`);
   },
 
   // Get live scores

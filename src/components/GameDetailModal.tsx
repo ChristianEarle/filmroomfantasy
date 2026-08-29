@@ -1,8 +1,11 @@
-import { useEffect, useRef, useMemo } from 'react';
-import { X, ArrowLeft, Cloud, Loader2, AlertCircle } from 'lucide-react';
+import { useEffect, useRef, useMemo, useState } from 'react';
+import { X, ArrowLeft, Cloud, Loader2, AlertCircle, Sparkles, Lock } from 'lucide-react';
 import { Player } from '../App';
 import { useGame } from '../hooks';
 import type { Game } from '../types/game';
+import { gameService } from '../services/games';
+import { ApiError } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 function formatGameTime(isoString: string): string {
   try {
@@ -84,6 +87,34 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
   const { homePlayers: apiHome, awayPlayers: apiAway, isLoading, error } = useGame(game.id);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+
+  // --- AI Post-Game Recap (Pro/Elite, final games only) ---
+  const { user, isAuthenticated } = useAuth();
+  const aiTier = (user?.subscriptionTier || 'free') as 'free' | 'pro' | 'elite';
+  const canViewRecap = isAuthenticated && (aiTier === 'pro' || aiTier === 'elite');
+  const isFinal = game.status === 'final';
+  const [recap, setRecap] = useState<string | null>(null);
+  const [recapLoading, setRecapLoading] = useState(false);
+  const [recapError, setRecapError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isFinal || !canViewRecap) return;
+    let cancelled = false;
+    setRecapLoading(true);
+    setRecapError(null);
+    setRecap(null);
+    gameService.getGameRecap(game.id)
+      .then((res) => { if (!cancelled) setRecap(res.recap); })
+      .catch((err) => {
+        if (cancelled) return;
+        const message = err instanceof ApiError
+          ? err.message
+          : 'AI recap is temporarily unavailable. Please try again shortly.';
+        setRecapError(message);
+      })
+      .finally(() => { if (!cancelled) setRecapLoading(false); });
+    return () => { cancelled = true; };
+  }, [game.id, isFinal, canViewRecap]);
 
   // Auto-focus close button on mount; restore focus to the opener on unmount
   useEffect(() => {
@@ -209,6 +240,45 @@ export function GameDetailModal({ game, onClose, onPlayerClick, isDarkMode }: Ga
               <p className="text-sm">Player projections and stats will appear here during the NFL season.</p>
             </div>
           )}
+          {/* AI Post-Game Recap */}
+          {isFinal && (
+            <div className={`rounded-lg border p-4 sm:p-6 mb-4 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className={`w-4 h-4 ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`} />
+                <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom AI Recap</h3>
+              </div>
+              {!canViewRecap ? (
+                <div className={`flex items-start gap-3 rounded-md border px-3 py-3 ${isDarkMode ? 'border-purple-900/50 bg-purple-950/20' : 'border-purple-200 bg-purple-50'}`}>
+                  <Lock className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`} />
+                  <div className="min-w-0">
+                    <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                      AI-generated fantasy recap — key performances, over/under-performers, and waiver-wire implications.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => window.location.assign(isAuthenticated ? '/pricing' : '/login')}
+                      className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+                    >
+                      {isAuthenticated ? 'Upgrade to Pro' : 'Sign in to unlock'}
+                    </button>
+                  </div>
+                </div>
+              ) : recapLoading ? (
+                <div className="space-y-2">
+                  <div className={`animate-pulse h-3 rounded ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                  <div className={`animate-pulse h-3 rounded w-5/6 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                  <div className={`animate-pulse h-3 rounded w-3/4 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                </div>
+              ) : recapError ? (
+                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{recapError}</p>
+              ) : recap ? (
+                <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{recap}</p>
+              ) : (
+                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No recap available yet.</p>
+              )}
+            </div>
+          )}
+
           {/* Team Headers */}
           <div className="grid grid-cols-2 gap-6 mb-4">
             {/* Away Team Header */}
