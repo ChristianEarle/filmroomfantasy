@@ -463,6 +463,14 @@ function OverviewTab({
         textSecondary={textSecondary}
       />
 
+      {/* Player props sync */}
+      <PlayerPropsSyncAdminCard
+        isDarkMode={isDarkMode}
+        cardClass={cardClass}
+        textPrimary={textPrimary}
+        textSecondary={textSecondary}
+      />
+
       {/* Recent Users */}
       {stats?.recentUsers && stats.recentUsers.length > 0 && (
         <div className={cardClass}>
@@ -637,6 +645,99 @@ function DraftRankingsAdminCard({
         </div>
       ) : (
         <p className={`text-sm ${textSecondary}`}>{jobsLoading ? 'Loading jobs…' : 'No batch jobs yet.'}</p>
+      )}
+    </div>
+  );
+}
+
+// ─── Player Props Sync Admin Card ──────────────────────────────────────────
+function PlayerPropsSyncAdminCard({
+  isDarkMode, cardClass, textPrimary, textSecondary,
+}: {
+  isDarkMode: boolean;
+  cardClass: string;
+  textPrimary: string;
+  textSecondary: string;
+}) {
+  const [week, setWeek] = useState(1);
+  const [season, setSeason] = useState(new Date().getFullYear());
+  const [syncing, setSyncing] = useState(false);
+  const [result, setResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const sync = async () => {
+    setSyncing(true);
+    setResult(null);
+    try {
+      const data = await api.post<{
+        games_processed: number;
+        props_found: number;
+        props_inserted: number;
+        projections_generated: number;
+        projections_updated: number;
+      }>('/admin/sync-player-props', { week, season });
+      setResult({
+        type: 'success',
+        message: `Synced ${data.games_processed} game${data.games_processed === 1 ? '' : 's'} — ${data.props_inserted} props inserted, ${data.projections_generated} projections generated, ${data.projections_updated} updated.`,
+      });
+    } catch (err) {
+      setResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to sync player props' });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const inputClass = `w-24 px-3 py-2 rounded-lg border text-sm ${
+    isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+  }`;
+
+  return (
+    <div className={cardClass}>
+      <h2 className={`text-lg font-semibold mb-2 ${textPrimary}`}>
+        <RefreshCw className="w-5 h-5 inline mr-2" />
+        Sync Player Props
+      </h2>
+      <p className={`text-sm mb-4 ${textSecondary}`}>
+        Pulls Vegas prop lines from the Odds API for every game in the given week (skipping games
+        already synced in the last 12h) and regenerates projections from them.
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Week</label>
+          <input
+            type="number"
+            min={1}
+            max={18}
+            value={week}
+            onChange={(e) => setWeek(Number(e.target.value))}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Season</label>
+          <input
+            type="number"
+            value={season}
+            onChange={(e) => setSeason(Number(e.target.value))}
+            className={inputClass}
+          />
+        </div>
+        <button
+          onClick={sync}
+          disabled={syncing}
+          className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+        >
+          {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          Sync Props
+        </button>
+      </div>
+      {result && (
+        <div className={`mt-4 px-3 py-2 rounded-lg text-sm ${
+          result.type === 'success'
+            ? isDarkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-50 text-green-700'
+            : isDarkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-700'
+        }`}>
+          {result.message}
+        </div>
       )}
     </div>
   );
