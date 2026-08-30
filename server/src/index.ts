@@ -2,14 +2,12 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { drizzle } from 'drizzle-orm/d1';
-import { and, eq } from 'drizzle-orm';
 import * as schema from './db/schema';
 
 // Import utilities
 import { cleanupExpiredRateLimits } from './middleware/rateLimit';
 import { snapshotRankHistory } from './services/draftRankings';
 import { generateInjuryNewsNotifications } from './services/notifications';
-import { getNflSeasonContext } from './services/espn';
 
 // Import routes
 import { authRoutes } from './routes/auth';
@@ -331,22 +329,14 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
 
     await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
 
-    // Sync player prop lines (per-player Vegas O/U), one game per call since
-    // the endpoint only fetches a single event's props per invocation to
-    // stay within CPU limits. Loop over every game scheduled for the current
-    // week so a full week's props — and the projections generated from them
-    // — actually fill in automatically instead of requiring a manual call
-    // per game. Games without props posted yet (Odds API hasn't listed them)
-    // simply come back empty and get picked up on a later cron run.
+    // Sync player prop lines (per-player Vegas O/U) for the current week.
+    // The endpoint itself loops over every game and skips any it already
+    // refreshed within the last 12h (see PROPS_REFRESH_HOURS in admin.ts),
+    // so a full week's props — and the projections generated from them —
+    // fill in automatically without re-billing the Odds API for games whose
+    // lines haven't had time to move.
     if (currentWeek <= 18) {
-      const seasonYear = getNflSeasonContext().season;
-      const weekGames = await db.query.nflGames.findMany({
-        where: and(eq(schema.nflGames.week, currentWeek), eq(schema.nflGames.seasonYear, seasonYear)),
-        columns: { id: true },
-      });
-      for (let i = 0; i < weekGames.length; i++) {
-        await callSync('/api/admin/sync-player-props', { week: currentWeek, gameIndex: i });
-      }
+      await callSync('/api/admin/sync-player-props', { week: currentWeek });
     }
 
     await callSync('/api/admin/sync-projections', { week: currentWeek });
