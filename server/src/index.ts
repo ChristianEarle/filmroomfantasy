@@ -328,6 +328,17 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
 
     await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
+
+    // Sync player prop lines (per-player Vegas O/U) for the current week.
+    // The endpoint itself loops over every game and skips any it already
+    // refreshed within the last 12h (see PROPS_REFRESH_HOURS in admin.ts),
+    // so a full week's props — and the projections generated from them —
+    // fill in automatically without re-billing the Odds API for games whose
+    // lines haven't had time to move.
+    if (currentWeek <= 18) {
+      await callSync('/api/admin/sync-player-props', { week: currentWeek });
+    }
+
     await callSync('/api/admin/sync-projections', { week: currentWeek });
 
     // Sync current odds during NFL season

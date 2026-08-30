@@ -23,6 +23,18 @@ const playerReadRateLimit = rateLimit(120, 60 * 1000); // 120 req/min for reads
 const playerAnalysisRateLimit = rateLimit(10, 60 * 1000); // 10 req/min for AI analysis
 const playerAskRateLimit = rateLimit(20, 60 * 1000); // 20 req/min for Ask AI
 
+// Display labels for prop market keys from The Odds API (mirrors the market
+// keys defined in services/projections.ts). Binary markets like anytime-TD
+// have no point line and are excluded from /prop-movements.
+const PROP_MARKET_LABELS: Record<string, string> = {
+  player_pass_yds: 'Pass Yards',
+  player_pass_tds: 'Pass TDs',
+  player_rush_yds: 'Rush Yards',
+  player_rush_tds: 'Rush TDs',
+  player_reception_yds: 'Rec Yards',
+  player_receptions: 'Receptions',
+};
+
 function mapSleeperStatsToRow(internalPlayerId: string, seasonYear: number, week: number, playerStats: any) {
   return {
     playerId: internalPlayerId,
@@ -716,6 +728,134 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
   } catch (error) {
     console.error('Projection movements error:', error);
     return c.json({ error: 'Failed to fetch projection movements' }, 500);
+  }
+});
+
+// Prop line movements - players whose Vegas prop O/U lines have moved the
+// most since the week's props started syncing (for Trends "Prop Movers" tab).
+// Cached for 5 minutes — props only refresh server-side every 12h per game.
+playerRoutes.get('/prop-movements', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const week = parseInt(c.req.query('week') || '1');
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
+
+  try {
+    const cacheKey = `prop-movements:${season}:${week}:${limit}`;
+    const movements = await cached(cacheKey, 5 * 60 * 1000, async () => {
+      const rows = await db.query.playerProps.findMany({
+        where: and(eq(schema.playerProps.week, week), eq(schema.playerProps.season, season)),
+        orderBy: asc(schema.playerProps.snapshotTime),
+        columns: {
+          playerName: true,
+          playerExternalId: true,
+          market: true,
+          overPoint: true,
+          bookmaker: true,
+          homeTeam: true,
+          awayTeam: true,
+        },
+      });
+
+      // overPoint is null for binary markets (e.g. anytime TD), which have
+      // no point line to move — only track markets with an actual number.
+      type PropPoint = {
+        point: number;
+        bookmaker: string;
+        homeTeam: string | null;
+        awayTeam: string | null;
+        playerName: string;
+        playerExternalId: string | null;
+        market: string;
+      };
+      const earliestByKey = new Map<string, PropPoint>();
+      const latestByKey = new Map<string, PropPoint>();
+
+      for (const row of rows) {
+        if (row.overPoint == null) continue;
+        const key = `${row.playerExternalId ?? row.playerName}::${row.market}`;
+        const point: PropPoint = {
+          point: row.overPoint,
+          bookmaker: row.bookmaker,
+          homeTeam: row.homeTeam,
+          awayTeam: row.awayTeam,
+          playerName: row.playerName,
+          playerExternalId: row.playerExternalId,
+          market: row.market,
+        };
+        if (!earliestByKey.has(key)) earliestByKey.set(key, point);
+        latestByKey.set(key, point);
+      }
+
+      // Enrich with team/position/headshot via the internal player record —
+      // playerProps only stores the game's home/away teams, not the
+      // player's own team, and has no position at all.
+      const externalIds = [...new Set(rows.map((r) => r.playerExternalId).filter((id): id is string => !!id))];
+      const playersByExternalId = new Map<string, { id: string; team: string; position: string; headshotUrl: string | null }>();
+      const CHUNK = 50;
+      for (let i = 0; i < externalIds.length; i += CHUNK) {
+        const chunk = externalIds.slice(i, i + CHUNK);
+        const chunkPlayers = await db.query.nflPlayers.findMany({
+          where: inArray(schema.nflPlayers.externalId, chunk),
+          columns: { id: true, externalId: true, team: true, position: true, headshotUrl: true },
+        });
+        for (const p of chunkPlayers) {
+          if (p.externalId) playersByExternalId.set(p.externalId, { id: p.id, team: p.team, position: p.position, headshotUrl: p.headshotUrl });
+        }
+      }
+
+      const results: Array<{
+        playerId: string | null;
+        name: string;
+        team: string;
+        position: string;
+        headshotUrl: string | null;
+        opponent: string | null;
+        market: string;
+        marketLabel: string;
+        bookmaker: string;
+        oldLine: number;
+        newLine: number;
+        movement: number;
+        direction: 'up' | 'down';
+      }> = [];
+
+      for (const [key, latest] of latestByKey) {
+        const earliest = earliestByKey.get(key)!;
+        const movement = latest.point - earliest.point;
+        // Prop lines move in 0.5 increments — anything smaller is noise.
+        if (Math.abs(movement) < 0.5) continue;
+
+        const playerInfo = latest.playerExternalId ? playersByExternalId.get(latest.playerExternalId) : undefined;
+        const opponent = playerInfo && latest.homeTeam && latest.awayTeam
+          ? (playerInfo.team === latest.homeTeam ? `vs ${latest.awayTeam}` : `@ ${latest.homeTeam}`)
+          : null;
+
+        results.push({
+          playerId: playerInfo?.id ?? null,
+          name: latest.playerName,
+          team: playerInfo?.team ?? latest.homeTeam ?? '',
+          position: playerInfo?.position ?? '',
+          headshotUrl: playerInfo?.headshotUrl ?? null,
+          opponent,
+          market: latest.market,
+          marketLabel: PROP_MARKET_LABELS[latest.market] ?? latest.market,
+          bookmaker: latest.bookmaker,
+          oldLine: earliest.point,
+          newLine: latest.point,
+          movement,
+          direction: movement > 0 ? 'up' : 'down',
+        });
+      }
+
+      results.sort((a, b) => Math.abs(b.movement) - Math.abs(a.movement));
+      return results.slice(0, limit);
+    });
+
+    return c.json({ movements });
+  } catch (error) {
+    console.error('Prop movements error:', error);
+    return c.json({ error: 'Failed to fetch prop movements' }, 500);
   }
 });
 

@@ -1654,6 +1654,11 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
   }
 });
 
+// How often the default (no explicit gameIndex/eventId) sync path will
+// re-fetch a game's props from the Odds API. Below this age a game is
+// considered fresh and skipped — see the default branch below.
+const PROPS_REFRESH_HOURS = 12;
+
 /**
  * POST /api/admin/sync-player-props
  * Fetches player prop lines from The Odds API for a given week/date.
@@ -1741,12 +1746,34 @@ adminRoutes.post('/sync-player-props', async (c) => {
       } else if (typeof gameIndex === 'number') {
         return c.json({ error: `Invalid gameIndex (must be 0-${validGames.length - 1})` }, 400);
       } else {
-        // Default: process first game only to avoid subrequest limits
-        console.log('No gameIndex specified, processing first game only');
-        if (validGames.length > 0) {
-          const propsGame = await fetchPlayerProps(apiKey, validGames[0].id, date);
+        // Default (cron path): sync every game for the week that hasn't had
+        // its props refreshed in the last PROPS_REFRESH_HOURS. Prop lines
+        // don't move fast enough to justify re-fetching (and re-billing
+        // against the Odds API quota) a game every 4-hour tick — most games
+        // sit unchanged between runs, so skip those and only pay for the
+        // ones actually due for a refresh.
+        const recentCutoff = new Date(Date.now() - PROPS_REFRESH_HOURS * 60 * 60 * 1000);
+        const existingProps = await db.query.playerProps.findMany({
+          where: and(eq(schema.playerProps.week, week), eq(schema.playerProps.season, seasonYear)),
+          columns: { homeTeam: true, awayTeam: true, createdAt: true },
+        });
+        const recentlySyncedPairs = new Set(
+          existingProps
+            .filter((p) => p.homeTeam && p.awayTeam && p.createdAt && p.createdAt >= recentCutoff)
+            .map((p) => `${p.awayTeam}_${p.homeTeam}`)
+        );
+
+        const gamesDue = validGames.filter((g) => {
+          const pair = `${teamNameToAbbr(g.away_team)}_${teamNameToAbbr(g.home_team)}`;
+          return !recentlySyncedPairs.has(pair);
+        });
+
+        console.log(`${validGames.length - gamesDue.length}/${validGames.length} games synced within the last ${PROPS_REFRESH_HOURS}h, refreshing ${gamesDue.length}`);
+
+        for (const dueGame of gamesDue) {
+          const propsGame = await fetchPlayerProps(apiKey, dueGame.id, date);
           if (propsGame) {
-            gamesToProcess = [propsGame];
+            gamesToProcess.push(propsGame);
           }
         }
       }
