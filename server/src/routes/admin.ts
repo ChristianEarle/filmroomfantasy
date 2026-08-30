@@ -895,7 +895,15 @@ adminRoutes.post('/sync-games', async (c) => {
     if (!Array.isArray(weeks) || weeks.length > 22 || weeks.some(w => typeof w !== 'number' || w < 1 || w > 22)) {
       return c.json({ error: 'Invalid weeks array' }, 400);
     }
-    const seasontype = body.weeks ? '2' : ctx.seasontype; // default to regular for explicit weeks
+    // Always regular season: week numbers 1-18 are unambiguously regular-season
+    // (postseason/preseason aren't synced via this endpoint's week numbering).
+    // Previously this fell back to ctx.seasontype when no explicit `weeks` was
+    // given — which is exactly the daily cron's call shape — so during the
+    // Aug 1-Sep 4 "preseason" calendar window (ctx.seasontype === '1') the
+    // cron silently synced preseason matchups into nfl_games tagged as
+    // week=1..18/regular's season year, instead of the real regular-season
+    // schedule.
+    const seasontype = '2';
 
     let inserted = 0;
     let updated = 0;
@@ -1720,10 +1728,15 @@ adminRoutes.post('/sync-player-props', async (c) => {
       // instead of guessing from a date window. Trusting a raw list position
       // previously let an unrelated week's game get labeled and stored as
       // this week's data (see PR fixing this).
+      // seasonType is required here — preseason and regular season both use
+      // week numbers 1-N, so week+season alone can collide with stale
+      // preseason rows for the same week/year (see PR fixing sync-games'
+      // preseason/regular-season mixup).
       const weekGames = await db.query.nflGames.findMany({
         where: and(
           eq(schema.nflGames.week, week),
-          eq(schema.nflGames.seasonYear, seasonYear)
+          eq(schema.nflGames.seasonYear, seasonYear),
+          eq(schema.nflGames.seasonType, 'regular')
         ),
         columns: { homeTeam: true, awayTeam: true },
       });
