@@ -170,11 +170,12 @@ export async function fetchHistoricalOdds(
 export function parseOddsResponse(
   games: OddsGame[],
   week?: number,
-  snapshotTime?: string
+  snapshotTime?: string,
+  season?: number
 ): ParsedOdds[] {
   const parsed: ParsedOdds[] = [];
   const timestamp = snapshotTime || new Date().toISOString();
-  const season = getNflSeasonContext().season;
+  const seasonYear = season ?? getNflSeasonContext().season;
 
   for (const game of games) {
     const homeTeamAbbr = teamNameToAbbr(game.home_team);
@@ -193,7 +194,7 @@ export function parseOddsResponse(
           bookmaker: bookmaker.key,
           market: market.key,
           snapshot_time: timestamp,
-          season,
+          season: seasonYear,
           week,
         };
 

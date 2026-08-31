@@ -1436,8 +1436,16 @@ adminRoutes.post('/sync-odds', async (c) => {
   }
 
   try {
+    let body: { week?: number; season?: number } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body
+    }
+
     const games = await fetchCurrentOdds(oddsApiKey);
-    const parsed = parseOddsResponse(games);
+    const parsed = parseOddsResponse(games, body.week, undefined, body.season);
 
     let inserted = 0;
     let skipped = 0;
@@ -1544,7 +1552,7 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
   }
 
   try {
-    let body: { date?: string; week?: number } = {};
+    let body: { date?: string; week?: number; season?: number } = {};
     try {
       const raw = await c.req.json();
       body = raw && typeof raw === 'object' ? raw : {};
@@ -1559,7 +1567,7 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
     }
 
     const historicalOdds = await fetchHistoricalOdds(oddsApiKey, body.date);
-    const parsed = parseOddsResponse(historicalOdds.games, body.week, historicalOdds.timestamp);
+    const parsed = parseOddsResponse(historicalOdds.games, body.week, historicalOdds.timestamp, body.season);
 
     let inserted = 0;
     let skipped = 0;

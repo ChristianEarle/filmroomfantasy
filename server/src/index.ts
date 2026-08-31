@@ -6,6 +6,7 @@ import * as schema from './db/schema';
 
 // Import utilities
 import { cleanupExpiredRateLimits } from './middleware/rateLimit';
+import { getDefaultSeason } from './utils/seasons';
 import { snapshotRankHistory } from './services/draftRankings';
 import { generateInjuryNewsNotifications } from './services/notifications';
 
@@ -318,10 +319,11 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // This keeps us within subrequest limits while keeping data fresh
     const db = drizzle(env.DB, { schema });
     const anyLeague = await db.query.leagues.findFirst({
-      columns: { currentWeek: true },
+      columns: { currentWeek: true, seasonYear: true },
       orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
     });
     const currentWeek = anyLeague?.currentWeek || 1;
+    const currentSeason = anyLeague?.seasonYear || getDefaultSeason();
 
     // Sync stats for current week + previous week (for late-breaking plays)
     const previousWeek = Math.max(1, currentWeek - 1);
@@ -343,7 +345,7 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
 
     // Sync current odds during NFL season
     if (currentWeek <= 18) {
-      await callSync('/api/admin/sync-odds');
+      await callSync('/api/admin/sync-odds', { week: currentWeek, season: currentSeason });
     }
   } else if (event.cron === '0 */6 * * *') {
     // Every 6 hours: sync all news sources
