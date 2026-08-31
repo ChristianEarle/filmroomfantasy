@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
 import { usePlayerProps, formatPropLine } from '../hooks/usePlayerProps';
-import { type APIPlayer, convertAPIPlayerToPlayer, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 import type { EnrichedPlayerFields } from '../services/players';
 import { AdUnit } from './AdUnit';
 import { Breadcrumb } from './shared/Breadcrumb';
@@ -455,7 +455,7 @@ export function PlayerTable({
   const weekDropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch odds and player props for the current week
-  const season = 2025;
+  const season = getDefaultSeason();
   const { odds } = useOdds(currentWeek, season);
   const { getPropsForPlayer } = usePlayerProps(currentWeek, season);
 

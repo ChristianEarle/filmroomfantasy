@@ -1,3 +1,5 @@
+import { getDefaultSeason } from '../utils/seasons';
+
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 /** Strip API key from URLs before logging to prevent credential leakage */
@@ -168,10 +170,12 @@ export async function fetchHistoricalOdds(
 export function parseOddsResponse(
   games: OddsGame[],
   week?: number,
-  snapshotTime?: string
+  snapshotTime?: string,
+  season?: number
 ): ParsedOdds[] {
   const parsed: ParsedOdds[] = [];
   const timestamp = snapshotTime || new Date().toISOString();
+  const seasonYear = season ?? getDefaultSeason();
 
   for (const game of games) {
     const homeTeamAbbr = teamNameToAbbr(game.home_team);
@@ -190,7 +194,7 @@ export function parseOddsResponse(
           bookmaker: bookmaker.key,
           market: market.key,
           snapshot_time: timestamp,
-          season: 2025,
+          season: seasonYear,
           week,
         };
 

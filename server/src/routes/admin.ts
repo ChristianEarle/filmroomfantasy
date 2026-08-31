@@ -6,6 +6,7 @@ import { fetchTwitterTweets } from '../services/twitter';
 import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
+import { getDefaultSeason } from '../utils/seasons';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
 import { generateProjectionsFromProps } from '../services/projections';
 import {
@@ -1428,8 +1429,16 @@ adminRoutes.post('/sync-odds', async (c) => {
   }
 
   try {
+    let body: { week?: number; season?: number } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body
+    }
+
     const games = await fetchCurrentOdds(oddsApiKey);
-    const parsed = parseOddsResponse(games);
+    const parsed = parseOddsResponse(games, body.week, undefined, body.season);
 
     let inserted = 0;
     let skipped = 0;
@@ -1532,7 +1541,7 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
   }
 
   try {
-    let body: { date?: string; week?: number } = {};
+    let body: { date?: string; week?: number; season?: number } = {};
     try {
       const raw = await c.req.json();
       body = raw && typeof raw === 'object' ? raw : {};
@@ -1547,7 +1556,7 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
     }
 
     const historicalOdds = await fetchHistoricalOdds(oddsApiKey, body.date);
-    const parsed = parseOddsResponse(historicalOdds.games, body.week, historicalOdds.timestamp);
+    const parsed = parseOddsResponse(historicalOdds.games, body.week, historicalOdds.timestamp, body.season);
 
     let inserted = 0;
     let skipped = 0;
@@ -1662,7 +1671,7 @@ adminRoutes.post('/sync-player-props', async (c) => {
 
   const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string; season?: number; snapshotTime?: string; skipProjections?: boolean }>();
   const { week, date, gameIndex, eventId } = body;
-  const seasonYear = body.season || 2025;
+  const seasonYear = body.season || getDefaultSeason();
   const providedSnapshotTime = body.snapshotTime;
 
   if (!week || week < 1 || week > 18) {
@@ -1781,7 +1790,7 @@ adminRoutes.post('/sync-player-props', async (c) => {
             yesPrice: prop.yes_price ?? null,
             noPrice: prop.no_price ?? null,
             snapshotTime: prop.snapshot_time,
-            season: 2025,
+            season: seasonYear,
             week,
             homeTeam: prop.home_team,
             awayTeam: prop.away_team,
