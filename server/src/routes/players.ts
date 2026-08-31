@@ -214,8 +214,11 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         if (anyStat) weekComplete = true;
       }
 
-      // Offseason fallback: if we're in the offseason (Feb-Aug), the entire NFL season is over
-      if (!weekComplete) {
+      // Offseason fallback: if we're in the offseason (Feb-Aug) AND we have no game
+      // records at all for this week/season, assume the season is over. Only applies
+      // when gamesForWeek is empty — if real (even incomplete/future) games were found,
+      // trust that over the calendar guess so upcoming weeks aren't misreported as final.
+      if (!weekComplete && gamesForWeek.length === 0) {
         const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 7=Aug
         if (currentMonth >= 1 && currentMonth <= 7) weekComplete = true;
       }
@@ -1912,14 +1915,22 @@ playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
       }
     }
 
-    // Enrich with player info
+    // Enrich with player info. Chunked — a week with full prop coverage
+    // across every game can produce 300-400+ unique player names, and a
+    // single unbatched inArray() blows D1's SQL variable limit ("too many
+    // SQL variables"), 500ing the whole endpoint.
     const playerNames = Object.keys(propsByPlayer);
+    const NAME_CHUNK = 100;
     if (playerNames.length > 0) {
-      const players = await db.query.nflPlayers.findMany({
-        where: inArray(schema.nflPlayers.name, playerNames),
-      });
+      const playerMap = new Map<string, (typeof schema.nflPlayers.$inferSelect)>();
+      for (let i = 0; i < playerNames.length; i += NAME_CHUNK) {
+        const chunk = playerNames.slice(i, i + NAME_CHUNK);
+        const players = await db.query.nflPlayers.findMany({
+          where: inArray(schema.nflPlayers.name, chunk),
+        });
+        for (const p of players) playerMap.set(p.name, p);
+      }
 
-      const playerMap = new Map(players.map(p => [p.name, p]));
       for (const [name, propData] of Object.entries(propsByPlayer)) {
         const player = playerMap.get(name);
         if (player) {
