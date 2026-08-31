@@ -39,6 +39,7 @@ export interface PlayerWeeklyStats {
   receivingYards?: number;
   receivingTDs?: number;
   targets?: number;
+  targetShare?: number;
   fgMade?: number;
   fgAttempts?: number;
   xpMade?: number;

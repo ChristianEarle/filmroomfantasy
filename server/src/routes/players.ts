@@ -2183,9 +2183,36 @@ playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
     // Resolve player position for DEF (plays every game; K needs attempts to count as played)
     const playerRow = await db.query.nflPlayers.findFirst({
       where: eq(schema.nflPlayers.id, playerId),
-      columns: { position: true },
+      columns: { position: true, team: true },
     });
     const position = playerRow?.position ?? '';
+
+    // Team target totals per week, for target-share (targets / team's total targets
+    // that week) — derived entirely from stats we already store, no new data feed
+    // needed. Uses the player's *current* team, so a mid-season trade will slightly
+    // misattribute earlier weeks to the new team; acceptable for this purpose.
+    const teamTargetsByWeek = new Map<number, number>();
+    if (playerRow?.team) {
+      const teamWeekTargets = await db
+        .select({
+          week: schema.playerWeeklyStats.week,
+          totalTargets: sql<number>`SUM(${schema.playerWeeklyStats.targets})`,
+        })
+        .from(schema.playerWeeklyStats)
+        .innerJoin(schema.nflPlayers, eq(schema.nflPlayers.id, schema.playerWeeklyStats.playerId))
+        .where(and(
+          eq(schema.nflPlayers.team, playerRow.team),
+          eq(schema.playerWeeklyStats.seasonYear, season)
+        ))
+        .groupBy(schema.playerWeeklyStats.week);
+      for (const row of teamWeekTargets) teamTargetsByWeek.set(row.week, row.totalTargets);
+    }
+    const computeTargetShare = (row: any): number | null => {
+      const targets = row.targets ?? 0;
+      const teamTargets = teamTargetsByWeek.get(row.week) ?? 0;
+      if (targets > 0 && teamTargets > 0) return Math.round((targets / teamTargets) * 1000) / 10;
+      return null;
+    };
 
     // Calculate season totals (gamesPlayed = weeks with snap participation; fallback to stat activity for older records)
     // DEF plays every game - count each week with stats as played; K requires FG/XP attempts
@@ -2209,10 +2236,13 @@ playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
           if (st > 0 && tmSt > 0) return (st / tmSt) * 100;
           return null;
         })();
+        const targetShare = computeTargetShare(week);
         return {
           games: acc.games + 1,
           gamesPlayed: acc.gamesPlayed + (played ? 1 : 0),
           snapPctSum: acc.snapPctSum + (snapPct != null ? snapPct : 0),
+          targetShareSum: acc.targetShareSum + (targetShare != null ? targetShare : 0),
+          targetShareGames: acc.targetShareGames + (targetShare != null ? 1 : 0),
           passYards: acc.passYards + (week.passYards || 0),
         passTDs: acc.passTDs + (week.passTDs || 0),
         passInterceptions: acc.passInterceptions + (week.passInterceptions || 0),
@@ -2231,6 +2261,8 @@ playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
         games: 0,
         gamesPlayed: 0,
         snapPctSum: 0,
+        targetShareSum: 0,
+        targetShareGames: 0,
         passYards: 0,
         passTDs: 0,
         passInterceptions: 0,
@@ -2266,17 +2298,22 @@ playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
       }
       const snapPct = computeSnapPct(row);
       if (snapPct != null) out.snapPct = snapPct;
+      const targetShare = computeTargetShare(row);
+      if (targetShare != null) out.targetShare = targetShare;
       return out;
     };
     const normalizedStats = stats.map(normalize);
 
-    const { snapPctSum, ...totalsOut } = seasonTotals as any;
+    const { snapPctSum, targetShareSum, targetShareGames, ...totalsOut } = seasonTotals as any;
     const averageSnapPct = snapPctSum > 0 && (seasonTotals.gamesPlayed ?? seasonTotals.games) > 0
       ? Math.round((snapPctSum / (seasonTotals.gamesPlayed ?? seasonTotals.games)) * 10) / 10
       : null;
+    const averageTargetShare = targetShareGames > 0
+      ? Math.round((targetShareSum / targetShareGames) * 10) / 10
+      : null;
     return c.json({
       weeklyStats: normalizedStats,
-      seasonTotals: { ...totalsOut, averageSnapPct },
+      seasonTotals: { ...totalsOut, averageSnapPct, averageTargetShare },
       resolvedSeason: season,
       averagePointsPPR: (seasonTotals.gamesPlayed ?? seasonTotals.games) > 0
         ? Math.round((seasonTotals.fantasyPointsPPR / (seasonTotals.gamesPlayed ?? seasonTotals.games)) * 10) / 10

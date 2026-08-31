@@ -64,7 +64,15 @@ history accrues from the first daily cron.
 ## P2 — Data feeds (see roadmap in docs/COMPLETION_PLAN.md)
 
 - [ ] Practice reports / injury designations (nflverse or ESPN, free)
-- [ ] Usage data: snap %, target share, red-zone touches (nflverse, free)
+- [x] Usage data: snap % — already synced from Sleeper (`playerWeeklyStats`
+  off/def/st snap columns) and shown on PlayerCard.
+- [x] Usage data: target share — derived from targets already stored in
+  `playerWeeklyStats` (no new feed needed): `GET /players/:id/stats` now
+  returns per-week `targetShare` + `seasonTotals.averageTargetShare`,
+  surfaced as a TGT% column on the RB/WR/TE PlayerCard season table.
+- [ ] Usage data: red-zone touches — needs real play-by-play data (down/
+  yardline per play), not just the weekly aggregate stats we already store;
+  a real new feed + cron, unlike snap %/target share above.
 - [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
 - [ ] Weather for outdoor games (Open-Meteo/NWS, free)
 - [ ] Redraft ADP (Sleeper/Underdog)

@@ -42,6 +42,7 @@ interface APIWeeklyStat {
   receivingYards?: number;
   receivingTDs?: number;
   targets?: number;
+  targetShare?: number | null;
   fgMade?: number;
   fgAttempts?: number;
   xpMade?: number;
@@ -85,7 +86,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [activeTab, setActiveTab] = useState<'props' | 'breakdown' | 'history'>('props');
 
   const [weeklyStats, setWeeklyStats] = useState<APIWeeklyStat[] | null>(null);
-  const [seasonTotals, setSeasonTotals] = useState<{ games?: number; gamesPlayed?: number; fantasyPointsPPR?: number; fantasyPointsHalf?: number; fantasyPointsStd?: number; averageSnapPct?: number | null } | null>(null);
+  const [seasonTotals, setSeasonTotals] = useState<{ games?: number; gamesPlayed?: number; fantasyPointsPPR?: number; fantasyPointsHalf?: number; fantasyPointsStd?: number; averageSnapPct?: number | null; averageTargetShare?: number | null } | null>(null);
   const [averagePoints, setAveragePoints] = useState<{ ppr: number | null; half: number | null; std: number | null }>({ ppr: null, half: null, std: null });
 
   // Resolve scoring format — normalize to 'ppr' | 'half_ppr' | 'standard'
@@ -279,7 +280,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
           : selectedSeason;
         type StatsResponse = {
           weeklyStats: APIWeeklyStat[];
-          seasonTotals?: { games?: number; gamesPlayed?: number; fantasyPointsPPR?: number; fantasyPointsHalf?: number; fantasyPointsStd?: number; averageSnapPct?: number | null };
+          seasonTotals?: { games?: number; gamesPlayed?: number; fantasyPointsPPR?: number; fantasyPointsHalf?: number; fantasyPointsStd?: number; averageSnapPct?: number | null; averageTargetShare?: number | null };
           averagePointsPPR?: number;
           averagePointsHalf?: number;
           averagePointsStd?: number;
@@ -857,10 +858,13 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                         (s.passAttempts ?? 0) > 0 || (s.rushAttempts ?? 0) > 0 || (s.targets ?? 0) > 0 || (s.receptions ?? 0) > 0 ||
                         (s.fgAttempts ?? 0) > 0 || (s.xpAttempts ?? 0) > 0 || (s.sacks ?? 0) > 0 || (s.defInterceptions ?? 0) > 0;
                       const snapPct = s.snapPct ?? null;
+                      const targetShare = s.targetShare ?? null;
                       return {
                       games: a.games + 1,
                       gamesPlayed: a.gamesPlayed + (played ? 1 : 0),
                       snapPctSum: a.snapPctSum + (snapPct != null ? snapPct : 0),
+                      targetShareSum: a.targetShareSum + (targetShare != null ? targetShare : 0),
+                      targetShareGames: a.targetShareGames + (targetShare != null ? 1 : 0),
                       fpts: a.fpts + getFantasyPoints(s),
                       passYds: a.passYds + (s.passYards ?? 0), passTDs: a.passTDs + (s.passTDs ?? 0), passInt: a.passInt + (s.passInterceptions ?? 0),
                       passCmp: a.passCmp + (s.passCompletions ?? 0), passAtt: a.passAtt + (s.passAttempts ?? 0),
@@ -869,10 +873,11 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       fgm: a.fgm + (s.fgMade ?? 0), fga: a.fga + (s.fgAttempts ?? 0), xpm: a.xpm + (s.xpMade ?? 0), xpa: a.xpa + (s.xpAttempts ?? 0),
                       sack: a.sack + (s.sacks ?? 0), defInt: a.defInt + (s.defInterceptions ?? 0), fr: a.fr + (s.fumblesRecovered ?? 0), defTd: a.defTd + (s.defenseTDs ?? 0), pa: a.pa + (s.pointsAllowed ?? 0),
                     };
-                    }, { games: 0, gamesPlayed: 0, snapPctSum: 0, fpts: 0, passYds: 0, passTDs: 0, passInt: 0, passCmp: 0, passAtt: 0, rushYds: 0, rushTDs: 0, rushAtt: 0, rec: 0, recYds: 0, recTDs: 0, tgt: 0, fgm: 0, fga: 0, xpm: 0, xpa: 0, sack: 0, defInt: 0, fr: 0, defTd: 0, pa: 0 });
+                    }, { games: 0, gamesPlayed: 0, snapPctSum: 0, targetShareSum: 0, targetShareGames: 0, fpts: 0, passYds: 0, passTDs: 0, passInt: 0, passCmp: 0, passAtt: 0, rushYds: 0, rushTDs: 0, rushAtt: 0, rec: 0, recYds: 0, recTDs: 0, tgt: 0, fgm: 0, fga: 0, xpm: 0, xpa: 0, sack: 0, defInt: 0, fr: 0, defTd: 0, pa: 0 });
                     const gp = seasonTotals?.gamesPlayed ?? tot.gamesPlayed ?? tot.games;
                     const avg = currentAverage ?? (gp > 0 ? tot.fpts / gp : null);
                     const snapPct = seasonTotals?.averageSnapPct ?? (tot.snapPctSum > 0 && gp > 0 ? Math.round((tot.snapPctSum / gp) * 10) / 10 : null);
+                    const targetShare = seasonTotals?.averageTargetShare ?? (tot.targetShareGames > 0 ? Math.round((tot.targetShareSum / tot.targetShareGames) * 10) / 10 : null);
                     return (
                   <div>
                     <h3 className={`font-bold mb-3 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Season Stats</h3>
@@ -1000,7 +1005,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}>
                                   <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
                                   <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Fantasy</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={5}>Receiving</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={6}>Receiving</th>
                                   <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Rushing</th>
                                 </tr>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
@@ -1010,6 +1015,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>G</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>SNAP%</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TGT</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TGT%</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>REC</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Y/R</th>
@@ -1027,6 +1033,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{gp}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{snapPct != null ? `${snapPct}%` : '-'}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.tgt}</td>
+                                  <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{targetShare != null ? `${targetShare}%` : '-'}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.rec}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.recYds.toLocaleString()}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.rec ? (tot.recYds/tot.rec).toFixed(1) : '—'}</td>
@@ -1044,7 +1051,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                                   <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={2}></th>
                                   <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={3}>Fantasy</th>
                                   <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={4}>Rushing</th>
-                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={4}>Receiving</th>
+                                  <th className={`px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} colSpan={6}>Receiving</th>
                                 </tr>
                                 <tr className={`border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-100/80'}`}>
                                   <th className={`px-4 py-2.5 text-left text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>YR</th>
@@ -1056,6 +1063,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Y/A</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TD</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TGT</th>
+                                  <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>TGT%</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>REC</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>YDS</th>
                                   <th className={`px-4 py-2.5 text-center text-xs font-medium ${colBorder(isDarkMode)} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Y/R</th>
@@ -1073,6 +1082,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.rushYds.toLocaleString()}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.rushAtt ? (tot.rushYds/tot.rushAtt).toFixed(1) : '—'}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.rushTDs}</td>
+                                  <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.tgt}</td>
+                                  <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{targetShare != null ? `${targetShare}%` : '-'}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.rec}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.recYds.toLocaleString()}</td>
                                   <td className={`px-4 py-3 text-center ${colBorder(isDarkMode)} ${statText(isDarkMode)}`}>{tot.rec ? (tot.recYds/tot.rec).toFixed(1) : '—'}</td>
