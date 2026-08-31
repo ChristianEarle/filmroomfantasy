@@ -1826,7 +1826,11 @@ adminRoutes.post('/sync-player-props', async (c) => {
     for (const game of gamesToProcess) {
       // Parse player props
       const propRecords = parsePlayerProps(game, week, snapshotTime);
-      console.log(`Event ${game.id}: parsed ${propRecords.length} player props`);
+      if (propRecords.length === 0) {
+        console.log(`Event ${game.id}: 0 player props — bookmakers in response: [${game.bookmakers.map((b: { key: string }) => b.key).join(', ')}]`);
+      } else {
+        console.log(`Event ${game.id}: parsed ${propRecords.length} player props`);
+      }
       propsFound += propRecords.length;
 
       // Match player names to our database player IDs (in-memory map lookup)
