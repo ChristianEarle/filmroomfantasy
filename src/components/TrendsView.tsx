@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { TrendingUp, TrendingDown, Activity, Loader2, RefreshCw, ArrowUpRight, ArrowDownRight, Users, BarChart3, Trophy } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, Loader2, RefreshCw, ArrowUpRight, ArrowDownRight, Users, BarChart3, Trophy, LineChart } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import api from '../services/api';
@@ -36,6 +36,22 @@ interface ProjectionMover {
   movement: number;
 }
 
+interface PropMover {
+  playerId: string | null;
+  name: string;
+  team: string;
+  position: string;
+  headshotUrl: string | null;
+  opponent: string | null;
+  market: string;
+  marketLabel: string;
+  bookmaker: string;
+  oldLine: number;
+  newLine: number;
+  movement: number;
+  direction: 'up' | 'down';
+}
+
 interface RecentLeader {
   id: string;
   name: string;
@@ -63,9 +79,9 @@ interface RecentLeadersResponse {
   limit: number;
 }
 
-type ActiveTab = 'trending' | 'projections' | 'leaders';
+type ActiveTab = 'trending' | 'projections' | 'propMovers' | 'leaders';
 
-const TAB_ORDER: ActiveTab[] = ['trending', 'projections', 'leaders'];
+const TAB_ORDER: ActiveTab[] = ['trending', 'projections', 'propMovers', 'leaders'];
 
 const VALID_POSITIONS = new Set<Player['position']>(['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'FLEX']);
 const TREND_WINDOW = 'Last 14 days';
@@ -84,6 +100,8 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   const [trendingDown, setTrendingDown] = useState<TrendingPlayer[]>([]);
   const [projectionMovers, setProjectionMovers] = useState<ProjectionMover[]>([]);
   const [projFilter, setProjFilter] = useState<'all' | 'up' | 'down'>('all');
+  const [propMovers, setPropMovers] = useState<PropMover[]>([]);
+  const [propFilter, setPropFilter] = useState<'all' | 'up' | 'down'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -118,16 +136,27 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
           })
         : Promise.resolve({ movements: [] });
 
-      const [upRes, downRes, projRes] = await Promise.all([
+      const propPromise = currentWeek != null
+        ? api.get<{ movements: PropMover[] }>(
+            `/players/prop-movements?week=${currentWeek}&season=${seasonYear}&limit=20`
+          ).catch((err) => {
+            console.warn('Failed to fetch prop movements:', err);
+            return { movements: [] };
+          })
+        : Promise.resolve({ movements: [] });
+
+      const [upRes, downRes, projRes, propRes] = await Promise.all([
         api.get<{ trending: TrendingPlayer[] }>(`/players/trending?direction=up${leagueParam}`),
         api.get<{ trending: TrendingPlayer[] }>(`/players/trending?direction=down${leagueParam}`),
         projPromise,
+        propPromise,
       ]);
 
       if (version !== fetchDataVersion.current) return;
       setTrendingUp(upRes.trending || []);
       setTrendingDown(downRes.trending || []);
       setProjectionMovers(projRes.movements || []);
+      setPropMovers(propRes.movements || []);
     } catch (err) {
       if (version !== fetchDataVersion.current) return;
       console.error('Failed to load trends data:', err);
@@ -135,6 +164,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
       setTrendingUp([]);
       setTrendingDown([]);
       setProjectionMovers([]);
+      setPropMovers([]);
     } finally {
       if (version === fetchDataVersion.current) setLoading(false);
     }
@@ -221,6 +251,31 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
       return projFilter === 'up' ? m.movement > 0 : m.movement < 0;
     }),
     [projectionMovers, projFilter]
+  );
+
+  const convertPropMoverToPlayer = (m: PropMover, index: number): Player => {
+    const position = VALID_POSITIONS.has(m.position as Player['position'])
+      ? (m.position as Player['position'])
+      : 'FLEX';
+    return {
+      id: m.playerId || `${m.name}-${m.market}-${index}`,
+      rank: index + 1,
+      name: m.name || 'Unknown',
+      team: m.team || '',
+      position,
+      keyLine: `${m.marketLabel}: ${m.newLine}`,
+      projectedPoints: 0,
+      weekChange: m.movement,
+      headshotUrl: m.headshotUrl ?? null,
+    };
+  };
+
+  const filteredPropMovers = useMemo(() =>
+    propMovers.filter(m => {
+      if (propFilter === 'all') return true;
+      return propFilter === 'up' ? m.movement > 0 : m.movement < 0;
+    }),
+    [propMovers, propFilter]
   );
 
   const convertLeaderToPlayer = (l: RecentLeader, index: number): Player => {
@@ -329,6 +384,22 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
           >
             <BarChart3 className="w-3.5 h-3.5" />
             Projection Movers
+          </button>
+          <button
+            role="tab"
+            id="tab-propMovers"
+            tabIndex={activeTab === 'propMovers' ? 0 : -1}
+            aria-selected={activeTab === 'propMovers'}
+            aria-controls="panel-propMovers"
+            onClick={() => setActiveTab('propMovers')}
+            className={`px-3 py-3 sm:py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+              activeTab === 'propMovers'
+                ? 'bg-blue-600 text-white'
+                : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <LineChart className="w-3.5 h-3.5" />
+            Prop Movers
           </button>
           <button
             role="tab"
@@ -589,6 +660,83 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      ) : activeTab === 'propMovers' ? (
+        /* Prop Movers Tab — biggest Vegas prop-line movements */
+        <div id="panel-propMovers" role="tabpanel" aria-labelledby="tab-propMovers" className={`rounded-lg border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <div className={`px-6 py-4 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <h2 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              Biggest Prop Line Movers{currentWeek ? ` — Week ${currentWeek}` : ''}
+            </h2>
+            <div className="flex items-center gap-2" data-testid="prop-filters">
+              {FILTER_OPTIONS.map((f) => {
+                const filterKey = f.toLowerCase() as 'all' | 'up' | 'down';
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setPropFilter(filterKey)}
+                    aria-pressed={propFilter === filterKey}
+                    data-testid={`prop-filter-${filterKey}`}
+                    className={`px-3 py-3 sm:py-1 text-xs rounded-lg transition-colors ${
+                      propFilter === filterKey
+                        ? 'bg-blue-600 text-white'
+                        : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {f === 'All' ? 'All' : f === 'Up' ? '↑ Up' : '↓ Down'}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={`divide-y ${isDarkMode ? 'divide-slate-800' : 'divide-slate-100'}`}>
+            {filteredPropMovers.length === 0 ? (
+              <div className={`p-12 text-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                <LineChart className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No prop line movement found for this week.</p>
+                <p className="text-xs mt-1">Lines fill in as sportsbooks post them and update over the week.</p>
+              </div>
+            ) : filteredPropMovers.map((mover, i) => {
+              const isUp = mover.movement > 0;
+              return (
+                <button
+                  key={`${mover.playerId || mover.name}-${mover.market}`}
+                  onClick={() => onPlayerClick(convertPropMoverToPlayer(mover, i))}
+                  aria-label={`View ${mover.name} details`}
+                  data-testid={`prop-mover-${i}`}
+                  className={`w-full px-6 py-3 text-left transition-colors flex items-center gap-4 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
+                >
+                  <span className={`text-xs font-mono w-5 text-center ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>{i + 1}</span>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                    {(mover.name || '?').split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-sm font-semibold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{mover.name || 'Unknown'}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'}`}>
+                        {mover.marketLabel}
+                      </span>
+                    </div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      {mover.team} • {mover.position}
+                      {mover.opponent ? ` • ${mover.opponent}` : ''}
+                      <span className="mx-1">•</span>
+                      <span className={isDarkMode ? 'text-slate-600' : 'text-slate-300'}>{mover.oldLine}</span>
+                      <span className="mx-1">→</span>
+                      <span className={`font-medium ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{mover.newLine}</span>
+                    </div>
+                  </div>
+                  <div className={`flex items-center gap-1 px-3 py-1.5 rounded-lg flex-shrink-0 ${
+                    isUp ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+                  }`}>
+                    {isUp ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    <span className="font-semibold text-sm">{isUp ? '+' : ''}{mover.movement.toFixed(1)}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : (

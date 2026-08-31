@@ -6,8 +6,7 @@ import { fetchTwitterTweets } from '../services/twitter';
 import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
-import { getDefaultSeason } from '../utils/seasons';
-import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps } from '../services/odds';
+import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr } from '../services/odds';
 import { generateProjectionsFromProps } from '../services/projections';
 import {
   submitDraftRankingsBatch,
@@ -48,7 +47,7 @@ adminRoutes.use('*', async (c, next) => {
     }
   }
 
-  await adminAuthMiddleware(c, next);
+  return adminAuthMiddleware(c, next);
 });
 
 /**
@@ -896,7 +895,15 @@ adminRoutes.post('/sync-games', async (c) => {
     if (!Array.isArray(weeks) || weeks.length > 22 || weeks.some(w => typeof w !== 'number' || w < 1 || w > 22)) {
       return c.json({ error: 'Invalid weeks array' }, 400);
     }
-    const seasontype = body.weeks ? '2' : ctx.seasontype; // default to regular for explicit weeks
+    // Always regular season: week numbers 1-18 are unambiguously regular-season
+    // (postseason/preseason aren't synced via this endpoint's week numbering).
+    // Previously this fell back to ctx.seasontype when no explicit `weeks` was
+    // given — which is exactly the daily cron's call shape — so during the
+    // Aug 1-Sep 4 "preseason" calendar window (ctx.seasontype === '1') the
+    // cron silently synced preseason matchups into nfl_games tagged as
+    // week=1..18/regular's season year, instead of the real regular-season
+    // schedule.
+    const seasontype = '2';
 
     let inserted = 0;
     let updated = 0;
@@ -1443,24 +1450,28 @@ adminRoutes.post('/sync-odds', async (c) => {
     let inserted = 0;
     let skipped = 0;
 
-    // Fetch all existing games to map to game IDs
+    // Fetch all existing games to map to game IDs (week/season come from the
+    // matched game record, not the odds payload — see historical bug where
+    // parseOddsResponse's guessed week/season silently mismatched the DB).
     const existingGames = await db.query.nflGames.findMany({
       columns: {
         id: true,
         homeTeam: true,
         awayTeam: true,
+        week: true,
+        seasonYear: true,
       },
     });
     const gameMap = new Map(
-      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g.id])
+      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g])
     );
 
     const BATCH_SIZE = 50;
     const statements: any[] = [];
 
     for (const odds of parsed) {
-      const gameId = gameMap.get(odds.game_id);
-      if (!gameId) {
+      const game = gameMap.get(odds.game_id);
+      if (!game) {
         skipped++;
         continue;
       }
@@ -1468,7 +1479,7 @@ adminRoutes.post('/sync-odds', async (c) => {
       statements.push(
         db.insert(schema.gameOdds).values({
           id: odds.id,
-          gameId,
+          gameId: game.id,
           sportKey: odds.sport_key,
           homeTeam: odds.home_team,
           awayTeam: odds.away_team,
@@ -1484,8 +1495,8 @@ adminRoutes.post('/sync-odds', async (c) => {
           overPrice: odds.over_price ?? null,
           underPrice: odds.under_price ?? null,
           snapshotTime: odds.snapshot_time,
-          season: odds.season,
-          week: odds.week ?? null,
+          season: game.seasonYear,
+          week: game.week,
           createdAt: new Date(),
         }).onConflictDoNothing()
       );
@@ -1561,24 +1572,28 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
     let inserted = 0;
     let skipped = 0;
 
-    // Fetch all existing games to map to game IDs
+    // Fetch all existing games to map to game IDs (week/season come from the
+    // matched game record, not the odds payload — see historical bug where
+    // parseOddsResponse's guessed week/season silently mismatched the DB).
     const existingGames = await db.query.nflGames.findMany({
       columns: {
         id: true,
         homeTeam: true,
         awayTeam: true,
+        week: true,
+        seasonYear: true,
       },
     });
     const gameMap = new Map(
-      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g.id])
+      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g])
     );
 
     const BATCH_SIZE = 50;
     const statements: any[] = [];
 
     for (const odds of parsed) {
-      const gameId = gameMap.get(odds.game_id);
-      if (!gameId) {
+      const game = gameMap.get(odds.game_id);
+      if (!game) {
         skipped++;
         continue;
       }
@@ -1586,7 +1601,7 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
       statements.push(
         db.insert(schema.gameOdds).values({
           id: odds.id,
-          gameId,
+          gameId: game.id,
           sportKey: odds.sport_key,
           homeTeam: odds.home_team,
           awayTeam: odds.away_team,
@@ -1602,8 +1617,8 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
           overPrice: odds.over_price ?? null,
           underPrice: odds.under_price ?? null,
           snapshotTime: odds.snapshot_time,
-          season: odds.season,
-          week: odds.week ?? null,
+          season: game.seasonYear,
+          week: game.week,
           createdAt: new Date(),
         }).onConflictDoNothing()
       );
@@ -1655,6 +1670,11 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
   }
 });
 
+// How often the default (no explicit gameIndex/eventId) sync path will
+// re-fetch a game's props from the Odds API. Below this age a game is
+// considered fresh and skipped — see the default branch below.
+const PROPS_REFRESH_HOURS = 12;
+
 /**
  * POST /api/admin/sync-player-props
  * Fetches player prop lines from The Odds API for a given week/date.
@@ -1671,7 +1691,8 @@ adminRoutes.post('/sync-player-props', async (c) => {
 
   const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string; season?: number; snapshotTime?: string; skipProjections?: boolean }>();
   const { week, date, gameIndex, eventId } = body;
-  const seasonYear = body.season || getDefaultSeason();
+  const { getNflSeasonContext } = await import('../services/espn');
+  const seasonYear = body.season || getNflSeasonContext().season;
   const providedSnapshotTime = body.snapshotTime;
 
   if (!week || week < 1 || week > 18) {
@@ -1709,15 +1730,31 @@ adminRoutes.post('/sync-player-props', async (c) => {
       const games = oddsData.games || [];
       snapshotTime = oddsData.timestamp || snapshotTime;
 
-      // Filter to valid games
-      const now = new Date();
-      const maxFutureTime = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      // The Odds API's odds feed returns events for the whole season, not
+      // just this week, and carries no week field of its own — so match
+      // each event against our own schedule for the requested week/season
+      // instead of guessing from a date window. Trusting a raw list position
+      // previously let an unrelated week's game get labeled and stored as
+      // this week's data (see PR fixing this).
+      // seasonType is required here — preseason and regular season both use
+      // week numbers 1-N, so week+season alone can collide with stale
+      // preseason rows for the same week/year (see PR fixing sync-games'
+      // preseason/regular-season mixup).
+      const weekGames = await db.query.nflGames.findMany({
+        where: and(
+          eq(schema.nflGames.week, week),
+          eq(schema.nflGames.seasonYear, seasonYear),
+          eq(schema.nflGames.seasonType, 'regular')
+        ),
+        columns: { homeTeam: true, awayTeam: true },
+      });
+      const weekTeamPairs = new Set(weekGames.map(g => `${g.awayTeam}_${g.homeTeam}`));
       const validGames = games.filter((game) => {
-        const commenceTime = new Date(game.commence_time);
-        return commenceTime <= maxFutureTime;
-      }).slice(0, 16);
+        const pair = `${teamNameToAbbr(game.away_team)}_${teamNameToAbbr(game.home_team)}`;
+        return weekTeamPairs.has(pair);
+      });
 
-      console.log(`Starting player props sync for week ${week}, found ${games.length} games, ${validGames.length} valid`);
+      console.log(`Starting player props sync for week ${week}, found ${games.length} events, ${validGames.length} match this week's schedule`);
 
       // If gameIndex is specified, fetch only that game
       if (typeof gameIndex === 'number' && gameIndex >= 0 && gameIndex < validGames.length) {
@@ -1730,12 +1767,34 @@ adminRoutes.post('/sync-player-props', async (c) => {
       } else if (typeof gameIndex === 'number') {
         return c.json({ error: `Invalid gameIndex (must be 0-${validGames.length - 1})` }, 400);
       } else {
-        // Default: process first game only to avoid subrequest limits
-        console.log('No gameIndex specified, processing first game only');
-        if (validGames.length > 0) {
-          const propsGame = await fetchPlayerProps(apiKey, validGames[0].id, date);
+        // Default (cron path): sync every game for the week that hasn't had
+        // its props refreshed in the last PROPS_REFRESH_HOURS. Prop lines
+        // don't move fast enough to justify re-fetching (and re-billing
+        // against the Odds API quota) a game every 4-hour tick — most games
+        // sit unchanged between runs, so skip those and only pay for the
+        // ones actually due for a refresh.
+        const recentCutoff = new Date(Date.now() - PROPS_REFRESH_HOURS * 60 * 60 * 1000);
+        const existingProps = await db.query.playerProps.findMany({
+          where: and(eq(schema.playerProps.week, week), eq(schema.playerProps.season, seasonYear)),
+          columns: { homeTeam: true, awayTeam: true, createdAt: true },
+        });
+        const recentlySyncedPairs = new Set(
+          existingProps
+            .filter((p) => p.homeTeam && p.awayTeam && p.createdAt && p.createdAt >= recentCutoff)
+            .map((p) => `${p.awayTeam}_${p.homeTeam}`)
+        );
+
+        const gamesDue = validGames.filter((g) => {
+          const pair = `${teamNameToAbbr(g.away_team)}_${teamNameToAbbr(g.home_team)}`;
+          return !recentlySyncedPairs.has(pair);
+        });
+
+        console.log(`${validGames.length - gamesDue.length}/${validGames.length} games synced within the last ${PROPS_REFRESH_HOURS}h, refreshing ${gamesDue.length}`);
+
+        for (const dueGame of gamesDue) {
+          const propsGame = await fetchPlayerProps(apiKey, dueGame.id, date);
           if (propsGame) {
-            gamesToProcess = [propsGame];
+            gamesToProcess.push(propsGame);
           }
         }
       }

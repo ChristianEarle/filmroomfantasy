@@ -91,7 +91,7 @@ articleRoutes.use('/admin/*', async (c, next) => {
     }
   }
 
-  await adminAuthMiddleware(c, next);
+  return adminAuthMiddleware(c, next);
 });
 
 // GET /api/articles/admin/all — List all articles including drafts (admin only)

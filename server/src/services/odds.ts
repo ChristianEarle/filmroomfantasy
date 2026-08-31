@@ -1,4 +1,4 @@
-import { getDefaultSeason } from '../utils/seasons';
+import { getNflSeasonContext } from './espn';
 
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
@@ -175,7 +175,7 @@ export function parseOddsResponse(
 ): ParsedOdds[] {
   const parsed: ParsedOdds[] = [];
   const timestamp = snapshotTime || new Date().toISOString();
-  const seasonYear = season ?? getDefaultSeason();
+  const seasonYear = season ?? getNflSeasonContext().season;
 
   for (const game of games) {
     const homeTeamAbbr = teamNameToAbbr(game.home_team);
