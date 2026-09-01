@@ -210,7 +210,6 @@ const VIEW_TO_PATH: Record<string, string> = {
   Settings: '/settings',
   Profile: '/profile',
   Login: '/login',
-  Register: '/register',
   AllPlayers: '/all-players',
   Pricing: '/pricing',
   Admin: '/admin',
@@ -232,6 +231,24 @@ const PATH_TO_VIEW: Record<string, string> = Object.fromEntries(
   Object.entries(VIEW_TO_PATH).map(([view, path]) => [path, view])
 );
 
+// The Login view has its own sub-routes for register/forgot/reset, tracked by
+// `authView` rather than `activeView`. Map both directions so each sub-screen
+// gets a real, shareable URL instead of always collapsing to /login.
+const AUTH_VIEW_TO_PATH: Record<'login' | 'register' | 'forgot' | 'reset', string> = {
+  login: '/login',
+  register: '/register',
+  forgot: '/forgot-password',
+  reset: '/reset-password',
+};
+const AUTH_PATHS = new Set(Object.values(AUTH_VIEW_TO_PATH));
+
+/** Read the current URL pathname and return the matching authView sub-state. */
+function getAuthViewFromURL(): 'login' | 'register' | 'forgot' | 'reset' {
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
+  const entry = Object.entries(AUTH_VIEW_TO_PATH).find(([, p]) => p === path);
+  return (entry?.[0] as 'login' | 'register' | 'forgot' | 'reset') ?? 'login';
+}
+
 /** Read the current URL pathname and return the matching view, defaulting to 'Landing'. */
 function getViewFromURL(): string {
   const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
@@ -246,10 +263,11 @@ function getViewFromURL(): string {
   // Handle player profile routes (/players/{slug}-{id})
   if (path.startsWith('/players/') && parsePlayerProfilePath(path)) return 'PlayerProfile';
 
-  const view = PATH_TO_VIEW[path] ?? 'NotFound';
-  // /register is handled within the Login view via authView state
-  if (view === 'Register') return 'Login';
-  return view;
+  // /register, /forgot-password, /reset-password are sub-routes of Login,
+  // tracked via authView rather than being their own top-level view.
+  if (AUTH_PATHS.has(path)) return 'Login';
+
+  return PATH_TO_VIEW[path] ?? 'NotFound';
 }
 
 /** Extract article slug from URL */
@@ -311,7 +329,8 @@ function AppContent() {
   }, [isDarkMode]);
 
   const [allPlayersSource, setAllPlayersSource] = useState<'board' | 'waivers'>('board');
-  const [authView, setAuthView] = useState<'login' | 'register' | 'forgot' | 'reset'>('login');
+  const [playerProfileSource, setPlayerProfileSource] = useState<string>('Board');
+  const [authView, setAuthView] = useState<'login' | 'register' | 'forgot' | 'reset'>(() => getAuthViewFromURL());
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
@@ -329,6 +348,8 @@ function AppContent() {
       targetPath = `/articles/${articleSlug}`;
     } else if (activeView === 'PlayerProfile' && playerProfile) {
       targetPath = `/players/${playerProfile.slug}-${playerProfile.id}`;
+    } else if (activeView === 'Login') {
+      targetPath = AUTH_VIEW_TO_PATH[authView];
     } else {
       targetPath = VIEW_TO_PATH[activeView] || '/player-rankings';
     }
@@ -336,7 +357,7 @@ function AppContent() {
       window.history.pushState({ view: activeView }, '', targetPath);
     }
     trackPageView(targetPath);
-  }, [activeView, articleSlug, playerProfile]);
+  }, [activeView, articleSlug, playerProfile, authView]);
 
   // Handle browser back/forward buttons (popstate) so routing stays in sync
   useEffect(() => {
@@ -345,6 +366,9 @@ function AppContent() {
       setActiveView(view as any);
       setArticleSlug(getArticleSlugFromURL());
       setPlayerProfile(getPlayerProfileFromURL());
+      if (view === 'Login') {
+        setAuthView(getAuthViewFromURL());
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -395,15 +419,6 @@ function AppContent() {
     })();
   }, [refreshUser]);
 
-  // Handle /register URL — set activeView to Login and authView to register
-  useEffect(() => {
-    const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
-    if (path === '/register') {
-      setActiveView('Login');
-      setAuthView('register');
-    }
-  }, []);
-
   // Check if user has synced leagues (use LeaguesContext - same source as sidebar/dropdown)
   const isLeagueSynced = leagues.length > 0;
 
@@ -441,10 +456,14 @@ function AppContent() {
     const path = buildPlayerProfilePath(p.name, p.id);
     const parsed = parsePlayerProfilePath(path);
     if (parsed) {
+      // Remember where the user came from so "Back" returns them there,
+      // rather than always landing on Board. Already on a profile (e.g. the
+      // quick-look modal linking to another player) keeps the earlier source.
+      setPlayerProfileSource((prev) => (activeView === 'PlayerProfile' ? prev : activeView));
       setPlayerProfile(parsed);
       setActiveView('PlayerProfile');
     }
-  }, []);
+  }, [activeView]);
 
   /** Reopen the modal as a quick-look from the standalone profile page. */
   const handleQuickLookFromProfile = useCallback((p: { id: string; name: string; team: string; position: 'QB' | 'RB' | 'WR' | 'TE' | 'K' | 'DEF'; headshotUrl?: string | null }) => {
@@ -463,8 +482,8 @@ function AppContent() {
 
   const handleBackFromPlayerProfile = useCallback(() => {
     setPlayerProfile(null);
-    setActiveView('Board');
-  }, []);
+    setActiveView(playerProfileSource as any);
+  }, [playerProfileSource]);
 
   const handleLogin = useCallback(async (email: string, password: string) => {
     try {
@@ -634,14 +653,16 @@ function AppContent() {
                   isDarkMode={isDarkMode}
                 />
               ) : (
-                <Suspense fallback={suspenseFallback}>
-                  <HomeView
-                    onPlayerClick={setSelectedPlayer}
-                    onViewChange={setActiveView}
-                    onGameSelect={handleGameSelect}
-                    isDarkMode={isDarkMode}
-                  />
-                </Suspense>
+                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                  <Suspense fallback={suspenseFallback}>
+                    <HomeView
+                      onPlayerClick={setSelectedPlayer}
+                      onViewChange={setActiveView}
+                      onGameSelect={handleGameSelect}
+                      isDarkMode={isDarkMode}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
               )
             ) : activeView === 'Board' ? (
               <div className="max-w-[1600px] mx-auto">
@@ -679,7 +700,9 @@ function AppContent() {
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <Suspense fallback={suspenseFallback}><TeamView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
+                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                  <Suspense fallback={suspenseFallback}><TeamView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
+                </ErrorBoundary>
               )
             ) : activeView === 'Matchup' ? (
               showLoginGate ? (
@@ -687,15 +710,19 @@ function AppContent() {
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <Suspense fallback={suspenseFallback}><MatchupView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
+                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                  <Suspense fallback={suspenseFallback}><MatchupView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
+                </ErrorBoundary>
               )
             ) : activeView === 'GameSlate' ? (
-              <Suspense fallback={suspenseFallback}>
-                <GameSlateView
-                  onSelectGame={setSelectedGame}
-                  isDarkMode={isDarkMode}
-                />
-              </Suspense>
+              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                <Suspense fallback={suspenseFallback}>
+                  <GameSlateView
+                    onSelectGame={setSelectedGame}
+                    isDarkMode={isDarkMode}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             ) : activeView === 'Trends' ? (
               <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                 <Suspense fallback={suspenseFallback}>
@@ -723,19 +750,23 @@ function AppContent() {
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <Suspense fallback={suspenseFallback}>
-                  <SettingsView
-                    isDarkMode={isDarkMode}
-                    onToggleDarkMode={handleToggleDarkMode}
-                    onLeagueSynced={() => refreshAll()}
-                  />
-                </Suspense>
+                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                  <Suspense fallback={suspenseFallback}>
+                    <SettingsView
+                      isDarkMode={isDarkMode}
+                      onToggleDarkMode={handleToggleDarkMode}
+                      onLeagueSynced={() => refreshAll()}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
               )
             ) : activeView === 'Profile' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <Suspense fallback={suspenseFallback}><ProfileView isDarkMode={isDarkMode} onLogout={handleLogout} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
+                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                  <Suspense fallback={suspenseFallback}><ProfileView isDarkMode={isDarkMode} onLogout={handleLogout} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
+                </ErrorBoundary>
               )
             ) : activeView === 'Login' ? (
               authView === 'forgot' ? (
@@ -766,30 +797,36 @@ function AppContent() {
                 />
               )
             ) : activeView === 'AllPlayers' ? (
-              <Suspense fallback={suspenseFallback}>
-                <AllPlayersView
-                  selectedScoring={selectedScoring}
-                  onScoringChange={setSelectedScoring}
-                  selectedPosition={selectedPosition}
-                  onPositionChange={setSelectedPosition}
-                  currentWeek={currentWeek}
-                  onWeekChange={setCurrentWeek}
-                  onPlayerClick={setSelectedPlayer}
-                  onBack={handleBackFromAllPlayers}
-                  isDarkMode={isDarkMode}
-                  source={allPlayersSource}
-                />
-              </Suspense>
+              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                <Suspense fallback={suspenseFallback}>
+                  <AllPlayersView
+                    selectedScoring={selectedScoring}
+                    onScoringChange={setSelectedScoring}
+                    selectedPosition={selectedPosition}
+                    onPositionChange={setSelectedPosition}
+                    currentWeek={currentWeek}
+                    onWeekChange={setCurrentWeek}
+                    onPlayerClick={setSelectedPlayer}
+                    onBack={handleBackFromAllPlayers}
+                    isDarkMode={isDarkMode}
+                    source={allPlayersSource}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             ) : activeView === 'Waivers' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <Suspense fallback={suspenseFallback}><WaiversView onPlayerClick={setSelectedPlayer} onViewAll={handleViewAllFromWaivers} isDarkMode={isDarkMode} /></Suspense>
+                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                  <Suspense fallback={suspenseFallback}><WaiversView onPlayerClick={setSelectedPlayer} onViewAll={handleViewAllFromWaivers} isDarkMode={isDarkMode} /></Suspense>
+                </ErrorBoundary>
               )
             ) : activeView === 'DraftRankings' ? (
-              <Suspense fallback={suspenseFallback}><DraftRankingsView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
+              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                <Suspense fallback={suspenseFallback}><DraftRankingsView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
+              </ErrorBoundary>
             ) : activeView === 'LeagueAnalyzer' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
@@ -803,10 +840,14 @@ function AppContent() {
                 </ErrorBoundary>
               )
             ) : activeView === 'TradeAnalyzer' ? (
-              <Suspense fallback={suspenseFallback}><TradeAnalyzerShell isDarkMode={isDarkMode} /></Suspense>
+              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                <Suspense fallback={suspenseFallback}><TradeAnalyzerShell isDarkMode={isDarkMode} /></Suspense>
+              </ErrorBoundary>
             ) : activeView === 'Admin' ? (
               user?.role === 'admin' ? (
-                <Suspense fallback={suspenseFallback}><AdminView isDarkMode={isDarkMode} /></Suspense>
+                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                  <Suspense fallback={suspenseFallback}><AdminView isDarkMode={isDarkMode} /></Suspense>
+                </ErrorBoundary>
               ) : (
                 <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
                   <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Access Denied</h2>
@@ -817,37 +858,45 @@ function AppContent() {
                 </div>
               )
             ) : activeView === 'Pricing' ? (
-              <Suspense fallback={suspenseFallback}><PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
+              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                <Suspense fallback={suspenseFallback}><PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
+              </ErrorBoundary>
             ) : activeView === 'Articles' ? (
-              <Suspense fallback={suspenseFallback}>
-                <ArticlesView
-                  isDarkMode={isDarkMode}
-                  onNavigate={(view) => setActiveView(view as any)}
-                  onArticleSelect={(slug) => { setArticleSlug(slug); setActiveView('ArticleDetail'); }}
-                />
-              </Suspense>
+              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                <Suspense fallback={suspenseFallback}>
+                  <ArticlesView
+                    isDarkMode={isDarkMode}
+                    onNavigate={(view) => setActiveView(view as any)}
+                    onArticleSelect={(slug) => { setArticleSlug(slug); setActiveView('ArticleDetail'); }}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             ) : activeView === 'ArticleDetail' && articleSlug ? (
-              <Suspense fallback={suspenseFallback}>
-                <ArticleDetailView
-                  slug={articleSlug}
-                  isDarkMode={isDarkMode}
-                  onBack={() => { setArticleSlug(null); setActiveView('Articles'); }}
-                  onArticleSelect={(slug) => { setArticleSlug(slug); }}
-                  onNavigate={(view) => setActiveView(view as any)}
-                />
-              </Suspense>
+              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                <Suspense fallback={suspenseFallback}>
+                  <ArticleDetailView
+                    slug={articleSlug}
+                    isDarkMode={isDarkMode}
+                    onBack={() => { setArticleSlug(null); setActiveView('Articles'); }}
+                    onArticleSelect={(slug) => { setArticleSlug(slug); }}
+                    onNavigate={(view) => setActiveView(view as any)}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             ) : activeView === 'PlayerProfile' && playerProfile ? (
-              <Suspense fallback={suspenseFallback}>
-                <PlayerProfileView
-                  playerId={playerProfile.id}
-                  isDarkMode={isDarkMode}
-                  seasonYear={league?.seasonYear}
-                  currentWeek={currentWeek}
-                  scoringFormat={league?.scoringFormat}
-                  onBack={handleBackFromPlayerProfile}
-                  onOpenQuickLook={handleQuickLookFromProfile}
-                />
-              </Suspense>
+              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
+                <Suspense fallback={suspenseFallback}>
+                  <PlayerProfileView
+                    playerId={playerProfile.id}
+                    isDarkMode={isDarkMode}
+                    seasonYear={league?.seasonYear}
+                    currentWeek={currentWeek}
+                    scoringFormat={league?.scoringFormat}
+                    onBack={handleBackFromPlayerProfile}
+                    onOpenQuickLook={handleQuickLookFromProfile}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             ) : activeView === 'Privacy' ? (
               <Suspense fallback={suspenseFallback}><PrivacyPolicyView isDarkMode={isDarkMode} /></Suspense>
             ) : activeView === 'Terms' ? (

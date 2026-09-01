@@ -280,7 +280,18 @@
 - [ ] **Audit PlayerAvatar** - Image loading, fallback initials
 - [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget
 - [ ] **Audit ErrorBoundary** - Error catch/display, recovery
-- [ ] **Audit App.tsx** - Routing, state management, context wiring, page transitions
+- [x] **Audit App.tsx** - Fixed 3 issues: (1) "Back" from the standalone
+  player profile page always returned to Board regardless of which view the
+  user opened it from — now records the origin view like the existing
+  `allPlayersSource` pattern. (2) `/register`, `/forgot-password`,
+  `/reset-password` never got their own URL — the router only ever wrote
+  `/login`, so sharing/refreshing on those screens silently rewrote the
+  address bar and lost the sub-screen. (3) Only 3 of ~20 lazy-loaded views
+  had a scoped `ErrorBoundary`; an error anywhere else crashed the entire
+  app shell instead of just that view's content area — now 14 more
+  data-driven views (Home, Team, Matchup, GameSlate, Settings, Profile,
+  AllPlayers, Waivers, DraftRankings, TradeAnalyzer, Admin, Pricing,
+  Articles, ArticleDetail, PlayerProfile) are wrapped the same way.
 
 ---
 
