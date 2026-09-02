@@ -100,6 +100,7 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
           </div>
           <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             {player.team} · {player.position}
+            {player.depthChartOrder != null && player.depthChartOrder > 0 ? player.depthChartOrder : ''}
             {oddsDisplay && (
               <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                 {oddsDisplay}

@@ -9,6 +9,8 @@ export interface APIPlayer {
   status: string;
   byeWeek: number | null;
   headshotUrl?: string | null;
+  /** Position rank on the team's Sleeper depth chart (1 = starter). Not always populated. */
+  depthChartOrder?: number | null;
   avgPointsPPR: number;
   projectedPoints: number;
   weeklyProjectedPoints?: number;
@@ -74,6 +76,7 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
     weekChange: 0,
     weeklyProjectedPoints: player.weeklyProjectedPoints,
     headshotUrl: player.headshotUrl ?? null,
+    depthChartOrder: player.depthChartOrder ?? null,
   };
 }
 

@@ -190,6 +190,8 @@ export interface Player {
   weekChange: number;
   weeklyProjectedPoints?: number;
   headshotUrl?: string | null;
+  /** Position rank on the team's Sleeper depth chart (1 = starter). Not always populated. */
+  depthChartOrder?: number | null;
 }
 
 // URL path <-> view mapping for client-side routing (BUG-001/002 fix)

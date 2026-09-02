@@ -81,6 +81,7 @@ const AllPlayerRow = memo(function AllPlayerRow({
       <td className="px-3 py-2 hidden sm:table-cell">
         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
           {player.position}
+          {player.depthChartOrder != null && player.depthChartOrder > 0 ? player.depthChartOrder : ''}
         </span>
       </td>
       <td className="px-3 py-2 hidden md:table-cell">
