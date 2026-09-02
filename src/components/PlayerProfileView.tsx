@@ -364,6 +364,12 @@ export function PlayerProfileView({
                   <span>#{player.jerseyNumber}</span>
                 </>
               )}
+              {player.depthChartOrder != null && player.depthChartOrder > 0 && (
+                <>
+                  <span className={muted}>•</span>
+                  <span>Depth Chart: {position}{player.depthChartOrder}</span>
+                </>
+              )}
               {player.byeWeek != null && (
                 <>
                   <span className={muted}>•</span>
