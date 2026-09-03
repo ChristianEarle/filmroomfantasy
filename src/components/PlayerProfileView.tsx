@@ -54,7 +54,6 @@ interface PlayerDetail extends ApiPlayer {
   height?: string;
   weight?: number;
   college?: string;
-  depthChartOrder?: number;
 }
 
 function formatTimeAgo(dateString: string | Date): string {
@@ -379,6 +378,9 @@ export function PlayerProfileView({
               {player.weight != null && <span><span className={`font-semibold ${bodyColor}`}>{player.weight}</span> lbs</span>}
               {player.college && <span><span className={`font-semibold ${bodyColor}`}>{player.college}</span></span>}
               {player.yearsExp != null && <span><span className={`font-semibold ${bodyColor}`}>{player.yearsExp}</span> yrs exp</span>}
+              {player.depthChartOrder != null && player.depthChartOrder > 0 && (
+                <span><span className={`font-semibold ${bodyColor}`}>{position}{player.depthChartOrder}</span> depth chart</span>
+              )}
             </div>
 
             {player.injuryNote && (

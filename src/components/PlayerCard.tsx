@@ -115,7 +115,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [projectionLoading, setProjectionLoading] = useState(true);
 
   // Some callers pass richer player objects than App's Player interface declares.
-  const playerExtras = player as Player & { status?: string; externalId?: string };
+  const playerExtras = player as Player & { status?: string; externalId?: string; depthChartOrder?: number };
 
   // --- Quick actions: Watch + Share ---
   const watchlist = useWatchlist();
@@ -480,7 +480,10 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       )}
                     </div>
                     <div className={`flex items-center gap-1.5 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <span>{player.team} • {player.position} •</span>
+                      <span>
+                        {player.team} • {player.position}
+                        {playerExtras.depthChartOrder != null && playerExtras.depthChartOrder > 0 && ` (${player.position}${playerExtras.depthChartOrder})`} •
+                      </span>
                       <select
                         value={selectedWeek}
                         onChange={(e) => setSelectedWeek(Number(e.target.value))}
