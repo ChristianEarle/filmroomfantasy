@@ -263,6 +263,7 @@
 - [x] **Audit SettingsView + FeedbackWidget** - Fixed 33 issues
 - [x] **Audit PlayoffPredictorView** - Fixed 18 issues (ties in records, findIndex guards, dynamic playoff weeks, memoization, tied scores, ARIA tabs, aria-labels, error display, unused vars)
 - [x] **Audit TradeHistoryView** - Fixed 11 issues (fetchAll race condition w/ cancellation token, handleIngest/handleGrade stale-league races, double fetch on league change, ingestNotice/error persistence across league switches, defensive seasons sort, dead callerTeamId field, dead aiAnalysis optional fields, label htmlFor, aria-pressed on season tabs, aria-expanded + aria-label on trade row expand button, clearing expanded set on league change)
+- [x] **Audit PlayerCard** - Fixed 3 issues (header headshot had no broken-image fallback — swapped the inline `<img>`/initials logic for the shared `PlayerAvatar` component used elsewhere; FilmRoom AI Take fetched analysis for the live current week instead of the header's selected week, out of sync with the Props/Averages/History tabs and matchup grade which all already followed the week selector; Props/Averages/History tab bar had no ARIA tab semantics — added `role="tablist"`/`"tab"`/`"tabpanel"` and `aria-selected`)
 
 **Views — Not yet audited:**
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
@@ -272,7 +273,6 @@
 - [ ] **Audit AllPlayersView** - Full player list with filters, pagination
 - [ ] **Audit ProfileView** - User profile, password change, Google link status
 - [ ] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth
-- [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
 
 **Shared Components — Not yet audited:**
 - [ ] **Audit Sidebar** - Navigation, responsive collapse, active state
