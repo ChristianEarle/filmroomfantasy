@@ -214,13 +214,19 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         if (anyStat) weekComplete = true;
       }
 
-      // Offseason fallback: if we're in the offseason (Feb-Aug) AND we have no game
+      // Offseason fallback: if we're in the offseason (Feb-Jul) AND we have no game
       // records at all for this week/season, assume the season is over. Only applies
       // when gamesForWeek is empty — if real (even incomplete/future) games were found,
       // trust that over the calendar guess so upcoming weeks aren't misreported as final.
+      // Bounded to match getNflSeasonContext()'s own Feb16-Jul31 "offseason" window
+      // (see espn.ts) — August is that function's *preseason* window for the upcoming
+      // season, not offseason, so it must NOT be included here. Including it caused
+      // Week 1 of a new season to be misreported as "complete" (and returned empty)
+      // whenever games hadn't been synced yet for the Aug 1-Sep 4 transition window,
+      // the same class of bug fixed in sync-games by de403f2.
       if (!weekComplete && gamesForWeek.length === 0) {
-        const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 7=Aug
-        if (currentMonth >= 1 && currentMonth <= 7) weekComplete = true;
+        const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 6=Jul
+        if (currentMonth >= 1 && currentMonth <= 6) weekComplete = true;
       }
     }
 
@@ -416,13 +422,29 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       return columns[sortBy] || schema.nflPlayers.name;
     };
 
+    // Total players matching the filters — computed once up front so it can size
+    // the computed-sort fetch below AND serve as the pagination total (previously
+    // this was a second, identical query run after enrichment/sorting).
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.nflPlayers)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+    const total = countResult[0]?.count || 0;
+
     // When sorting by projected/avg points, we must fetch more, enrich, then sort in memory
     const sortByComputed = sortBy === 'projectedPoints' || sortBy === 'avgPointsPPR';
     // When availableOnly, fetch extra to compensate for rostered players we'll filter out
     const availableMultiplier = availableOnly && leagueId ? 3 : 1;
-    const fetchLimit = (sortByComputed && includeStats) || availableOnly
-      ? Math.max((limit + offset) * availableMultiplier, 500)
-      : limit + offset;
+    // Sorting by a computed field requires the FULL matching pool before sorting —
+    // a name-ordered, limit-500 fetch silently drops any player whose name falls
+    // alphabetically past row 500 from ranking consideration, regardless of their
+    // actual projection (this was the bug: top projected players with late-alphabet
+    // names never got fetched at all, so they could never appear at the top).
+    const fetchLimit = sortByComputed && includeStats
+      ? total
+      : availableOnly
+        ? Math.max((limit + offset) * availableMultiplier, 500)
+        : limit + offset;
     const fetchOffset = (sortByComputed && includeStats) || availableOnly ? 0 : offset;
 
     // Get players
@@ -626,14 +648,6 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         enrichedPlayers = enrichedPlayers.filter((p: any) => !p.isRostered);
       }
     }
-
-    // Get total count
-    const countResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.nflPlayers)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
-
-    const total = countResult[0]?.count || 0;
 
     return c.json({
       players: enrichedPlayers,
