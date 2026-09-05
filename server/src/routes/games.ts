@@ -47,6 +47,10 @@ async function persistGamesToDb(
       if (values.tvNetwork == null && existing.tvNetwork) delete values.tvNetwork;
       if (values.spread == null && existing.spread != null) delete values.spread;
       if (values.overUnder == null && existing.overUnder != null) delete values.overUnder;
+      // Keep a previously-fetched forecast (see services/weather.ts) if this
+      // sync didn't produce one — a transient Open-Meteo failure shouldn't
+      // wipe out weather we already have for a future outdoor game.
+      if (values.weather == null && existing.weather) delete values.weather;
       await db.update(schema.nflGames).set(values).where(eq(schema.nflGames.id, row.id));
     } else {
       await db.insert(schema.nflGames).values(values);

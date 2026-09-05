@@ -5,6 +5,7 @@
  */
 
 import staticSchedule from '../data/nfl-schedule-2025.json';
+import { fetchStadiumForecasts } from './weather';
 
 // The bundled static schedule is a point-in-time snapshot of ONE specific
 // season (see filename). It must never be used as a stand-in for a
@@ -283,6 +284,34 @@ function parseEspnEvents(
 }
 
 /**
+ * Fill in real forecasts (via Open-Meteo) for future outdoor games that ESPN
+ * hasn't attached its own weather to yet (ESPN generally only does so within
+ * ~a week of kickoff). Mutates `games`/`dbRows` in place; best-effort — a
+ * fetch failure just leaves those games without weather, same as before.
+ */
+async function enrichWithForecasts(parsed: { games: EspnSlateGame[]; dbRows: EspnGameRow[] }): Promise<void> {
+  const now = Date.now();
+  const targets: Array<{ team: string; gameTime: Date }> = [];
+  const targetIndices: number[] = [];
+
+  parsed.dbRows.forEach((row, i) => {
+    if (parsed.games[i].weather) return; // ESPN already has it (or indoor was synthesized)
+    if (row.gameTime.getTime() <= now) return; // only forecast games that haven't kicked off
+    targets.push({ team: row.homeTeam, gameTime: row.gameTime });
+    targetIndices.push(i);
+  });
+  if (targets.length === 0) return;
+
+  const forecasts = await fetchStadiumForecasts(targets);
+  forecasts.forEach((forecast, ti) => {
+    if (!forecast) return;
+    const i = targetIndices[ti];
+    parsed.games[i].weather = forecast;
+    parsed.dbRows[i].weather = JSON.stringify(forecast);
+  });
+}
+
+/**
  * Fetch ESPN scoreboard using the standard week-based endpoint.
  * Returns null if the request fails (so caller can try fallback).
  */
@@ -389,6 +418,11 @@ export async function fetchEspnScoreboard(
   const weekResult = await fetchEspnByWeek(week, s, st);
   if (weekResult && weekResult.events.length > 0) {
     const parsed = parseEspnEvents(weekResult.events, weekResult.resolvedWeek, s, st);
+    try {
+      await enrichWithForecasts(parsed);
+    } catch (err) {
+      console.warn('[espn] weather enrichment failed:', err instanceof Error ? err.message : err);
+    }
     return { ...parsed, week: weekResult.resolvedWeek, season: s, source: 'espn' };
   }
 
@@ -401,6 +435,11 @@ export async function fetchEspnScoreboard(
   const dateResult = s === STATIC_SCHEDULE_SEASON ? await fetchEspnByDateRange(weekNum, s, st) : null;
   if (dateResult && dateResult.events.length > 0) {
     const parsed = parseEspnEvents(dateResult.events, weekNum, s, st);
+    try {
+      await enrichWithForecasts(parsed);
+    } catch (err) {
+      console.warn('[espn] weather enrichment failed:', err instanceof Error ? err.message : err);
+    }
     return { ...parsed, week: weekNum, season: s, source: 'espn' };
   }
 
