@@ -40,7 +40,7 @@ history accrues from the first daily cron.
   ranking types — `dynasty` (whole-player-pool, long-term asset value,
   age-curve-aware AI prompt) and `rookie` (unchanged rookie-only ranking,
   renamed for clarity). New `Dynasty`/`Rookie` pills in the UI, 12
-  `DEFAULT_VARIANTS` (was 8), migration `0042` renames existing
+  `DEFAULT_VARIANTS` (was 8), migration `0045` renames existing
   `dynasty_rookie` rows to `rookie`. Dynasty data appears after the next
   Monday ranking batch.
 
@@ -55,9 +55,8 @@ history accrues from the first daily cron.
 - [ ] **Live Pro/Elite verification** — one authed round-trip each for
   `/draft-rankings/ask`, `/players/ask`, and `/players/:id/analysis` in
   prod (tests mock Anthropic).
-- [ ] **Sign off on dropping `team_scouting_reports`** — orphaned table;
-  Drizzle definition already removed, physical `DROP TABLE` migration
-  deferred pending explicit approval.
+- [x] **Sign off on dropping `team_scouting_reports`** — dropped in
+  migration `0044_drop_team_scouting_reports.sql` (2026-09-06).
 
 ## P1 — Remaining feature gaps
 

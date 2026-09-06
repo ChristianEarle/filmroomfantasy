@@ -1112,7 +1112,6 @@ Provide your JSON analysis. Weight the ACTUAL OUTCOME block more heavily than th
         max_tokens: 2048,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
-        temperature: 0.3,
       }),
       signal: AbortSignal.timeout(45000),
     });

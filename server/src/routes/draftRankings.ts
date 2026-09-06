@@ -299,7 +299,6 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
           buildDraftAskSystemPrompt(rankingType, scoringFormat, contextBlock),
         ),
         messages: [...recentHistory, { role: 'user', content: question }],
-        temperature: 0.4,
       }),
       signal: AbortSignal.timeout(30000),
     });

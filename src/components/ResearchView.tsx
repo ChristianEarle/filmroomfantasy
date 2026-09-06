@@ -3,6 +3,7 @@ import { Search, Lock, TrendingUp, Zap } from 'lucide-react';
 import { Player } from '../App';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import api from '../services/api';
+import { getDefaultSeason } from '../utils/playerUtils';
 
 interface ResearchViewProps {
   isDarkMode: boolean;
@@ -92,7 +93,7 @@ export function ResearchView({
     const fetchPlayerDetails = async () => {
       try {
         setLoadingDetails(true);
-        const season = 2025;
+        const season = getDefaultSeason();
 
         const [propsRes, statsRes, accuracyRes] = await Promise.all([
           api

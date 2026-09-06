@@ -40,14 +40,10 @@ const ANTHROPIC_BATCH_URL = 'https://api.anthropic.com/v1/messages/batches';
 // drafts (Josh Allen @ ADP 2.21 instead of ~20), which pollutes 1-QB
 // rankings badly.
 //
-// Dynasty ADP (all players, long-term asset value) comes straight from
-// FantasyCalc's overall dynasty rank — no rookie filter, no fallback
-// merge, since FC's dynasty pool has full veteran + rookie coverage.
-//
-// Rookie ADP comes from FantasyCalc (primary) — they publish dynasty
-// values that include rookies with age/prospect-adjusted ranks; after
-// filtering to rookies-only at write time we get a clean rookie pecking
-// order. MFL IS_KEEPER=R is kept as a fallback for rookies that
+// Dynasty rookie ADP comes from FantasyCalc (primary) — they publish
+// dynasty values that include rookies with age/prospect-adjusted ranks;
+// after filtering to rookies-only at write time we get a clean rookie
+// pecking order. MFL IS_KEEPER=R is kept as a fallback for rookies that
 // FantasyCalc doesn't cover yet (e.g. late-breaking rookies).
 
 /**
@@ -183,10 +179,11 @@ async function fetchFantasyCalcDynastyValues(
 }
 
 /**
- * Build a whole-player-pool dynasty ADP map straight from FantasyCalc's
- * overall dynasty rank (1 = most valuable dynasty asset). Unlike the rookie
- * map below, no re-indexing or MFL fallback is needed — FC's dynasty
- * dataset already covers the full veteran + rookie pool.
+ * Build a full-population dynasty ADP map straight from FantasyCalc's
+ * dynasty values — unlike buildRookieAdpMap, this does NOT filter to
+ * rookies or re-index; FantasyCalc's own overall dynasty rank (1 = most
+ * valuable dynasty asset, veterans included) is used directly as the anchor
+ * for the true dynasty (non-rookie-draft) variant.
  */
 async function buildDynastyAdpMap(
   scoringFormat: 'ppr' | 'half-ppr' | 'standard',
@@ -197,7 +194,7 @@ async function buildDynastyAdpMap(
   for (const [name, { rank }] of fcDynasty) {
     result.set(name, rank);
   }
-  console.log(`[draftRankings] Dynasty ADP: ${result.size} entries`);
+  console.log(`[draftRankings] Dynasty ADP (${scoringFormat}, sf=${superflex}): ${result.size} entries`);
   return result;
 }
 
@@ -345,9 +342,9 @@ async function buildPlayerContexts(
     where: inArray(schema.nflPlayers.position, posFilter),
   });
 
-  // Rookie rankings scope to this year's incoming class; redraft and dynasty
-  // both rank the full active pool (dynasty just weighs long-term value
-  // instead of single-season points).
+  // 'dynasty' uses the full active-player pool, same as 'redraft' — it's
+  // ranking every rosterable player (veterans included) by multi-year
+  // value, not just this year's rookie class.
   let players = rankingType === 'rookie'
     ? allPlayers.filter(p => p.yearsExp === 0)
     : allPlayers.filter(p => p.status !== 'inactive' && p.team !== 'FA');
@@ -489,6 +486,8 @@ function buildDynastyPrompt(
   scoringFormat: string,
   superflex: boolean,
 ): string {
+  // Anchor on FantasyCalc's full (non-rookie-filtered) dynasty rank — p.adp
+  // here is that overall dynasty rank, 1 = most valuable dynasty asset.
   const playerLines = players
     .filter(p => p.lastSeasonPoints !== null || p.adp !== null)
     .sort((a, b) => (a.adp ?? 999) - (b.adp ?? 999))
@@ -502,9 +501,9 @@ function buildDynastyPrompt(
     })
     .join('\n');
 
-  return `You are an expert fantasy football dynasty analyst generating DYNASTY ${scoringFormat.toUpperCase()} rankings — a long-term asset-value ranking of the full player pool (not a single-season redraft ranking).${superflex ? ' This is a SUPERFLEX league — QBs hold their dynasty value far longer and rank much higher than in 1-QB.' : ' This is a 1-QB league — QB dynasty value is real but capped by scarcity of a single starting slot.'}
+  return `You are an expert fantasy football dynasty analyst generating ${scoringFormat.toUpperCase()} DYNASTY rankings — a startup or keeper-league dynasty draft board covering ALL rosterable players (rookies AND established veterans), valued for MULTI-YEAR production, not just the upcoming season.${superflex ? ' This is a SUPERFLEX league (QBs are dramatically more valuable long-term because two can start every week).' : ' This is a 1-QB league (elite young QBs still carry a long-term premium, but positional scarcity caps how many belong at the very top).'}
 
-TASK: Rank these players by long-term dynasty asset value — the combination of a player's expected production over the NEXT 3+ SEASONS, not just next year. Dynasty ADP is your primary anchor — stay within ±10 spots of Dynasty ADP unless you have a SPECIFIC, CONCRETE reason (age cliff, contract/opportunity change, injury with long recovery, coaching change altering scheme fit for multiple years).
+TASK: Rank these players for a dynasty startup draft, prioritizing 2-4 year value over a single season. "Dynasty ADP" (FantasyCalc's consensus dynasty rank) is your primary anchor — stay within ±10 spots unless you have a SPECIFIC, CONCRETE reason (a role change, contract/depth-chart shift, confirmed decline, or a rookie who has since separated from the class). Recent single-game buzz is NOT a reason to deviate — dynasty ADP already prices in the market's forward-looking view.
 
 PLAYER DATA:
 ${playerLines}
@@ -520,36 +519,36 @@ RESPOND WITH ONLY VALID JSON — an array of objects, one per ranked player. Ran
     "projectedPoints": 320.5,
     "ceilingRank": 1,
     "floorRank": 8,
-    "rationale": "1 concise sentence summarizing dynasty value and age/opportunity outlook",
-    "analysis": "3-5 sentence detailed breakdown covering: age curve and remaining runway, situation/opportunity stability, injury/durability history, and long-term outlook vs redraft-only value. Reference specific ages, contract/depth-chart situations, and multi-year trends."
+    "rationale": "1 concise sentence summarizing dynasty value and ADP context",
+    "analysis": "3-5 sentence detailed breakdown covering: age curve / years of remaining prime, role trajectory (ascending, stable, declining), situation (offense quality, coaching, contract/draft-capital security), and multi-year outlook vs redraft-only value."
   }
 ]
 
-CEILING/FLOOR: ceilingRank is the player's realistic best-case dynasty rank if things break right (a number <= overallRank); floorRank is the realistic worst-case rank if age/situation turns (a number >= overallRank). Young ascending players get tighter ceiling bands; aging or crowded-situation players get wider floor bands. Both must be integers.
+CEILING/FLOOR: ceilingRank is the player's realistic best-case dynasty rank if their trajectory breaks right (a number <= overallRank); floorRank is the realistic worst-case rank if age/competition/scheme risk hits (a number >= overallRank). Young ascending players with a clear runway get tighter bands; aging veterans or unproven situations get wider bands. Both must be integers.
 
-DYNASTY-SPECIFIC VALUE RULES (critical — this is NOT a redraft ranking):
-- AGE IS A DIRECT INPUT, not a tiebreaker. A 24-year-old WR1 outranks a 30-year-old WR1 with similar current production, because dynasty value compounds over the RB/WR age cliff (typically 27-29) and the longer QB/TE prime.
-- RBs decline earliest and hardest — a 27+ year old RB, even an elite one, should be discounted relative to redraft value. A 22-23 year old RB in a good situation can outrank a same-production 28-year-old RB.
-- WRs and TEs age more gracefully — prime years often extend to 29-31.
-- QBs hold dynasty value longest (often into their mid-30s), which is why ${superflex ? 'SUPERFLEX dynasty startups spend early first-round picks on young QBs' : 'even in 1-QB, a young ascending QB1 is a top-15 dynasty asset despite modest redraft ADP'}.
-- Rookies and 2nd/3rd-year players with a clear opportunity path should rank ABOVE aging veterans with similar or even better current production, because dynasty value is about the next 3+ years, not just next year.
-- A player facing an imminent age cliff, declining role, or crowded backfield/depth chart should be marked DOWN from raw current production.
+DYNASTY VALUATION PRIORITIES (in order):
+1. **Age curve** — a 24-year-old WR1 is worth meaningfully more than a 30-year-old producing the same numbers today, because dynasty value compounds over remaining useful years. RBs age out fastest (decline risk rises sharply past 27); WRs and QBs age more gracefully (mid-30s for elite QBs); TEs are in between.
+2. **Role trajectory** — an ascending young player in an expanding role outranks a stable veteran with flat or shrinking usage, even if the veteran scores more THIS season.
+3. **Situation security** — offensive scheme, coaching stability, and contract/draft-capital investment matter: a player entrenched as a clear priority for his franchise carries a safety premium over a talented player in a crowded or unstable depth chart.
+4. **Positional scarcity over a multi-year horizon** — ${superflex ? 'in SUPERFLEX, a proven or ascending young QB is a top-5-overall dynasty asset because you can roster and start two' : 'in 1-QB, elite young RBs and WRs still anchor the top of dynasty boards; only a handful of truly special young QBs crack the top 10-15 overall'}.
+5. **Current-year production** — still matters (it's the floor of the range and often the leading indicator of role), but never overrides age/trajectory/situation when they conflict.
 
-TIER RULES (dynasty asset value):
-- Tier 1: Cornerstone assets — elite young players locked into their prime for years (top ~8-10)
-- Tier 2: High-end long-term assets (top ~20)
-- Tier 3: Strong dynasty holds (top ~40)
-- Tier 4: Solid contributors with real runway (top ~70)
-- Tier 5: Flex-worthy assets, moderate long-term value (top ~100)
-- Tier 6: Speculative holds — youth or role upside, unproven (top ~140)
-- Tier 7: Late-round dynasty stashes (top ~180)
-- Tier 8: Deep dynasty depth / aging veterans near their cliff (180+)
+TIER RULES:
+- Tier 1: Cornerstone dynasty assets — young stars early in a long prime (top ~8-10)
+- Tier 2: High-end assets with strong multi-year outlooks (top ~20)
+- Tier 3: Solid long-term building blocks (top ~40)
+- Tier 4: Good value with some age or role uncertainty (top ~70)
+- Tier 5: Flex-caliber dynasty pieces, including productive-but-aging vets (top ~100)
+- Tier 6: Bench stashes / late-prime vets with real but capped remaining value (top ~140)
+- Tier 7: Speculative long-shots or steep-decline vets (top ~180)
+- Tier 8: Deep dynasty depth / cut candidates (180+)
 
 IMPORTANT:
-- projectedPoints is this upcoming season's projected total for ${scoringFormat} scoring — informative context, but overallRank is driven by long-term dynasty value, not this number alone.
-- Deviating more than ±10 from Dynasty ADP requires a concrete age/situation/opportunity reason cited in the rationale.
-- rationale: 1 punchy sentence (shown inline in the rankings table)
-- analysis: 3-5 sentences of real dynasty scouting — age curve, situation stability, injury history, multi-year outlook. Be specific: "Age 24, entering his prime with a 3-year extension worth of target share locked in behind a stable young QB" is good. "Great player with upside" is worthless.`;
+- projectedPoints is this UPCOMING season's projected total for ${scoringFormat} scoring — it informs the ranking but is not the sole driver; a lower current-season projection with a much better age/trajectory profile can still outrank a higher one.
+- Tiers should have natural breakpoints — don't force exact counts.
+- Deviating more than ±10 from Dynasty ADP requires a concrete reason cited in the rationale (age cliff, buried depth chart, confirmed decline, separated-from-class rookie, etc.).
+- rationale: 1 punchy sentence (shown inline in the rankings table).
+- analysis: 3-5 sentences of real dynasty scouting — age/trajectory, situation, and multi-year framing. Be specific: "27 years old with 3 more prime years, entrenched as the unquestioned WR1 in a top-5 pass offense, contract extended through 2028" is good; "great player, still has value" is worthless.`;
 }
 
 function buildRookiePrompt(
@@ -678,8 +677,9 @@ export async function submitDraftRankingsBatch(
     //  Redraft 1-QB → FantasyPros 1-QB ADP (MFL is dominated by superflex drafts)
     //  Redraft superflex → MFL ADP (their pool being superflex-dominated is
     //    exactly the anchor we want for SF variants)
-    //  Dynasty → FantasyCalc dynasty values across the full player pool
-    //  Rookie → FantasyCalc dynasty values filtered to rookies
+    //  Dynasty → FantasyCalc dynasty values, UNFILTERED (full player pool,
+    //    veterans included) — their own overall dynasty rank used directly
+    //  Dynasty rookie → FantasyCalc dynasty values filtered to rookies
     //    (clean age/prospect-adjusted ranks) + MFL IS_KEEPER=R fallback
     const adp = v.rankingType === 'rookie'
       ? await buildRookieAdpMap(db, v.scoringFormat, v.superflex, seasonYear)
@@ -706,7 +706,6 @@ export async function submitDraftRankingsBatch(
         model: ANTHROPIC_MODEL,
         max_tokens: MAX_TOKENS,
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
       },
     });
     metas.push({

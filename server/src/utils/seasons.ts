@@ -5,6 +5,16 @@ import * as schema from '../db/schema';
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
 /**
+ * Get the default NFL season year from the current date.
+ * NFL season spans into early next year: Jan–Apr = previous year's season.
+ * Mirrors src/utils/playerUtils.ts's getDefaultSeason() on the frontend.
+ */
+export function getDefaultSeason(): number {
+  const d = new Date();
+  return d.getMonth() <= 3 ? d.getFullYear() - 1 : d.getFullYear();
+}
+
+/**
  * Resolve the effective "display season" for a request.
  *
  * In the NFL offseason (roughly January through early September), the current
