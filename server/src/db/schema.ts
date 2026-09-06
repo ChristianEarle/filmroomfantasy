@@ -740,6 +740,42 @@ export type NewTeamDraftPick = typeof teamDraftPicks.$inferInsert;
 export type PlayerAiAnalysis = typeof playerAiAnalyses.$inferSelect;
 export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
 
+/** Cached AI scouting narrative for one team, one per (team, season, week). */
+export const teamAiNarratives = sqliteTable('team_ai_narratives', {
+  id: text('id').primaryKey(),
+  teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  week: integer('week').notNull(),
+  narrative: text('narrative').notNull(),
+  model: text('model').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  teamAiNarrativesIdentity: uniqueIndex('idx_team_ai_narratives_identity')
+    .on(table.teamId, table.seasonYear, table.week),
+}));
+
+export type TeamAiNarrative = typeof teamAiNarratives.$inferSelect;
+export type NewTeamAiNarrative = typeof teamAiNarratives.$inferInsert;
+
+/** Cached league-wide AI "pulse" narrative, one per (league, season, week). */
+export const leagueAiPulses = sqliteTable('league_ai_pulses', {
+  id: text('id').primaryKey(),
+  leagueId: text('league_id').notNull().references(() => leagues.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  week: integer('week').notNull(),
+  narrative: text('narrative').notNull(),
+  /** JSON array of team ids, ordered most to least powerful. Null if the model's ranking failed validation. */
+  rankingJson: text('ranking_json'),
+  model: text('model').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  leagueAiPulsesIdentity: uniqueIndex('idx_league_ai_pulses_identity')
+    .on(table.leagueId, table.seasonYear, table.week),
+}));
+
+export type LeagueAiPulse = typeof leagueAiPulses.$inferSelect;
+export type NewLeagueAiPulse = typeof leagueAiPulses.$inferInsert;
+
 // ============================================
 // DRAFT RANKINGS
 // ============================================
@@ -752,7 +788,7 @@ export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
 export const draftRankings = sqliteTable('draft_rankings', {
   id: text('id').primaryKey(),
   playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
-  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty' | 'dynasty_rookie'
   scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
   superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
   overallRank: integer('overall_rank').notNull(),
@@ -790,7 +826,7 @@ export type NewDraftRanking = typeof draftRankings.$inferInsert;
 export const rankHistory = sqliteTable('rank_history', {
   id: text('id').primaryKey(),
   playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
-  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty' | 'dynasty_rookie'
   scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
   superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
   overallRank: integer('overall_rank').notNull(),

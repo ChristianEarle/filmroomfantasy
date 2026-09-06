@@ -12,7 +12,8 @@ describe('auth routes (workers pool)', () => {
     expect(body.error).toMatch(/unauthorized/i);
   });
 
-  it('register -> login round trip: a freshly registered user can log back in with the same credentials', async () => {
+  // Two PBKDF2 hashes + a cold workerd boot can exceed vitest's 5s default on CI.
+  it('register -> login round trip: a freshly registered user can log back in with the same credentials', { timeout: 30_000 }, async () => {
     const app = mountWithDb(authRoutes);
 
     const registerRes = await app.request('/register', {

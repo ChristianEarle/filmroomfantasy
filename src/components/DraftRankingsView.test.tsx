@@ -136,10 +136,20 @@ describe('DraftRankingsView — data fetching', () => {
     expect(url).toContain('superflex=0');
   });
 
-  it('refetches dynasty rookies when the Dynasty pill is clicked', async () => {
+  it('refetches true dynasty (veteran) rankings when the Dynasty pill is clicked', async () => {
     renderView();
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: 'Dynasty' }));
+    await waitFor(() => {
+      const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
+      expect(urls.some(u => u.includes('type=dynasty') && !u.includes('type=dynasty_rookie'))).toBe(true);
+    });
+  });
+
+  it('refetches dynasty rookies when the Rookie pill is clicked', async () => {
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Rookie' }));
     await waitFor(() => {
       const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
       expect(urls.some(u => u.includes('type=dynasty_rookie'))).toBe(true);
@@ -432,5 +442,14 @@ describe('DraftRankingsView — empty state', () => {
     hoisted.mockGet.mockResolvedValue(response([]));
     renderView();
     expect(await screen.findByText(/No Redraft Rankings Yet/i)).toBeInTheDocument();
+  });
+
+  it('tells the user dynasty rankings generate on the weekly cron when the Dynasty pill has no rows yet', async () => {
+    renderView();
+    await loaded();
+    hoisted.mockGet.mockResolvedValue(response([]));
+    fireEvent.click(screen.getByRole('button', { name: 'Dynasty' }));
+    expect(await screen.findByText(/No Dynasty Rankings Yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/weekly Monday AI ranking run/i)).toBeInTheDocument();
   });
 });
