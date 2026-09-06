@@ -190,6 +190,13 @@ export interface Player {
   weekChange: number;
   weeklyProjectedPoints?: number;
   headshotUrl?: string | null;
+  /**
+   * Truthfully labels what `projectedPoints` represents when a caller
+   * overrides it outside week mode (e.g. PlayerTable's Full Season view):
+   * 'projected' for a genuine AI-generated projection, 'actual' when it's
+   * really a sum of already-played actuals shown as a fallback.
+   */
+  pointsType?: 'actual' | 'projected';
 }
 
 // URL path <-> view mapping for client-side routing (BUG-001/002 fix)
