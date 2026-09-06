@@ -9,6 +9,7 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import { useAuth } from '../context/AuthContext';
 import { buildPlayerProfilePath } from '../utils/slug';
 import { NewsSnippet } from './NewsSnippet';
+import { PlayerAvatar } from './PlayerAvatar';
 
 
 
@@ -168,7 +169,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     setAiTakeLoading(true);
     setAiTakeError(null);
     setAiTake(null);
-    playerService.getPlayerAnalysis(player.id, { week: propsCurrentWeek, season: propsSeasonYear })
+    playerService.getPlayerAnalysis(player.id, { week: selectedWeek, season: propsSeasonYear })
       .then((res) => { if (!cancelled) setAiTake(res.analysis); })
       .catch((err) => {
         if (cancelled) return;
@@ -179,7 +180,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
       })
       .finally(() => { if (!cancelled) setAiTakeLoading(false); });
     return () => { cancelled = true; };
-  }, [player.id, canViewAiTake, propsCurrentWeek, propsSeasonYear]);
+  }, [player.id, canViewAiTake, selectedWeek, propsSeasonYear]);
 
   // Fetch the current-week stat-category projection when the card opens or the week changes.
   useEffect(() => {
@@ -456,14 +457,14 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             <div className={`p-3 sm:p-6 border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                  <div className={`w-11 h-13 sm:w-14 sm:h-16 flex-shrink-0 rounded-lg overflow-hidden border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
-                    {player.headshotUrl ? (
-                      <img src={player.headshotUrl} alt={player.name} className="w-full h-full object-contain" loading="lazy" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
-                      </div>
-                    )}
+                  <div className={`w-11 h-13 sm:w-14 sm:h-16 flex-shrink-0 rounded-lg overflow-hidden border flex items-center justify-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                    <PlayerAvatar
+                      name={player.name}
+                      headshotUrl={player.headshotUrl}
+                      className="w-full h-full object-contain"
+                      fallbackClassName="text-sm font-bold"
+                      isDarkMode={isDarkMode}
+                    />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 sm:gap-3 mb-1 flex-wrap">
@@ -576,10 +577,14 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             </div>
 
             {/* Tabs */}
-            <div className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <div role="tablist" aria-label="Player details" className={`flex border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               {(['props', 'breakdown', 'history'] as const).map((tab) => (
                 <button
                   key={tab}
+                  id={`player-card-tab-${tab}`}
+                  role="tab"
+                  aria-selected={activeTab === tab}
+                  aria-controls="player-card-tabpanel"
                   onClick={() => setActiveTab(tab)}
                   className={`flex-1 py-3 text-sm font-medium bg-transparent border-0 border-b-[3px] ${
                     activeTab === tab
@@ -595,7 +600,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
             </div>
 
             {/* Tab Content */}
-            <div className="p-3 sm:p-6">
+            <div id="player-card-tabpanel" role="tabpanel" aria-labelledby={`player-card-tab-${activeTab}`} tabIndex={0} className="p-3 sm:p-6">
               {activeTab === 'props' && (() => {
                 const MARKET_LABELS: Record<string, string> = {
                   passyds: 'Passing Yards', rushyds: 'Rushing Yards', receptionyds: 'Receiving Yards',
