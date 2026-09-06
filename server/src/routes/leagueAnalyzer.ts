@@ -25,6 +25,25 @@ leagueAnalyzerRoutes.use('*', analyzerRateLimit);
 
 const AI_MODEL = 'claude-sonnet-5'; // same model as the per-player analysis + trades follow-up calls
 
+// Carries an HTTP status alongside the message so a shared/deduped generation
+// (see below) can surface the right response to every waiter, not just a
+// generic 500.
+class RouteError extends Error {
+  constructor(public status: 404 | 503, message: string) {
+    super(message);
+    this.name = 'RouteError';
+  }
+}
+
+// In-flight request coalescing: if two viewers hit an uncached narrative/pulse
+// for the same cache key at the same time, only the first triggers an
+// Anthropic call — the rest await that same promise instead of firing their
+// own (duplicate, billable) request. Keyed by the same (id, season, week)
+// tuple used for the DB cache row; entries are removed in `finally` so a
+// later cache miss (new week, cache cleared) always starts a fresh call.
+const narrativeInFlight = new Map<string, Promise<{ narrative: string; generatedAt: string }>>();
+const pulseInFlight = new Map<string, Promise<{ narrative: string; ranking: string[] | null; generatedAt: string }>>();
+
 type Db = ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>;
 type LeagueRow = typeof schema.leagues.$inferSelect;
 type MembershipRow = typeof schema.leagueMembers.$inferSelect;
@@ -881,74 +900,89 @@ leagueAnalyzerRoutes.get(
         });
       }
 
-      const analysis = await computeLeagueAnalysis(db, league, membership);
-      const team = analysis.teams.find((t) => t.id === teamId);
-      if (!team) return c.json({ error: 'Team not found in this league' }, 404);
+      const cacheKey = `${teamId}:${seasonYear}:${week}`;
+      let generation = narrativeInFlight.get(cacheKey);
+      if (!generation) {
+        generation = (async () => {
+          const analysis = await computeLeagueAnalysis(db, league, membership);
+          const team = analysis.teams.find((t) => t.id === teamId);
+          if (!team) throw new RouteError(404, 'Team not found in this league');
 
-      const starterSpots = await db.query.rosterSpots.findMany({
-        where: and(eq(schema.rosterSpots.teamId, teamId), eq(schema.rosterSpots.isStarter, true)),
-        columns: { playerId: true },
-      });
-      const starterIds = starterSpots.map((s: { playerId: string }) => s.playerId);
-      const starters = starterIds.length > 0
-        ? await db.query.nflPlayers.findMany({
-            where: inArray(schema.nflPlayers.id, starterIds),
-            columns: { name: true, position: true },
-          })
-        : [];
-      const starterLine = starters.length > 0
-        ? starters.map((p: { name: string; position: string }) => `${p.name} (${p.position})`).join(', ')
-        : '(no roster synced yet)';
+          const starterSpots = await db.query.rosterSpots.findMany({
+            where: and(eq(schema.rosterSpots.teamId, teamId), eq(schema.rosterSpots.isStarter, true)),
+            columns: { playerId: true },
+          });
+          const starterIds = starterSpots.map((s: { playerId: string }) => s.playerId);
+          const starters = starterIds.length > 0
+            ? await db.query.nflPlayers.findMany({
+                where: inArray(schema.nflPlayers.id, starterIds),
+                columns: { name: true, position: true },
+              })
+            : [];
+          const starterLine = starters.length > 0
+            ? starters.map((p: { name: string; position: string }) => `${p.name} (${p.position})`).join(', ')
+            : '(no roster synced yet)';
 
-      const dataBlock = `TEAM DATA (season ${seasonYear}, week ${week}):
+          const dataBlock = `TEAM DATA (season ${seasonYear}, week ${week}):
 ${formatTeamFacts(team, analysis.leagueAvgPpg, analysis.teams.length)}
 Current starters: ${starterLine}`;
 
-      let narrative: string;
-      try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': anthropicKey,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: AI_MODEL,
-            max_tokens: 500,
-            system: buildCachedSystemBlocks(TEAM_NARRATIVE_SYSTEM_PROMPT),
-            messages: [{ role: 'user', content: dataBlock }],
-          }),
-          signal: AbortSignal.timeout(30000),
-        });
+          let narrative: string;
+          try {
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': anthropicKey,
+                'anthropic-version': '2023-06-01',
+              },
+              body: JSON.stringify({
+                model: AI_MODEL,
+                max_tokens: 500,
+                system: buildCachedSystemBlocks(TEAM_NARRATIVE_SYSTEM_PROMPT),
+                messages: [{ role: 'user', content: dataBlock }],
+              }),
+              signal: AbortSignal.timeout(30000),
+            });
 
-        if (!res.ok) {
-          const errText = await res.text().catch(() => '');
-          console.error('[league-analyzer/narrative] Anthropic error:', res.status, errText);
-          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
-        }
-        const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-        const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
-        if (!text) {
-          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
-        }
-        narrative = text;
-      } catch (err) {
-        console.error('[league-analyzer/narrative] AI call failed:', err);
-        return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+            if (!res.ok) {
+              const errText = await res.text().catch(() => '');
+              console.error('[league-analyzer/narrative] Anthropic error:', res.status, errText);
+              throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
+            }
+            const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+            const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
+            if (!text) {
+              throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
+            }
+            narrative = text;
+          } catch (err) {
+            if (err instanceof RouteError) throw err;
+            console.error('[league-analyzer/narrative] AI call failed:', err);
+            throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
+          }
+
+          try {
+            await db
+              .insert(schema.teamAiNarratives)
+              .values({ id: generateId(), teamId, seasonYear, week, narrative, model: AI_MODEL })
+              .onConflictDoNothing();
+          } catch (err) {
+            console.error('[league-analyzer/narrative] failed to cache narrative:', err);
+          }
+
+          return { narrative, generatedAt: new Date().toISOString() };
+        })();
+        narrativeInFlight.set(cacheKey, generation);
+        generation.finally(() => narrativeInFlight.delete(cacheKey));
       }
 
-      try {
-        await db
-          .insert(schema.teamAiNarratives)
-          .values({ id: generateId(), teamId, seasonYear, week, narrative, model: AI_MODEL })
-          .onConflictDoNothing();
-      } catch (err) {
-        console.error('[league-analyzer/narrative] failed to cache narrative:', err);
-      }
-
-      return c.json({ narrative, cached: false, generatedAt: new Date().toISOString(), season: seasonYear, week });
+      const result = await generation;
+      return c.json({ narrative: result.narrative, cached: false, generatedAt: result.generatedAt, season: seasonYear, week });
     } catch (error) {
+      if (error instanceof RouteError) {
+        return c.json({ error: error.message }, error.status);
+      }
       console.error('Team AI narrative error:', error);
       return c.json({ error: 'Failed to generate team narrative' }, 500);
     }
@@ -1030,91 +1064,106 @@ leagueAnalyzerRoutes.get(
         });
       }
 
-      const analysis = await computeLeagueAnalysis(db, league, membership);
-      if (analysis.teams.length === 0) {
-        return c.json({ error: 'No teams found for this league yet.' }, 404);
-      }
-      const teamIds = analysis.teams.map((t) => t.id);
+      const cacheKey = `${leagueId}:${seasonYear}:${week}`;
+      let generation = pulseInFlight.get(cacheKey);
+      if (!generation) {
+        generation = (async () => {
+          const analysis = await computeLeagueAnalysis(db, league, membership);
+          if (analysis.teams.length === 0) {
+            throw new RouteError(404, 'No teams found for this league yet.');
+          }
+          const teamIds = analysis.teams.map((t) => t.id);
 
-      const teamBlocks = analysis.teams
-        .map((t) => formatTeamFacts(t, analysis.leagueAvgPpg, analysis.teams.length))
-        .join('\n\n');
-      const dataBlock = `LEAGUE DATA (${analysis.league.name}, season ${seasonYear}, week ${week}, ${analysis.teams.length} teams, top ${analysis.league.playoffTeams} make playoffs):
+          const teamBlocks = analysis.teams
+            .map((t) => formatTeamFacts(t, analysis.leagueAvgPpg, analysis.teams.length))
+            .join('\n\n');
+          const dataBlock = `LEAGUE DATA (${analysis.league.name}, season ${seasonYear}, week ${week}, ${analysis.teams.length} teams, top ${analysis.league.playoffTeams} make playoffs):
 
 ${teamBlocks}`;
 
-      let narrative: string;
-      let ranking: string[] | null;
-      try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': anthropicKey,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: AI_MODEL,
-            max_tokens: 900,
-            system: buildCachedSystemBlocks(LEAGUE_PULSE_SYSTEM_PROMPT),
-            messages: [{ role: 'user', content: dataBlock }],
-          }),
-          signal: AbortSignal.timeout(30000),
-        });
+          let narrative: string;
+          let ranking: string[] | null;
+          try {
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': anthropicKey,
+                'anthropic-version': '2023-06-01',
+              },
+              body: JSON.stringify({
+                model: AI_MODEL,
+                max_tokens: 900,
+                system: buildCachedSystemBlocks(LEAGUE_PULSE_SYSTEM_PROMPT),
+                messages: [{ role: 'user', content: dataBlock }],
+              }),
+              signal: AbortSignal.timeout(30000),
+            });
 
-        if (!res.ok) {
-          const errText = await res.text().catch(() => '');
-          console.error('[league-analyzer/pulse] Anthropic error:', res.status, errText);
-          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
-        }
-        const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-        const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
-        if (!text) {
-          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
-        }
+            if (!res.ok) {
+              const errText = await res.text().catch(() => '');
+              console.error('[league-analyzer/pulse] Anthropic error:', res.status, errText);
+              throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
+            }
+            const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+            const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
+            if (!text) {
+              throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
+            }
 
-        const jsonStr = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-        let parsed: { ranking?: unknown; narrative?: unknown };
-        try {
-          parsed = JSON.parse(jsonStr);
-        } catch {
-          console.error('[league-analyzer/pulse] non-JSON response:', text.slice(0, 300));
-          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
-        }
-        if (typeof parsed.narrative !== 'string' || !parsed.narrative.trim()) {
-          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
-        }
-        narrative = parsed.narrative.trim();
-        // A malformed ranking degrades gracefully — the narrative still ships,
-        // the client just falls back to the deterministic standings order.
-        ranking = isValidRanking(parsed.ranking, teamIds) ? parsed.ranking : null;
-        if (!ranking) {
-          console.error('[league-analyzer/pulse] model returned an invalid ranking permutation');
-        }
-      } catch (err) {
-        console.error('[league-analyzer/pulse] AI call failed:', err);
-        return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+            const jsonStr = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+            let parsed: { ranking?: unknown; narrative?: unknown };
+            try {
+              parsed = JSON.parse(jsonStr);
+            } catch {
+              console.error('[league-analyzer/pulse] non-JSON response:', text.slice(0, 300));
+              throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
+            }
+            if (typeof parsed.narrative !== 'string' || !parsed.narrative.trim()) {
+              throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
+            }
+            narrative = parsed.narrative.trim();
+            // A malformed ranking degrades gracefully — the narrative still ships,
+            // the client just falls back to the deterministic standings order.
+            ranking = isValidRanking(parsed.ranking, teamIds) ? parsed.ranking : null;
+            if (!ranking) {
+              console.error('[league-analyzer/pulse] model returned an invalid ranking permutation');
+            }
+          } catch (err) {
+            if (err instanceof RouteError) throw err;
+            console.error('[league-analyzer/pulse] AI call failed:', err);
+            throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
+          }
+
+          try {
+            await db
+              .insert(schema.leagueAiPulses)
+              .values({
+                id: generateId(),
+                leagueId,
+                seasonYear,
+                week,
+                narrative,
+                rankingJson: ranking ? JSON.stringify(ranking) : null,
+                model: AI_MODEL,
+              })
+              .onConflictDoNothing();
+          } catch (err) {
+            console.error('[league-analyzer/pulse] failed to cache pulse:', err);
+          }
+
+          return { narrative, ranking, generatedAt: new Date().toISOString() };
+        })();
+        pulseInFlight.set(cacheKey, generation);
+        generation.finally(() => pulseInFlight.delete(cacheKey));
       }
 
-      try {
-        await db
-          .insert(schema.leagueAiPulses)
-          .values({
-            id: generateId(),
-            leagueId,
-            seasonYear,
-            week,
-            narrative,
-            rankingJson: ranking ? JSON.stringify(ranking) : null,
-            model: AI_MODEL,
-          })
-          .onConflictDoNothing();
-      } catch (err) {
-        console.error('[league-analyzer/pulse] failed to cache pulse:', err);
-      }
-
-      return c.json({ narrative, ranking, cached: false, generatedAt: new Date().toISOString(), season: seasonYear, week });
+      const result = await generation;
+      return c.json({ narrative: result.narrative, ranking: result.ranking, cached: false, generatedAt: result.generatedAt, season: seasonYear, week });
     } catch (error) {
+      if (error instanceof RouteError) {
+        return c.json({ error: error.message }, error.status);
+      }
       console.error('League AI pulse error:', error);
       return c.json({ error: 'Failed to generate league pulse' }, 500);
     }
