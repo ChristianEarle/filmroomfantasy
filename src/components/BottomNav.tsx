@@ -34,7 +34,9 @@ export function BottomNav({ activeView, onViewChange, onMoreClick, isDarkMode }:
   return (
     <nav
       aria-label="Primary mobile navigation"
-      style={{ left: 0, right: 0 }}
+      // Safe-area inset lives on the nav (no fixed height) so it ADDS to the
+      // 56px row instead of being carved out of it under border-box sizing.
+      style={{ left: 0, right: 0, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       className={`bottom-nav-mobile z-mobile-bottomnav fixed inset-x-0 bottom-0 border-t ${
         isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-white border-slate-200'
       }`}
@@ -42,7 +44,7 @@ export function BottomNav({ activeView, onViewChange, onMoreClick, isDarkMode }:
       {/* Inline sizes: h-14 / text-[10px] / gap-0.5 / leading-none / min-w-[44px]
           are not in the precompiled src/index.css, so without these the labels
           rendered at 16px and ran into each other. */}
-      <div className="flex items-stretch" style={{ height: 56, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <div className="flex items-stretch" style={{ height: 56 }}>
         {NAV_ITEMS.map((item) => {
           const isActive = activeView === item.view;
           return (
@@ -70,7 +72,7 @@ export function BottomNav({ activeView, onViewChange, onMoreClick, isDarkMode }:
           onClick={onMoreClick}
           aria-label="More navigation options"
           style={{ minWidth: 44, gap: 3 }}
-              className={`flex-1 flex flex-col items-center justify-center transition-colors duration-150 ${
+          className={`flex-1 flex flex-col items-center justify-center transition-colors duration-150 ${
             isDarkMode ? 'text-slate-400 active:text-slate-200' : 'text-slate-500 active:text-slate-700'
           }`}
         >
