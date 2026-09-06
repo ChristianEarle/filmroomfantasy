@@ -33,7 +33,6 @@ if (sessionStorage.getItem('chunk_reload')) sessionStorage.removeItem('chunk_rel
 
 const TrendsView = lazyWithReload(() => import('./components/TrendsView').then(m => ({ default: m.TrendsView })));
 const PlayoffPredictorView = lazyWithReload(() => import('./components/PlayoffPredictorView').then(m => ({ default: m.PlayoffPredictorView })));
-const ResearchView = lazyWithReload(() => import('./components/ResearchView').then(m => ({ default: m.ResearchView })));
 const TeamView = lazyWithReload(() => import('./components/TeamView').then(m => ({ default: m.TeamView })));
 const MatchupView = lazyWithReload(() => import('./components/MatchupView').then(m => ({ default: m.MatchupView })));
 const WaiversView = lazyWithReload(() => import('./components/WaiversView').then(m => ({ default: m.WaiversView })));
@@ -63,7 +62,6 @@ import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
 import { ForgotPasswordView, ResetPasswordView } from './components/ForgotPasswordView';
 import { EmailVerificationBanner } from './components/EmailVerificationBanner';
-import { ComingSoonView } from './components/ComingSoonView';
 import { LandingPage } from './components/LandingPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
@@ -202,7 +200,6 @@ const VIEW_TO_PATH: Record<string, string> = {
   Waivers: '/waivers',
   GameSlate: '/game-slate',
   Trends: '/trends',
-  Research: '/research',
   Playoffs: '/playoff-predictor',
   DraftRankings: '/draft-rankings',
   LeagueAnalyzer: '/league-analyzer',
@@ -246,6 +243,10 @@ function getViewFromURL(): string {
   // Handle player profile routes (/players/{slug}-{id})
   if (path.startsWith('/players/') && parsePlayerProfilePath(path)) return 'PlayerProfile';
 
+  // Research was removed (never shipped past "coming soon") — send old links home
+  // instead of 404ing.
+  if (path === '/research') return 'Home';
+
   const view = PATH_TO_VIEW[path] ?? 'NotFound';
   // /register is handled within the Login view via authView state
   if (view === 'Register') return 'Login';
@@ -284,7 +285,7 @@ function AppContent() {
     }
   }, [league?.id, league?.currentWeek]);
   // Initialize activeView from URL so direct navigation works
-  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'PlayerProfile' | 'Privacy' | 'Terms' | 'CookiePolicy' | 'DMCA' | 'Refunds' | 'DoNotSell' | 'Disclaimer' | 'Accessibility' | 'AcceptableUse' | 'NotFound'>(() => getViewFromURL() as any);
+  const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'PlayerProfile' | 'Privacy' | 'Terms' | 'CookiePolicy' | 'DMCA' | 'Refunds' | 'DoNotSell' | 'Disclaimer' | 'Accessibility' | 'AcceptableUse' | 'NotFound'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [articleSlug, setArticleSlug] = useState<string | null>(() => getArticleSlugFromURL());
   const [playerProfile, setPlayerProfile] = useState<{ slug: string; id: string } | null>(() => getPlayerProfileFromURL());
@@ -705,8 +706,6 @@ function AppContent() {
                   />
                 </Suspense>
               </ErrorBoundary>
-            ) : activeView === 'Research' ? (
-              <ComingSoonView title="Player Research" description="In-depth player analysis with Vegas props, game logs, projection accuracy tracking, and advanced metrics." icon="draft" isDarkMode={isDarkMode} />
             ) : activeView === 'Playoffs' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
