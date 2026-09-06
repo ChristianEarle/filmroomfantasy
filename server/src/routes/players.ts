@@ -15,6 +15,7 @@ import {
   type ConversationTurn,
 } from '../utils/prompt';
 import { buildProjectionsFromProps } from '../services/projections';
+import { resolveWeekComplete, computeFetchWindow } from './playersLogic';
 import type { Env, Variables } from '../index';
 
 // Rate limits for player routes
@@ -200,10 +201,11 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         where: and(eq(schema.nflGames.week, week), eq(schema.nflGames.seasonYear, season)),
         columns: { id: true, isComplete: true, homeScore: true, awayScore: true },
       });
-      weekComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
+      const gamesComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
 
       // Fallback: if we have stats for this week (Sleeper only has stats for completed weeks), treat as past week
-      if (!weekComplete && includeStats) {
+      let hasAnyStat = false;
+      if (!gamesComplete && includeStats) {
         const anyStat = await db.query.playerWeeklyStats.findFirst({
           where: and(
             eq(schema.playerWeeklyStats.week, week),
@@ -211,23 +213,12 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           ),
           columns: { id: true },
         });
-        if (anyStat) weekComplete = true;
+        hasAnyStat = !!anyStat;
       }
 
-      // Offseason fallback: if we're in the offseason (Feb-Jul) AND we have no game
-      // records at all for this week/season, assume the season is over. Only applies
-      // when gamesForWeek is empty — if real (even incomplete/future) games were found,
-      // trust that over the calendar guess so upcoming weeks aren't misreported as final.
-      // Bounded to match getNflSeasonContext()'s own Feb16-Jul31 "offseason" window
-      // (see espn.ts) — August is that function's *preseason* window for the upcoming
-      // season, not offseason, so it must NOT be included here. Including it caused
-      // Week 1 of a new season to be misreported as "complete" (and returned empty)
-      // whenever games hadn't been synced yet for the Aug 1-Sep 4 transition window,
-      // the same class of bug fixed in sync-games by de403f2.
-      if (!weekComplete && gamesForWeek.length === 0) {
-        const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 6=Jul
-        if (currentMonth >= 1 && currentMonth <= 6) weekComplete = true;
-      }
+      // See playersLogic.ts:resolveWeekComplete for the games/stats/offseason
+      // fallback logic (kept there so it can be unit tested without D1).
+      weekComplete = resolveWeekComplete({ gamesForWeek, includeStats, hasAnyStat });
     }
 
     if (week !== undefined && weekComplete && includeStats && !availableOnly) {
@@ -436,22 +427,12 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
     const effectiveSortBy = sortBy === 'seasonProjectedPoints' && week !== undefined
       ? 'projectedPoints'
       : sortBy;
-    // When sorting by projected/avg points, we must fetch more, enrich, then sort in memory
+    // When sorting by projected/avg/season points, we must fetch the FULL matching
+    // pool, enrich, then sort in memory — see playersLogic.ts:computeFetchWindow for
+    // the sizing rationale (kept there so it can be unit tested without D1).
     const sortByComputed = effectiveSortBy === 'projectedPoints' || effectiveSortBy === 'avgPointsPPR'
       || effectiveSortBy === 'seasonProjectedPoints';
-    // When availableOnly, fetch extra to compensate for rostered players we'll filter out
-    const availableMultiplier = availableOnly && leagueId ? 3 : 1;
-    // Sorting by a computed field requires the FULL matching pool before sorting —
-    // a name-ordered, limit-500 fetch silently drops any player whose name falls
-    // alphabetically past row 500 from ranking consideration, regardless of their
-    // actual projection (this was the bug: top projected players with late-alphabet
-    // names never got fetched at all, so they could never appear at the top).
-    const fetchLimit = sortByComputed && includeStats
-      ? total
-      : availableOnly
-        ? Math.max((limit + offset) * availableMultiplier, 500)
-        : limit + offset;
-    const fetchOffset = (sortByComputed && includeStats) || availableOnly ? 0 : offset;
+    const { fetchLimit, fetchOffset } = computeFetchWindow({ sortByComputed, includeStats, availableOnly, leagueId, limit, offset, total });
 
     // Get players
     const players = await db.query.nflPlayers.findMany({
