@@ -424,10 +424,16 @@ Respond with the JSON schema described in the system prompt.`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 2048,
+        // Scales with team count: a 4-team trade needs a teamGrades entry
+        // (2-3 sentences) per team plus winnerExplanation/keyFactors/
+        // improvements on top — the fixed 2048 cap was truncating longer
+        // multi-team responses mid-JSON, which is indistinguishable from a
+        // genuinely malformed response once JSON.parse fails. No cost
+        // downside to a generous cap — Anthropic bills actual tokens
+        // generated, not this ceiling.
+        max_tokens: 2048 + body.teams.length * 512,
         system: systemBlocks,
         messages: [{ role: 'user', content: userMessage }],
-        temperature: 0.3,
       }),
       signal: AbortSignal.timeout(45000),
     });
@@ -442,9 +448,9 @@ Respond with the JSON schema described in the system prompt.`;
     return { ok: false, error: 'AI analysis failed. Please try again later.', status: 502 };
   }
 
-  let data: { content?: { type: string; text?: string }[] };
+  let data: { content?: { type: string; text?: string }[]; stop_reason?: string };
   try {
-    data = (await res.json()) as { content?: { type: string; text?: string }[] };
+    data = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string };
   } catch {
     return { ok: false, error: 'AI returned malformed response', status: 502 };
   }
@@ -461,7 +467,13 @@ Respond with the JSON schema described in the system prompt.`;
   try {
     parsed = JSON.parse(jsonStr);
   } catch {
-    console.error('[tradeAnalyzer] JSON parse failed:', rawText.slice(0, 500));
+    // stop_reason === 'max_tokens' means the response was cut off mid-JSON,
+    // not genuinely malformed — logged distinctly so a recurrence is
+    // immediately diagnosable without a manual wrangler tail session.
+    console.error(
+      `[tradeAnalyzer] JSON parse failed (stop_reason=${data.stop_reason ?? 'unknown'}, teams=${body.teams.length}, textLength=${rawText.length}):`,
+      rawText.slice(0, 500),
+    );
     return { ok: false, error: 'AI returned an invalid response. Please try again.', status: 502 };
   }
 

@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLeaguesContext } from '../context/LeaguesContext';
 import { leagueConnectService, sleeperApi, yahooApi, PlatformError, type Platform, type ExternalLeague } from '../services';
 import { authService } from '../services';
-import { API_ORIGIN } from '../services/api';
+import api, { API_ORIGIN, ApiError } from '../services/api';
 import { UpgradeModal } from './UpgradeModal';
 import type { ScoringFormat } from '../services/auth';
 
@@ -37,13 +37,22 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
   const yahooPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const yahooListenerRef = useRef<((event: MessageEvent) => void) | null>(null);
 
-  // Clean up Yahoo OAuth resources on unmount
-  useEffect(() => {
-    return () => {
-      if (yahooPollRef.current) clearInterval(yahooPollRef.current);
-      if (yahooListenerRef.current) window.removeEventListener('message', yahooListenerRef.current);
-    };
+  // Tear down both Yahoo OAuth resources. Every exit path from the flow has to
+  // call this: the poll interval and the message listener are created together
+  // and leaking either one outlives the modal that owns it.
+  const cleanupYahooOAuth = useCallback(() => {
+    if (yahooPollRef.current) {
+      clearInterval(yahooPollRef.current);
+      yahooPollRef.current = null;
+    }
+    if (yahooListenerRef.current) {
+      window.removeEventListener('message', yahooListenerRef.current);
+      yahooListenerRef.current = null;
+    }
   }, []);
+
+  // Clean up Yahoo OAuth resources on unmount
+  useEffect(() => cleanupYahooOAuth, [cleanupYahooOAuth]);
 
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [connectionStep, setConnectionStep] = useState<ConnectionStep>('select-platform');
@@ -84,6 +93,19 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
   const [yahooLeagues, setYahooLeagues] = useState<ExternalLeague[]>([]);
   const [loadingYahooLeagues, setLoadingYahooLeagues] = useState(false);
   const [yahooError, setYahooError] = useState<string | null>(null);
+  // null = not checked yet; false = this deploy has no Yahoo OAuth secrets
+  const [yahooConfigured, setYahooConfigured] = useState<boolean | null>(null);
+
+  // Check Yahoo availability the first time the connect modal opens, so the
+  // tile can be disabled instead of dead-ending the user mid-flow.
+  useEffect(() => {
+    if (!showConnectModal || yahooConfigured !== null) return;
+    let cancelled = false;
+    yahooApi.isConfigured().then((configured) => {
+      if (!cancelled) setYahooConfigured(configured);
+    });
+    return () => { cancelled = true; };
+  }, [showConnectModal, yahooConfigured]);
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -134,12 +156,17 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
   const platforms = [
     { id: 'sleeper' as Platform, name: 'Sleeper', color: 'bg-blue-500', textColor: 'text-blue-400', description: 'Connect via username' },
     { id: 'espn' as Platform, name: 'ESPN', color: 'bg-red-600', textColor: 'text-red-400', description: 'Public leagues only' },
-    { id: 'yahoo' as Platform, name: 'Yahoo', color: 'bg-purple-600', textColor: 'text-purple-400', description: 'Connect via OAuth' },
+    { id: 'yahoo' as Platform, name: 'Yahoo', color: 'bg-purple-600', textColor: 'text-purple-400', description: yahooConfigured === false ? 'Unavailable on this server' : 'Connect via OAuth' },
     { id: 'mfl' as Platform, name: 'MFL', color: 'bg-green-600', textColor: 'text-green-400', description: 'Enter league ID' },
   ];
 
   // Reset modal state
   const resetModal = () => {
+    // Closing the modal mid-OAuth must kill the poll timer and message
+    // listener too. Without this they outlive the modal: a callback arriving
+    // afterwards would fire a getLeagues() request and mutate step state
+    // behind a closed modal, so reopening it landed on a stale league list.
+    cleanupYahooOAuth();
     setConnectionStep('select-platform');
     setSelectedPlatform(null);
     setSleeperUsername('');
@@ -167,6 +194,30 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
         case 'network':      return err.message;
         default:             return fallback;
       }
+    }
+    return err instanceof Error ? err.message : fallback;
+  };
+
+  // Map a Yahoo API failure to a user-readable string. The server distinguishes
+  // "OAuth isn't configured on this deploy" (503) from "your Yahoo session died"
+  // (401 + YAHOO_REAUTH_REQUIRED); collapsing both into a generic retry message
+  // sends users in circles retrying something that can never succeed.
+  const yahooErrorMessage = (err: unknown, fallback: string): string => {
+    if (err instanceof ApiError) {
+      const code = (err.data as { code?: string } | undefined)?.code;
+      if (err.status === 503) {
+        return 'Yahoo connection is unavailable right now — this server is missing its Yahoo OAuth credentials. Please try another platform or contact support.';
+      }
+      if (code === 'YAHOO_REAUTH_REQUIRED') {
+        return 'Your Yahoo session expired. Please connect your Yahoo account again.';
+      }
+      if (code === 'YAHOO_NOT_CONNECTED') {
+        return 'Yahoo account not connected. Please authorize Yahoo first.';
+      }
+      if (err.status === 429) {
+        return 'Too many Yahoo requests. Please wait a few minutes and try again.';
+      }
+      if (err.message) return err.message;
     }
     return err instanceof Error ? err.message : fallback;
   };
@@ -222,14 +273,27 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     setYahooError(null);
 
     // Clean up any previous OAuth resources
-    if (yahooPollRef.current) clearInterval(yahooPollRef.current);
-    if (yahooListenerRef.current) window.removeEventListener('message', yahooListenerRef.current);
+    cleanupYahooOAuth();
 
     try {
       const authUrl = await yahooApi.getAuthUrl();
 
       // Open OAuth popup
       const popup = window.open(authUrl, 'yahoo_oauth', 'width=600,height=700,scrollbars=yes');
+
+      // A blocked popup returns null. The close-detection poll below reads
+      // popup.closed, so without this guard it can never fire and the modal
+      // sits on "Waiting for Yahoo authorization..." forever.
+      if (!popup) {
+        setYahooError('Your browser blocked the Yahoo authorization popup. Allow popups for this site and try again.');
+        setConnectionStep('select-platform');
+        return;
+      }
+
+      // Did the popup report back before it closed? The callback page closes
+      // itself ~1.5s after posting, so "popup closed" alone cannot distinguish
+      // a completed authorization from a user-cancelled one.
+      let callbackReceived = false;
 
       // Listen for the callback message
       const handleMessage = async (event: MessageEvent) => {
@@ -238,8 +302,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
         // (cross-origin from the app) so we accept messages from either the
         // app's own origin (dev/proxy mode) or the API origin (prod).
         if (event.origin !== window.location.origin && event.origin !== API_ORIGIN) return;
-        window.removeEventListener('message', handleMessage);
-        yahooListenerRef.current = null;
+        callbackReceived = true;
+        cleanupYahooOAuth();
 
         if (event.data.success) {
           // OAuth succeeded — fetch Yahoo leagues
@@ -251,8 +315,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
             if (yahooFetchedLeagues.length === 0) {
               setYahooError('No NFL leagues found on your Yahoo account.');
             }
-          } catch {
-            setYahooError('Failed to fetch Yahoo leagues. Please try again.');
+          } catch (err) {
+            setYahooError(yahooErrorMessage(err, 'Failed to fetch Yahoo leagues. Please try again.'));
           } finally {
             setLoadingYahooLeagues(false);
           }
@@ -267,24 +331,19 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
       // Handle popup being closed manually
       const pollTimer = setInterval(() => {
-        if (popup && popup.closed) {
-          clearInterval(pollTimer);
-          yahooPollRef.current = null;
-          // If still on connecting step, the callback never fired
-          setConnectionStep((prev) => {
-            if (prev === 'yahoo-connecting') {
-              setYahooError('Authorization window was closed. Please try again.');
-              return 'select-platform';
-            }
-            return prev;
-          });
-          window.removeEventListener('message', handleMessage);
-          yahooListenerRef.current = null;
+        if (!popup.closed) return;
+        cleanupYahooOAuth();
+        // Only a close *without* a callback is a cancellation. Previously this
+        // branched on the current step from inside a setConnectionStep updater
+        // — a side effect in a function React may call more than once.
+        if (!callbackReceived) {
+          setYahooError('Authorization window was closed before Yahoo finished authorizing. Please try again.');
+          setConnectionStep('select-platform');
         }
       }, 500);
       yahooPollRef.current = pollTimer;
-    } catch {
-      setYahooError('Failed to start Yahoo authorization. Please try again.');
+    } catch (err) {
+      setYahooError(yahooErrorMessage(err, 'Failed to start Yahoo authorization. Please try again.'));
       setConnectionStep('select-platform');
     }
   };
@@ -380,6 +439,11 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     setSyncSuccessLeagueId(null);
     try {
       await leagueConnectService.syncLeague(leagueId);
+      // Roster-affecting sync — clear this week's cached AI power ranking and
+      // scouting reports so League Analyzer regenerates against the fresh
+      // rosters instead of serving a take based on the pre-sync lineup.
+      // Best-effort: a failure here shouldn't block the sync success path.
+      api.post(`/league-analyzer/${leagueId}/ai-cache/invalidate`, {}).catch(() => {});
       refetchLeagues();
       onLeagueSynced?.();
       setSyncSuccessLeagueId(leagueId);
@@ -773,9 +837,13 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               {connectionStep === 'select-platform' && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {platforms.map((platform) => (
+                    {platforms.map((platform) => {
+                      const isUnavailable = platform.id === 'yahoo' && yahooConfigured === false;
+                      return (
                       <button
                         key={platform.id}
+                        disabled={isUnavailable}
+                        title={isUnavailable ? 'Yahoo OAuth is not configured on this server' : undefined}
                         onClick={() => {
                           setSelectedPlatform(platform.id);
                           if (platform.id === 'sleeper') {
@@ -790,7 +858,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                           isDarkMode
                             ? 'bg-slate-800 border-slate-700 hover:border-blue-500'
                             : 'bg-slate-50 border-slate-200 hover:border-blue-500'
-                        }`}
+                        } ${isUnavailable ? 'opacity-40 cursor-not-allowed hover:border-slate-700' : ''}`}
                       >
                         <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 ${platform.color}/20 ${platform.textColor}`}>
                           <Globe className="w-6 h-6" />
@@ -798,8 +866,19 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                         <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{platform.name}</span>
                         <span className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{platform.description}</span>
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
+
+                  {/* Yahoo OAuth can fail before the popup ever opens (server
+                      missing credentials, rate limit, expired session). That
+                      path returns here, so the error has to render here too. */}
+                  {yahooError && (
+                    <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      {yahooError}
+                    </div>
+                  )}
                 </div>
               )}
 

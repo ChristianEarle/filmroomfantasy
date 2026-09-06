@@ -1,5 +1,5 @@
 import { defineConfig, mergeConfig } from 'vitest/config';
-import viteConfig from './vite.config';
+import viteConfig from './vite.config.mts';
 
 // Reuse the app's Vite config (react-swc plugin + path aliases) so component
 // tests transform JSX and resolve imports exactly like the real build.

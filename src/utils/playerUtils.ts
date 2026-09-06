@@ -13,6 +13,10 @@ export interface APIPlayer {
   projectedPoints: number;
   weeklyProjectedPoints?: number;
   isRostered: boolean;
+  /** Season mode only: genuine full-season AI-projected total (redraft pool), or null if uncovered. */
+  seasonProjectedPoints?: number | null;
+  /** Season mode only: sum of played weeks' actual fantasy points. */
+  seasonActualPoints?: number | null;
   seasonStats?: {
     games: number;
     gamesPlayed?: number;

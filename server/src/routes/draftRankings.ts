@@ -15,20 +15,20 @@ export const draftRankingsRoutes = new Hono<{ Bindings: Env; Variables: Variable
  * GET /api/draft-rankings
  *
  * Query params:
- *  - type: 'redraft' | 'dynasty_rookie' (default: 'redraft')
+ *  - type: 'redraft' | 'dynasty' | 'dynasty_rookie' (default: 'redraft')
  *  - scoring: 'ppr' | 'half-ppr' | 'standard' (default: 'ppr')
  *  - superflex: '0' | '1' (default: '0')
  *  - season: number (default: current year)
  */
 draftRankingsRoutes.get('/', async (c) => {
   const db = c.get('db');
-  const rankingType = (c.req.query('type') || 'redraft') as 'redraft' | 'dynasty_rookie';
+  const rankingType = (c.req.query('type') || 'redraft') as 'redraft' | 'dynasty' | 'dynasty_rookie';
   const scoringFormat = (c.req.query('scoring') || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
   const superflex = c.req.query('superflex') === '1';
   const season = parseInt(c.req.query('season') || String(new Date().getFullYear()), 10);
 
   // Validate
-  if (!['redraft', 'dynasty_rookie'].includes(rankingType)) {
+  if (!['redraft', 'dynasty', 'dynasty_rookie'].includes(rankingType)) {
     return c.json({ error: 'Invalid ranking type' }, 400);
   }
   if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
@@ -190,7 +190,7 @@ function buildDraftAskContext(
 }
 
 function buildDraftAskSystemPrompt(rankingType: string, scoringFormat: string, contextBlock: string): string {
-  const label = rankingType === 'dynasty_rookie' ? 'dynasty rookie' : 'redraft';
+  const label = rankingType === 'dynasty_rookie' ? 'dynasty rookie' : rankingType === 'dynasty' ? 'dynasty' : 'redraft';
   return `You are FilmRoom's draft assistant helping a user with their fantasy football draft. You have FilmRoom's current ${label} rankings in ${scoringFormat.toUpperCase()} scoring (below). Answer the user's question using these rankings — recommend players, compare options, suggest picks by ADP and tier, and explain your reasoning concisely.
 
 Respond in plain text (not JSON), under 4 short paragraphs. If the question is outside fantasy football drafting, politely redirect to draft topics.
@@ -222,11 +222,11 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
     return c.json({ error: 'question required' }, 400);
   }
 
-  const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty_rookie';
+  const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty' | 'dynasty_rookie';
   const scoringFormat = (body.scoring || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
   const superflex = body.superflex === true;
   const season = body.season || new Date().getFullYear();
-  if (!['redraft', 'dynasty_rookie'].includes(rankingType)) {
+  if (!['redraft', 'dynasty', 'dynasty_rookie'].includes(rankingType)) {
     return c.json({ error: 'Invalid ranking type' }, 400);
   }
   if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
@@ -299,7 +299,6 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
           buildDraftAskSystemPrompt(rankingType, scoringFormat, contextBlock),
         ),
         messages: [...recentHistory, { role: 'user', content: question }],
-        temperature: 0.4,
       }),
       signal: AbortSignal.timeout(30000),
     });

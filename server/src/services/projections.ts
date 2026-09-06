@@ -325,6 +325,22 @@ export async function generateProjectionsFromProps(
     }
   }
 
+  // Pre-fetch existing projections for this week/season in ONE query instead
+  // of a findFirst per (player, format) pair — that pattern previously blew
+  // the Worker's per-invocation subrequest cap on any event with full prop
+  // coverage (~15 players × 3 formats = 45+ round-trips on top of everything
+  // else in the request).
+  const existingProjections = await db.query.playerProjections.findMany({
+    where: and(
+      eq(schema.playerProjections.week, week),
+      eq(schema.playerProjections.seasonYear, seasonYear)
+    ),
+  });
+  const existingByKey = new Map<string, (typeof existingProjections)[number]>();
+  for (const p of existingProjections) {
+    existingByKey.set(`${p.playerId}::${p.scoringFormat}`, p);
+  }
+
   let generated = 0;
   let updated = 0;
   const BATCH_SIZE = 50;
@@ -346,14 +362,7 @@ export async function generateProjectionsFromProps(
     ];
 
     for (const { format, points } of formats) {
-      const existingProj = await db.query.playerProjections.findFirst({
-        where: and(
-          eq(schema.playerProjections.playerId, playerId),
-          eq(schema.playerProjections.week, week),
-          eq(schema.playerProjections.seasonYear, seasonYear),
-          eq(schema.playerProjections.scoringFormat, format)
-        ),
-      });
+      const existingProj = existingByKey.get(`${playerId}::${format}`);
 
       const projData = {
         playerId,
