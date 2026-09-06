@@ -129,6 +129,7 @@ describe('PlayerTable — Week mode (unaffected by Full Season changes)', () => 
     await within(grid).findByText('Josh Allen');
     const url = hoisted.mockGet.mock.calls[0][0] as string;
     expect(url).toContain('week=3');
+    expect(url).toContain('sortBy=projectedPoints');
     expect(url).not.toContain('sortBy=avgPointsPPR');
     // Week mode never shows the Full Season Proj/Actual badge.
     expect(within(grid).queryByText('Proj')).toBeNull();
@@ -144,6 +145,21 @@ describe('PlayerTable — Full Season projected vs actual', () => {
     await waitFor(() => {
       const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
       expect(urls.some(u => !u.includes('week='))).toBe(true);
+    });
+  });
+
+  it('sorts server-side by seasonProjectedPoints, not the per-game average', async () => {
+    // Regression for #296/#301: sorting the full pool by avgPointsPPR (or
+    // any per-game metric) before slicing to the page limit truncates out
+    // high season-total players with a low per-game average. The request
+    // must sort by the same value the table displays.
+    hoisted.mockGet.mockResolvedValue(seasonModeResponse());
+    renderTable(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Full Season' }));
+    await waitFor(() => {
+      const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
+      expect(urls.some(u => u.includes('sortBy=seasonProjectedPoints'))).toBe(true);
+      expect(urls.every(u => !u.includes('sortBy=avgPointsPPR'))).toBe(true);
     });
   });
 

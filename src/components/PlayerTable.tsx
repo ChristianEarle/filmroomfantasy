@@ -501,12 +501,15 @@ export function PlayerTable({
     setError(null);
     try {
       // Full Season mode omits the week param — the API then returns
-      // season aggregates (seasonStats totals + avgPointsPPR per game).
+      // season aggregates (seasonStats totals + the genuine AI-projected
+      // season total). Sort by that displayed total, not the per-game
+      // average, so high full-season projections aren't truncated out of
+      // the response before the client can re-sort (see #296/#301).
       const params = new URLSearchParams({
         page: '1',
         limit: '500',
         includeStats: 'true',
-        sortBy: fullSeason ? 'avgPointsPPR' : 'projectedPoints',
+        sortBy: fullSeason ? 'seasonProjectedPoints' : 'projectedPoints',
         sortOrder: 'desc',
         season: String(seasonYear),
         scoringFormat,

@@ -431,8 +431,14 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       .where(conditions.length > 0 ? and(...conditions) : undefined);
     const total = countResult[0]?.count || 0;
 
+    // seasonProjectedPoints is only meaningful in full-season mode (week === undefined);
+    // if a client passes it alongside a week, treat it as projectedPoints instead.
+    const effectiveSortBy = sortBy === 'seasonProjectedPoints' && week !== undefined
+      ? 'projectedPoints'
+      : sortBy;
     // When sorting by projected/avg points, we must fetch more, enrich, then sort in memory
-    const sortByComputed = sortBy === 'projectedPoints' || sortBy === 'avgPointsPPR';
+    const sortByComputed = effectiveSortBy === 'projectedPoints' || effectiveSortBy === 'avgPointsPPR'
+      || effectiveSortBy === 'seasonProjectedPoints';
     // When availableOnly, fetch extra to compensate for rostered players we'll filter out
     const availableMultiplier = availableOnly && leagueId ? 3 : 1;
     // Sorting by a computed field requires the FULL matching pool before sorting —
@@ -670,10 +676,15 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       }
       // Sort by computed field and apply pagination
       if (sortByComputed) {
-        const key = sortBy === 'projectedPoints' ? 'projectedPoints' : 'avgPointsPPR';
+        const useSeasonProjected = effectiveSortBy === 'seasonProjectedPoints';
+        const key = effectiveSortBy === 'projectedPoints' ? 'projectedPoints' : 'avgPointsPPR';
         enrichedPlayers = [...enrichedPlayers].sort((a, b) => {
-          const aVal = (a as any)[key] ?? 0;
-          const bVal = (b as any)[key] ?? 0;
+          const aVal = useSeasonProjected
+            ? ((a as any).seasonProjectedPoints ?? (a as any).seasonActualPoints ?? 0)
+            : ((a as any)[key] ?? 0);
+          const bVal = useSeasonProjected
+            ? ((b as any).seasonProjectedPoints ?? (b as any).seasonActualPoints ?? 0)
+            : ((b as any)[key] ?? 0);
           return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
         });
         enrichedPlayers = enrichedPlayers.slice(offset, offset + limit);
