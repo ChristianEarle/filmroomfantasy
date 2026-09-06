@@ -17,6 +17,18 @@ const YAHOO_AUTH_URL = 'https://api.login.yahoo.com/oauth2/request_auth';
 const YAHOO_TOKEN_URL = 'https://api.login.yahoo.com/oauth2/get_token';
 const YAHOO_API_BASE = 'https://fantasysports.yahooapis.com/fantasy/v2';
 
+// Shown to end users when the deploy has no Yahoo OAuth secrets. Deliberately
+// user-facing: the frontend surfaces this string verbatim, so it must explain
+// that retrying is pointless rather than implying a transient failure.
+const NOT_CONFIGURED_MESSAGE =
+  'Yahoo connection is unavailable right now — this server is missing its Yahoo OAuth credentials. Please try another platform or contact support.';
+
+type ConfiguredEnv = Env & { YAHOO_CLIENT_ID: string; YAHOO_CLIENT_SECRET: string };
+
+function isYahooConfigured(env: Env): env is ConfiguredEnv {
+  return Boolean(env.YAHOO_CLIENT_ID && env.YAHOO_CLIENT_SECRET);
+}
+
 // Derive the OAuth callback URL. Prefer the explicit YAHOO_REDIRECT_URI env
 // var (required when the worker is reachable on multiple hostnames but Yahoo's
 // app only whitelists one); fall back to deriving from the incoming request
@@ -45,15 +57,6 @@ async function verifyOAuthState(state: string, secret: string): Promise<string> 
     throw new Error('Invalid OAuth state');
   }
   return payload.sub;
-}
-
-// Yahoo normally returns expires_in, but a missing or non-numeric value would
-// make `Date.now() + expires_in * 1000` NaN — an Invalid Date that fails every
-// later expiry comparison, so the token is refreshed on every single request.
-// Fall back to Yahoo's standard 1-hour access token lifetime.
-function expiresInSeconds(value: unknown): number {
-  const n = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(n) && n > 0 ? n : 3600;
 }
 
 // Refresh Yahoo access token using refresh token
@@ -100,8 +103,8 @@ async function getYahooToken(
     return user.yahooAccessToken;
   }
 
-  if (!env.YAHOO_CLIENT_ID || !env.YAHOO_CLIENT_SECRET) {
-    throw new Error('Yahoo OAuth is not configured');
+  if (!isYahooConfigured(env)) {
+    throw new Error(NOT_CONFIGURED_MESSAGE);
   }
 
   // Refresh the token
@@ -111,29 +114,16 @@ async function getYahooToken(
     env.YAHOO_CLIENT_SECRET
   );
 
-  const newExpiresAt = new Date(Date.now() + expiresInSeconds(tokens.expires_in) * 1000);
+  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000);
 
   await db.update(schema.users).set({
     yahooAccessToken: tokens.access_token,
-    // OAuth refresh responses are not required to carry a new refresh token.
-    // Writing an absent one through would null the column and permanently
-    // break the connection, with no way back except a full re-authorization.
-    yahooRefreshToken: tokens.refresh_token || user.yahooRefreshToken,
+    yahooRefreshToken: tokens.refresh_token,
     yahooTokenExpiresAt: newExpiresAt,
     updatedAt: new Date(),
   }).where(eq(schema.users.id, user.id));
 
   return tokens.access_token;
-}
-
-// Carries the HTTP status alongside the message so callers can branch on the
-// real status instead of pattern-matching the response body. Message format is
-// unchanged, so existing generic `catch` handlers keep working.
-class YahooApiError extends Error {
-  constructor(public status: number, body: string) {
-    super(`Yahoo API error (${status}): ${body}`);
-    this.name = 'YahooApiError';
-  }
 }
 
 // Make an authenticated Yahoo Fantasy API request
@@ -145,7 +135,7 @@ async function yahooApiFetch(accessToken: string, path: string): Promise<any> {
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new YahooApiError(res.status, errText);
+    throw new Error(`Yahoo API error (${res.status}): ${errText}`);
   }
 
   return res.json();
@@ -155,13 +145,19 @@ async function yahooApiFetch(accessToken: string, path: string): Promise<any> {
 // ROUTES
 // ============================================
 
+// Report whether this deploy can do Yahoo OAuth at all, so the UI can mark the
+// platform unavailable up front instead of failing after the user clicks it.
+yahooRoutes.get('/status', yahooReadRateLimit, (c) => {
+  return c.json({ configured: isYahooConfigured(c.env) });
+});
+
 // Generate Yahoo OAuth authorization URL
 yahooRoutes.post('/auth-url', yahooAuthRateLimit, authMiddleware, async (c) => {
   const user = c.get('user');
   if (!user) return c.json({ error: 'Not authenticated' }, 401);
 
-  if (!c.env.YAHOO_CLIENT_ID || !c.env.YAHOO_CLIENT_SECRET) {
-    return c.json({ error: 'Yahoo OAuth is not configured' }, 503);
+  if (!isYahooConfigured(c.env)) {
+    return c.json({ error: NOT_CONFIGURED_MESSAGE, code: 'YAHOO_NOT_CONFIGURED' }, 503);
   }
 
   const state = await createOAuthState(user.id, c.env.JWT_SECRET);
@@ -189,6 +185,11 @@ yahooRoutes.get('/callback', yahooCallbackRateLimit, async (c) => {
   // must explicitly target the app origin or the message is silently dropped
   // by the browser.
   const frontendOrigin = c.env.APP_URL ? new URL(c.env.APP_URL).origin : '*';
+
+  if (!isYahooConfigured(c.env)) {
+    console.error('[yahoo:callback] Yahoo OAuth secrets are not configured');
+    return c.html(getCallbackHtml(false, frontendOrigin, NOT_CONFIGURED_MESSAGE));
+  }
 
   if (error) {
     console.error('[yahoo:callback] Yahoo returned error param:', error);
@@ -243,7 +244,7 @@ yahooRoutes.get('/callback', yahooCallbackRateLimit, async (c) => {
 
   // Store tokens on the user
   const db = c.get('db');
-  const expiresAt = new Date(Date.now() + expiresInSeconds(tokens.expires_in) * 1000);
+  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
 
   await db.update(schema.users).set({
     yahooAccessToken: tokens.access_token,
@@ -275,20 +276,11 @@ yahooRoutes.get('/leagues', yahooReadRateLimit, authMiddleware, async (c) => {
   try {
     const accessToken = await getYahooToken(db, freshUser, c.env);
 
-    // Fetch user's NFL fantasy leagues. `;out=settings` pulls each league's
-    // stat_modifiers inline so scoring format can be derived without an extra
-    // per-league round trip. Scoring detection is a nice-to-have and the sync
-    // re-derives it later, so never let the sub-resource cost us the league
-    // list itself: if Yahoo rejects `out`, fall back to the plain collection.
-    const LEAGUES_PATH = '/users;use_login=1/games;game_keys=nfl/leagues';
-    let data: any;
-    try {
-      data = await yahooApiFetch(accessToken, `${LEAGUES_PATH};out=settings`);
-    } catch (outErr) {
-      if (outErr instanceof YahooApiError && outErr.status === 401) throw outErr;
-      console.warn('Yahoo leagues fetch with ;out=settings failed, retrying without it:', outErr);
-      data = await yahooApiFetch(accessToken, LEAGUES_PATH);
-    }
+    // Fetch user's NFL fantasy leagues
+    const data = await yahooApiFetch(
+      accessToken,
+      '/users;use_login=1/games;game_keys=nfl/leagues'
+    );
 
     // Parse Yahoo's nested response structure
     const leagues = parseYahooLeagues(data);
@@ -299,13 +291,8 @@ yahooRoutes.get('/leagues', yahooReadRateLimit, authMiddleware, async (c) => {
     console.error('Yahoo leagues fetch error:', error);
 
     // Refresh failures + 401s mean the saved tokens are dead — clear them so
-    // the UI re-prompts OAuth instead of silently failing forever. Match on the
-    // real HTTP status where we have it: the old body regex also matched a "401"
-    // appearing anywhere in an unrelated 5xx payload (Yahoo ids are numeric),
-    // which wiped valid tokens on a transient Yahoo outage.
-    const isAuthErr =
-      (error instanceof YahooApiError && error.status === 401) ||
-      (!(error instanceof YahooApiError) && /unauthorized|invalid_grant|refresh failed/i.test(msg));
+    // the UI re-prompts OAuth instead of silently failing forever.
+    const isAuthErr = /401|unauthorized|invalid_grant|refresh failed/i.test(msg);
     if (isAuthErr) {
       try {
         await db.update(schema.users).set({
@@ -346,41 +333,6 @@ yahooRoutes.post('/disconnect', yahooAuthRateLimit, authMiddleware, async (c) =>
 // ============================================
 // HELPERS
 // ============================================
-
-// Yahoo stat id for receptions. PPR-ness lives in the league's stat_modifiers,
-// not in scoring_type — scoring_type describes the *format* (head-to-head vs
-// roto vs total points) and says nothing about whether receptions score.
-const YAHOO_STAT_ID_RECEPTIONS = 11;
-
-// Derive our scoring bucket from a Yahoo league settings node. Yahoo allows any
-// per-reception value, so map to the nearest of the three formats we store.
-// Accepts either the raw `settings` node (array or object) from the API.
-//
-// Returns null when the modifiers are absent entirely — "we could not tell"
-// is distinct from "receptions score nothing". Callers must not persist a
-// guess over a known-good value: an absent payload would otherwise silently
-// rewrite a correct PPR league to standard on every sync.
-export function parseYahooScoringFormat(settingsNode: any): 'ppr' | 'half_ppr' | 'standard' | null {
-  const settings = Array.isArray(settingsNode) ? settingsNode[0] : settingsNode;
-  const stats = settings?.stat_modifiers?.stats;
-  if (!Array.isArray(stats)) return null;
-
-  for (const entry of stats) {
-    const stat = entry?.stat;
-    if (!stat) continue;
-    if (Number(stat.stat_id) !== YAHOO_STAT_ID_RECEPTIONS) continue;
-
-    const value = Number(stat.value);
-    if (!Number.isFinite(value) || value <= 0) return 'standard';
-    // Nearest bucket: >=0.75 full PPR, >=0.25 half PPR, else standard.
-    if (value >= 0.75) return 'ppr';
-    if (value >= 0.25) return 'half_ppr';
-    return 'standard';
-  }
-
-  // No reception modifier at all means receptions score nothing.
-  return 'standard';
-}
 
 // Parse Yahoo's deeply nested league response into flat objects
 function parseYahooLeagues(data: any): Array<{
@@ -433,10 +385,7 @@ function parseYahooLeagues(data: any): Array<{
             name: l.name || `Yahoo League`,
             seasonYear: parseInt(l.season) || new Date().getFullYear(),
             teamCount: parseInt(l.num_teams) || 12,
-            // Requires the `;out=settings` sub-resource on the leagues request;
-            // without it there are no stat_modifiers and this falls back to
-            // 'standard'. The league sync re-derives it from full settings.
-            scoringFormat: parseYahooScoringFormat(leagueArr[1]?.settings) ?? 'standard',
+            scoringFormat: l.scoring_type === 'headpoint' ? 'ppr' : 'standard',
             currentWeek: parseInt(l.current_week) || 1,
           });
         }

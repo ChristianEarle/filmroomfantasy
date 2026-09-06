@@ -2,21 +2,32 @@ import { Hono } from 'hono';
 import { eq, and, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
+import { requireTier } from '../middleware/tier';
 import { rateLimit } from '../middleware/rateLimit';
+import { generateId } from '../utils/id';
+import { buildCachedSystemBlocks } from '../utils/prompt';
 import type { Env, Variables } from '../index';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// League Analyzer — deterministic league-wide analysis computed entirely from
-// already-synced data (teams, roster_spots, players, player_weekly_stats,
-// player_projections, matchups). No AI calls; the per-team narrative is built
-// from template sentences over the computed facts.
+// League Analyzer — league-wide analysis computed entirely from already-synced
+// data (teams, roster_spots, players, player_weekly_stats, player_projections,
+// matchups): grades, positional surplus/deficit, ROS schedule difficulty, and
+// Monte Carlo playoff odds. The per-team and league-wide AI narratives (below)
+// layer real Anthropic-generated analysis on top of those computed facts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const analyzerRateLimit = rateLimit(60, 60 * 1000);
+const aiRateLimit = rateLimit(10, 60 * 1000); // AI calls are more expensive than the deterministic endpoint
 
 export const leagueAnalyzerRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 leagueAnalyzerRoutes.use('*', analyzerRateLimit);
+
+const AI_MODEL = 'claude-sonnet-5'; // same model as the per-player analysis + trades follow-up calls
+
+type Db = ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>;
+type LeagueRow = typeof schema.leagues.$inferSelect;
+type MembershipRow = typeof schema.leagueMembers.$inferSelect;
 
 /** Positions we grade. UNK / IDP positions are ignored. */
 const GRADED_POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const;
@@ -65,6 +76,8 @@ interface PositionBreakdown {
   /** Percent above/below the league average (0 when no baseline). */
   deltaPct: number;
   status: 'surplus' | 'balanced' | 'deficit';
+  /** Percent of this team's total starter point production coming from this position. */
+  pointShare: number;
 }
 
 interface StandingInput {
@@ -279,66 +292,59 @@ function buildNarrative(input: {
   return sentences.join(' ');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /:leagueId — full league analysis
-// ─────────────────────────────────────────────────────────────────────────────
-leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
-  const user = c.get('user');
-  const db = c.get('db');
-  const leagueId = c.req.param('leagueId');
-
-  if (!user) {
-    return c.json({ error: 'Not authenticated' }, 401);
-  }
-
-  // Verify the league belongs to this user (same ownership check as routes/leagues.ts)
+/** Shared membership + league lookup used by every route below. */
+async function loadLeagueForUser(db: Db, userId: string, leagueId: string) {
   const membership = await db.query.leagueMembers.findFirst({
     where: and(
-      eq(schema.leagueMembers.userId, user.id),
+      eq(schema.leagueMembers.userId, userId),
       eq(schema.leagueMembers.leagueId, leagueId),
     ),
   });
-
-  if (!membership) {
-    return c.json({ error: 'Not a member of this league' }, 403);
-  }
+  if (!membership) return { error: 'Not a member of this league' as const, status: 403 as const };
 
   const league = await db.query.leagues.findFirst({
     where: eq(schema.leagues.id, leagueId),
   });
+  if (!league) return { error: 'League not found' as const, status: 404 as const };
 
-  if (!league) {
-    return c.json({ error: 'League not found' }, 404);
+  return { membership, league };
+}
+
+/**
+ * Computes the full deterministic league analysis (grades, positional
+ * surplus/deficit, ROS schedule difficulty, Monte Carlo playoff odds, and a
+ * template-sentence narrative per team) from already-synced data. Shared by
+ * the main analysis route and the AI narrative routes below, which use the
+ * same computed facts as the data block fed to Anthropic.
+ */
+async function computeLeagueAnalysis(db: Db, league: LeagueRow, membership: MembershipRow) {
+  const format = normalizeFormat(league.scoringFormat);
+  const seasonYear = league.seasonYear;
+  const currentWeek = league.currentWeek || 1;
+
+  // ── Batch load everything up-front (no per-team queries) ────────────────
+  const teams = await db.query.teams.findMany({
+    where: eq(schema.teams.leagueId, league.id),
+    with: { owner: { columns: { username: true } } },
+  });
+
+  if (teams.length === 0) {
+    return {
+      league: {
+        id: league.id,
+        name: league.name,
+        currentWeek,
+        seasonYear,
+        playoffTeams: league.playoffTeams || 6,
+        scoringFormat: format,
+        teamCount: 0,
+      },
+      leagueAvgPpg: 0,
+      positionAverages: {},
+      teams: [],
+      generatedAt: new Date().toISOString(),
+    };
   }
-
-  try {
-    const format = normalizeFormat(league.scoringFormat);
-    const seasonYear = league.seasonYear;
-    const currentWeek = league.currentWeek || 1;
-
-    // ── Batch load everything up-front (no per-team queries) ────────────────
-    const teams = await db.query.teams.findMany({
-      where: eq(schema.teams.leagueId, leagueId),
-      with: { owner: { columns: { username: true } } },
-    });
-
-    if (teams.length === 0) {
-      return c.json({
-        league: {
-          id: league.id,
-          name: league.name,
-          currentWeek,
-          seasonYear,
-          playoffTeams: league.playoffTeams || 6,
-          scoringFormat: format,
-          teamCount: 0,
-        },
-        leagueAvgPpg: 0,
-        positionAverages: {},
-        teams: [],
-        generatedAt: new Date().toISOString(),
-      });
-    }
 
     const teamIds = teams.map((t) => t.id);
 
@@ -410,12 +416,14 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
 
     // All league matchups in one query
     const leagueMatchups = await db.query.matchups.findMany({
-      where: eq(schema.matchups.leagueId, leagueId),
+      where: eq(schema.matchups.leagueId, league.id),
       columns: {
         id: true,
         week: true,
         homeTeamId: true,
         awayTeamId: true,
+        homeScore: true,
+        awayScore: true,
         isComplete: true,
         isPlayoff: true,
       },
@@ -436,6 +444,17 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
       playerValue.set(pid, preferred ? preferred.points : 0);
     }
 
+    // Forward-looking per-player value for "projected PPG": prefer this
+    // week's projection (a real look-ahead signal) over season-to-date PPG.
+    // Falls back to playerValue for players with no projection (byes, etc.)
+    // so a gap doesn't zero out the team's projected total.
+    const playerProjectedValue = new Map<string, number>();
+    for (const pid of playerIds) {
+      const projs = projByPlayer.get(pid) || [];
+      const preferred = projs.find((p) => normalizeFormat(p.format) === format) || projs[0];
+      playerProjectedValue.set(pid, preferred ? preferred.points : playerValue.get(pid) || 0);
+    }
+
     // ── Team-level aggregates ────────────────────────────────────────────────
     const spotsByTeam = new Map<string, typeof allSpots>();
     for (const spot of allSpots) {
@@ -444,13 +463,19 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
       spotsByTeam.set(spot.teamId, list);
     }
 
-    // Positional average of starters per team
-    const teamPositionAvg = new Map<string, Map<GradedPosition, { avg: number; count: number }>>();
+    // Positional average + total of starters per team, plus the team's
+    // forward-looking projected PPG (sum of starters' projectedValue) — both
+    // computed fresh from current roster_spots on every request, so a roster
+    // change (trade, waiver add) is reflected immediately, no caching lag.
+    const teamPositionAvg = new Map<string, Map<GradedPosition, { avg: number; count: number; sum: number }>>();
+    const teamProjectedPpg = new Map<string, number>();
     for (const team of teams) {
-      const posMap = new Map<GradedPosition, { avg: number; count: number }>();
+      const posMap = new Map<GradedPosition, { avg: number; count: number; sum: number }>();
       const starters = (spotsByTeam.get(team.id) || []).filter((s) => s.isStarter);
       const byPos = new Map<GradedPosition, number[]>();
+      let projectedTotal = 0;
       for (const spot of starters) {
+        projectedTotal += playerProjectedValue.get(spot.playerId) || 0;
         const player = playersById.get(spot.playerId);
         if (!player) continue;
         const pos = player.position as GradedPosition;
@@ -460,12 +485,11 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
         byPos.set(pos, list);
       }
       for (const [pos, values] of byPos) {
-        posMap.set(pos, {
-          avg: values.reduce((s, v) => s + v, 0) / values.length,
-          count: values.length,
-        });
+        const sum = values.reduce((s, v) => s + v, 0);
+        posMap.set(pos, { avg: sum / values.length, count: values.length, sum });
       }
       teamPositionAvg.set(team.id, posMap);
+      teamProjectedPpg.set(team.id, projectedTotal);
     }
 
     // League average per position (mean of per-team averages, teams with starters at that position)
@@ -499,6 +523,30 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
       }
     }
     leagueAvgPpg = teamsWithGames > 0 ? leagueAvgPpg / teamsWithGames : 0;
+
+    // Recent form: each team's average score over its last 3 completed games,
+    // compared to its season PPG. This is the momentum signal the AI power
+    // ranking uses to weigh "hot/cold" teams — raw season PPG alone just
+    // reproduces the standings.
+    const recentFormByTeam = new Map<string, { recentPpg: number | null; trend: 'up' | 'down' | 'steady' }>();
+    for (const team of teams) {
+      const recentGames = leagueMatchups
+        .filter((m) => m.isComplete && (m.homeTeamId === team.id || m.awayTeamId === team.id))
+        .map((m) => (m.homeTeamId === team.id ? { week: m.week, score: m.homeScore } : { week: m.week, score: m.awayScore }))
+        .filter((g): g is { week: number; score: number } => g.score != null)
+        .sort((a, b) => b.week - a.week)
+        .slice(0, 3);
+
+      if (recentGames.length === 0) {
+        recentFormByTeam.set(team.id, { recentPpg: null, trend: 'steady' });
+        continue;
+      }
+      const recentPpg = recentGames.reduce((sum, g) => sum + g.score, 0) / recentGames.length;
+      const seasonPpg = teamPpg.get(team.id) || 0;
+      const deltaPct = seasonPpg > 0 ? ((recentPpg - seasonPpg) / seasonPpg) * 100 : 0;
+      const trend: 'up' | 'down' | 'steady' = deltaPct >= 5 ? 'up' : deltaPct <= -5 ? 'down' : 'steady';
+      recentFormByTeam.set(team.id, { recentPpg: round1(recentPpg), trend });
+    }
 
     // ── Remaining schedule + Monte Carlo playoff odds ────────────────────────
     const standingsInput: StandingInput[] = teams.map((t) => ({
@@ -542,6 +590,8 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
       });
     }
 
+    const teamNameById = new Map(teams.map((t) => [t.id, t.name]));
+
     // ── Assemble per-team results ────────────────────────────────────────────
     const unranked = teams.map((team) => {
       const gp = team.wins + team.losses + team.ties;
@@ -550,6 +600,7 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
       const grade = leagueAvgPpg > 0 && gp > 0 ? gradeFromRatio(ratio) : 'B';
 
       const posMap = teamPositionAvg.get(team.id) || new Map();
+      const totalStarterSum = Array.from(posMap.values()).reduce((s, e) => s + e.sum, 0);
       const positions: PositionBreakdown[] = GRADED_POSITIONS.filter(
         (pos) => positionAverages[pos] != null,
       ).map((pos) => {
@@ -567,8 +618,25 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
           leagueAvg,
           deltaPct: round1(deltaPct),
           status,
+          pointShare: totalStarterSum > 0 ? round1(((entry?.sum ?? 0) / totalStarterSum) * 100) : 0,
         };
       });
+
+      // Biggest remaining swing game: the closest-PPG opponent left on the
+      // schedule is the most uncertain, highest-leverage remaining result.
+      const ownPpg = ppg;
+      const remainingOpponents = remainingRegularSeason
+        .filter((m) => m.team1Id === team.id || m.team2Id === team.id)
+        .map((m) => {
+          const oppId = m.team1Id === team.id ? m.team2Id : m.team1Id;
+          const opponentPpg = teamPpg.get(oppId) ?? leagueAvgPpg;
+          return { week: leagueMatchups.find((lm) => lm.id === m.id)?.week ?? 0, oppId, opponentPpg };
+        });
+      const biggestSwingGame = remainingOpponents.length > 0
+        ? remainingOpponents.reduce((closest, cur) =>
+            Math.abs(cur.opponentPpg - ownPpg) < Math.abs(closest.opponentPpg - ownPpg) ? cur : closest,
+          )
+        : null;
 
       const schedule = scheduleByTeam.get(team.id) || { avgOpponentPpg: null, remainingGames: 0 };
       const scheduleDeltaPct =
@@ -588,6 +656,9 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
         membership.externalUsername != null &&
         team.externalOwnerId != null &&
         team.externalOwnerId === membership.externalUsername;
+
+      const form = recentFormByTeam.get(team.id) || { recentPpg: null, trend: 'steady' as const };
+      const projectedPpg = round1(teamProjectedPpg.get(team.id) || 0);
 
       return {
         id: team.id,
@@ -611,6 +682,18 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
         },
         playoffOdds: mc?.playoffPct ?? 0,
         projectedWins: mc?.avgProjectedWins ?? team.wins,
+        recentFormPpg: form.recentPpg,
+        trend: form.trend,
+        projectedPpg,
+        projectedPpgDelta: round1(projectedPpg - ppg),
+        biggestSwingGame: biggestSwingGame && biggestSwingGame.week > 0
+          ? {
+              week: biggestSwingGame.week,
+              opponentId: biggestSwingGame.oppId,
+              opponentName: teamNameById.get(biggestSwingGame.oppId) || 'Unknown',
+              opponentPpg: round1(biggestSwingGame.opponentPpg),
+            }
+          : null,
       };
     });
 
@@ -621,10 +704,27 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
       return b.pointsFor - a.pointsFor;
     });
 
+    // Real win-loss standings order (independent of the strength/PPG-ratio
+    // rank above) — the gap between the two is the "contender vs lucky
+    // record" signal: a team ranked much better by record than by strength
+    // is overachieving (regression risk); the reverse is underachieving
+    // (a buy-low candidate before the market catches up).
+    const recordOrder = [...unranked].sort((a, b) => {
+      if (b.record.wins !== a.record.wins) return b.record.wins - a.record.wins;
+      return b.pointsFor - a.pointsFor;
+    });
+    const recordRankById = new Map(recordOrder.map((t, i) => [t.id, i + 1]));
+
     const analyzedTeams = ranked.map((team, index) => {
       const rank = index + 1;
+      const recordRank = recordRankById.get(team.id) ?? rank;
+      const rankGap = recordRank - rank;
+      const recordVsStrength: 'overachieving' | 'underachieving' | 'aligned' =
+        team.gamesPlayed === 0 ? 'aligned' : rankGap <= -2 ? 'overachieving' : rankGap >= 2 ? 'underachieving' : 'aligned';
       return {
         ...team,
+        recordRank,
+        recordVsStrength,
         rank,
         narrative: buildNarrative({
           name: team.name,
@@ -645,7 +745,7 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
       };
     });
 
-    return c.json({
+    return {
       league: {
         id: league.id,
         name: league.name,
@@ -659,9 +759,420 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
       positionAverages,
       teams: analyzedTeams,
       generatedAt: new Date().toISOString(),
-    });
+    };
+}
+
+type LeagueAnalysis = Awaited<ReturnType<typeof computeLeagueAnalysis>>;
+type AnalyzedTeam = LeagueAnalysis['teams'][number];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /:leagueId — full league analysis
+// ─────────────────────────────────────────────────────────────────────────────
+leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+  const leagueId = c.req.param('leagueId');
+
+  if (!user) {
+    return c.json({ error: 'Not authenticated' }, 401);
+  }
+
+  const loaded = await loadLeagueForUser(db, user.id, leagueId);
+  if ('error' in loaded) {
+    return c.json({ error: loaded.error }, loaded.status);
+  }
+
+  try {
+    const result = await computeLeagueAnalysis(db, loaded.league, loaded.membership);
+    return c.json(result);
   } catch (error) {
     console.error('League analyzer error:', error);
     return c.json({ error: 'Failed to analyze league' }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI narratives — real Anthropic-generated analysis layered on the computed
+// facts above. Cached per (team|league, season, week) so every viewer of the
+// same league shares one generation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Renders one team's computed facts as a data-block section for AI prompts. */
+function formatTeamFacts(team: AnalyzedTeam, leagueAvgPpg: number, teamCount: number): string {
+  const positionLines = team.positions
+    .filter((p) => p.starterCount > 0)
+    .map(
+      (p) =>
+        `  ${p.position}: ${p.avgPoints.toFixed(1)} PPG vs league avg ${p.leagueAvg.toFixed(1)} (${p.deltaPct > 0 ? '+' : ''}${p.deltaPct.toFixed(1)}%, ${p.status})`,
+    )
+    .join('\n');
+
+  const scheduleLine =
+    team.scheduleDifficulty.remainingGames > 0 && team.scheduleDifficulty.label
+      ? `${team.scheduleDifficulty.label} ROS — opponents average ${team.scheduleDifficulty.avgOpponentPpg?.toFixed(1)} PPG over ${team.scheduleDifficulty.remainingGames} remaining games`
+      : 'Regular season complete';
+
+  const formLine = team.recentFormPpg != null
+    ? `${team.recentFormPpg.toFixed(1)} PPG over last 3 games (trending ${team.trend} vs season average)`
+    : 'no completed games yet';
+
+  return `${team.name} (owner: ${team.ownerName}) [id: ${team.id}]
+Standings rank #${team.rank} of ${teamCount} by season PPG | Grade: ${team.grade} | Record: ${formatRecord(team.record.wins, team.record.losses, team.record.ties)} | Season PPG: ${team.ppg.toFixed(1)} (league avg ${leagueAvgPpg.toFixed(1)})
+Recent form: ${formLine}
+Points for: ${team.pointsFor.toFixed(1)} | Points against: ${team.pointsAgainst.toFixed(1)}
+Positional breakdown (starters):
+${positionLines || '  (no starter data yet)'}
+Remaining schedule: ${scheduleLine}
+Playoff odds: ${team.playoffOdds}% | Projected wins: ${team.projectedWins.toFixed(1)}`;
+}
+
+const TEAM_NARRATIVE_SYSTEM_PROMPT = `You are FilmRoom's fantasy football analyst writing a scouting report on one team in a fantasy league, for that team's manager and their league-mates.
+
+You will receive a data block with the team's rank and grade relative to the league, record, points per game, a positional breakdown (starter average vs league average at each position), remaining schedule difficulty, Monte Carlo playoff odds, and current starting lineup.
+
+Write 2-4 short paragraphs (under 180 words total) covering: the team's biggest strength and clearest weakness by position, what their remaining schedule and playoff odds mean for the rest of the season, and one concrete recommendation (a trade target position, a lineup consideration, or a storyline to watch).
+
+Rules:
+- Use ONLY the facts in the data block. Do not invent stats, injuries, or news not present in the data.
+- Reference specific numbers from the data block.
+- Respond in plain text — no markdown, no headings, no bullet lists.`;
+
+// GET /:leagueId/teams/:teamId/narrative — cached per (team, season, week).
+leagueAnalyzerRoutes.get(
+  '/:leagueId/teams/:teamId/narrative',
+  authMiddleware,
+  requireTier('pro', 'AI team scouting report'),
+  aiRateLimit,
+  async (c) => {
+    const user = c.get('user');
+    const db = c.get('db');
+    const anthropicKey = c.env.ANTHROPIC_API_KEY;
+    const leagueId = c.req.param('leagueId');
+    const teamId = c.req.param('teamId');
+
+    if (!user) return c.json({ error: 'Not authenticated' }, 401);
+    if (!anthropicKey) {
+      return c.json({ error: 'AI analysis is not configured. Missing API key.' }, 503);
+    }
+
+    const loaded = await loadLeagueForUser(db, user.id, leagueId);
+    if ('error' in loaded) {
+      return c.json({ error: loaded.error }, loaded.status);
+    }
+    const { league, membership } = loaded;
+    const seasonYear = league.seasonYear;
+    const week = league.currentWeek || 1;
+
+    try {
+      const cachedRow = await db.query.teamAiNarratives.findFirst({
+        where: and(
+          eq(schema.teamAiNarratives.teamId, teamId),
+          eq(schema.teamAiNarratives.seasonYear, seasonYear),
+          eq(schema.teamAiNarratives.week, week),
+        ),
+      });
+      if (cachedRow) {
+        return c.json({
+          narrative: cachedRow.narrative,
+          cached: true,
+          generatedAt: cachedRow.createdAt,
+          season: seasonYear,
+          week,
+        });
+      }
+
+      const analysis = await computeLeagueAnalysis(db, league, membership);
+      const team = analysis.teams.find((t) => t.id === teamId);
+      if (!team) return c.json({ error: 'Team not found in this league' }, 404);
+
+      const starterSpots = await db.query.rosterSpots.findMany({
+        where: and(eq(schema.rosterSpots.teamId, teamId), eq(schema.rosterSpots.isStarter, true)),
+        columns: { playerId: true },
+      });
+      const starterIds = starterSpots.map((s: { playerId: string }) => s.playerId);
+      const starters = starterIds.length > 0
+        ? await db.query.nflPlayers.findMany({
+            where: inArray(schema.nflPlayers.id, starterIds),
+            columns: { name: true, position: true },
+          })
+        : [];
+      const starterLine = starters.length > 0
+        ? starters.map((p: { name: string; position: string }) => `${p.name} (${p.position})`).join(', ')
+        : '(no roster synced yet)';
+
+      const dataBlock = `TEAM DATA (season ${seasonYear}, week ${week}):
+${formatTeamFacts(team, analysis.leagueAvgPpg, analysis.teams.length)}
+Current starters: ${starterLine}`;
+
+      let narrative: string;
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: AI_MODEL,
+            max_tokens: 500,
+            system: buildCachedSystemBlocks(TEAM_NARRATIVE_SYSTEM_PROMPT),
+            messages: [{ role: 'user', content: dataBlock }],
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          console.error('[league-analyzer/narrative] Anthropic error:', res.status, errText);
+          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+        }
+        const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+        const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
+        if (!text) {
+          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+        }
+        narrative = text;
+      } catch (err) {
+        console.error('[league-analyzer/narrative] AI call failed:', err);
+        return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+      }
+
+      try {
+        await db
+          .insert(schema.teamAiNarratives)
+          .values({ id: generateId(), teamId, seasonYear, week, narrative, model: AI_MODEL })
+          .onConflictDoNothing();
+      } catch (err) {
+        console.error('[league-analyzer/narrative] failed to cache narrative:', err);
+      }
+
+      return c.json({ narrative, cached: false, generatedAt: new Date().toISOString(), season: seasonYear, week });
+    } catch (error) {
+      console.error('Team AI narrative error:', error);
+      return c.json({ error: 'Failed to generate team narrative' }, 500);
+    }
+  },
+);
+
+const LEAGUE_PULSE_SYSTEM_PROMPT = `You are FilmRoom's fantasy football analyst producing a weekly "power ranking" and pulse briefing for a fantasy league, shared with every manager.
+
+You will receive a data block listing every team's id, season-long standings rank, grade, record, points per game, recent form (last 3 games vs season average — the momentum signal), positional surpluses/deficits, remaining schedule difficulty, and Monte Carlo playoff odds.
+
+A power ranking is NOT the same as the standings — it's your holistic judgment of which team is actually playing best right now. Weigh recent form heavily: a team with a losing record but a hot last 3 games can rank above a team coasting on an early-season winning record. Also weigh positional strength/weakness, remaining schedule, and playoff odds. Ties in the data should be broken by which team you'd rather own going forward.
+
+Respond with ONLY valid JSON (no markdown fences, no other text), in this exact shape:
+{"ranking": ["<team id>", "<team id>", ...], "narrative": "<3-5 short paragraphs, under 220 words>"}
+
+Rules for "ranking":
+- Must contain every team id from the data block EXACTLY as given, each exactly once, ordered from most to least powerful.
+- Use the exact id strings from the data block's "[id: ...]" tags — do not alter, guess, or invent ids.
+
+Rules for "narrative":
+- Cover: the biggest mover(s) between the power ranking and the raw standings and why, the tightest part of the playoff race, any position that's scarce or abundant league-wide (a trade-market observation), and one storyline to watch.
+- Use ONLY the facts in the data block. Do not invent stats, injuries, or news not present in the data.
+- Keep the tone analytical, not mean-spirited — this is read by every manager in the league, including whoever you're describing.
+- Plain text within the JSON string — no markdown, no headings, no bullet lists.`;
+
+/** Validates the model's ranking is exactly a permutation of the league's team ids. */
+function isValidRanking(ranking: unknown, teamIds: string[]): ranking is string[] {
+  if (!Array.isArray(ranking) || ranking.length !== teamIds.length) return false;
+  const idSet = new Set(teamIds);
+  const seen = new Set<string>();
+  for (const id of ranking) {
+    if (typeof id !== 'string' || !idSet.has(id) || seen.has(id)) return false;
+    seen.add(id);
+  }
+  return true;
+}
+
+// GET /:leagueId/pulse — league-wide AI narrative, cached per (league, season, week).
+leagueAnalyzerRoutes.get(
+  '/:leagueId/pulse',
+  authMiddleware,
+  requireTier('pro', 'AI league pulse'),
+  aiRateLimit,
+  async (c) => {
+    const user = c.get('user');
+    const db = c.get('db');
+    const anthropicKey = c.env.ANTHROPIC_API_KEY;
+    const leagueId = c.req.param('leagueId');
+
+    if (!user) return c.json({ error: 'Not authenticated' }, 401);
+    if (!anthropicKey) {
+      return c.json({ error: 'AI analysis is not configured. Missing API key.' }, 503);
+    }
+
+    const loaded = await loadLeagueForUser(db, user.id, leagueId);
+    if ('error' in loaded) {
+      return c.json({ error: loaded.error }, loaded.status);
+    }
+    const { league, membership } = loaded;
+    const seasonYear = league.seasonYear;
+    const week = league.currentWeek || 1;
+
+    try {
+      const cachedRow = await db.query.leagueAiPulses.findFirst({
+        where: and(
+          eq(schema.leagueAiPulses.leagueId, leagueId),
+          eq(schema.leagueAiPulses.seasonYear, seasonYear),
+          eq(schema.leagueAiPulses.week, week),
+        ),
+      });
+      if (cachedRow) {
+        return c.json({
+          narrative: cachedRow.narrative,
+          ranking: cachedRow.rankingJson ? JSON.parse(cachedRow.rankingJson) : null,
+          cached: true,
+          generatedAt: cachedRow.createdAt,
+          season: seasonYear,
+          week,
+        });
+      }
+
+      const analysis = await computeLeagueAnalysis(db, league, membership);
+      if (analysis.teams.length === 0) {
+        return c.json({ error: 'No teams found for this league yet.' }, 404);
+      }
+      const teamIds = analysis.teams.map((t) => t.id);
+
+      const teamBlocks = analysis.teams
+        .map((t) => formatTeamFacts(t, analysis.leagueAvgPpg, analysis.teams.length))
+        .join('\n\n');
+      const dataBlock = `LEAGUE DATA (${analysis.league.name}, season ${seasonYear}, week ${week}, ${analysis.teams.length} teams, top ${analysis.league.playoffTeams} make playoffs):
+
+${teamBlocks}`;
+
+      let narrative: string;
+      let ranking: string[] | null;
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: AI_MODEL,
+            max_tokens: 900,
+            system: buildCachedSystemBlocks(LEAGUE_PULSE_SYSTEM_PROMPT),
+            messages: [{ role: 'user', content: dataBlock }],
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          console.error('[league-analyzer/pulse] Anthropic error:', res.status, errText);
+          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+        }
+        const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+        const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
+        if (!text) {
+          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+        }
+
+        const jsonStr = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+        let parsed: { ranking?: unknown; narrative?: unknown };
+        try {
+          parsed = JSON.parse(jsonStr);
+        } catch {
+          console.error('[league-analyzer/pulse] non-JSON response:', text.slice(0, 300));
+          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+        }
+        if (typeof parsed.narrative !== 'string' || !parsed.narrative.trim()) {
+          return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+        }
+        narrative = parsed.narrative.trim();
+        // A malformed ranking degrades gracefully — the narrative still ships,
+        // the client just falls back to the deterministic standings order.
+        ranking = isValidRanking(parsed.ranking, teamIds) ? parsed.ranking : null;
+        if (!ranking) {
+          console.error('[league-analyzer/pulse] model returned an invalid ranking permutation');
+        }
+      } catch (err) {
+        console.error('[league-analyzer/pulse] AI call failed:', err);
+        return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
+      }
+
+      try {
+        await db
+          .insert(schema.leagueAiPulses)
+          .values({
+            id: generateId(),
+            leagueId,
+            seasonYear,
+            week,
+            narrative,
+            rankingJson: ranking ? JSON.stringify(ranking) : null,
+            model: AI_MODEL,
+          })
+          .onConflictDoNothing();
+      } catch (err) {
+        console.error('[league-analyzer/pulse] failed to cache pulse:', err);
+      }
+
+      return c.json({ narrative, ranking, cached: false, generatedAt: new Date().toISOString(), season: seasonYear, week });
+    } catch (error) {
+      console.error('League AI pulse error:', error);
+      return c.json({ error: 'Failed to generate league pulse' }, 500);
+    }
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /:leagueId/ai-cache/invalidate — clear this week's cached AI pulse +
+// team narratives so a roster change (trade, waiver move) doesn't leave every
+// viewer looking at a stale take until the weekly cache key rolls over. Called
+// by the client right after a successful league sync. Not tier-gated — any
+// member re-syncing should refresh the shared cache, regardless of their own
+// subscription. Deterministic stats (grades, positions, projected PPG, etc.)
+// need no invalidation — computeLeagueAnalysis always reads current data.
+// ─────────────────────────────────────────────────────────────────────────────
+leagueAnalyzerRoutes.post('/:leagueId/ai-cache/invalidate', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+  const leagueId = c.req.param('leagueId');
+
+  if (!user) return c.json({ error: 'Not authenticated' }, 401);
+
+  const loaded = await loadLeagueForUser(db, user.id, leagueId);
+  if ('error' in loaded) {
+    return c.json({ error: loaded.error }, loaded.status);
+  }
+  const { league } = loaded;
+  const seasonYear = league.seasonYear;
+  const week = league.currentWeek || 1;
+
+  try {
+    const leagueTeams = await db.query.teams.findMany({
+      where: eq(schema.teams.leagueId, leagueId),
+      columns: { id: true },
+    });
+    const teamIds = leagueTeams.map((t: { id: string }) => t.id);
+
+    await db
+      .delete(schema.leagueAiPulses)
+      .where(and(
+        eq(schema.leagueAiPulses.leagueId, leagueId),
+        eq(schema.leagueAiPulses.seasonYear, seasonYear),
+        eq(schema.leagueAiPulses.week, week),
+      ));
+
+    if (teamIds.length > 0) {
+      await db
+        .delete(schema.teamAiNarratives)
+        .where(and(
+          inArray(schema.teamAiNarratives.teamId, teamIds),
+          eq(schema.teamAiNarratives.seasonYear, seasonYear),
+          eq(schema.teamAiNarratives.week, week),
+        ));
+    }
+
+    return c.json({ invalidated: true });
+  } catch (error) {
+    console.error('League AI cache invalidation error:', error);
+    return c.json({ error: 'Failed to invalidate AI cache' }, 500);
   }
 });
