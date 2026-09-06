@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, BookOpen, ArrowLeftRight, ShieldCheck, Medal, BarChart3, FileText, ChevronDown, ChartNoAxesCombined, Shield, Wrench } from 'lucide-react';
+import { Home, LayoutDashboard, TrendingUp, Settings, Swords, Users as UsersIcon, ListPlus, CalendarRange, Trophy, CreditCard, ArrowLeftRight, ShieldCheck, Medal, BarChart3, FileText, ChevronDown, ChartNoAxesCombined, Shield, Wrench } from 'lucide-react';
 import { LeagueManager } from './LeagueManager';
 
-type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Research' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'LeagueAnalyzer' | 'Settings' | 'Pricing' | 'Admin' | 'Articles' | 'ArticleDetail' | 'PlayerProfile';
+type SidebarView = 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'DraftRankings' | 'TradeAnalyzer' | 'LeagueAnalyzer' | 'Settings' | 'Pricing' | 'Admin' | 'Articles' | 'ArticleDetail' | 'PlayerProfile';
 
 interface MenuItem {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   view: SidebarView;
-  comingSoon: boolean;
 }
 
 interface MenuGroup {
@@ -91,8 +90,8 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
 
   // Top-level items (always visible)
   const topItems: MenuItem[] = [
-    { icon: Home, label: 'Home', view: 'Home', comingSoon: false },
-    { icon: ArrowLeftRight, label: 'Trade Analyzer', view: 'TradeAnalyzer', comingSoon: false },
+    { icon: Home, label: 'Home', view: 'Home' },
+    { icon: ArrowLeftRight, label: 'Trade Analyzer', view: 'TradeAnalyzer' },
   ];
 
   // Collapsible groups
@@ -101,38 +100,37 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
       icon: ChartNoAxesCombined,
       label: 'Rankings',
       items: [
-        { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board', comingSoon: false },
-        { icon: TrendingUp, label: 'Trends', view: 'Trends', comingSoon: false },
-        { icon: Medal, label: 'Draft Rankings', view: 'DraftRankings', comingSoon: false },
+        { icon: LayoutDashboard, label: 'Player Rankings', view: 'Board' },
+        { icon: TrendingUp, label: 'Trends', view: 'Trends' },
+        { icon: Medal, label: 'Draft Rankings', view: 'DraftRankings' },
       ],
     },
     {
       icon: Shield,
       label: 'League',
       items: [
-        { icon: UsersIcon, label: 'Team', view: 'Team', comingSoon: false },
-        { icon: Swords, label: 'Matchup', view: 'Matchup', comingSoon: false },
-        { icon: ListPlus, label: 'Waivers', view: 'Waivers', comingSoon: false },
-        { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs', comingSoon: false },
-        { icon: BarChart3, label: 'League Analyzer', view: 'LeagueAnalyzer', comingSoon: false },
+        { icon: UsersIcon, label: 'Team', view: 'Team' },
+        { icon: Swords, label: 'Matchup', view: 'Matchup' },
+        { icon: ListPlus, label: 'Waivers', view: 'Waivers' },
+        { icon: Trophy, label: 'Playoff Predictor', view: 'Playoffs' },
+        { icon: BarChart3, label: 'League Analyzer', view: 'LeagueAnalyzer' },
       ],
     },
     {
       icon: Wrench,
       label: 'Tools',
       items: [
-        { icon: CalendarRange, label: 'Game Slate', view: 'GameSlate', comingSoon: false },
-        { icon: BookOpen, label: 'Research', view: 'Research', comingSoon: true },
-        { icon: FileText, label: 'Articles', view: 'Articles', comingSoon: false },
+        { icon: CalendarRange, label: 'Game Slate', view: 'GameSlate' },
+        { icon: FileText, label: 'Articles', view: 'Articles' },
       ],
     },
   ];
 
   // Bottom items (always visible, separated)
   const bottomItems: MenuItem[] = [
-    { icon: CreditCard, label: 'Pricing', view: 'Pricing', comingSoon: false },
-    { icon: Settings, label: 'Settings', view: 'Settings', comingSoon: false },
-    ...(isAdmin ? [{ icon: ShieldCheck, label: 'Admin', view: 'Admin' as SidebarView, comingSoon: false }] : []),
+    { icon: CreditCard, label: 'Pricing', view: 'Pricing' },
+    { icon: Settings, label: 'Settings', view: 'Settings' },
+    ...(isAdmin ? [{ icon: ShieldCheck, label: 'Admin', view: 'Admin' as SidebarView }] : []),
   ];
 
   // Auto-expand the group that contains the active view
@@ -178,17 +176,6 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
     >
       <item.icon className="w-5 h-5" />
       <span className="text-sm font-medium">{item.label}</span>
-      {item.comingSoon && (
-        <span className={`ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${
-          item.view === activeView
-            ? 'bg-white/20 text-white'
-            : isDarkMode
-              ? 'bg-amber-500/15 text-amber-400'
-              : 'bg-amber-100 text-amber-600'
-        }`}>
-          SOON
-        </span>
-      )}
     </button>
   );
 
