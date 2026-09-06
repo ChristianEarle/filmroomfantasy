@@ -47,7 +47,11 @@ const passwordResetRateLimit = rateLimit(5, 15 * 60 * 1000);
 // Generate JWT token
 const generateToken = async (userId: string, secret: string): Promise<string> => {
   const secretKey = new TextEncoder().encode(secret);
-  return new SignJWT({ sub: userId })
+  // jose's setIssuedAt() has second granularity, so two logins for the same
+  // user within the same second would otherwise sign byte-identical tokens
+  // and collide on the sessions.token UNIQUE constraint. A random jti keeps
+  // every token unique regardless of timing.
+  return new SignJWT({ sub: userId, jti: crypto.randomUUID() })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('24h')

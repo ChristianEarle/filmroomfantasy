@@ -6,6 +6,7 @@ import * as schema from './db/schema';
 
 // Import utilities
 import { cleanupExpiredRateLimits } from './middleware/rateLimit';
+import { getDefaultSeason } from './utils/seasons';
 import { snapshotRankHistory } from './services/draftRankings';
 import { generateInjuryNewsNotifications } from './services/notifications';
 
@@ -318,21 +319,33 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // This keeps us within subrequest limits while keeping data fresh
     const db = drizzle(env.DB, { schema });
     const anyLeague = await db.query.leagues.findFirst({
-      columns: { currentWeek: true },
+      columns: { currentWeek: true, seasonYear: true },
       orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
     });
     const currentWeek = anyLeague?.currentWeek || 1;
+    const currentSeason = anyLeague?.seasonYear || getDefaultSeason();
 
     // Sync stats for current week + previous week (for late-breaking plays)
     const previousWeek = Math.max(1, currentWeek - 1);
     const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
 
     await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
+
+    // Sync player prop lines (per-player Vegas O/U) for the current week.
+    // The endpoint itself loops over every game and skips any it already
+    // refreshed within the last 12h (see PROPS_REFRESH_HOURS in admin.ts),
+    // so a full week's props — and the projections generated from them —
+    // fill in automatically without re-billing the Odds API for games whose
+    // lines haven't had time to move.
+    if (currentWeek <= 18) {
+      await callSync('/api/admin/sync-player-props', { week: currentWeek });
+    }
+
     await callSync('/api/admin/sync-projections', { week: currentWeek });
 
     // Sync current odds during NFL season
     if (currentWeek <= 18) {
-      await callSync('/api/admin/sync-odds');
+      await callSync('/api/admin/sync-odds', { week: currentWeek, season: currentSeason });
     }
   } else if (event.cron === '0 */6 * * *') {
     // Every 6 hours: sync all news sources
@@ -360,6 +373,10 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'half-ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'ppr', superflex: true });
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'half-ppr', superflex: true });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'half-ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'ppr', superflex: true });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'half-ppr', superflex: true });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'half-ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr', superflex: true });

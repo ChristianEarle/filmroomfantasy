@@ -54,22 +54,30 @@ history accrues from the first daily cron.
   fully wired; only the credential is missing.
 - [ ] **Live Pro/Elite verification** — one authed round-trip each for
   `/draft-rankings/ask`, `/players/ask`, and `/players/:id/analysis` in
-  prod (tests mock Anthropic).
-- [ ] **Sign off on dropping `team_scouting_reports`** — orphaned table;
-  Drizzle definition already removed, physical `DROP TABLE` migration
-  deferred pending explicit approval.
+  prod (tests mock Anthropic). Still needs a Pro login to exercise the
+  gated paths for real.
+- [x] **Sign off on dropping `team_scouting_reports`** — dropped in
+  migration `0044_drop_team_scouting_reports.sql` (2026-09-06).
 
 ## P1 — Remaining feature gaps
 
 - [ ] **Push notifications** — in-app notifications shipped; web push /
   email delivery (and waiver/trade/lineup-lock event types) remain.
-- [ ] **Season projections** — full-season projected totals per player;
-  current pipeline is weekly-props-derived only.
+- [x] **Season projections** — `GET /players` in season mode now returns
+  genuine full-season `seasonProjectedPoints` from `draft_rankings`
+  (redraft, matching scoring format), with `seasonActualPoints` as a
+  labeled fallback (#301).
 - [ ] **PlayerCard Alert/Pin actions** — Compare shipped as a follow-up
-  (see below); Alert needs notification delivery (see push/email item
-  below) and Pin needs its own persistence layer.
-- [ ] **Redraft / Dynasty / Rookie three-way split** — backend still
-  bundles `dynasty_rookie`; splitting needs regeneration plumbing.
+  (see "Shipped since the completion sprint" above); Alert needs
+  notification delivery (see push/email item below) and Pin needs its
+  own persistence layer.
+- [x] **Redraft / Dynasty / Rookie three-way split** — true veteran-inclusive
+  `dynasty` ranking type added alongside `redraft` and the existing
+  rookie-only `dynasty_rookie`; Draft Rankings now has Redraft/Dynasty/
+  Rookie pills (#301).
+- [x] **Research page decision** — removed from nav for launch; dead
+  `ComingSoonView`/`ResearchView` deleted, old `/research` links redirect
+  home (#303).
 
 ## P2 — Data feeds (see roadmap in docs/COMPLETION_PLAN.md)
 
@@ -102,8 +110,8 @@ history accrues from the first daily cron.
   modal + AI take cover this; inline expand is a UX preference.
 - [ ] **De-shadow vendored `src/components/ui/*` primitives** — left
   untouched by the cohesion sweep (unbounded blast radius).
-- [ ] **Server-side test harness** — zero backend tests exist; vitest
-  covers frontend only.
+- [x] **Server-side test harness** — Vitest harness added (`unit` +
+  `@cloudflare/vitest-pool-workers` projects), 45 tests, wired into CI (#302).
 - [ ] **Newsletter email capture**, **ad integration** (monetization
   experiments).
 

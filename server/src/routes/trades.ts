@@ -506,7 +506,6 @@ tradesRoutes.post(
             ...recentHistory,
             { role: 'user', content: question },
           ],
-          temperature: 0.4,
         }),
         signal: AbortSignal.timeout(30000),
       });
