@@ -34,6 +34,17 @@ Deploy notes: migrations `0037`–`0041` auto-apply on merge; superflex +
 ceiling/floor data appears after the next Monday ranking batch; rank
 history accrues from the first daily cron.
 
+## Shipped since the completion sprint
+
+- Notification email delivery: a digest cron (`sendPendingNotificationEmails`)
+  emails users a summary of their unread notifications via the existing
+  Resend integration — no new owner credential needed. Gated on the
+  existing Settings "Notifications" toggle + verified email; one digest
+  email per user (not one per notification) to avoid inbox spam.
+  Migration `0045` adds `notifications.emailed_at` and backfills existing
+  rows so the historical backlog isn't mass-emailed on deploy. Web push
+  still needs VAPID keys (owner action) and is not part of this.
+
 ---
 
 ## P0 — Owner action required (not code)
@@ -51,8 +62,10 @@ history accrues from the first daily cron.
 
 ## P1 — Remaining feature gaps
 
-- [ ] **Push notifications** — in-app notifications shipped; web push /
-  email delivery (and waiver/trade/lineup-lock event types) remain.
+- [ ] **Web push notifications** — email delivery shipped (see above); web
+  push still needs a `push_subscriptions` table, a service worker, and a
+  VAPID keypair (owner action — `wrangler secret put`). Waiver/trade/
+  lineup-lock event types (beyond the existing injury type) also remain.
 - [x] **Season projections** — `GET /players` in season mode now returns
   genuine full-season `seasonProjectedPoints` from `draft_rankings`
   (redraft, matching scoring format), with `seasonActualPoints` as a

@@ -672,7 +672,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
           <div className="flex items-center justify-between">
             <div>
               <div id="notifications-label" className={`font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Notifications</div>
-              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Receive alerts for injuries and lineup changes</div>
+              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Receive alerts for injuries and lineup changes, plus an email summary when there's news</div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input

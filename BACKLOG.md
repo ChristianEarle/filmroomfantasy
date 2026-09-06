@@ -12,6 +12,11 @@
 > (owner-blocked credentials, external data sources, premium roadmap).
 > Checkboxes below are historical; `TODO.md` is the live list.
 >
+> **Follow-up:** notifications now have email delivery (a digest cron via
+> the existing Resend integration), gated on the Settings notifications
+> toggle + verified email. Web push is still open, blocked on VAPID keys.
+> See `TODO.md` → "Shipped since the completion sprint".
+>
 > **2026-09-06:** several backlog items shipped (season projections,
 > Redraft/Dynasty/Rookie split, League Analyzer AI narratives + pulse
 > ranking, backend Vitest harness, Sidebar audit, mobile sweeps — see

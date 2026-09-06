@@ -691,11 +691,16 @@ export const notifications = sqliteTable('notifications', {
   link: text('link'),
   dedupeKey: text('dedupe_key'),
   isRead: integer('is_read', { mode: 'boolean' }).notNull().default(false),
+  // null = email delivery not yet attempted (or not applicable, e.g. the
+  // recipient has notifications/email disabled at send time). Set once an
+  // email send is attempted so the digest cron never reprocesses a row.
+  emailedAt: integer('emailed_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   notificationsDedupe: uniqueIndex('idx_notifications_dedupe').on(table.userId, table.dedupeKey),
   notificationsUserCreated: index('idx_notifications_user_created').on(table.userId, table.createdAt),
   notificationsUserUnread: index('idx_notifications_user_unread').on(table.userId, table.isRead),
+  notificationsEmailPending: index('idx_notifications_email_pending').on(table.emailedAt),
 }));
 
 /**

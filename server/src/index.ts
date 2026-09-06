@@ -8,7 +8,7 @@ import * as schema from './db/schema';
 import { cleanupExpiredRateLimits } from './middleware/rateLimit';
 import { getDefaultSeason } from './utils/seasons';
 import { snapshotRankHistory } from './services/draftRankings';
-import { generateInjuryNewsNotifications } from './services/notifications';
+import { generateInjuryNewsNotifications, sendPendingNotificationEmails } from './services/notifications';
 
 // Import routes
 import { authRoutes } from './routes/auth';
@@ -304,6 +304,18 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
       console.error('[cron] injury notification generation failed:', err);
     }
 
+    // Email any not-yet-emailed notifications (this run's + any left over from
+    // a prior tick). Idempotent via emailedAt; a missing RESEND_API_KEY just
+    // logs a warning and no-ops, same convention as auth.ts's account emails.
+    try {
+      const db = drizzle(env.DB, { schema });
+      const appUrl = env.APP_URL || 'http://localhost:5173';
+      const emailRes = await sendPendingNotificationEmails(db, env.RESEND_API_KEY, appUrl);
+      console.log(`[cron] notification emails: ${emailRes.usersEmailed} users emailed, ${emailRes.notificationsMarked} rows marked`);
+    } catch (err) {
+      console.error('[cron] notification email digest failed:', err);
+    }
+
     // Snapshot current draft rankings into rank_history for movement deltas
     // and trend sparklines. Idempotent per UTC day (existence check + unique
     // index), so retried cron runs are no-ops.
@@ -361,6 +373,15 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
       console.log(`[cron] injury notifications: ${res.attempted} rows for ${res.relevantNews} news items (${res.scannedNews} scanned)`);
     } catch (err) {
       console.error('[cron] injury notification generation failed:', err);
+    }
+
+    try {
+      const db = drizzle(env.DB, { schema });
+      const appUrl = env.APP_URL || 'http://localhost:5173';
+      const emailRes = await sendPendingNotificationEmails(db, env.RESEND_API_KEY, appUrl);
+      console.log(`[cron] notification emails: ${emailRes.usersEmailed} users emailed, ${emailRes.notificationsMarked} rows marked`);
+    } catch (err) {
+      console.error('[cron] notification email digest failed:', err);
     }
   } else if (event.cron === '0 13 * * 1') {
     // Weekly Monday 8 AM EST (13:00 UTC): submit an Anthropic batch per
