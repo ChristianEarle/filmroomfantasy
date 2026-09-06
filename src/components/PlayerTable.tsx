@@ -112,6 +112,18 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
       {/* PTS (actual points when available, else projection) */}
       <td className="px-2 sm:px-4 py-3 sm:py-4 text-right">
         <span className={`font-bold text-base sm:text-lg tabular-nums ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+        {seasonMode && (
+          <span
+            className={`ml-1.5 fr-text-9 font-bold uppercase fr-tracking-wider px-1 py-0.5 rounded align-middle ${
+              player.pointsType === 'actual'
+                ? isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
+                : 'bg-blue-500/15 text-blue-500'
+            }`}
+            title={player.pointsType === 'actual' ? 'No season projection available — showing actual points scored so far' : 'AI-projected full-season total'}
+          >
+            {player.pointsType === 'actual' ? 'Actual' : 'Proj'}
+          </span>
+        )}
       </td>
 
       {/* PROJ (weekly projection) */}
@@ -331,14 +343,18 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
             {/* Panel 3 — Week summary */}
             <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}>
               <div className={`fr-text-10 font-bold uppercase fr-tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
-                {seasonMode ? 'SEASON TOTAL' : pointsType === 'actual' ? 'WEEK SUMMARY' : 'PROJECTION'}
+                {seasonMode
+                  ? (player.pointsType === 'actual' ? 'SEASON ACTUAL' : 'SEASON PROJECTED')
+                  : pointsType === 'actual' ? 'WEEK SUMMARY' : 'PROJECTION'}
               </div>
               <div className={`text-2xl font-extrabold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 {player.projectedPoints.toFixed(1)}
               </div>
               <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {seasonMode
-                  ? `${player.position} · Full season`
+                  ? (player.pointsType === 'actual'
+                    ? `${player.position} · Full season (actual so far — no AI projection available)`
+                    : `${player.position} · Full season (AI-projected total)`)
                   : pointsType === 'actual' ? `${player.position} · Week ${currentWeek}` : `${player.position} · Proj Wk ${currentWeek}`}
               </div>
               {!seasonMode && pointsType === 'actual' && player.weeklyProjectedPoints != null && (
@@ -522,7 +538,11 @@ export function PlayerTable({
       const pagination = response?.pagination;
       setPlayers(playersList);
       setTotalPlayers(pagination?.total ?? playersList.length);
-      // Season totals are actuals but don't carry week-level proj/outcome context
+      // Table-wide pointsType only gates week-level UI (OUTCOME column, weekly
+      // +/- pill) — Full Season mode never shows those regardless of whether
+      // an individual row's value is a real projection or a fallback actual
+      // (that per-row distinction is tracked on each Player via `pointsType`,
+      // set below in sortedAndFilteredPlayers).
       setPointsType(fullSeason ? 'projected' : response?.pointsType ?? 'projected');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch players';
@@ -581,15 +601,23 @@ export function PlayerTable({
         d.weekChange = Math.round((scores[scores.length - 1] - scores[scores.length - 2]) * 10) / 10;
       }
       if (fullSeason) {
-        // Show season totals for the selected scoring format in the PTS column
+        // Full Season mode: prefer the genuine AI-generated full-season
+        // projection (redraft draft-rankings pool). Not every player is
+        // covered by that pool (it tops out around 200 players), so fall
+        // back to the sum of already-played weeks' actuals — and label
+        // that fallback truthfully as 'actual', not 'projected'.
         const totals = p.seasonStats;
-        const total = selectedScoring === 'PPR'
+        const actualTotal = selectedScoring === 'PPR'
           ? totals?.fantasyPointsPPR
           : selectedScoring === 'Half PPR'
           ? totals?.fantasyPointsHalf
           : totals?.fantasyPointsStd;
-        d.projectedPoints = Math.round((total ?? 0) * 10) / 10;
+        const seasonActual = p.seasonActualPoints ?? actualTotal ?? 0;
+        const hasSeasonProjection = p.seasonProjectedPoints != null;
+        const seasonValue = hasSeasonProjection ? (p.seasonProjectedPoints as number) : seasonActual;
+        d.projectedPoints = Math.round(seasonValue * 10) / 10;
         d.weeklyProjectedPoints = undefined;
+        d.pointsType = hasSeasonProjection ? 'projected' : 'actual';
       }
       return d;
     });
@@ -694,7 +722,7 @@ export function PlayerTable({
             </h1>
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               {fullSeason
-                ? <>{seasonYear} Season · Full Season · Season total points</>
+                ? <>{seasonYear} Season · Full Season · AI-projected season totals (actual points where a projection isn't available)</>
                 : <>{seasonYear} Season · Week {currentWeek} {pointsType === 'actual' ? '(Final)' : '(Projections)'} · {pointsType === 'actual' ? 'Actual points scored' : 'Projected points'}</>}
               {totalPlayers > 0 && <> · {totalPlayers} players</>}
             </p>

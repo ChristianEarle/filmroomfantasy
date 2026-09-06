@@ -488,6 +488,22 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           const projCond = week !== undefined
             ? and(inArray(schema.playerProjections.playerId, chunk), eq(schema.playerProjections.seasonYear, season), eq(schema.playerProjections.week, week), eq(schema.playerProjections.scoringFormat, scoringFormat))
             : and(inArray(schema.playerProjections.playerId, chunk), eq(schema.playerProjections.seasonYear, season), eq(schema.playerProjections.scoringFormat, scoringFormat));
+          // Season mode (week omitted): also pull the AI-generated full-season
+          // redraft projection so the client can show a genuine season total
+          // instead of mislabeling summed actuals as "projected". Only queried
+          // in season mode — week mode has no use for it.
+          const draftRankingsPromise = week === undefined
+            ? db.query.draftRankings.findMany({
+                where: and(
+                  inArray(schema.draftRankings.playerId, chunk),
+                  eq(schema.draftRankings.rankingType, 'redraft'),
+                  eq(schema.draftRankings.scoringFormat, scoringFormat),
+                  eq(schema.draftRankings.superflex, false),
+                  eq(schema.draftRankings.seasonYear, season),
+                ),
+                columns: { playerId: true, projectedPoints: true },
+              })
+            : Promise.resolve([] as { playerId: string; projectedPoints: number | null }[]);
           return Promise.all([
             db.query.playerWeeklyStats.findMany({
               where: and(
@@ -499,6 +515,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
               where: projCond,
               orderBy: week !== undefined ? undefined : desc(schema.playerProjections.week),
             }),
+            draftRankingsPromise,
           ]);
         })
       );
@@ -506,9 +523,11 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       // Flatten results
       const allStats: { playerId: string; [k: string]: any }[] = [];
       const allProjections: { playerId: string; [k: string]: any }[] = [];
-      for (const [statsChunk, projChunk] of chunkResults) {
+      const allDraftRankings: { playerId: string; projectedPoints: number | null }[] = [];
+      for (const [statsChunk, projChunk, draftChunk] of chunkResults) {
         allStats.push(...statsChunk);
         allProjections.push(...projChunk);
+        allDraftRankings.push(...draftChunk);
       }
 
       const statsByPlayer = new Map<string, typeof allStats>();
@@ -521,6 +540,14 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       const projectionByPlayer = new Map<string, (typeof allProjections)[0]>();
       for (const p of allProjections) {
         if (!projectionByPlayer.has(p.playerId)) projectionByPlayer.set(p.playerId, p);
+      }
+
+      // Genuine full-season AI-projected total per player (redraft pool only
+      // covers ~top 200 players; anyone else falls back to season actuals
+      // on the client).
+      const seasonProjectionByPlayer = new Map<string, number>();
+      for (const dr of allDraftRankings) {
+        if (dr.projectedPoints != null) seasonProjectionByPlayer.set(dr.playerId, dr.projectedPoints);
       }
 
       // Column key for the requested scoring format — used for sparkline history
@@ -614,11 +641,24 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           projPts = projection?.projectedPoints || 0;
         }
         const { snapPctSum, ...ss } = seasonStats as any;
+
+        // Season mode only: the genuine full-season AI-projected total (from
+        // the redraft draft-rankings pool) alongside the already-computed sum
+        // of played weeks' actuals, so the client can display each truthfully
+        // instead of labelling summed actuals as "projected".
+        const seasonPtsCol = scoringFormat === 'standard' ? 'fantasyPointsStd' : scoringFormat === 'half-ppr' ? 'fantasyPointsHalf' : 'fantasyPointsPPR';
+        const seasonActualPoints = Math.round(((ss as any)[seasonPtsCol] ?? 0) * 10) / 10;
+        const seasonProjectedPoints = week === undefined
+          ? (seasonProjectionByPlayer.get(player.id) ?? null)
+          : null;
+
         return {
           ...player,
           seasonStats: { ...ss, averageSnapPct: avgSnapPct },
           avgPointsPPR: avgPts,
           projectedPoints: projPts,
+          seasonActualPoints,
+          seasonProjectedPoints,
           recentWeeklyScores,
           isRostered: rosteredPlayerIds.includes(player.id),
         };

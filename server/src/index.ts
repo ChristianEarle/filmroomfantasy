@@ -373,6 +373,10 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'half-ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'ppr', superflex: true });
     await callSync('/api/admin/generate-draft-rankings', { type: 'redraft', scoring: 'half-ppr', superflex: true });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'half-ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'ppr', superflex: true });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'half-ppr', superflex: true });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'half-ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr', superflex: true });

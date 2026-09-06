@@ -43,10 +43,12 @@ interface AnalyticsData {
 
 type AdminTab = 'overview' | 'analytics' | 'articles';
 
-// Mirrors DEFAULT_VARIANTS in server/src/services/draftRankings.ts (all 1-QB).
+// Mirrors the weekly cron's variant submissions in server/src/index.ts (all 1-QB).
 const DRAFT_RANKING_VARIANTS = [
   { label: 'Redraft · PPR', type: 'redraft', scoring: 'ppr' },
   { label: 'Redraft · Half PPR', type: 'redraft', scoring: 'half-ppr' },
+  { label: 'Dynasty · PPR', type: 'dynasty', scoring: 'ppr' },
+  { label: 'Dynasty · Half PPR', type: 'dynasty', scoring: 'half-ppr' },
   { label: 'Dynasty Rookie · PPR', type: 'dynasty_rookie', scoring: 'ppr' },
   { label: 'Dynasty Rookie · Half PPR', type: 'dynasty_rookie', scoring: 'half-ppr' },
 ] as const;
