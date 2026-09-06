@@ -78,6 +78,18 @@ export interface PlayerProjection {
   projRecTDs?: number | null;
 }
 
+export interface PlayerSeasonProjection {
+  available: boolean;
+  projectedPoints?: number | null;
+  overallRank?: number | null;
+  positionRank?: number | null;
+  tier?: number | null;
+  scoringFormat?: string;
+  superflex?: boolean;
+  season?: number;
+  generatedAt?: string | null;
+}
+
 export interface PlayerNews {
   id: string;
   playerId: string;
@@ -254,6 +266,25 @@ export const playerService = {
     const query = searchParams.toString();
     return api.get<{ projections: PlayerProjection[] }>(
       `/players/${playerId}/projections${query ? `?${query}` : ''}`
+    );
+  },
+
+  // Get a player's full-season AI-projected point total (redraft variant).
+  getPlayerSeasonProjection: async (
+    playerId: string,
+    params?: { scoring?: string; superflex?: boolean; season?: number }
+  ): Promise<PlayerSeasonProjection> => {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.append(key, String(value));
+        }
+      });
+    }
+    const query = searchParams.toString();
+    return api.get<PlayerSeasonProjection>(
+      `/players/${playerId}/season-projection${query ? `?${query}` : ''}`
     );
   },
 

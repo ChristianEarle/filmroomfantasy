@@ -4,7 +4,7 @@ import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Cl
 import { Player } from '../App';
 import api, { ApiError } from '../services/api';
 import { playerService } from '../services';
-import type { PlayerNews, MatchupGradeResponse, PlayerProjection } from '../services';
+import type { PlayerNews, MatchupGradeResponse, PlayerProjection, PlayerSeasonProjection } from '../services';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useAuth } from '../context/AuthContext';
 import { buildPlayerProfilePath } from '../utils/slug';
@@ -113,6 +113,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || 1);
   const [projection, setProjection] = useState<PlayerProjection | null>(null);
   const [projectionLoading, setProjectionLoading] = useState(true);
+  const [seasonProjection, setSeasonProjection] = useState<PlayerSeasonProjection | null>(null);
+  const [seasonProjectionLoading, setSeasonProjectionLoading] = useState(true);
 
   // Some callers pass richer player objects than App's Player interface declares.
   const playerExtras = player as Player & { status?: string; externalId?: string };
@@ -194,6 +196,21 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
       .finally(() => { if (!cancelled) setProjectionLoading(false); });
     return () => { cancelled = true; };
   }, [player.id, selectedWeek, propsSeasonYear, propsScoringFormat]);
+
+  // Fetch the full-season AI projection (sourced from Draft Rankings' redraft
+  // batch) when the card opens or the scoring format changes. Independent of
+  // selectedWeek — this is a whole-season number, not a per-week one.
+  useEffect(() => {
+    if (!player?.id) return;
+    let cancelled = false;
+    setSeasonProjectionLoading(true);
+    const scoring = (propsScoringFormat === 'half_ppr' ? 'half-ppr' : propsScoringFormat === 'standard' ? 'standard' : 'ppr');
+    playerService.getPlayerSeasonProjection(player.id, { scoring, season: propsSeasonYear })
+      .then((res) => { if (!cancelled) setSeasonProjection(res); })
+      .catch(() => { if (!cancelled) setSeasonProjection(null); })
+      .finally(() => { if (!cancelled) setSeasonProjectionLoading(false); });
+    return () => { cancelled = true; };
+  }, [player.id, propsSeasonYear, propsScoringFormat]);
 
   // Fetch player props when card opens
   useEffect(() => {
@@ -842,6 +859,37 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       </div>
                     );
                   })()}
+
+                  {/* Full-season AI projection (sourced from Draft Rankings — a whole-season number, not the week-derived one above). */}
+                  <div>
+                    <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{propsSeasonYear || new Date().getFullYear()} Season Projection</h3>
+                    {seasonProjectionLoading ? (
+                      <div className={`animate-pulse rounded-lg h-16 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                    ) : !seasonProjection?.available ? (
+                      <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                        <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No season projection available for this player yet.</p>
+                      </div>
+                    ) : (
+                      <div className={`rounded-lg p-4 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                        <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>AI full-season estimate • {scoringLabel} redraft</p>
+                        <div className="flex items-center justify-between py-3 bg-blue-500/10 -mx-4 px-4 rounded-lg">
+                          <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Projected {scoringLabel} Points</span>
+                          <span className="font-bold text-blue-400 text-lg">
+                            {seasonProjection.projectedPoints != null ? seasonProjection.projectedPoints.toFixed(1) : '—'}
+                          </span>
+                        </div>
+                        {(seasonProjection.overallRank != null || seasonProjection.positionRank != null) && (
+                          <div className={`flex items-center justify-between py-2 mt-1 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                            <span>Overall Rank</span>
+                            <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                              {seasonProjection.overallRank != null ? `#${seasonProjection.overallRank}` : '—'}
+                              {seasonProjection.positionRank != null && ` (${player.position}${seasonProjection.positionRank})`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 );
               })()}

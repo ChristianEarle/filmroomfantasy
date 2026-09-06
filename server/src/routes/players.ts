@@ -2389,6 +2389,75 @@ playerRoutes.get('/:id/projections', optionalAuthMiddleware, async (c) => {
   }
 });
 
+/**
+ * GET /:id/season-projection
+ *
+ * A player's full-season projected point total. The weekly /projections
+ * endpoint above is derived from sportsbook prop lines and only ever covers
+ * one week at a time — there's no pipeline that sums those into a
+ * whole-season number. The Draft Rankings AI batch already produces one
+ * (`projectedPoints` on the redraft variant, generated alongside overall
+ * rank/tier), so this surfaces that existing number rather than building a
+ * second, possibly-inconsistent season model.
+ *
+ * Only the ~200 players covered by the redraft batch have a season
+ * projection; `available: false` for everyone else (deep bench/inactive).
+ *
+ * Query params:
+ *  - scoring: 'ppr' | 'half-ppr' | 'standard' (default: 'ppr')
+ *  - superflex: '0' | '1' (default: '0')
+ *  - season: number (default: current year)
+ */
+playerRoutes.get('/:id/season-projection', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  let playerId = c.req.param('id');
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const scoringFormat = (c.req.query('scoring') || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
+  const superflex = c.req.query('superflex') === '1';
+
+  if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
+    return c.json({ error: 'Invalid scoring format' }, 400);
+  }
+
+  try {
+    if (/^\d+$/.test(playerId)) {
+      const player = await db.query.nflPlayers.findFirst({
+        where: eq(schema.nflPlayers.externalId, playerId),
+      });
+      if (player) playerId = player.id;
+    }
+
+    const ranking = await db.query.draftRankings.findFirst({
+      where: and(
+        eq(schema.draftRankings.playerId, playerId),
+        eq(schema.draftRankings.rankingType, 'redraft'),
+        eq(schema.draftRankings.scoringFormat, scoringFormat),
+        eq(schema.draftRankings.superflex, superflex),
+        eq(schema.draftRankings.seasonYear, season),
+      ),
+    });
+
+    if (!ranking || ranking.projectedPoints == null) {
+      return c.json({ available: false });
+    }
+
+    return c.json({
+      available: true,
+      projectedPoints: ranking.projectedPoints,
+      overallRank: ranking.overallRank,
+      positionRank: ranking.positionRank,
+      tier: ranking.tier,
+      scoringFormat,
+      superflex,
+      season,
+      generatedAt: ranking.generatedAt,
+    });
+  } catch (error) {
+    console.error('Get season projection error:', error);
+    return c.json({ error: 'Failed to fetch season projection' }, 500);
+  }
+});
+
 // Get player news + articles linked to this player
 playerRoutes.get('/:id/news', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
