@@ -16,6 +16,15 @@
 > /players/:id/season-projection`, surfaced on PlayerCard) by exposing
 > Draft Rankings' existing redraft `projectedPoints` rather than building
 > a new model. See `TODO.md` → "Shipped since the completion sprint".
+>
+> **2026-09-06:** several backlog items shipped (season projections,
+> Redraft/Dynasty/Rookie split, League Analyzer AI narratives + pulse
+> ranking, backend Vitest harness, Sidebar audit, mobile sweeps — see
+> `CHANGELOG.md`). Trade Finder was removed from the codebase, so the
+> Trade Finder backlog sections below are obsolete (kept for history).
+> Separately, ~30 open draft PRs have accumulated from repeated runs of
+> this backlog-picking routine, some duplicating the same item — still
+> pending a triage/close pass before picking new items off this list.
 
 ---
 
@@ -166,9 +175,13 @@
 ### Data & Rankings
 - [ ] **Top waiver pickups from multiple platforms** - Source trending waiver pickups from multiple league platforms (Sleeper, ESPN, Yahoo) for better consensus recommendations.
 - [ ] **Draft rankings** - Pre-draft player rankings with tiers, positional scarcity analysis, and ADP comparison. Sidebar nav item removed for beta — re-add `{ icon: Medal, label: 'Draft Rankings', view: 'DraftRankings' }` to `Sidebar.tsx` menuItems. Route and `ComingSoonView` still exist in `App.tsx`.
-- [ ] **Season projections** - Full-season projected stats and fantasy point totals for all players, updated weekly.
+- [x] **Season projections** - `GET /players` in season mode now returns genuine `seasonProjectedPoints` from `draft_rankings` (redraft, matching scoring format), with `seasonActualPoints` as a labeled fallback; `PlayerTable`'s Full Season view sorts by and badges the displayed value (#301).
 
 ### Trade Finder — API Cost & Rate-Limit Hardening
+> **OBSOLETE (2026-09-06):** the Trade Finder feature (`tradeFinder.ts`, `tradeConstructor.ts`,
+> `tradeMatcher.ts`, `TradeFinderView.tsx`) has been removed from the codebase. The items below
+> no longer apply; kept for historical context only. Trade Analyzer (manual, non-AI-discovery)
+> remains and is unaffected.
 > Reduce Anthropic API pressure on `/trade-finder/recommendations` (currently 6-10 parallel Claude calls per cold request). Ordered by impact-vs-effort.
 
 - [ ] **Enable Anthropic prompt caching on static system prompts** (~1h) - Add `cache_control: { type: 'ephemeral' }` to the system-prompt blocks in `tradeConstructor.ts` (`constructTrades`), `tradeAnalyzer.ts` (`analyzeTrade`), and `tradeFinder.ts` (`buildTeamNeeds`). The constructor and analyzer system prompts are ~2-3K tokens each and identical across every call — Anthropic caches them for 5 min at ~10% of normal token cost. Biggest win: ~50-60% reduction in input token spend per recommendations run, zero UX change. Requires converting the `system:` string to an array of content blocks with `type: 'text' + cache_control`.
@@ -181,6 +194,8 @@
 - [ ] **Cloudflare Queues for verification fan-out** (~1 day) - Move verification calls behind a Cloudflare Queue with a producer rate cap. `/recommendations` returns immediately with "analyzing in progress"; client polls for verified results. Guarantees we never exceed Anthropic rate limits under load. Only needed at real scale — skip until traffic actually warrants it.
 
 ### Trade Finder — Discovery Enhancements
+> **OBSOLETE (2026-09-06):** the Trade Finder feature has been removed from the codebase (see
+> note above). Kept for historical context only.
 > Feature ideas discussed during the trade finder rework session that were deferred. Most require the existing mega-call path to be stable first.
 
 - [ ] **"Target a specific player" UI entry point** (~half day) - Add a collapsible panel to `TradeFinderView.tsx` with a searchable combobox of every non-user player in the league (source: existing `GET /rosters/:leagueId/all`). When selected, the finder runs a single focused construction call for that exact player instead of scanning the whole league. Extend `RecommendationsBody` with `targetPlayerId`, thread through `findTradeRecommendations`, bump `CACHE_VERSION`. Useful on its own regardless of the underlying discovery mechanism.
@@ -219,7 +234,7 @@
 - [ ] **Compare (up to N) drawer** (~1 day frontend) - Mock has a `+ Compare (0)` button in the header that opens a side-drawer with 2–4 players side-by-side: projection breakdown, value, AI take, schedule strength. Pure client-side state (no new persistence). Add a `Compare Drawer` component, thread `selectedForCompare: Set<string>` through `PlayerRow`, render a checkbox on hover. Can reuse the same expanded-row panel markup for each column.
 - [ ] **Export rankings** (~2h) - Mock has an `Export` button. CSV download of the current filtered rankings with columns matching the table (`#, Player, Position, Team, ProjPts, ADP, ValueDelta, Tier, Analysis`). Pure frontend — generate a `data:text/csv` blob from `filteredRankings` and trigger a download. No backend call needed.
 - [ ] **Ask AI about draft** button (~half day) - Mock has a blue "Ask AI about draft" CTA. Quick chat modal where the user can ask questions against the currently loaded ranking set ("who should I draft at pick 5?", "build me a zero-RB plan"). Reuse the existing Trade Analyzer `/trades/follow-up` pattern but with a new `/draft-rankings/ask` endpoint that seeds the rankings + positional tiers as context. Pro/Elite gated.
-- [ ] **Redraft / Dynasty / Rookie three-way split** (~3h backend + 1h frontend) - Current backend bundles Dynasty and Rookie into a single `dynasty_rookie` ranking type. The mock shows them as separate pills. Split at the generation level: three ranking types (`redraft`, `dynasty`, `rookie`), each generated independently. Existing `draft_rankings` rows can stay until regenerated — the API just needs to route the new `dynasty`/`rookie` query values correctly.
+- [x] **Redraft / Dynasty / Rookie three-way split** - Added a true veteran-inclusive `dynasty` ranking type (age curves, role trajectory, multi-year value; anchored on FantasyCalc's unfiltered dynasty ranks) alongside `redraft` and the existing rookie-only `dynasty_rookie`. Draft Rankings now has Redraft/Dynasty/Rookie pills with dynasty-specific tier labels; weekly cron submits 4 additional dynasty batch variants (#301).
 
 ### Player Rankings — Enhancements
 > Follow-ups deferred from the Player Rankings redesign session. The redesign landed the 3 Boom/Bust/MVP callouts above the table and the OUTCOME pill column (BOOM/BUST/MET) on finalized weeks. These are the larger pieces that needed new data, new surfaces, or changes outside `PlayerTable.tsx`.
@@ -241,7 +256,7 @@
 - [x] **Sync success feedback** - Sync button now shows green "Synced!" with checkmark for 5 seconds after successful sync. Last synced timestamp updates immediately.
 
 ### Mobile
-- [ ] **Mobile optimization** - Comprehensive mobile pass: fix touch targets, table scrolling, modal sizing, bottom nav, and responsive breakpoints across all views.
+- [x] **Mobile optimization** - Comprehensive mobile pass shipped across several rounds: bottom nav, touch targets, and modal sizing (2026-07 sprint); Ask AI chat modal, bottom nav sizing, and landing header overflow at 375px (#297); Sidebar mobile drawer resize/focus-trap/ARIA (#283); Research nav removal, off-screen `PageTransition` modal fix, and Waivers filter wrap (#303).
 
 ---
 
@@ -280,7 +295,14 @@
 - [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
 
 **Shared Components — Not yet audited:**
-- [ ] **Audit Sidebar** - Navigation, responsive collapse, active state
+- [x] **Audit Sidebar** - Fixed a real bug: resizing/rotating past the `md`
+  breakpoint while the mobile drawer was open left it stuck as a
+  `position: fixed` overlay with no way to dismiss it (the click-outside
+  backdrop is `md:hidden`) — now force-closes via a `matchMedia` listener.
+  Also brought the mobile drawer up to the same modal pattern used
+  elsewhere in the app (Escape to close, Tab focus trap, focus restored on
+  close) and added `aria-current`/`aria-expanded`/`aria-controls`/nav
+  `aria-label` for screen readers.
 - [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
 - [ ] **Audit PlayerAvatar** - Image loading, fallback initials
 - [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget

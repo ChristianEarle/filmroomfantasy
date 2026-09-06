@@ -178,6 +178,11 @@ async function main() {
           date,
           season: SEASON,
           gameIndex: gameIdx,
+          // Regenerating projections is a full-week pass, not per-game — doing
+          // it after every game in this loop is pure redundant CPU cost.
+          // Step 6 below (sync-projections) does the one pass that matters,
+          // once, after every game in the week has synced.
+          skipProjections: true,
         }, `props-week-${week}-game-${gameIdx}`);
 
         if (result && result.success) {

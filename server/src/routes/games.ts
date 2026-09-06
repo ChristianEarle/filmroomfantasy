@@ -541,6 +541,125 @@ gameRoutes.get('/line-movements', optionalAuthMiddleware, async (c) => {
   }
 });
 
+// NOTE: single-segment static routes (/upcoming, /odds, etc.) must be registered
+// before the /:id catch-all below — Hono matches in registration order, so a
+// static route registered after /:id would be permanently shadowed by it.
+
+// Get upcoming games
+gameRoutes.get('/upcoming', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const limit = parseInt(c.req.query('limit') || '10');
+
+  try {
+    const now = new Date();
+    const games = await db.query.nflGames.findMany({
+      where: eq(schema.nflGames.isComplete, false),
+      orderBy: asc(schema.nflGames.gameTime),
+      limit,
+    });
+
+    // Filter to only future games
+    const upcomingGames = games.filter(g => new Date(g.gameTime) > now);
+
+    return c.json({ games: upcomingGames });
+  } catch (error) {
+    console.error('Get upcoming games error:', error);
+    return c.json({ error: 'Failed to fetch upcoming games' }, 500);
+  }
+});
+
+// Get odds for games in a given week
+gameRoutes.get('/odds', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const week = parseInt(c.req.query('week') || '1');
+  const season = parseInt(c.req.query('season') || '2025');
+
+  try {
+    // Get all games for the given week
+    const games = await db.query.nflGames.findMany({
+      where: and(eq(schema.nflGames.week, week), eq(schema.nflGames.seasonYear, season)),
+    });
+
+    if (games.length === 0) {
+      return c.json({ games: [], week, season });
+    }
+
+    // For each game, get the latest odds snapshot
+    const gameOdds = new Map<
+      string,
+      {
+        game: (typeof games)[0];
+        spreads: any[];
+        totals: any[];
+        moneylines: any[];
+      }
+    >();
+
+    for (const game of games) {
+      gameOdds.set(game.id, {
+        game,
+        spreads: [],
+        totals: [],
+        moneylines: [],
+      });
+    }
+
+    // Get latest odds for all games in this week
+    const allOdds = await db.query.gameOdds.findMany({
+      where: and(
+        eq(schema.gameOdds.week, week),
+        eq(schema.gameOdds.season, season)
+      ),
+      orderBy: desc(schema.gameOdds.snapshotTime),
+    });
+
+    // Group by game and market, keeping only the latest snapshot per market
+    const processed = new Set<string>();
+
+    for (const odds of allOdds) {
+      const key = `${odds.gameId}_${odds.market}`;
+      if (processed.has(key)) continue;
+      processed.add(key);
+
+      const gameOddEntry = gameOdds.get(odds.gameId);
+      if (!gameOddEntry) continue;
+
+      if (odds.market === 'spreads') {
+        gameOddEntry.spreads.push(odds);
+      } else if (odds.market === 'totals') {
+        gameOddEntry.totals.push(odds);
+      } else if (odds.market === 'h2h') {
+        gameOddEntry.moneylines.push(odds);
+      }
+    }
+
+    const result = [];
+    for (const [, entry] of gameOdds) {
+      result.push({
+        gameId: entry.game.id,
+        week: entry.game.week,
+        homeTeam: entry.game.homeTeam,
+        awayTeam: entry.game.awayTeam,
+        commenceTime: entry.game.gameTime,
+        spreads: entry.spreads.length > 0 ? entry.spreads[0] : null,
+        totals: entry.totals.length > 0 ? entry.totals[0] : null,
+        moneylines: entry.moneylines.length > 0 ? entry.moneylines[0] : null,
+        lastUpdated: entry.spreads[0]?.snapshotTime || entry.totals[0]?.snapshotTime || entry.moneylines[0]?.snapshotTime,
+      });
+    }
+
+    return c.json({
+      games: result,
+      week,
+      season,
+      count: result.length,
+    });
+  } catch (error) {
+    console.error('Get game odds error:', error);
+    return c.json({ error: 'Failed to fetch game odds' }, 500);
+  }
+});
+
 // Get single game details (with players; supports lookup by id or query ?home=X&away=Y)
 gameRoutes.get('/:id', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
@@ -906,29 +1025,6 @@ gameRoutes.get('/live/scores', espnProxyRateLimit, optionalAuthMiddleware, async
   }
 });
 
-// Get upcoming games
-gameRoutes.get('/upcoming', optionalAuthMiddleware, async (c) => {
-  const db = c.get('db');
-  const limit = parseInt(c.req.query('limit') || '10');
-
-  try {
-    const now = new Date();
-    const games = await db.query.nflGames.findMany({
-      where: eq(schema.nflGames.isComplete, false),
-      orderBy: asc(schema.nflGames.gameTime),
-      limit,
-    });
-
-    // Filter to only future games
-    const upcomingGames = games.filter(g => new Date(g.gameTime) > now);
-
-    return c.json({ games: upcomingGames });
-  } catch (error) {
-    console.error('Get upcoming games error:', error);
-    return c.json({ error: 'Failed to fetch upcoming games' }, 500);
-  }
-});
-
 // Get schedule for a team
 gameRoutes.get('/team/:team', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
@@ -958,97 +1054,5 @@ gameRoutes.get('/team/:team', optionalAuthMiddleware, async (c) => {
   } catch (error) {
     console.error('Get team schedule error:', error);
     return c.json({ error: 'Failed to fetch team schedule' }, 500);
-  }
-});
-
-// Get odds for games in a given week
-gameRoutes.get('/odds', optionalAuthMiddleware, async (c) => {
-  const db = c.get('db');
-  const week = parseInt(c.req.query('week') || '1');
-  const season = parseInt(c.req.query('season') || '2025');
-
-  try {
-    // Get all games for the given week
-    const games = await db.query.nflGames.findMany({
-      where: and(eq(schema.nflGames.week, week), eq(schema.nflGames.seasonYear, season)),
-    });
-
-    if (games.length === 0) {
-      return c.json({ games: [], week, season });
-    }
-
-    // For each game, get the latest odds snapshot
-    const gameOdds = new Map<
-      string,
-      {
-        game: (typeof games)[0];
-        spreads: any[];
-        totals: any[];
-        moneylines: any[];
-      }
-    >();
-
-    for (const game of games) {
-      gameOdds.set(game.id, {
-        game,
-        spreads: [],
-        totals: [],
-        moneylines: [],
-      });
-    }
-
-    // Get latest odds for all games in this week
-    const allOdds = await db.query.gameOdds.findMany({
-      where: and(
-        eq(schema.gameOdds.week, week),
-        eq(schema.gameOdds.season, season)
-      ),
-      orderBy: desc(schema.gameOdds.snapshotTime),
-    });
-
-    // Group by game and market, keeping only the latest snapshot per market
-    const processed = new Set<string>();
-
-    for (const odds of allOdds) {
-      const key = `${odds.gameId}_${odds.market}`;
-      if (processed.has(key)) continue;
-      processed.add(key);
-
-      const gameOddEntry = gameOdds.get(odds.gameId);
-      if (!gameOddEntry) continue;
-
-      if (odds.market === 'spreads') {
-        gameOddEntry.spreads.push(odds);
-      } else if (odds.market === 'totals') {
-        gameOddEntry.totals.push(odds);
-      } else if (odds.market === 'h2h') {
-        gameOddEntry.moneylines.push(odds);
-      }
-    }
-
-    const result = [];
-    for (const [, entry] of gameOdds) {
-      result.push({
-        gameId: entry.game.id,
-        week: entry.game.week,
-        homeTeam: entry.game.homeTeam,
-        awayTeam: entry.game.awayTeam,
-        commenceTime: entry.game.gameTime,
-        spreads: entry.spreads.length > 0 ? entry.spreads[0] : null,
-        totals: entry.totals.length > 0 ? entry.totals[0] : null,
-        moneylines: entry.moneylines.length > 0 ? entry.moneylines[0] : null,
-        lastUpdated: entry.spreads[0]?.snapshotTime || entry.totals[0]?.snapshotTime || entry.moneylines[0]?.snapshotTime,
-      });
-    }
-
-    return c.json({
-      games: result,
-      week,
-      season,
-      count: result.length,
-    });
-  } catch (error) {
-    console.error('Get game odds error:', error);
-    return c.json({ error: 'Failed to fetch game odds' }, 500);
   }
 });
