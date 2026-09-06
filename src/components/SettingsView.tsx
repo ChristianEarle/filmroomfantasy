@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLeaguesContext } from '../context/LeaguesContext';
 import { leagueConnectService, sleeperApi, yahooApi, PlatformError, type Platform, type ExternalLeague } from '../services';
 import { authService } from '../services';
-import { API_ORIGIN, ApiError } from '../services/api';
+import api, { API_ORIGIN, ApiError } from '../services/api';
 import { UpgradeModal } from './UpgradeModal';
 import type { ScoringFormat } from '../services/auth';
 
@@ -93,6 +93,19 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
   const [yahooLeagues, setYahooLeagues] = useState<ExternalLeague[]>([]);
   const [loadingYahooLeagues, setLoadingYahooLeagues] = useState(false);
   const [yahooError, setYahooError] = useState<string | null>(null);
+  // null = not checked yet; false = this deploy has no Yahoo OAuth secrets
+  const [yahooConfigured, setYahooConfigured] = useState<boolean | null>(null);
+
+  // Check Yahoo availability the first time the connect modal opens, so the
+  // tile can be disabled instead of dead-ending the user mid-flow.
+  useEffect(() => {
+    if (!showConnectModal || yahooConfigured !== null) return;
+    let cancelled = false;
+    yahooApi.isConfigured().then((configured) => {
+      if (!cancelled) setYahooConfigured(configured);
+    });
+    return () => { cancelled = true; };
+  }, [showConnectModal, yahooConfigured]);
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -143,7 +156,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
   const platforms = [
     { id: 'sleeper' as Platform, name: 'Sleeper', color: 'bg-blue-500', textColor: 'text-blue-400', description: 'Connect via username' },
     { id: 'espn' as Platform, name: 'ESPN', color: 'bg-red-600', textColor: 'text-red-400', description: 'Public leagues only' },
-    { id: 'yahoo' as Platform, name: 'Yahoo', color: 'bg-purple-600', textColor: 'text-purple-400', description: 'Connect via OAuth' },
+    { id: 'yahoo' as Platform, name: 'Yahoo', color: 'bg-purple-600', textColor: 'text-purple-400', description: yahooConfigured === false ? 'Unavailable on this server' : 'Connect via OAuth' },
     { id: 'mfl' as Platform, name: 'MFL', color: 'bg-green-600', textColor: 'text-green-400', description: 'Enter league ID' },
   ];
 
@@ -426,6 +439,11 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     setSyncSuccessLeagueId(null);
     try {
       await leagueConnectService.syncLeague(leagueId);
+      // Roster-affecting sync — clear this week's cached AI power ranking and
+      // scouting reports so League Analyzer regenerates against the fresh
+      // rosters instead of serving a take based on the pre-sync lineup.
+      // Best-effort: a failure here shouldn't block the sync success path.
+      api.post(`/league-analyzer/${leagueId}/ai-cache/invalidate`, {}).catch(() => {});
       refetchLeagues();
       onLeagueSynced?.();
       setSyncSuccessLeagueId(leagueId);
@@ -819,9 +837,13 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
               {connectionStep === 'select-platform' && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {platforms.map((platform) => (
+                    {platforms.map((platform) => {
+                      const isUnavailable = platform.id === 'yahoo' && yahooConfigured === false;
+                      return (
                       <button
                         key={platform.id}
+                        disabled={isUnavailable}
+                        title={isUnavailable ? 'Yahoo OAuth is not configured on this server' : undefined}
                         onClick={() => {
                           setSelectedPlatform(platform.id);
                           if (platform.id === 'sleeper') {
@@ -836,7 +858,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                           isDarkMode
                             ? 'bg-slate-800 border-slate-700 hover:border-blue-500'
                             : 'bg-slate-50 border-slate-200 hover:border-blue-500'
-                        }`}
+                        } ${isUnavailable ? 'opacity-40 cursor-not-allowed hover:border-slate-700' : ''}`}
                       >
                         <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 ${platform.color}/20 ${platform.textColor}`}>
                           <Globe className="w-6 h-6" />
@@ -844,7 +866,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                         <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{platform.name}</span>
                         <span className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{platform.description}</span>
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Yahoo OAuth can fail before the popup ever opens (server
