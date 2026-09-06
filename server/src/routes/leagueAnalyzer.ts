@@ -5,7 +5,7 @@ import { authMiddleware } from '../middleware/auth';
 import { requireTier } from '../middleware/tier';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
-import { buildCachedSystemBlocks } from '../utils/prompt';
+import { buildCachedSystemBlocks, sanitizePromptInput } from '../utils/prompt';
 import type { Env, Variables } from '../index';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -818,6 +818,12 @@ leagueAnalyzerRoutes.get('/:leagueId', authMiddleware, async (c) => {
 
 /** Renders one team's computed facts as a data-block section for AI prompts. */
 function formatTeamFacts(team: AnalyzedTeam, leagueAvgPpg: number, teamCount: number): string {
+  // Team/owner names are user-controlled (renamed via league settings), so
+  // sanitize before interpolating into the prompt to defuse prompt-injection
+  // attempts hiding in a team or owner name.
+  const safeName = sanitizePromptInput(team.name, 80);
+  const safeOwnerName = sanitizePromptInput(team.ownerName, 80);
+
   const positionLines = team.positions
     .filter((p) => p.starterCount > 0)
     .map(
@@ -835,7 +841,7 @@ function formatTeamFacts(team: AnalyzedTeam, leagueAvgPpg: number, teamCount: nu
     ? `${team.recentFormPpg.toFixed(1)} PPG over last 3 games (trending ${team.trend} vs season average)`
     : 'no completed games yet';
 
-  return `${team.name} (owner: ${team.ownerName}) [id: ${team.id}]
+  return `${safeName} (owner: ${safeOwnerName}) [id: ${team.id}]
 Standings rank #${team.rank} of ${teamCount} by season PPG | Grade: ${team.grade} | Record: ${formatRecord(team.record.wins, team.record.losses, team.record.ties)} | Season PPG: ${team.ppg.toFixed(1)} (league avg ${leagueAvgPpg.toFixed(1)})
 Recent form: ${formLine}
 Points for: ${team.pointsFor.toFixed(1)} | Points against: ${team.pointsAgainst.toFixed(1)}
@@ -883,6 +889,21 @@ leagueAnalyzerRoutes.get(
     const week = league.currentWeek || 1;
 
     try {
+      // Cross-league IDOR guard: team_ai_narratives is keyed by (teamId,
+      // seasonYear, week) only — it has no leagueId column — so a teamId from
+      // a DIFFERENT league that happens to share the same season/week would
+      // otherwise serve that other league's cached narrative to a caller who
+      // is only verified as a member of `leagueId`. Verify team ownership
+      // BEFORE any cache lookup so both the cached and uncached paths share
+      // this guard.
+      const teamInLeague = await db.query.teams.findFirst({
+        where: and(eq(schema.teams.id, teamId), eq(schema.teams.leagueId, leagueId)),
+        columns: { id: true },
+      });
+      if (!teamInLeague) {
+        return c.json({ error: 'Team not found in this league' }, 404);
+      }
+
       const cachedRow = await db.query.teamAiNarratives.findFirst({
         where: and(
           eq(schema.teamAiNarratives.teamId, teamId),
@@ -1054,9 +1075,21 @@ leagueAnalyzerRoutes.get(
         ),
       });
       if (cachedRow) {
+        // Degrade gracefully like the generation path below: a corrupted or
+        // unexpectedly-shaped cached ranking shouldn't 500 the whole request —
+        // the narrative still ships, the client falls back to standings order.
+        let cachedRanking: string[] | null = null;
+        if (cachedRow.rankingJson) {
+          try {
+            cachedRanking = JSON.parse(cachedRow.rankingJson);
+          } catch (err) {
+            console.error('[league-analyzer/pulse] failed to parse cached ranking JSON:', err);
+            cachedRanking = null;
+          }
+        }
         return c.json({
           narrative: cachedRow.narrative,
-          ranking: cachedRow.rankingJson ? JSON.parse(cachedRow.rankingJson) : null,
+          ranking: cachedRanking,
           cached: true,
           generatedAt: cachedRow.createdAt,
           season: seasonYear,
@@ -1077,7 +1110,8 @@ leagueAnalyzerRoutes.get(
           const teamBlocks = analysis.teams
             .map((t) => formatTeamFacts(t, analysis.leagueAvgPpg, analysis.teams.length))
             .join('\n\n');
-          const dataBlock = `LEAGUE DATA (${analysis.league.name}, season ${seasonYear}, week ${week}, ${analysis.teams.length} teams, top ${analysis.league.playoffTeams} make playoffs):
+          const safeLeagueName = sanitizePromptInput(analysis.league.name, 80);
+          const dataBlock = `LEAGUE DATA (${safeLeagueName}, season ${seasonYear}, week ${week}, ${analysis.teams.length} teams, top ${analysis.league.playoffTeams} make playoffs):
 
 ${teamBlocks}`;
 

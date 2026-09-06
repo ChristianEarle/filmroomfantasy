@@ -214,17 +214,26 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
   // ── AI per-team scouting reports — fetched on-demand when a card expands ──
   const [teamNarratives, setTeamNarratives] = useState<Record<string, AiNarrativeState>>({});
   const requestedTeamIds = useRef<Set<string>>(new Set());
+  // Bumped whenever the league changes (or on unmount) so an in-flight
+  // narrative fetch started for a previous league can recognize itself as
+  // stale and skip applying its result — mirrors the `cancelled` pattern used
+  // by the pulse effect above, adapted for a callback invoked on-demand
+  // rather than inside a single effect.
+  const teamNarrativeGeneration = useRef(0);
 
   const fetchTeamNarrative = useCallback((teamId: string) => {
     if (!leagueId || !canViewAi) return;
     if (requestedTeamIds.current.has(teamId)) return; // already fetched or in flight
     requestedTeamIds.current.add(teamId);
+    const generation = teamNarrativeGeneration.current;
     setTeamNarratives((prev) => ({ ...prev, [teamId]: { text: null, loading: true, error: null } }));
     api.get<AiNarrativeResponse>(`/league-analyzer/${leagueId}/teams/${teamId}/narrative`)
       .then((res) => {
+        if (teamNarrativeGeneration.current !== generation) return; // stale: league changed since this request started
         setTeamNarratives((prev) => ({ ...prev, [teamId]: { text: res.narrative, loading: false, error: null } }));
       })
       .catch((err) => {
+        if (teamNarrativeGeneration.current !== generation) return; // stale: league changed since this request started
         requestedTeamIds.current.delete(teamId); // allow retry on failure
         const message = err instanceof ApiError ? err.message : 'AI scouting report is temporarily unavailable.';
         setTeamNarratives((prev) => ({ ...prev, [teamId]: { text: null, loading: false, error: message } }));
@@ -233,8 +242,12 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
 
   // Clear per-team AI cache when the league changes so stale reports don't leak across leagues
   useEffect(() => {
+    teamNarrativeGeneration.current += 1;
     requestedTeamIds.current = new Set();
     setTeamNarratives({});
+    return () => {
+      teamNarrativeGeneration.current += 1;
+    };
   }, [leagueId]);
 
   const fetchAnalysis = useCallback(async () => {
