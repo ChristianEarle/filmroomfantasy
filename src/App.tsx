@@ -119,10 +119,12 @@ function PageTransition({ children, viewKey }: { children: React.ReactNode; view
 
   return (
     <div
-      className={`transition-all duration-300 ease-out motion-reduce:transition-none ${
-        isVisible
-          ? 'opacity-100 translate-y-0'
-          : 'opacity-0 translate-y-2'
+      // Opacity-only: a `transform` here (e.g. translate-y) would create a new
+      // containing block for every `position: fixed` descendant (modals like
+      // AiChatModal, PlayerCard), pinning them to this wrapper instead of the
+      // viewport and pushing them off-screen. See mobile-sweep investigation.
+      className={`transition-opacity duration-300 ease-out motion-reduce:transition-none ${
+        isVisible ? 'opacity-100' : 'opacity-0'
       }`}
     >
       {displayChildren}
