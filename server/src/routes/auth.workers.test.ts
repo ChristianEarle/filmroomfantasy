@@ -29,13 +29,10 @@ describe('auth routes (workers pool)', () => {
     expect(registerBody.token).toBeTruthy();
     expect(registerBody.user.email).toBe('workers-pool-test@example.com');
 
-    // JWTs here are signed with second-granularity `iat` (jose's setIssuedAt()),
-    // and the same user id + same second produces a byte-identical HS256 token.
-    // sessions.token has a UNIQUE constraint, so logging in again in the same
-    // second as registration would collide on insert — wait for the clock to
-    // tick over so login gets its own distinct session token.
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-
+    // Tokens carry a random `jti` claim, so registering and immediately logging
+    // back in within the same second still produces two distinct session
+    // tokens — no need to wait out the clock for sessions.token's UNIQUE
+    // constraint.
     const loginRes = await app.request('/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -47,5 +44,6 @@ describe('auth routes (workers pool)', () => {
     expect(loginRes.status).toBe(200);
     const loginBody = await loginRes.json() as { token: string };
     expect(loginBody.token).toBeTruthy();
+    expect(loginBody.token).not.toBe(registerBody.token);
   });
 });
