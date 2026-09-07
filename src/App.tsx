@@ -197,6 +197,15 @@ export interface Player {
    * really a sum of already-played actuals shown as a fallback.
    */
   pointsType?: 'actual' | 'projected';
+  /**
+   * Full Season mode only: which source `projectedPoints` came from —
+   * 'market' (deterministic sportsbook-implied projection), 'ai' (AI
+   * draft-rankings total), or 'actual' (neither available — points are a
+   * sum of already-played actuals). Drives the Market/AI/Actual badge.
+   */
+  projectionSource?: 'market' | 'ai' | 'actual' | null;
+  /** Full Season mode only: Market rest-of-season points, shown as a secondary number when it differs from the season total. */
+  rosProjectedPoints?: number | null;
 }
 
 // URL path <-> view mapping for client-side routing (BUG-001/002 fix)

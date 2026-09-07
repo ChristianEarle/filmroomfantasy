@@ -17,6 +17,12 @@ export interface APIPlayer {
   seasonProjectedPoints?: number | null;
   /** Season mode only: sum of played weeks' actual fantasy points. */
   seasonActualPoints?: number | null;
+  /** Season mode only: source of seasonProjectedPoints — 'market' | 'ai' | 'actual'. */
+  projectionSource?: 'market' | 'ai' | 'actual' | null;
+  /** Season mode only: Market rest-of-season points, or null if uncovered. */
+  rosProjectedPoints?: number | null;
+  /** Season mode only: Market ranking confidence tier. */
+  marketConfidence?: string | null;
   seasonStats?: {
     games: number;
     gamesPlayed?: number;
