@@ -434,4 +434,95 @@ describe('mergeSeasonStatVector', () => {
     expect(result.sourcesByStat.rushYds).toBe('weekly');
     expect(result.stats.rushYds).toBeCloseTo(15 * 17, 5);
   });
+
+  // ── Regression: weekly-sourced stats must be full-season (played + rate*remaining) ──
+  //
+  // Before this fix, a weekly-sourced stat was computed as `weekly * remainingGames`
+  // only — the played-so-far production for that stat was silently dropped from the
+  // season total. Since computeRosPoints does `max(0, seasonPoints - playedPoints)`,
+  // that omission deflated rest-of-season points for every mid-season "blended"
+  // player once games had actually been played.
+  it('mid-season blended RB: weekly-sourced receiving stats include played production, not just the remaining-games extrapolation', () => {
+    const asOfWeek = 4;
+    const remainingGames = 13; // e.g. 17-game season, week 4 done, no bye yet: 17 - 4 = 13
+
+    // Full-season rush line from season props (Tier A) — unaffected by this fix.
+    const seasonLines = { ...EMPTY_SEASON_STAT_VECTOR, rushYds: 900, rushTds: 7 };
+    const seasonStatsPresent = new Set<SeasonStatKey>(['rushYds', 'rushTds']);
+
+    // Tier B per-game receiving rate from the latest weekly props projection.
+    const weeklyStats = { receptions: 3.5, recYds: 30, recTds: 0.25 };
+
+    // Actual receiving production already on the books through week 4.
+    const playedStatTotals = { receptions: 16, recYds: 140, recTds: 1 };
+
+    const fixed = mergeSeasonStatVector({
+      seasonLines,
+      seasonStatsPresent,
+      weeklyStats,
+      playedStatTotals,
+      remainingGames,
+      position: 'RB',
+    });
+
+    expect(fixed.confidence).toBe('blended');
+    expect(fixed.sourcesByStat.receptions).toBe('weekly');
+    expect(fixed.stats.receptions).toBeCloseTo(16 + 3.5 * 13, 5); // 61.5
+    expect(fixed.stats.recYds).toBeCloseTo(140 + 30 * 13, 5); // 530
+    expect(fixed.stats.recTds).toBeCloseTo(1 + 0.25 * 13, 5); // 4.25
+    // Season line stats are untouched by playedStatTotals.
+    expect(fixed.stats.rushYds).toBe(900);
+    expect(fixed.stats.rushTds).toBe(7);
+
+    // The pre-fix formula (remaining-games extrapolation only, no played total).
+    const preFix = mergeSeasonStatVector({
+      seasonLines,
+      seasonStatsPresent,
+      weeklyStats,
+      remainingGames,
+      position: 'RB',
+    });
+    expect(preFix.stats.receptions).toBeCloseTo(3.5 * 13, 5); // 45.5 — missing the played 16
+    expect(preFix.stats.recYds).toBeCloseTo(30 * 13, 5);
+    expect(preFix.stats.recTds).toBeCloseTo(0.25 * 13, 5);
+
+    // Season points (full-PPR: 1/reception, 0.1/yard, 6/TD) computed from each
+    // vector's receiving stats must differ by exactly the played receiving
+    // contribution (16 rec, 140 yds, 1 TD -> 16 + 14 + 6 = 36 points).
+    const pprPoints = (receptions: number, recYds: number, recTds: number) =>
+      receptions * 1 + recYds * 0.1 + recTds * 6;
+    const fixedPoints = pprPoints(fixed.stats.receptions, fixed.stats.recYds, fixed.stats.recTds);
+    const preFixPoints = pprPoints(preFix.stats.receptions, preFix.stats.recYds, preFix.stats.recTds);
+    const playedReceivingContribution = pprPoints(16, 140, 1); // 36
+    expect(fixedPoints).toBeGreaterThan(preFixPoints);
+    expect(fixedPoints - preFixPoints).toBeCloseTo(playedReceivingContribution, 5);
+  });
+
+  it('pre-season (asOfWeek 0 / no games played yet) is unaffected: explicit zero playedStatTotals matches omitting it entirely', () => {
+    const seasonLines = { ...EMPTY_SEASON_STAT_VECTOR, rushYds: 900, rushTds: 7 };
+    const seasonStatsPresent = new Set<SeasonStatKey>(['rushYds', 'rushTds']);
+    const weeklyStats = { receptions: 3.5, recYds: 30, recTds: 0.25 };
+    const remainingGames = 17;
+
+    const withoutPlayedTotals = mergeSeasonStatVector({
+      seasonLines,
+      seasonStatsPresent,
+      weeklyStats,
+      remainingGames,
+      position: 'RB',
+    });
+    const withZeroPlayedTotals = mergeSeasonStatVector({
+      seasonLines,
+      seasonStatsPresent,
+      weeklyStats,
+      playedStatTotals: { ...EMPTY_SEASON_STAT_VECTOR },
+      remainingGames,
+      position: 'RB',
+    });
+
+    expect(withZeroPlayedTotals.stats).toEqual(withoutPlayedTotals.stats);
+    expect(withZeroPlayedTotals.confidence).toBe(withoutPlayedTotals.confidence);
+    expect(withZeroPlayedTotals.sourcesByStat).toEqual(withoutPlayedTotals.sourcesByStat);
+    expect(withoutPlayedTotals.stats.receptions).toBeCloseTo(3.5 * 17, 5);
+  });
 });

@@ -181,7 +181,14 @@ export interface MergeSeasonStatVectorInput {
   seasonStatsPresent: ReadonlySet<SeasonStatKey>;
   /** Per-stat values from the latest weekly 'props'-sourced player_projections row (a single week's projection, not a rate). Missing/undefined = no weekly coverage for that stat. */
   weeklyStats: Partial<SeasonStatVector>;
-  /** Games remaining in the season (see computeRemainingGames) — weekly stats are extrapolated as weeklyStats[stat] * remainingGames. */
+  /**
+   * Per-stat totals already accrued in played weeks (weeks 1..asOfWeek),
+   * e.g. summed from player_weekly_stats. Missing stats default to 0
+   * (pre-season / no played weeks behaves exactly as before). Used to make
+   * weekly-sourced stats full-season totals — see the 'weekly' branch below.
+   */
+  playedStatTotals?: Partial<SeasonStatVector>;
+  /** Games remaining in the season (see computeRemainingGames) — weekly stats are extrapolated as playedStatTotals[stat] + weeklyStats[stat] * remainingGames. */
   remainingGames: number;
   position: string;
 }
@@ -207,7 +214,7 @@ export interface MergeSeasonStatVectorResult {
  * confidence gating.
  */
 export function mergeSeasonStatVector(input: MergeSeasonStatVectorInput): MergeSeasonStatVectorResult {
-  const { seasonLines, seasonStatsPresent, weeklyStats, remainingGames, position } = input;
+  const { seasonLines, seasonStatsPresent, weeklyStats, playedStatTotals, remainingGames, position } = input;
   const core = CORE_STATS_BY_POSITION[position] ?? [];
   const optional = OPTIONAL_STATS_BY_POSITION[position] ?? [];
   const relevant = new Set<SeasonStatKey>([...core, ...optional]);
@@ -227,7 +234,14 @@ export function mergeSeasonStatVector(input: MergeSeasonStatVectorInput): MergeS
     }
     const weeklyValue = weeklyStats[key];
     if (weeklyValue != null) {
-      stats[key] = weeklyValue * remainingGames;
+      // Season lines are whole-season totals, so weekly-sourced stats must
+      // be full-season too: already-played production plus the projected
+      // rate applied to the remaining schedule. Without the played total,
+      // a mid-season blended vector would omit production already on the
+      // books for this stat (see computeRosPoints, which subtracts played
+      // points from this season total to get rest-of-season points).
+      const played = playedStatTotals?.[key] ?? 0;
+      stats[key] = played + weeklyValue * remainingGames;
       sourcesByStat[key] = 'weekly';
       continue;
     }

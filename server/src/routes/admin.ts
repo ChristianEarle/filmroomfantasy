@@ -2446,8 +2446,22 @@ adminRoutes.post('/sync-market-projections', async (c) => {
 
       for (const player of relevantPlayers) {
         const stats = statsByPlayer.get(player.id) || [];
-        const playedPoints = stats.reduce((sum, s: any) => sum + (s[ptsCol] || 0), 0);
+        // player_weekly_stats only ever holds finalized (already-played) weeks,
+        // but guard with the asOfWeek cutoff anyway to match computeRemainingGames'
+        // "week <= asOfWeek is played" definition.
+        const playedStats = stats.filter((s: any) => (s.week as number) <= asOfWeek);
+        const playedPoints = playedStats.reduce((sum, s: any) => sum + (s[ptsCol] || 0), 0);
         const playedWeeks = stats.map((s: any) => s.week as number);
+        const playedStatTotals: Partial<SeasonStatVector> = {
+          passYds: playedStats.reduce((sum, s: any) => sum + (s.passYards || 0), 0),
+          passTds: playedStats.reduce((sum, s: any) => sum + (s.passTDs || 0), 0),
+          interceptions: playedStats.reduce((sum, s: any) => sum + (s.passInterceptions || 0), 0),
+          rushYds: playedStats.reduce((sum, s: any) => sum + (s.rushYards || 0), 0),
+          rushTds: playedStats.reduce((sum, s: any) => sum + (s.rushTDs || 0), 0),
+          receptions: playedStats.reduce((sum, s: any) => sum + (s.receptions || 0), 0),
+          recYds: playedStats.reduce((sum, s: any) => sum + (s.receivingYards || 0), 0),
+          recTds: playedStats.reduce((sum, s: any) => sum + (s.receivingTDs || 0), 0),
+        };
         const schedule = scheduleByTeam.get(player.team) || [];
         const remaining = computeRemainingGames({
           teamScheduleWeeks: schedule,
@@ -2472,6 +2486,7 @@ adminRoutes.post('/sync-market-projections', async (c) => {
               seasonLines: seasonPropProj.stats,
               seasonStatsPresent,
               weeklyStats: weeklyStatVectorByPlayer.get(player.id) ?? {},
+              playedStatTotals,
               remainingGames: remaining,
               position: player.position,
             });
