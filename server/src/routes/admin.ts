@@ -2308,7 +2308,9 @@ adminRoutes.post('/sync-market-projections', async (c) => {
     // ── Shared data (same across all scoring formats) ──
     const RELEVANT_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DEF']);
     const allPlayers = await db.query.nflPlayers.findMany({
-      where: eq(schema.nflPlayers.status, 'active'),
+      // Injury designations (questionable/doubtful/probable) are still
+      // rankable — only truly inactive/IR/suspended/FA players are excluded.
+      where: inArray(schema.nflPlayers.status, ['active', 'questionable', 'doubtful', 'probable']),
       columns: { id: true, name: true, position: true, team: true, byeWeek: true },
     });
     const relevantPlayers = allPlayers.filter((p) => RELEVANT_POSITIONS.has(p.position));
@@ -2597,9 +2599,9 @@ adminRoutes.post('/sync-market-projections', async (c) => {
           seasonYear: season,
           asOfWeek,
           scoringFormat: format,
-          seasonPoints: row.seasonPoints,
-          rosPoints,
-          perGameRate,
+          seasonPoints: Math.round(row.seasonPoints * 100) / 100,
+          rosPoints: rosPoints == null ? rosPoints : Math.round(rosPoints * 100) / 100,
+          perGameRate: perGameRate == null ? perGameRate : Math.round(perGameRate * 1000) / 1000,
           remainingGames: row.remaining,
           marketRank: rankInfo?.overallRank ?? null,
           positionRank: rankInfo?.positionRank ?? null,
