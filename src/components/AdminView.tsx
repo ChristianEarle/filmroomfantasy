@@ -49,8 +49,8 @@ const DRAFT_RANKING_VARIANTS = [
   { label: 'Redraft · Half PPR', type: 'redraft', scoring: 'half-ppr' },
   { label: 'Dynasty · PPR', type: 'dynasty', scoring: 'ppr' },
   { label: 'Dynasty · Half PPR', type: 'dynasty', scoring: 'half-ppr' },
-  { label: 'Dynasty Rookie · PPR', type: 'dynasty_rookie', scoring: 'ppr' },
-  { label: 'Dynasty Rookie · Half PPR', type: 'dynasty_rookie', scoring: 'half-ppr' },
+  { label: 'Rookie · PPR', type: 'rookie', scoring: 'ppr' },
+  { label: 'Rookie · Half PPR', type: 'rookie', scoring: 'half-ppr' },
 ] as const;
 
 interface RankingBatchJob {

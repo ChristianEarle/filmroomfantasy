@@ -2796,7 +2796,7 @@ adminRoutes.post('/bulk-set-tier', async (c) => {
  * runs that hourly).
  *
  * Body:
- *  - type: 'redraft' | 'dynasty' | 'dynasty_rookie' (default: 'redraft')
+ *  - type: 'redraft' | 'dynasty' | 'rookie' (default: 'redraft')
  *  - scoring: 'ppr' | 'half-ppr' | 'standard' (default: 'ppr')
  *  - superflex: boolean (default: false)
  *  - season: number (default: current year)
@@ -2817,13 +2817,13 @@ adminRoutes.post('/generate-draft-rankings', async (c) => {
       season?: number;
     };
 
-    const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty' | 'dynasty_rookie';
+    const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty' | 'rookie';
     const scoringFormat = (body.scoring || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
     const superflex = body.superflex ?? false;
     const seasonYear = body.season || new Date().getFullYear();
 
-    if (!['redraft', 'dynasty', 'dynasty_rookie'].includes(rankingType)) {
-      return c.json({ error: 'Invalid type — use "redraft", "dynasty", or "dynasty_rookie"' }, 400);
+    if (!['redraft', 'dynasty', 'rookie'].includes(rankingType)) {
+      return c.json({ error: 'Invalid type — use "redraft", "dynasty", or "rookie"' }, 400);
     }
     if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
       return c.json({ error: 'Invalid scoring — use "ppr", "half-ppr", or "standard"' }, 400);

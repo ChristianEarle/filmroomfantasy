@@ -8,7 +8,7 @@
  *
  * Flow:
  *  1. Weekly cron calls submitDraftRankingsBatch({ variants: [...] }).
- *  2. That builds one Claude request per variant (redraft/dynasty/dynasty_rookie ×
+ *  2. That builds one Claude request per variant (redraft/dynasty/rookie ×
  *     ppr/half-ppr × 1-QB/superflex), wraps them in a single
  *     POST /v1/messages/batches submission, records a row in ranking_batch_jobs,
  *     and returns immediately.
@@ -360,12 +360,12 @@ export interface PlayerContext {
 }
 
 /**
- * Decide whether a player belongs in the dynasty_rookie draft pool.
+ * Decide whether a player belongs in the rookie draft pool.
  *
  * Sleeper's `years_exp` is the naive signal ("=== 0" means rookie"), but a
  * `sync-players` run can transiently write `null` instead of `0` for
  * brand-new players — under a strict `=== 0` filter that zeroes the entire
- * rookie pool for that run (a confirmed cause of dynasty_rookie rankings
+ * rookie pool for that run (a confirmed cause of rookie rankings
  * silently going stale for months: zero eligible players → zero contexts →
  * the batch submission skipped the variant entirely). Delegating to
  * `inferPlayerTenure` cross-references our own stats table (has this
@@ -465,7 +465,7 @@ async function buildMarketContextMap(
 
 async function buildPlayerContexts(
   db: DB,
-  rankingType: 'redraft' | 'dynasty' | 'dynasty_rookie',
+  rankingType: 'redraft' | 'dynasty' | 'rookie',
   scoringFormat: 'ppr' | 'half-ppr' | 'standard',
   seasonYear: number,
   adpByNormalizedName: Map<string, number>,
@@ -505,10 +505,10 @@ async function buildPlayerContexts(
 
   // 'dynasty' uses the full active-player pool, same as 'redraft' — it's
   // ranking every rosterable player (veterans included) by multi-year
-  // value, not just this year's rookie class. 'dynasty_rookie' uses
+  // value, not just this year's rookie class. 'rookie' uses
   // isRookieEligible (playerTenure-backed) rather than a bare
   // `yearsExp === 0` check — see that function's docstring.
-  let players = rankingType === 'dynasty_rookie'
+  let players = rankingType === 'rookie'
     ? allPlayers.filter(p => isRookieEligible(p, {
         playedInCurrentSeason: currentSeasonPlayerIds.has(p.id),
         playedInPreviousSeason: statsByPlayer.has(p.id),
@@ -746,7 +746,7 @@ IMPORTANT:
 - analysis: 3-5 sentences of real dynasty scouting — age/trajectory, situation, and multi-year framing. Be specific: "27 years old with 3 more prime years, entrenched as the unquestioned WR1 in a top-5 pass offense, contract extended through 2028" is good; "great player, still has value" is worthless.`;
 }
 
-function buildDynastyRookiePrompt(
+function buildRookiePrompt(
   players: PlayerContext[],
   scoringFormat: string,
   superflex: boolean,
@@ -820,7 +820,7 @@ IMPORTANT:
 // ── Batch submission ────────────────────────────────────────────────
 
 export interface RankingVariant {
-  rankingType: 'redraft' | 'dynasty' | 'dynasty_rookie';
+  rankingType: 'redraft' | 'dynasty' | 'rookie';
   scoringFormat: 'ppr' | 'half-ppr' | 'standard';
   superflex: boolean;
 }
@@ -841,7 +841,7 @@ export interface SubmitBatchResult {
 
 interface BatchVariantMeta {
   customId: string;
-  rankingType: 'redraft' | 'dynasty' | 'dynasty_rookie';
+  rankingType: 'redraft' | 'dynasty' | 'rookie';
   scoringFormat: 'ppr' | 'half-ppr' | 'standard';
   superflex: boolean;
 }
@@ -859,7 +859,7 @@ function variantCustomId(v: RankingVariant): string {
  * batch id in any query/dashboard.
  *
  * Without this, the old code just `continue`d past the variant — which is
- * exactly how dynasty_rookie regeneration silently stopped for two months:
+ * exactly how rookie ranking regeneration silently stopped for two months:
  * "zero eligible players" never left a trace, so nothing was queryable to
  * notice the staleness.
  */
@@ -918,9 +918,9 @@ export async function submitDraftRankingsBatch(
     //    exactly the anchor we want for SF variants)
     //  Dynasty → FantasyCalc dynasty values, UNFILTERED (full player pool,
     //    veterans included) — their own overall dynasty rank used directly
-    //  Dynasty rookie → FantasyCalc dynasty values filtered to rookies
+    //  Rookie → FantasyCalc dynasty values filtered to rookies
     //    (clean age/prospect-adjusted ranks) + MFL IS_KEEPER=R fallback
-    const adp = v.rankingType === 'dynasty_rookie'
+    const adp = v.rankingType === 'rookie'
       ? await buildRookieAdpMap(db, v.scoringFormat, v.superflex, seasonYear)
       : v.rankingType === 'dynasty'
       ? await buildDynastyAdpMap(v.scoringFormat, v.superflex)
@@ -928,25 +928,25 @@ export async function submitDraftRankingsBatch(
       ? await fetchMFLADP(seasonYear, v.scoringFormat, 'N')
       : await fetchFfcAdp(v.scoringFormat, seasonYear);
 
-    // Rookie-specific canary: dynasty_rookie's ADP map is intentionally
-    // small (re-indexed 1..N over this year's rookie class, typically well
-    // under 100), so it can't use the same ADP_CANARY_MIN_ENTRIES threshold
-    // as redraft/dynasty. But a fully EMPTY map is not "small pool" — it's a
+    // Rookie-specific canary: rookie's ADP map is intentionally small
+    // (re-indexed 1..N over this year's rookie class, typically well under
+    // 100), so it can't use the same ADP_CANARY_MIN_ENTRIES threshold as
+    // redraft/dynasty. But a fully EMPTY map is not "small pool" — it's a
     // total outage of both the FantasyCalc rookie feed and the MFL
     // IS_KEEPER=R fallback — so gate on size 0 specifically, mirroring the
     // redraft/dynasty canary below.
-    if (v.rankingType === 'dynasty_rookie' && adp.size === 0) {
+    if (v.rankingType === 'rookie' && adp.size === 0) {
       const msg = `Rookie ADP coverage canary tripped: 0 entries for ${meta.customId} (FantasyCalc rookie feed and MFL fallback both empty — likely outage)`;
       console.error(`[draftRankings] ${msg}`);
       await recordJobProblem(db, seasonYear, meta, msg);
       continue;
     }
 
-    // Canary: dynasty_rookie's ADP map is intentionally small (re-indexed
+    // Canary: rookie's ADP map is intentionally small (re-indexed
     // 1..N over this year's rookie class, typically well under 100), so
     // only gate redraft/dynasty here — both draw from a 250+ player feed
     // when the source is actually working.
-    if (v.rankingType !== 'dynasty_rookie' && adp.size < ADP_CANARY_MIN_ENTRIES) {
+    if (v.rankingType !== 'rookie' && adp.size < ADP_CANARY_MIN_ENTRIES) {
       const msg = `ADP coverage canary tripped: only ${adp.size} entries for ${meta.customId} (source feed likely broken/blocked)`;
       console.error(`[draftRankings] ${msg}`);
       await recordJobProblem(db, seasonYear, meta, msg);
@@ -969,7 +969,7 @@ export async function submitDraftRankingsBatch(
       ? buildRedraftPrompt(contexts, v.scoringFormat, v.superflex)
       : v.rankingType === 'dynasty'
       ? buildDynastyPrompt(contexts, v.scoringFormat, v.superflex)
-      : buildDynastyRookiePrompt(contexts, v.scoringFormat, v.superflex);
+      : buildRookiePrompt(contexts, v.scoringFormat, v.superflex);
 
     requests.push({
       custom_id: meta.customId,
@@ -1334,7 +1334,7 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
   // Re-fetch ADP for adpDelta so it reflects current ADP at write time
   // rather than what was in effect hours ago when the batch was submitted.
   // Same source routing as the submit path.
-  const adp = meta.rankingType === 'dynasty_rookie'
+  const adp = meta.rankingType === 'rookie'
     ? await buildRookieAdpMap(db, meta.scoringFormat, meta.superflex, seasonYear)
     : meta.rankingType === 'dynasty'
     ? await buildDynastyAdpMap(meta.scoringFormat, meta.superflex)
@@ -1493,8 +1493,8 @@ export const DEFAULT_VARIANTS: RankingVariant[] = [
   { rankingType: 'dynasty', scoringFormat: 'half-ppr', superflex: false },
   { rankingType: 'dynasty', scoringFormat: 'ppr', superflex: true },
   { rankingType: 'dynasty', scoringFormat: 'half-ppr', superflex: true },
-  { rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: false },
-  { rankingType: 'dynasty_rookie', scoringFormat: 'half-ppr', superflex: false },
-  { rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: true },
-  { rankingType: 'dynasty_rookie', scoringFormat: 'half-ppr', superflex: true },
+  { rankingType: 'rookie', scoringFormat: 'ppr', superflex: false },
+  { rankingType: 'rookie', scoringFormat: 'half-ppr', superflex: false },
+  { rankingType: 'rookie', scoringFormat: 'ppr', superflex: true },
+  { rankingType: 'rookie', scoringFormat: 'half-ppr', superflex: true },
 ];

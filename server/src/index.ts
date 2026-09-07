@@ -391,10 +391,10 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'half-ppr' });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'ppr', superflex: true });
     await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty', scoring: 'half-ppr', superflex: true });
-    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr' });
-    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'half-ppr' });
-    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'ppr', superflex: true });
-    await callSync('/api/admin/generate-draft-rankings', { type: 'dynasty_rookie', scoring: 'half-ppr', superflex: true });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'rookie', scoring: 'ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'rookie', scoring: 'half-ppr' });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'rookie', scoring: 'ppr', superflex: true });
+    await callSync('/api/admin/generate-draft-rankings', { type: 'rookie', scoring: 'half-ppr', superflex: true });
   } else if (event.cron === '15 * * * *') {
     // Hourly: drain any ranking batches that have ended. Cheap no-op when
     // there are no pending batches.

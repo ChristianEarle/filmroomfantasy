@@ -25,20 +25,20 @@ export const draftRankingsRoutes = new Hono<{ Bindings: Env; Variables: Variable
  * GET /api/draft-rankings
  *
  * Query params:
- *  - type: 'redraft' | 'dynasty' | 'dynasty_rookie' (default: 'redraft')
+ *  - type: 'redraft' | 'dynasty' | 'rookie' (default: 'redraft')
  *  - scoring: 'ppr' | 'half-ppr' | 'standard' (default: 'ppr')
  *  - superflex: '0' | '1' (default: '0')
  *  - season: number (default: current year)
  */
 draftRankingsRoutes.get('/', async (c) => {
   const db = c.get('db');
-  const rankingType = (c.req.query('type') || 'redraft') as 'redraft' | 'dynasty' | 'dynasty_rookie';
+  const rankingType = (c.req.query('type') || 'redraft') as 'redraft' | 'dynasty' | 'rookie';
   const scoringFormat = (c.req.query('scoring') || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
   const superflex = c.req.query('superflex') === '1';
   const season = parseInt(c.req.query('season') || String(new Date().getFullYear()), 10);
 
   // Validate
-  if (!['redraft', 'dynasty', 'dynasty_rookie'].includes(rankingType)) {
+  if (!['redraft', 'dynasty', 'rookie'].includes(rankingType)) {
     return c.json({ error: 'Invalid ranking type' }, 400);
   }
   if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
@@ -224,7 +224,7 @@ function buildDraftAskContext(
 }
 
 function buildDraftAskSystemPrompt(rankingType: string, scoringFormat: string, contextBlock: string): string {
-  const label = rankingType === 'dynasty_rookie' ? 'dynasty rookie' : rankingType === 'dynasty' ? 'dynasty' : 'redraft';
+  const label = rankingType === 'dynasty' ? 'dynasty' : rankingType === 'rookie' ? 'dynasty rookie' : 'redraft';
   return `You are FilmRoom's draft assistant helping a user with their fantasy football draft. You have FilmRoom's current ${label} rankings in ${scoringFormat.toUpperCase()} scoring (below).
 
 You also have tools: lookup_player (full card for a named player not already in your data — season stats, this week's matchup, market/dynasty rankings, injury news), search_players (filter the board by position / free-agent status), get_matchup (the caller's current head-to-head matchup), and get_my_lineup (the caller's own roster, useful for "who should I cut/start" during the season). Use a tool whenever answering well needs data you don't already have. If get_matchup or get_my_lineup return a "no_league" error, tell the user once that no league is synced and answer generally instead.
@@ -260,11 +260,11 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
     return c.json({ error: 'question required' }, 400);
   }
 
-  const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty' | 'dynasty_rookie';
+  const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty' | 'rookie';
   const scoringFormat = (body.scoring || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
   const superflex = body.superflex === true;
   const season = body.season || new Date().getFullYear();
-  if (!['redraft', 'dynasty', 'dynasty_rookie'].includes(rankingType)) {
+  if (!['redraft', 'dynasty', 'rookie'].includes(rankingType)) {
     return c.json({ error: 'Invalid ranking type' }, 400);
   }
   if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
