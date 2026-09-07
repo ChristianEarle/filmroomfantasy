@@ -143,7 +143,7 @@ export interface EnrichedPlayerFields {
   marketRank?: number | null;
   /** Season mode only: Market rest-of-season points (played + rate×remaining games), or null if uncovered. */
   rosProjectedPoints?: number | null;
-  /** Season mode only: 'season_props' | 'weekly_extrapolation' | 'none' | null. */
+  /** Season mode only: 'season_props' | 'blended' | 'weekly_extrapolation' | 'none' | null. */
   marketConfidence?: string | null;
 }
 

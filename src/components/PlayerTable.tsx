@@ -118,7 +118,9 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
           const source = player.projectionSource ?? (player.pointsType === 'actual' ? 'actual' : 'ai');
           const label = source === 'market' ? 'Market' : source === 'ai' ? 'AI' : 'Actual';
           const title = source === 'market'
-            ? 'Deterministic sportsbook-implied season projection'
+            ? player.marketConfidence === 'blended'
+              ? 'Market (blended with weekly lines)'
+              : 'Deterministic sportsbook-implied season projection'
             : source === 'ai'
             ? 'AI-projected full-season total'
             : 'No season projection available — showing actual points scored so far';
@@ -650,6 +652,7 @@ export function PlayerTable({
         // (market/ai/actual) over the coarser pointsType above.
         d.projectionSource = p.projectionSource ?? (hasSeasonProjection ? 'ai' : 'actual');
         d.rosProjectedPoints = p.rosProjectedPoints ?? null;
+        d.marketConfidence = p.marketConfidence ?? null;
       }
       return d;
     });
