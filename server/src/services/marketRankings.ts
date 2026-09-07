@@ -86,6 +86,183 @@ export function seasonPointsFromWeeklyRate(input: WeeklyRateInput): number {
   return input.playedPoints + blendedRate * input.remainingGames;
 }
 
+// ── Tier B week selection ───────────────────────────────────────────────
+
+/**
+ * Which week's 'props'-sourced weekly player_projections rows Tier B should
+ * read from. `asOfWeek` is the last COMPLETED week (0 pre-Week-1), so the
+ * upcoming week — the one still worth extrapolating from — is
+ * `asOfWeek + 1`. When that exact week has no props coverage yet (e.g. the
+ * book hasn't posted week-N lines), fall back to the latest available week
+ * at or before it, so the sync still finds something rather than nothing.
+ * Returns null when no available week qualifies (no props data at all, or
+ * only weeks after the upcoming one).
+ */
+export function pickTierBWeek(asOfWeek: number, availableWeeks: number[]): number | null {
+  const targetWeek = asOfWeek + 1;
+  if (availableWeeks.includes(targetWeek)) return targetWeek;
+  const eligible = availableWeeks.filter((week) => week <= targetWeek);
+  if (eligible.length === 0) return null;
+  return Math.max(...eligible);
+}
+
+// ── Stat-level season/weekly merge (Tier A + Tier B blending) ────────────
+
+export type SeasonStatKey =
+  | 'passYds'
+  | 'passTds'
+  | 'rushYds'
+  | 'rushTds'
+  | 'receptions'
+  | 'recYds'
+  | 'recTds'
+  | 'interceptions';
+
+export type SeasonStatVector = Record<SeasonStatKey, number>;
+
+export type StatSource = 'season' | 'weekly' | 'missing';
+
+export type MarketConfidence = 'season_props' | 'blended' | 'weekly_extrapolation';
+
+const ALL_STAT_KEYS: SeasonStatKey[] = [
+  'passYds',
+  'passTds',
+  'rushYds',
+  'rushTds',
+  'receptions',
+  'recYds',
+  'recTds',
+  'interceptions',
+];
+
+export const EMPTY_SEASON_STAT_VECTOR: SeasonStatVector = {
+  passYds: 0,
+  passTds: 0,
+  rushYds: 0,
+  rushTds: 0,
+  receptions: 0,
+  recYds: 0,
+  recTds: 0,
+  interceptions: 0,
+};
+
+/**
+ * Stats that gate confidence for a position: ALL of these must come from a
+ * season-long prop line for the player to be 'season_props' confidence,
+ * and NONE of them coming from season lines means 'weekly_extrapolation'.
+ * Anything in between (some core stats from season lines, the rest filled
+ * from weekly extrapolation or left at 0 because neither source has them)
+ * is 'blended'.
+ */
+const CORE_STATS_BY_POSITION: Partial<Record<string, SeasonStatKey[]>> = {
+  QB: ['passYds', 'passTds', 'rushYds', 'rushTds'],
+  RB: ['rushYds', 'rushTds', 'receptions', 'recYds', 'recTds'],
+  WR: ['receptions', 'recYds', 'recTds'],
+  TE: ['receptions', 'recYds', 'recTds'],
+};
+
+/**
+ * Stats that are merged in when available but don't gate confidence — a
+ * missing optional stat never by itself prevents 'season_props' (e.g. most
+ * WRs never get a rush_yds prop line at all; that's not "incomplete
+ * coverage", it's just not a market for them).
+ */
+const OPTIONAL_STATS_BY_POSITION: Partial<Record<string, SeasonStatKey[]>> = {
+  QB: ['interceptions'],
+  RB: [],
+  WR: ['rushYds'],
+  TE: ['rushYds'],
+};
+
+export interface MergeSeasonStatVectorInput {
+  /** Season-long stat totals from season prop lines (buildSeasonProjectionsFromSeasonProps's `.stats`). Missing stats should be 0. */
+  seasonLines: Partial<SeasonStatVector>;
+  /** Which stat keys actually had a season-prop line — distinguishes "0 because no line" from "0 because the line's value was 0". */
+  seasonStatsPresent: ReadonlySet<SeasonStatKey>;
+  /** Per-stat values from the latest weekly 'props'-sourced player_projections row (a single week's projection, not a rate). Missing/undefined = no weekly coverage for that stat. */
+  weeklyStats: Partial<SeasonStatVector>;
+  /**
+   * Per-stat totals already accrued in played weeks (weeks 1..asOfWeek),
+   * e.g. summed from player_weekly_stats. Missing stats default to 0
+   * (pre-season / no played weeks behaves exactly as before). Used to make
+   * weekly-sourced stats full-season totals — see the 'weekly' branch below.
+   */
+  playedStatTotals?: Partial<SeasonStatVector>;
+  /** Games remaining in the season (see computeRemainingGames) — weekly stats are extrapolated as playedStatTotals[stat] + weeklyStats[stat] * remainingGames. */
+  remainingGames: number;
+  position: string;
+}
+
+export interface MergeSeasonStatVectorResult {
+  stats: SeasonStatVector;
+  sourcesByStat: Record<SeasonStatKey, StatSource>;
+  confidence: MarketConfidence;
+}
+
+/**
+ * Build a player's full season stat vector by merging season-prop lines
+ * (Tier A) with weekly-projection extrapolation (Tier B) at the individual
+ * stat level, so a player with partial season-prop coverage (e.g. an RB
+ * with only a rush_yds season line) doesn't get scored as if their
+ * un-covered stats (receptions, rec_yds, rec_tds) are zero for the season.
+ *
+ * For each stat relevant to `position` (core + optional):
+ *  - present in seasonStatsPresent -> use the season-line total as-is.
+ *  - else, weeklyStats has a value for it -> extrapolate weeklyStats * remainingGames.
+ *  - else -> 0 (no source at all).
+ * Stats not relevant to the position are left at 0 and excluded from
+ * confidence gating.
+ */
+export function mergeSeasonStatVector(input: MergeSeasonStatVectorInput): MergeSeasonStatVectorResult {
+  const { seasonLines, seasonStatsPresent, weeklyStats, playedStatTotals, remainingGames, position } = input;
+  const core = CORE_STATS_BY_POSITION[position] ?? [];
+  const optional = OPTIONAL_STATS_BY_POSITION[position] ?? [];
+  const relevant = new Set<SeasonStatKey>([...core, ...optional]);
+
+  const stats: SeasonStatVector = { ...EMPTY_SEASON_STAT_VECTOR };
+  const sourcesByStat = {} as Record<SeasonStatKey, StatSource>;
+
+  for (const key of ALL_STAT_KEYS) {
+    if (!relevant.has(key)) {
+      sourcesByStat[key] = 'missing';
+      continue;
+    }
+    if (seasonStatsPresent.has(key)) {
+      stats[key] = seasonLines[key] ?? 0;
+      sourcesByStat[key] = 'season';
+      continue;
+    }
+    const weeklyValue = weeklyStats[key];
+    if (weeklyValue != null) {
+      // Season lines are whole-season totals, so weekly-sourced stats must
+      // be full-season too: already-played production plus the projected
+      // rate applied to the remaining schedule. Without the played total,
+      // a mid-season blended vector would omit production already on the
+      // books for this stat (see computeRosPoints, which subtracts played
+      // points from this season total to get rest-of-season points).
+      const played = playedStatTotals?.[key] ?? 0;
+      stats[key] = played + weeklyValue * remainingGames;
+      sourcesByStat[key] = 'weekly';
+      continue;
+    }
+    sourcesByStat[key] = 'missing';
+  }
+
+  let confidence: MarketConfidence;
+  if (core.length === 0) {
+    // No core stats defined for this position (e.g. K/DEF) — this function
+    // isn't meant to be used for them, but degrade gracefully rather than throw.
+    confidence = 'weekly_extrapolation';
+  } else {
+    const coreSources = core.map((key) => sourcesByStat[key]);
+    const allSeason = coreSources.every((s) => s === 'season');
+    const noneSeason = coreSources.every((s) => s !== 'season');
+    confidence = allSeason ? 'season_props' : noneSeason ? 'weekly_extrapolation' : 'blended';
+  }
+
+  return { stats, sourcesByStat, confidence };
+}
+
 // ── Rest-of-season points ────────────────────────────────────────────────
 
 export interface RosPointsResult {

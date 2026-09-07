@@ -281,7 +281,10 @@ export const playerMarketProjections = sqliteTable('player_market_projections', 
   tier: integer('tier'),
   vorp: real('vorp'),
 
-  // 'season_props' | 'weekly_extrapolation' | 'none'
+  // 'season_props' (all core stats from season-long prop lines) |
+  // 'blended' (some core stats from season lines, the rest filled in from
+  // weekly-projection extrapolation) | 'weekly_extrapolation' (no core
+  // stats from season lines) | 'none' (not persisted, just counted)
   confidence: text('confidence').notNull().default('none'),
   source: text('source').notNull().default('market'),
 
@@ -860,6 +863,12 @@ export const draftRankings = sqliteTable('draft_rankings', {
   projectedPoints: real('projected_points'), // full-season projected total (null for rookies without data)
   adp: real('adp'), // average draft position from Sleeper
   adpDelta: real('adp_delta'), // rank - ADP (negative = value, positive = reach)
+  // Deterministic Market (sportsbook-implied) VORP rank at generation time —
+  // persisted for auditability alongside the AI's overallRank. GET
+  // /api/draft-rankings joins a *live* marketRank from player_market_projections
+  // for display (so it reflects the latest sync even between regenerations);
+  // this column is what the prompt/AI actually saw when it produced the rank.
+  marketRank: integer('market_rank'),
   rationale: text('rationale').notNull(), // AI-generated 1-2 sentence blurb
   analysis: text('analysis'), // AI-generated detailed player analysis (strengths, risks, outlook)
   ceilingRank: integer('ceiling_rank'), // AI best-case overall rank (lower number = better)

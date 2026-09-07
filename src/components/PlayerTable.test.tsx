@@ -89,6 +89,17 @@ const MAHOMES = makePlayer({
   seasonStats: { games: 5, gamesPlayed: 5, fantasyPointsPPR: 140.1, fantasyPointsHalf: 135, fantasyPointsStd: 128, passYards: 1600, passTDs: 14, rushYards: 40, rushTDs: 0, receptions: 0, receivingYards: 0, receivingTDs: 0 },
 });
 
+// A player whose Market projection is blended (partial season-prop coverage,
+// filled out with weekly extrapolation for the missing core stats).
+const TAYLOR = makePlayer({
+  id: 'd', name: 'Jonathan Taylor', team: 'IND', position: 'RB',
+  seasonProjectedPoints: 280.6,
+  seasonActualPoints: 90.3,
+  projectionSource: 'market',
+  marketConfidence: 'blended',
+  seasonStats: { games: 5, gamesPlayed: 5, fantasyPointsPPR: 90.3, fantasyPointsHalf: 85, fantasyPointsStd: 78, passYards: 0, passTDs: 0, rushYards: 600, rushTDs: 6, receptions: 10, receivingYards: 80, receivingTDs: 0 },
+});
+
 function seasonModeResponse() {
   return {
     players: [ALLEN, OBSCURE],
@@ -101,6 +112,15 @@ function seasonModeResponse() {
 function seasonModeResponseWithMarket() {
   return {
     players: [MAHOMES, ALLEN, OBSCURE],
+    pagination: { page: 1, limit: 500, total: 3, totalPages: 1 },
+    weekComplete: false,
+    pointsType: 'projected',
+  };
+}
+
+function seasonModeResponseWithBlendedMarket() {
+  return {
+    players: [TAYLOR, ALLEN, OBSCURE],
     pagination: { page: 1, limit: 500, total: 3, totalPages: 1 },
     weekComplete: false,
     pointsType: 'projected',
@@ -260,5 +280,17 @@ describe('PlayerTable — Market projection source', () => {
     await screen.findByText('Josh Allen');
     const row = screen.getByText('Josh Allen').closest('tr') as HTMLElement;
     expect(within(row).queryByText(/^ROS /)).toBeNull();
+  });
+
+  it('shows a "Market" badge with a blended tooltip for marketConfidence "blended"', async () => {
+    hoisted.mockGet.mockResolvedValue(seasonModeResponseWithBlendedMarket());
+    renderTable();
+    fireEvent.click(screen.getByRole('button', { name: 'Full Season' }));
+
+    await screen.findByText('Jonathan Taylor');
+    const row = screen.getByText('Jonathan Taylor').closest('tr') as HTMLElement;
+    const badge = within(row).getByText('Market');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute('title', 'Market (blended with weekly lines)');
   });
 });

@@ -39,6 +39,8 @@ interface DraftRanking {
   projectedPoints: number | null;
   adp: number | null;
   adpDelta: number | null;
+  /** Live deterministic Market (sportsbook-implied) VORP rank, 1-QB only — populated for the redraft/1-QB variant. */
+  marketRank?: number | null;
   rationale: string;
   analysis: string | null;
   /** AI best-case overall rank (lower = better); null until generated. */
@@ -50,6 +52,81 @@ interface DraftRanking {
   movement?: RankMovement;
   generatedAt: string;
   player: DraftRankingPlayer;
+  /** Present only for rows adapted from the Market view (see marketRowToDraftRanking). */
+  rosPoints?: number | null;
+  confidence?: string | null;
+}
+
+// ── Market rankings (deterministic, sportsbook-implied) ────────────────
+
+interface MarketRankingPlayer {
+  id: string;
+  name: string;
+  team: string;
+  position: string;
+  status: string;
+  injuryNote: string | null;
+  headshotUrl: string | null;
+}
+
+interface MarketRanking {
+  playerId: string;
+  player: MarketRankingPlayer | null;
+  marketRank: number | null;
+  positionRank: number | null;
+  tier: number | null;
+  vorp: number | null;
+  seasonPoints: number | null;
+  rosPoints: number | null;
+  perGameRate: number | null;
+  remainingGames: number | null;
+  confidence: string | null;
+}
+
+interface MarketRankingsResponse {
+  rankings: MarketRanking[];
+  pagination: { limit: number; offset: number; total: number };
+  meta: { scoringFormat: string; season: number; asOfWeek: number | null; count: number };
+}
+
+/**
+ * Adapt a Market ranking row into the shape PlayerRow already knows how to
+ * render, so the Market view reuses the same row component (with
+ * source="market" disabling the AI-only affordances) instead of duplicating
+ * the table markup.
+ */
+function marketRowToDraftRanking(m: MarketRanking): DraftRanking {
+  return {
+    id: `mkt-${m.playerId}`,
+    overallRank: m.marketRank ?? 0,
+    positionRank: m.positionRank ?? 0,
+    tier: m.tier ?? 8,
+    projectedPoints: m.seasonPoints,
+    adp: null,
+    adpDelta: null,
+    marketRank: null,
+    rationale: '',
+    analysis: null,
+    ceilingRank: null,
+    floorRank: null,
+    recentRanks: [],
+    movement: undefined,
+    generatedAt: '',
+    player: {
+      id: m.player?.id ?? m.playerId,
+      name: m.player?.name ?? 'Unknown Player',
+      position: m.player?.position ?? '',
+      team: m.player?.team ?? '',
+      age: null,
+      yearsExp: null,
+      status: m.player?.status ?? 'active',
+      injuryNote: m.player?.injuryNote ?? null,
+      headshotUrl: m.player?.headshotUrl ?? null,
+      externalId: null,
+    },
+    rosPoints: m.rosPoints,
+    confidence: m.confidence,
+  };
 }
 
 interface DraftRankingsResponse {
@@ -144,6 +221,15 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   const [watchingOnly, setWatchingOnly] = useState(false);
   const [showAsk, setShowAsk] = useState(false);
 
+  // FilmRoom AI vs deterministic Market source toggle. Market is a
+  // 1-QB, season-long-only board (see services/marketRankings.ts) — the
+  // Redraft/Dynasty/Rookie + Superflex controls only apply to the AI source.
+  const [source, setSource] = useState<'ai' | 'market'>('ai');
+  const [marketRankings, setMarketRankings] = useState<MarketRanking[]>([]);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketError, setMarketError] = useState<string | null>(null);
+  const [marketAsOfWeek, setMarketAsOfWeek] = useState<number | null>(null);
+
   const { user, isAuthenticated } = useAuth();
   const watchlist = useWatchlist();
 
@@ -211,6 +297,31 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     fetchRankings();
   }, [fetchRankings]);
 
+  const fetchMarketRankings = useCallback(async () => {
+    setMarketLoading(true);
+    setMarketError(null);
+    try {
+      const season = new Date().getFullYear();
+      const data = await api.get<MarketRankingsResponse>(
+        `/market-rankings?scoring=${scoringFormat}&season=${season}&limit=300`,
+      );
+      setMarketRankings(data.rankings);
+      setMarketAsOfWeek(data.meta.asOfWeek);
+    } catch (err) {
+      console.error('Failed to fetch market rankings:', err);
+      setMarketError('Failed to load market rankings');
+      setMarketRankings([]);
+    } finally {
+      setMarketLoading(false);
+    }
+  }, [scoringFormat]);
+
+  // Only fetch the Market board once it's actually selected — no need to hit
+  // the endpoint while the user stays on the AI view.
+  useEffect(() => {
+    if (source === 'market') fetchMarketRankings();
+  }, [source, fetchMarketRankings]);
+
   // A comparison only makes sense within one variant, so reset the basket when
   // the ranking type, scoring format, or superflex setting changes.
   useEffect(() => {
@@ -240,6 +351,25 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     }
     return filtered;
   }, [rankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
+
+  // Market rows adapted into the same shape PlayerRow renders, filtered the
+  // same way as the AI list (position/search/watching).
+  const filteredMarketRankings = useMemo(() => {
+    let filtered = marketRankings.map(marketRowToDraftRanking);
+    if (positionFilter !== 'ALL') {
+      filtered = filtered.filter(r => r.player.position === positionFilter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        r => r.player.name.toLowerCase().includes(q) || r.player.team.toLowerCase().includes(q),
+      );
+    }
+    if (watchingOnly) {
+      filtered = filtered.filter(r => watchlist.watchedIds.has(r.player.id));
+    }
+    return filtered;
+  }, [marketRankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
 
   const handlePlayerClick = useCallback((ranking: DraftRanking) => {
     const p = ranking.player;
@@ -301,10 +431,13 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
 
   // ── Render ──────────────────────────────────────────────────────────
 
+  const isMarket = source === 'market';
+
   // adpDelta is the rank-vs-ADP gap (negative = ranked above ADP = steal,
   // positive = ranked below ADP = reach), not day-over-day movement.
   const stealCount = rankings.filter(r => r.adpDelta !== null && r.adpDelta < -3).length;
   const reachCount = rankings.filter(r => r.adpDelta !== null && r.adpDelta > 3).length;
+  const activeCount = isMarket ? marketRankings.length : rankings.length;
 
   const headerBtn = `inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
     isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
@@ -323,10 +456,19 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
               Draft Rankings
             </h1>
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              {generatedAt && <>Updated {new Date(generatedAt).toLocaleDateString()} · </>}
-              {rankings.length} players ranked
-              {stealCount > 0 && <> · <span className="text-emerald-500">{stealCount} steal{stealCount !== 1 ? 's' : ''}</span></>}
-              {reachCount > 0 && <> · <span className="text-red-500">{reachCount} reach{reachCount !== 1 ? 'es' : ''}</span></>}
+              {isMarket ? (
+                <>
+                  {marketAsOfWeek != null && <>As of week {marketAsOfWeek} · </>}
+                  {activeCount} players ranked
+                </>
+              ) : (
+                <>
+                  {generatedAt && <>Updated {new Date(generatedAt).toLocaleDateString()} · </>}
+                  {activeCount} players ranked
+                  {stealCount > 0 && <> · <span className="text-emerald-500">{stealCount} steal{stealCount !== 1 ? 's' : ''}</span></>}
+                  {reachCount > 0 && <> · <span className="text-red-500">{reachCount} reach{reachCount !== 1 ? 'es' : ''}</span></>}
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -346,11 +488,13 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
             type="button"
             className={headerBtn}
             aria-label="Export rankings"
-            disabled={filteredRankings.length === 0}
+            disabled={(isMarket ? filteredMarketRankings : filteredRankings).length === 0}
             onClick={() =>
               downloadRankingsCsv(
-                filteredRankings,
-                `draft-rankings-${rankingType}-${scoringFormat}${superflex ? '-superflex' : ''}-${new Date().getFullYear()}.csv`,
+                isMarket ? filteredMarketRankings : filteredRankings,
+                isMarket
+                  ? `market-rankings-${scoringFormat}-${new Date().getFullYear()}.csv`
+                  : `draft-rankings-${rankingType}-${scoringFormat}${superflex ? '-superflex' : ''}-${new Date().getFullYear()}.csv`,
               )
             }
           >
@@ -371,14 +515,26 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
 
       {/* Controls row */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Ranking view */}
+        {/* Source: FilmRoom AI vs deterministic Market */}
         <div className="flex gap-1">
-          {pill(rankingType === 'redraft', () => setRankingType('redraft'), 'Redraft')}
-          {pill(rankingType === 'dynasty', () => setRankingType('dynasty'), 'Dynasty')}
-          {pill(rankingType === 'rookie', () => setRankingType('rookie'), 'Rookie')}
+          {pill(source === 'ai', () => setSource('ai'), 'FilmRoom AI')}
+          {pill(source === 'market', () => setSource('market'), 'Market')}
         </div>
 
         <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+
+        {!isMarket && (
+          <>
+            {/* Ranking view */}
+            <div className="flex gap-1">
+              {pill(rankingType === 'redraft', () => setRankingType('redraft'), 'Redraft')}
+              {pill(rankingType === 'dynasty', () => setRankingType('dynasty'), 'Dynasty')}
+              {pill(rankingType === 'rookie', () => setRankingType('rookie'), 'Rookie')}
+            </div>
+
+            <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+          </>
+        )}
 
         {/* Scoring format as pills */}
         <div className="flex gap-1">
@@ -398,24 +554,28 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
           ))}
         </div>
 
-        <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+        {!isMarket && (
+          <>
+            <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
 
-        {/* Superflex toggle */}
-        <label className={`inline-flex items-center gap-2 cursor-pointer select-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-          <input type="checkbox" checked={superflex} onChange={() => setSuperflex(v => !v)} className="sr-only" />
-          <span
-            className={`relative inline-block w-8 h-4 rounded-full transition-colors ${
-              superflex ? 'bg-blue-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
-                superflex ? 'translate-x-4' : 'translate-x-0'
-              }`}
-            />
-          </span>
-          <span className="text-xs font-semibold">Superflex</span>
-        </label>
+            {/* Superflex toggle */}
+            <label className={`inline-flex items-center gap-2 cursor-pointer select-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+              <input type="checkbox" checked={superflex} onChange={() => setSuperflex(v => !v)} className="sr-only" />
+              <span
+                className={`relative inline-block w-8 h-4 rounded-full transition-colors ${
+                  superflex ? 'bg-blue-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                    superflex ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </span>
+              <span className="text-xs font-semibold">Superflex</span>
+            </label>
+          </>
+        )}
 
         {watchlist.isAuthenticated && (
           <>
@@ -444,8 +604,8 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
         />
       </div>
 
-      {/* Callout cards */}
-      {callouts && !loading && (
+      {/* Callout cards (AI only — steal/reach/value math is ADP-delta based) */}
+      {!isMarket && callouts && !loading && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { label: 'Biggest Riser', icon: TrendingUp, color: 'text-emerald-500', bgColor: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', r: callouts.riser, delta: callouts.riser?.adpDelta },
@@ -485,7 +645,62 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
       )}
 
       {/* Content */}
-      {loading ? (
+      {isMarket ? (
+        marketLoading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className={`w-8 h-8 animate-spin ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+            <p className={`mt-3 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Loading market rankings...
+            </p>
+          </div>
+        ) : marketError ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <p className={`text-sm ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>{marketError}</p>
+          </div>
+        ) : marketRankings.length === 0 ? (
+          <MarketEmptyState isDarkMode={isDarkMode} />
+        ) : filteredMarketRankings.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              No players match your filters.
+            </p>
+          </div>
+        ) : (
+          <div className={`${panelCls} overflow-hidden`} data-testid="rankings-table">
+            {/* Table header (Market shape) */}
+            <div className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b fr-text-10 uppercase fr-tracking-wider font-bold ${
+              isDarkMode ? 'bg-slate-900/80 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-500'
+            }`}>
+              <span className="w-6 sm:w-8 text-center">#</span>
+              <span className="flex-1 min-w-0">Player</span>
+              <span className="text-right w-14 sm:w-20">Season Proj</span>
+              <span className="hidden sm:inline text-right" style={{ width: '70px' }}>ROS</span>
+              <span className="hidden sm:inline text-center" style={{ width: '44px' }}>Tier</span>
+              <span className="flex justify-center w-[90px]">Confidence</span>
+            </div>
+
+            <div className="space-y-0">
+            {filteredMarketRankings.map(ranking => (
+              <PlayerRow
+                key={ranking.id}
+                ranking={ranking}
+                rankingType={rankingType}
+                isDarkMode={isDarkMode}
+                source="market"
+                isExpanded={false}
+                onToggleRationale={() => {}}
+                onPlayerClick={() => handlePlayerClick(ranking)}
+                isInCompare={false}
+                onToggleCompare={() => {}}
+                onTradeValue={() => {}}
+                isWatched={watchlist.watchedIds.has(ranking.player.id)}
+                onToggleWatch={() => handleToggleWatch(ranking)}
+              />
+            ))}
+            </div>
+          </div>
+        )
+      ) : loading ? (
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 className={`w-8 h-8 animate-spin ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
           <p className={`mt-3 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -514,6 +729,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
             <span className="flex-1 min-w-0">Player</span>
             <span className="text-right w-14 sm:w-20">Proj</span>
             <span className="hidden sm:inline text-right" style={{ width: '60px' }}>ADP</span>
+            <span className="hidden lg:inline text-center" style={{ width: '56px' }}>vs Mkt</span>
             <span className="flex justify-center w-[72px] sm:w-[90px]">Value</span>
             <span className="hidden md:inline text-center" style={{ width: '64px' }}>Trend</span>
             <span className="hidden sm:inline text-center" style={{ width: '40px' }}>Age</span>
@@ -527,6 +743,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
               ranking={ranking}
               rankingType={rankingType}
               isDarkMode={isDarkMode}
+              source="ai"
               isExpanded={expandedRationale === ranking.id}
               onToggleRationale={() => setExpandedRationale(prev => (prev === ranking.id ? null : ranking.id))}
               onPlayerClick={() => handlePlayerClick(ranking)}
@@ -588,6 +805,43 @@ function EmptyState({ rankingType, superflex, isDarkMode }: { rankingType: Ranki
         {message}
       </p>
     </div>
+  );
+}
+
+function MarketEmptyState({ isDarkMode }: { isDarkMode: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <Medal className={`w-12 h-12 mb-4 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} />
+      <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+        No Market Rankings Yet
+      </h3>
+      <p className={`text-sm max-w-md ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+        Market rankings generate after the projections sync.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * "vs Mkt" pill for the AI view: marketRank − overallRank. Positive (green)
+ * means FilmRoom AI ranks the player better (a lower overall rank number)
+ * than the deterministic Market board; negative (red) means AI is lower on
+ * the player than the market. Small gaps (|Δ| ≤ 3) and players with no
+ * Market coverage render as a neutral grey dash.
+ */
+function VsMarketPill({ marketRank, overallRank, isDarkMode }: { marketRank: number | null | undefined; overallRank: number; isDarkMode: boolean }) {
+  if (marketRank == null) {
+    return <span className={`fr-text-10 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>—</span>;
+  }
+  const delta = marketRank - overallRank;
+  const abs = Math.abs(delta);
+  const neutralCls = isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500';
+  const cls = abs <= 3 ? neutralCls : delta > 0 ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500';
+  const label = abs <= 3 ? '—' : delta > 0 ? `+${abs}` : `-${abs}`;
+  return (
+    <span className={`fr-text-10 font-bold px-2 py-0.5 rounded ${cls}`} title={`Market rank #${marketRank}`}>
+      {label}
+    </span>
   );
 }
 
@@ -711,6 +965,7 @@ function PlayerRow({
   onTradeValue,
   isWatched,
   onToggleWatch,
+  source = 'ai',
 }: {
   ranking: DraftRanking;
   rankingType: RankingType;
@@ -723,14 +978,21 @@ function PlayerRow({
   onTradeValue: () => void;
   isWatched: boolean;
   onToggleWatch: () => void;
+  /** 'ai' (default) shows the full FilmRoom AI row — expandable rationale/
+   * analysis, ceiling/floor, ADP + vs-Mkt + value badge + trend. 'market'
+   * renders the deterministic Market row shape instead: no expand, no
+   * rationale/ceiling/floor, ROS + tier + confidence badge in place of
+   * ADP/value/trend. */
+  source?: 'ai' | 'market';
 }) {
   const p = ranking.player;
   const posColor = POSITION_COLORS[p.position] || 'text-slate-400';
+  const isAi = source === 'ai';
 
-  // Value badge
+  // Value badge (AI only — ADP-delta math doesn't apply to Market rows)
   const adpDelta = ranking.adpDelta;
   let valueBadge: React.ReactNode = null;
-  if (adpDelta !== null) {
+  if (isAi && adpDelta !== null) {
     if (Math.abs(adpDelta) < 3) {
       valueBadge = (
         <span className={`fr-text-10 font-bold px-2 py-0.5 rounded ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
@@ -752,6 +1014,23 @@ function PlayerRow({
     }
   }
 
+  // Confidence badge (Market only)
+  let confidenceBadge: React.ReactNode = null;
+  if (!isAi) {
+    const conf = ranking.confidence;
+    const label = conf === 'season_props' ? 'HIGH' : conf === 'weekly_extrapolation' ? 'EST' : '—';
+    const cls = conf === 'season_props'
+      ? 'bg-emerald-500/15 text-emerald-500'
+      : conf === 'weekly_extrapolation'
+      ? 'bg-amber-500/15 text-amber-500'
+      : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500';
+    confidenceBadge = (
+      <span className={`fr-text-10 font-bold px-2 py-0.5 rounded ${cls}`} title={conf ? `Confidence: ${conf.replace('_', ' ')}` : undefined}>
+        {label}
+      </span>
+    );
+  }
+
   return (
     <div
       className={`border-b transition-colors ${
@@ -761,11 +1040,11 @@ function PlayerRow({
       }`}
     >
       <div
-        className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 cursor-pointer"
-        onClick={onToggleRationale}
-        role="button"
-        tabIndex={0}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleRationale(); } }}
+        className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 ${isAi ? 'cursor-pointer' : ''}`}
+        onClick={isAi ? onToggleRationale : undefined}
+        role={isAi ? 'button' : undefined}
+        tabIndex={isAi ? 0 : undefined}
+        onKeyDown={isAi ? (e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleRationale(); } }) : undefined}
       >
         {/* Rank */}
         <span className={`w-6 sm:w-8 text-center text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -787,7 +1066,9 @@ function PlayerRow({
           </div>
           <div className="flex items-center gap-1.5 fr-text-11">
             <span className={`font-bold ${posColor}`}>{p.position}{ranking.positionRank}</span>
-            <span className={`truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{p.team} · Age {p.age ?? '—'}</span>
+            <span className={`truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              {p.team}{isAi ? <> · Age {p.age ?? '—'}</> : null}
+            </span>
           </div>
         </div>
 
@@ -799,40 +1080,70 @@ function PlayerRow({
           <span className={`fr-text-10 ml-0.5 hidden sm:inline ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>pts</span>
         </div>
 
-        {/* ADP */}
-        <div className="hidden sm:block text-right" style={{ width: '60px' }}>
-          <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-            {ranking.adp != null ? ranking.adp.toFixed(1) : '—'}
-          </span>
-        </div>
+        {isAi ? (
+          <>
+            {/* ADP */}
+            <div className="hidden sm:block text-right" style={{ width: '60px' }}>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                {ranking.adp != null ? ranking.adp.toFixed(1) : '—'}
+              </span>
+            </div>
 
-        {/* Value Badge */}
-        <div className="flex justify-center w-[72px] sm:w-[90px]">
-          {valueBadge}
-        </div>
+            {/* vs Mkt — marketRank minus overallRank, so positive = AI is higher on the player */}
+            <div className="hidden lg:flex items-center justify-center" style={{ width: '56px' }}>
+              <VsMarketPill marketRank={ranking.marketRank} overallRank={ranking.overallRank} isDarkMode={isDarkMode} />
+            </div>
 
-        {/* Trend sparkline (last 4 daily snapshots) */}
-        <div className="hidden md:flex items-center justify-center" style={{ width: '64px' }}>
-          <TrendSparkline ranks={ranking.recentRanks} isDarkMode={isDarkMode} />
-        </div>
+            {/* Value Badge */}
+            <div className="flex justify-center w-[72px] sm:w-[90px]">
+              {valueBadge}
+            </div>
 
-        {/* Age */}
-        <div className="hidden sm:block text-center" style={{ width: '40px' }}>
-          <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-            {p.age ?? '—'}
-          </span>
-        </div>
+            {/* Trend sparkline (last 4 daily snapshots) */}
+            <div className="hidden md:flex items-center justify-center" style={{ width: '64px' }}>
+              <TrendSparkline ranks={ranking.recentRanks} isDarkMode={isDarkMode} />
+            </div>
 
-        {/* Expand chevron */}
-        {isExpanded ? (
-          <ChevronDown className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+            {/* Age */}
+            <div className="hidden sm:block text-center" style={{ width: '40px' }}>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                {p.age ?? '—'}
+              </span>
+            </div>
+
+            {/* Expand chevron */}
+            {isExpanded ? (
+              <ChevronDown className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+            ) : (
+              <ChevronRight className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+            )}
+          </>
         ) : (
-          <ChevronRight className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+          <>
+            {/* ROS (rest-of-season points) */}
+            <div className="hidden sm:block text-right" style={{ width: '70px' }}>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                {ranking.rosPoints != null ? ranking.rosPoints.toFixed(1) : '—'}
+              </span>
+            </div>
+
+            {/* Tier */}
+            <div className="hidden sm:block text-center" style={{ width: '44px' }}>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                {ranking.tier ?? '—'}
+              </span>
+            </div>
+
+            {/* Confidence badge */}
+            <div className="flex justify-center w-[90px]">
+              {confidenceBadge}
+            </div>
+          </>
         )}
       </div>
 
-      {/* Expanded detail — panel grid */}
-      {isExpanded && (
+      {/* Expanded detail — panel grid (AI only: rationale/analysis and ceiling/floor don't exist for Market rows) */}
+      {isAi && isExpanded && (
         <div className={`px-4 pb-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             {/* Season Projection */}

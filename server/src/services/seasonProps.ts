@@ -378,6 +378,13 @@ export interface SeasonProjection {
   marketsUsed: number;
   /** Distinct sportsbooks whose lines contributed to this projection. */
   books: string[];
+  /**
+   * Which stat markets actually had at least one season-prop line — as
+   * opposed to `stats` above, which defaults every uncovered stat to 0.
+   * Consumers (see marketRankings.ts's mergeSeasonStatVector) need this to
+   * tell "no line, defaulted to 0" apart from "the line's value was 0".
+   */
+  presentStats: SeasonPropStat[];
 }
 
 const EMPTY_STAT_TOTALS: Record<SeasonPropStat, number> = {
@@ -463,6 +470,7 @@ export function buildSeasonProjectionsFromSeasonProps(
       },
       marketsUsed,
       books: Array.from(booksUsed).sort(),
+      presentStats: Array.from(byStat.keys()),
     });
   }
 

@@ -23,6 +23,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
 import { inferPlayerTenure } from './playerTenure';
+import { resolveMarketAsOfWeek } from './marketRankingsQueries';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -331,7 +332,7 @@ async function fetchMFLADP(
 
 // ── Player context builder ──────────────────────────────────────────
 
-interface PlayerContext {
+export interface PlayerContext {
   id: string;
   externalId: string | null;
   name: string;
@@ -346,6 +347,16 @@ interface PlayerContext {
   lastSeasonGames: number | null;
   recentNews: string[];
   adp: number | null;
+  /** Deterministic Market (sportsbook-implied) VORP overall rank, 1-QB only —
+   * see services/marketRankings.ts. Null before the first sync, or for a
+   * player the market layer has no coverage for. Superflex variants still
+   * receive this 1-QB value (the market layer has no superflex mode yet). */
+  marketRank: number | null;
+  /** Market-implied full-season point projection in the variant's scoring
+   * format, paired with marketRank. */
+  marketProjection: number | null;
+  /** Market VORP tier (1-8), paired with marketRank. */
+  marketTier: number | null;
 }
 
 /**
@@ -383,6 +394,73 @@ export function isRookieEligible(
     seasonPhase: 'offseason',
   });
   return tenure.rookieStatus === 'incoming-rookie' || tenure.rookieStatus === 'rookie-active';
+}
+
+interface MarketContext {
+  rank: number | null;
+  projection: number | null;
+  tier: number | null;
+}
+
+/**
+ * Look up the deterministic Market (sportsbook-implied) VORP ranking for a
+ * set of players, at the most recently synced as_of_week for this season +
+ * scoring format (services/marketRankingsQueries.ts's resolveMarketAsOfWeek
+ * — the same resolver GET /api/draft-rankings and /api/market-rankings use,
+ * so all three agree on which snapshot is "current"). 1-QB only: the market
+ * layer has no superflex mode, so superflex variants get this same map —
+ * callers label it as a 1-QB signal in the prompt rather than re-deriving a
+ * superflex-specific rank.
+ *
+ * Returns an empty map (not a throw) when no market sync has run yet for
+ * this season/scoring format — callers treat that as "no market data" and
+ * fall back to ADP-only prompt wording.
+ */
+async function buildMarketContextMap(
+  db: DB,
+  seasonYear: number,
+  scoringFormat: 'ppr' | 'half-ppr' | 'standard',
+  playerIds: string[],
+): Promise<Map<string, MarketContext>> {
+  const result = new Map<string, MarketContext>();
+  if (playerIds.length === 0) return result;
+
+  // Fails soft (empty map) on any error — a missing/broken market table
+  // shouldn't take down ranking generation, same posture as the ADP
+  // fetchers above. Callers treat an empty map exactly like "no sync has
+  // run yet" and fall back to ADP-only prompt wording.
+  try {
+    const asOfWeek = await resolveMarketAsOfWeek(db, seasonYear, scoringFormat);
+    if (asOfWeek == null) return result;
+
+    // D1 bounds inArray's parameter list, so chunk player ids rather than
+    // sending one query with hundreds of bindings.
+    const CHUNK = 50;
+    const chunks: string[][] = [];
+    for (let i = 0; i < playerIds.length; i += CHUNK) chunks.push(playerIds.slice(i, i + CHUNK));
+
+    const rowsChunks = await Promise.all(
+      chunks.map(chunk =>
+        db.query.playerMarketProjections.findMany({
+          where: and(
+            inArray(schema.playerMarketProjections.playerId, chunk),
+            eq(schema.playerMarketProjections.seasonYear, seasonYear),
+            eq(schema.playerMarketProjections.asOfWeek, asOfWeek),
+            eq(schema.playerMarketProjections.scoringFormat, scoringFormat),
+          ),
+          columns: { playerId: true, marketRank: true, seasonPoints: true, tier: true },
+        }),
+      ),
+    );
+
+    for (const row of rowsChunks.flat()) {
+      result.set(row.playerId, { rank: row.marketRank, projection: row.seasonPoints, tier: row.tier });
+    }
+  } catch (err) {
+    console.error('[draftRankings] Market context lookup failed:', err);
+    return new Map();
+  }
+  return result;
 }
 
 async function buildPlayerContexts(
@@ -455,6 +533,12 @@ async function buildPlayerContexts(
     newsByPlayer.set(n.playerId, list);
   }
 
+  // Deterministic Market (sportsbook-implied) VORP context — 1-QB only, see
+  // buildMarketContextMap's docstring. Populated for every ranking type;
+  // buildRedraftPrompt/buildDynastyPrompt decide how (or whether) to surface
+  // it depending on whether any rows came back.
+  const marketByPlayerId = await buildMarketContextMap(db, seasonYear, scoringFormat, players.map(p => p.id));
+
   return players.map(p => ({
     id: p.id,
     externalId: p.externalId,
@@ -470,32 +554,63 @@ async function buildPlayerContexts(
     lastSeasonGames: statsByPlayer.get(p.id)?.gamesPlayed ?? null,
     recentNews: newsByPlayer.get(p.id) || [],
     adp: adpByNormalizedName.get(normalizePlayerName(p.name)) ?? null,
+    marketRank: marketByPlayerId.get(p.id)?.rank ?? null,
+    marketProjection: marketByPlayerId.get(p.id)?.projection ?? null,
+    marketTier: marketByPlayerId.get(p.id)?.tier ?? null,
   }));
 }
 
 // ── Prompt builders ─────────────────────────────────────────────────
 
-function buildRedraftPrompt(
+export function buildRedraftPrompt(
   players: PlayerContext[],
   scoringFormat: string,
   superflex: boolean,
 ): string {
+  // The Market rank (deterministic, sportsbook-implied VORP — see
+  // services/marketRankings.ts) becomes the primary anchor once a sync has
+  // run for this season/scoring format; before that (or if the market
+  // lookup failed) every player's marketRank is null and the prompt must
+  // read exactly as it did pre-#309/#310 — no "Market" wording at all.
+  const hasMarketData = players.some(p => p.marketRank != null);
+
   const playerLines = players
     .filter(p => p.lastSeasonPoints !== null || p.adp !== null)
-    .sort((a, b) => (a.adp ?? 999) - (b.adp ?? 999))
+    .sort((a, b) => (a.marketRank ?? a.adp ?? 999) - (b.marketRank ?? b.adp ?? 999))
     .slice(0, 250)
     .map(p => {
       const ppg = p.lastSeasonPoints && p.lastSeasonGames
         ? (p.lastSeasonPoints / p.lastSeasonGames).toFixed(1)
         : 'N/A';
       const newsStr = p.recentNews.length > 0 ? ` | News: ${p.recentNews.join('; ')}` : '';
-      return `${p.name} (${p.position}, ${p.team}) | Age: ${p.age ?? '?'} | Exp: ${p.yearsExp ?? '?'}yr | Status: ${p.status}${p.injuryNote ? ` (${p.injuryNote})` : ''} | Depth: ${p.depthChartOrder ?? '?'} | Last Season: ${p.lastSeasonPoints?.toFixed(1) ?? 'N/A'} pts in ${p.lastSeasonGames ?? 0} games (${ppg} ppg) | ADP: ${p.adp ?? 'N/A'}${newsStr}`;
+      const marketStr = p.marketRank != null
+        ? ` | Market: #${p.marketRank} (proj ${p.marketProjection != null ? p.marketProjection.toFixed(1) : 'N/A'})`
+        : '';
+      return `${p.name} (${p.position}, ${p.team}) | Age: ${p.age ?? '?'} | Exp: ${p.yearsExp ?? '?'}yr | Status: ${p.status}${p.injuryNote ? ` (${p.injuryNote})` : ''} | Depth: ${p.depthChartOrder ?? '?'} | Last Season: ${p.lastSeasonPoints?.toFixed(1) ?? 'N/A'} pts in ${p.lastSeasonGames ?? 0} games (${ppg} ppg) | ADP: ${p.adp ?? 'N/A'}${marketStr}${newsStr}`;
     })
     .join('\n');
 
+  // Market ranks are computed for 1-QB lineups only. In superflex the ±10 rule
+  // must not suppress the QB inflation the SUPERFLEX OVERRIDE asks for.
+  const superflexMarketCaveat = superflex && hasMarketData
+    ? ` NOTE: Market rank reflects 1-QB value. For QBs in this SUPERFLEX league, do NOT apply the ±10 rule against Market rank — rank QBs per the SUPERFLEX OVERRIDE below and justify the uplift briefly in the rationale; the ±10 rule still applies to non-QBs.`
+    : '';
+
+  const taskIntro = hasMarketData
+    ? `TASK: Rank these players for a full-season redraft draft. The MARKET RANK (labeled "Market" below) is your primary anchor — a deterministic ranking computed from sportsbook prop lines and replacement-level (VORP) math, so it already reflects the market's forward-looking view on production. ADP is secondary context, useful mainly for players with no Market rank. Stay within ±10 spots of a player's Market rank (or ADP when Market is unavailable for that player) unless you have a SPECIFIC, CONCRETE reason the market hasn't priced in yet (recent injury, post-market-close trade, confirmed role change, coaching hire that shifts scheme). "Scored a lot last year" is NOT a reason — Market and ADP already reflect last year's performance.${superflexMarketCaveat}`
+    : `TASK: Rank these players for a full-season redraft draft. ADP is your primary anchor — stay within ±10 spots of ADP for any player unless you have a SPECIFIC, CONCRETE reason ADP hasn't priced in yet (recent injury, post-ADP trade, confirmed role change, coaching hire that shifts scheme). "Scored a lot last year" is NOT a reason — ADP already reflects last year's performance.`;
+
+  const deviationBullet = hasMarketData
+    ? `Deviating more than ±10 from Market rank (or ADP when a player has no Market rank) requires a concrete news/role reason cited in the rationale`
+    : `Deviating more than ±10 from ADP requires a concrete news/role reason cited in the rationale`;
+
+  const backstopAnchorSentence = hasMarketData
+    ? `Market rank (when present) is the anchor — treat any deviation of more than 10 spots from a player's Market rank as requiring a specific, concrete justification written into that player's rationale; fall back to ADP as the anchor only for a player with no Market rank.`
+    : `ADP (when present) is the anchor — treat any deviation of more than 10 spots from a player's ADP as requiring a specific, concrete justification written into that player's rationale.`;
+
   return `You are an expert fantasy football analyst generating ${scoringFormat.toUpperCase()} redraft rankings for the upcoming NFL season.${superflex ? ' This is a SUPERFLEX league (QBs are significantly more valuable).' : ''}
 
-TASK: Rank these players for a full-season redraft draft. ADP is your primary anchor — stay within ±10 spots of ADP for any player unless you have a SPECIFIC, CONCRETE reason ADP hasn't priced in yet (recent injury, post-ADP trade, confirmed role change, coaching hire that shifts scheme). "Scored a lot last year" is NOT a reason — ADP already reflects last year's performance.
+${taskIntro}
 
 PLAYER DATA:
 ${playerLines}
@@ -530,7 +645,7 @@ Typical 1-QB draft shape (reflects expert consensus and real ADP):
 
 RULE: No more than 3 QBs inside the top 40 overall. No QB inside the top 15 overall unless the consensus ADP agrees. If your instinct says "this QB is underranked because of points" — stop. ADP already accounts for points; the anchor is positional scarcity.${superflex ? '\n\nSUPERFLEX OVERRIDE: Because you can start a second QB in the flex, QB value roughly doubles. Top QBs belong in Round 1-2; the QB12 belongs in Round 6-7. Disregard the 1-QB round guidance above.' : `
 
-POSITIONAL SCARCITY BACKSTOP: This is a 1-QB league — only one QB slot and only one TE slot start each week, so raw projected points at those positions are misleading. QBs ranked outside the top ~3 at the position, and TEs ranked outside the top ~3 at the position, must NOT be ranked ahead of an RB or WR with similar projectedPoints; RB/WR touches convert to fantasy value at a much higher replacement-level premium than QB/TE points do past that point. ADP (when present) is the anchor — treat any deviation of more than 10 spots from a player's ADP as requiring a specific, concrete justification written into that player's rationale.`}
+POSITIONAL SCARCITY BACKSTOP: This is a 1-QB league — only one QB slot and only one TE slot start each week, so raw projected points at those positions are misleading. QBs ranked outside the top ~3 at the position, and TEs ranked outside the top ~3 at the position, must NOT be ranked ahead of an RB or WR with similar projectedPoints; RB/WR touches convert to fantasy value at a much higher replacement-level premium than QB/TE points do past that point. ${backstopAnchorSentence}`}
 
 TIER RULES:
 - Tier 1: Elite studs (top ~8-10 overall)
@@ -545,19 +660,26 @@ TIER RULES:
 IMPORTANT:
 - projectedPoints is the full-season total for ${scoringFormat} scoring. QBs will project higher in raw points than RBs/WRs — that is EXPECTED and does not affect overallRank, which is driven by positional scarcity relative to ADP.
 - Tiers should have natural breakpoints — don't force exact counts
-- Deviating more than ±10 from ADP requires a concrete news/role reason cited in the rationale
+- ${deviationBullet}
 - Account for injury risk, age, opportunity changes, and coaching/scheme changes
 - rationale: 1 punchy sentence (shown inline in the rankings table)
 - analysis: 3-5 sentences of real scouting — strengths, weaknesses, situation, fantasy outlook. This is the main value-add. Be specific: reference stats, scheme, coaching, age curves, injury history. "Elite volume" is lazy; "led NFL with 178 targets at age 24, now gets a healthy Dak back after relying on Cooper Rush for 6 games" is good.`;
 }
 
-function buildDynastyPrompt(
+export function buildDynastyPrompt(
   players: PlayerContext[],
   scoringFormat: string,
   superflex: boolean,
 ): string {
-  // Anchor on FantasyCalc's full (non-rookie-filtered) dynasty rank — p.adp
-  // here is that overall dynasty rank, 1 = most valuable dynasty asset.
+  // Dynasty ADP (FantasyCalc's full, non-rookie-filtered dynasty rank —
+  // p.adp here is that overall dynasty rank) stays the anchor: multi-year
+  // value isn't something a this-season market line can price. The
+  // deterministic Market projection (services/marketRankings.ts) is only
+  // ever surfaced as a same-season production cross-check, never as a rank
+  // anchor — see the IMPORTANT bullet below. Omitted entirely when no
+  // market sync has run yet for this season/scoring format.
+  const hasMarketData = players.some(p => p.marketProjection != null);
+
   const playerLines = players
     .filter(p => p.lastSeasonPoints !== null || p.adp !== null)
     .sort((a, b) => (a.adp ?? 999) - (b.adp ?? 999))
@@ -567,7 +689,10 @@ function buildDynastyPrompt(
         ? (p.lastSeasonPoints / p.lastSeasonGames).toFixed(1)
         : 'N/A';
       const newsStr = p.recentNews.length > 0 ? ` | News: ${p.recentNews.join('; ')}` : '';
-      return `${p.name} (${p.position}, ${p.team}) | Age: ${p.age ?? '?'} | Exp: ${p.yearsExp ?? '?'}yr | Status: ${p.status}${p.injuryNote ? ` (${p.injuryNote})` : ''} | Depth: ${p.depthChartOrder ?? '?'} | Last Season: ${p.lastSeasonPoints?.toFixed(1) ?? 'N/A'} pts in ${p.lastSeasonGames ?? 0} games (${ppg} ppg) | Dynasty ADP: ${p.adp ?? 'N/A'}${newsStr}`;
+      const marketStr = p.marketProjection != null
+        ? ` | Market Proj (this season): ${p.marketProjection.toFixed(1)} pts`
+        : '';
+      return `${p.name} (${p.position}, ${p.team}) | Age: ${p.age ?? '?'} | Exp: ${p.yearsExp ?? '?'}yr | Status: ${p.status}${p.injuryNote ? ` (${p.injuryNote})` : ''} | Depth: ${p.depthChartOrder ?? '?'} | Last Season: ${p.lastSeasonPoints?.toFixed(1) ?? 'N/A'} pts in ${p.lastSeasonGames ?? 0} games (${ppg} ppg) | Dynasty ADP: ${p.adp ?? 'N/A'}${marketStr}${newsStr}`;
     })
     .join('\n');
 
@@ -614,7 +739,7 @@ TIER RULES:
 - Tier 8: Deep dynasty depth / cut candidates (180+)
 
 IMPORTANT:
-- projectedPoints is this UPCOMING season's projected total for ${scoringFormat} scoring — it informs the ranking but is not the sole driver; a lower current-season projection with a much better age/trajectory profile can still outrank a higher one.
+- projectedPoints is this UPCOMING season's projected total for ${scoringFormat} scoring — it informs the ranking but is not the sole driver; a lower current-season projection with a much better age/trajectory profile can still outrank a higher one.${hasMarketData ? ` When present, "Market Proj (this season)" is a deterministic sportsbook-implied projection for the upcoming season only — treat it as a cross-check on current-year production (priority 5 above), never as a dynasty rank anchor; Dynasty ADP remains the anchor.` : ''}
 - Tiers should have natural breakpoints — don't force exact counts.
 - Deviating more than ±10 from Dynasty ADP requires a concrete reason cited in the rationale (age cliff, buried depth chart, confirmed decline, separated-from-class rookie, etc.).
 - rationale: 1 punchy sentence (shown inline in the rankings table).
@@ -1249,6 +1374,11 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
       projectedPoints: r.projectedPoints,
       adp: player.adp,
       adpDelta: player.adp != null ? r.overallRank - player.adp : null,
+      // Snapshot of the Market rank the prompt/AI actually saw at generation
+      // time, for auditability — the live join in GET /api/draft-rankings
+      // stays the source of truth shown to users (see marketRank comment on
+      // the schema column).
+      marketRank: player.marketRank,
       rationale: r.rationale || '',
       analysis: r.analysis || null,
       ceilingRank,
