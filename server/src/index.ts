@@ -38,6 +38,8 @@ export type Env = {
   DB: D1Database;
   JWT_SECRET: string;
   ENVIRONMENT: string;
+  /** Local-only: 'pro' | 'elite' bypasses tier gates on localhost (see middleware/tier.ts). */
+  DEV_TIER_OVERRIDE?: string;
   SYNC_SECRET?: string; // Optional: required for POST /api/admin/sync-players
   ODDS_API_KEY?: string; // Optional: The Odds API key for fetching NFL odds
   TWITTER_RSS_URLS?: string; // Comma-separated RSS URLs, e.g. https://nitter.net/AdamSchefter/rss

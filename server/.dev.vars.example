@@ -13,3 +13,4 @@
 # STRIPE_SECRET_KEY=sk_test_...  # required for paid plans (test key for dev)
 # STRIPE_WEBHOOK_SECRET=whsec_...# required so checkout webhook can settle subscriptions
 # ODDS_API_KEY=...               # optional: The Odds API key for fetching NFL odds (https://the-odds-api.com/)
+# DEV_TIER_OVERRIDE=pro          # local only: treat every logged-in user as pro (or elite) on localhost; ignored in production
