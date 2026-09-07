@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Medal, Loader2, Search, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, AlertTriangle, Plus, Download, MessageSquare, Heart, ArrowUpRight, Check, X } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
@@ -298,6 +298,12 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     fetchRankings();
   }, [fetchRankings]);
 
+  // Cache the last successfully-loaded Market board by scoring format + season
+  // so flipping the source pill back and forth (AI <-> Market) doesn't
+  // re-fetch or flash the spinner when nothing about the query changed; a
+  // real scoring/season change still busts the cache and refetches below.
+  const marketLoadedKeyRef = useRef<string | null>(null);
+
   const fetchMarketRankings = useCallback(async () => {
     setMarketLoading(true);
     setMarketError(null);
@@ -308,6 +314,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
       );
       setMarketRankings(data.rankings);
       setMarketAsOfWeek(data.meta.asOfWeek);
+      marketLoadedKeyRef.current = `${scoringFormat}:${season}`;
     } catch (err) {
       console.error('Failed to fetch market rankings:', err);
       setMarketError('Failed to load market rankings');
@@ -318,10 +325,14 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   }, [scoringFormat]);
 
   // Only fetch the Market board once it's actually selected — no need to hit
-  // the endpoint while the user stays on the AI view.
+  // the endpoint while the user stays on the AI view — and skip the fetch
+  // entirely when the cached board already matches the current scoring/season.
   useEffect(() => {
-    if (source === 'market') fetchMarketRankings();
-  }, [source, fetchMarketRankings]);
+    if (source !== 'market') return;
+    const season = new Date().getFullYear();
+    if (marketLoadedKeyRef.current === `${scoringFormat}:${season}`) return;
+    fetchMarketRankings();
+  }, [source, scoringFormat, fetchMarketRankings]);
 
   // A comparison only makes sense within one variant, so reset the basket when
   // the ranking type, scoring format, or superflex setting changes.
