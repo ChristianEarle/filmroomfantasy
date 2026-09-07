@@ -164,24 +164,42 @@ export async function runAskWithTools(opts: RunAskWithToolsOptions): Promise<Run
     // parallel and append the results as one user turn.
     messages.push({ role: 'assistant', content: response.content });
 
+    // Hardening: cap tool calls per round (the model's tool args are
+    // untrusted), and run handlers under the remaining wall-clock budget so a
+    // hung D1 query cannot push the request past `budgetMs`. Failures are
+    // reported with `is_error` so the model knows the call did not succeed.
+    const MAX_TOOL_CALLS_PER_ROUND = 6;
+    const toolBudgetMs = Math.max(1000, deadline - Date.now());
     const results = await Promise.all(
-      toolUseBlocks.map(async (block) => {
+      toolUseBlocks.map(async (block, idx) => {
         toolCalls.push({ name: block.name, input: block.input });
         const handler = opts.handlers[block.name];
         let content: unknown;
-        if (!handler) {
+        let isError = false;
+        if (idx >= MAX_TOOL_CALLS_PER_ROUND) {
+          content = { error: `Too many tool calls in one round (max ${MAX_TOOL_CALLS_PER_ROUND})` };
+          isError = true;
+        } else if (!handler) {
           content = { error: `Unknown tool: ${block.name}` };
+          isError = true;
         } else {
           try {
-            content = await handler(block.input);
+            content = await Promise.race([
+              handler(block.input),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Tool execution timed out')), toolBudgetMs),
+              ),
+            ]);
           } catch (err) {
             content = { error: err instanceof Error ? err.message : 'Tool execution failed' };
+            isError = true;
           }
         }
         return {
           type: 'tool_result' as const,
           tool_use_id: block.id,
           content: typeof content === 'string' ? content : JSON.stringify(content),
+          ...(isError ? { is_error: true as const } : {}),
         };
       }),
     );
