@@ -1677,8 +1677,11 @@ interface PlayersAskBody {
   leagueId?: string;
 }
 
-/** Daily Ask AI cap for the player board: Pro 20/day, Elite unlimited. */
+/** Daily Ask AI cap for the player board: Pro 20/day, Elite 200/day (a high
+ * ceiling, not unlimited — unlimited let a single account's usage grow
+ * without bound). */
 const PLAYER_ASK_DAILY_LIMIT = 20;
+const PLAYER_ASK_DAILY_LIMIT_ELITE = 200;
 
 function buildPlayersAskSystemPrompt(
   week: number,
@@ -1735,8 +1738,8 @@ playerRoutes.post(
 
     // Daily cap via tradeAnalysisUsage keyed `playerask:<userId>`.
     const today = getTodayKey();
-    const askLimit = tier === 'elite' ? Infinity : PLAYER_ASK_DAILY_LIMIT;
-    if (askLimit !== Infinity) {
+    const askLimit = tier === 'elite' ? PLAYER_ASK_DAILY_LIMIT_ELITE : PLAYER_ASK_DAILY_LIMIT;
+    {
       const usage = await db
         .select()
         .from(schema.tradeAnalysisUsage)
@@ -1906,17 +1909,15 @@ playerRoutes.post(
       // Record usage. tradeAnalysisUsage has no free-form column for
       // rounds/toolCalls, so log them for now instead of dropping the info.
       console.log('[players/ask] rounds:', rounds, 'toolCalls:', toolCalls.map((t) => t.name));
-      if (askLimit !== Infinity) {
-        try {
-          await db.insert(schema.tradeAnalysisUsage).values({
-            id: generateId(),
-            userId: `playerask:${user.id}`,
-            usedAt: new Date().toISOString(),
-            dateKey: today,
-          });
-        } catch (err) {
-          console.error('[players/ask] Failed to record usage:', err);
-        }
+      try {
+        await db.insert(schema.tradeAnalysisUsage).values({
+          id: generateId(),
+          userId: `playerask:${user.id}`,
+          usedAt: new Date().toISOString(),
+          dateKey: today,
+        });
+      } catch (err) {
+        console.error('[players/ask] Failed to record usage:', err);
       }
 
       return c.json({ answer, toolCalls });

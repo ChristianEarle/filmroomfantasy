@@ -124,6 +124,18 @@ describe('assemblePlayerCard', () => {
     expect(withoutRows.draft).toBeNull();
   });
 
+  it('treats a market row with no seasonPoints as no market projection (matches players.ts hasMarketProjection)', () => {
+    // A market_projections row can exist (e.g. rosPoints/marketRank populated
+    // from a partial sync) without a usable seasonPoints figure — players.ts
+    // only calls it a "market" projection when seasonPoints != null, so the
+    // card must not surface a market object the client would otherwise show.
+    const card = assemblePlayerCard({
+      player: basePlayer, week: 1, scoringFormat: 'ppr', weeklyStats: [],
+      marketRow: { seasonPoints: null, rosPoints: 210.2, marketRank: 12, confidence: 'season_props' },
+    });
+    expect(card.market).toBeNull();
+  });
+
   it('caps news to 3 items and computes ageHours from the injectable `now`', () => {
     const now = new Date('2026-09-15T00:00:00Z').getTime();
     const newsRows = [

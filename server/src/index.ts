@@ -351,7 +351,11 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // Refresh the deterministic Market (sportsbook-implied) season
     // projection + VORP ranking layer now that this week's props/projections
     // are current. Cheap: mostly re-derives from data already synced above.
-    await callSync('/api/admin/sync-market-projections', { asOfWeek: currentWeek, season: currentSeason });
+    // Let the endpoint default asOfWeek to the last COMPLETED week
+    // (max(0, currentWeek - 1)) instead of passing the in-progress week —
+    // matching the "week <= asOfWeek is already played" semantics it uses
+    // for computeRemainingGames.
+    await callSync('/api/admin/sync-market-projections', { season: currentSeason });
 
     // Sync current odds during NFL season
     if (currentWeek <= 18) {

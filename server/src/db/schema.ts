@@ -863,11 +863,14 @@ export const draftRankings = sqliteTable('draft_rankings', {
   projectedPoints: real('projected_points'), // full-season projected total (null for rookies without data)
   adp: real('adp'), // average draft position from Sleeper
   adpDelta: real('adp_delta'), // rank - ADP (negative = value, positive = reach)
-  // Deterministic Market (sportsbook-implied) VORP rank at generation time —
+  // Deterministic Market (sportsbook-implied) VORP rank as of write time —
   // persisted for auditability alongside the AI's overallRank. GET
   // /api/draft-rankings joins a *live* marketRank from player_market_projections
   // for display (so it reflects the latest sync even between regenerations);
-  // this column is what the prompt/AI actually saw when it produced the rank.
+  // this column is rebuilt when the batch result is written (same as the adp
+  // column above), NOT what the prompt/AI actually saw hours earlier when
+  // the batch was submitted — see the writeVariantRankings comment in
+  // services/draftRankings.ts.
   marketRank: integer('market_rank'),
   rationale: text('rationale').notNull(), // AI-generated 1-2 sentence blurb
   analysis: text('analysis'), // AI-generated detailed player analysis (strengths, risks, outlook)

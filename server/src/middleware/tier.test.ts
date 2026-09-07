@@ -18,38 +18,52 @@ describe('isLocalDevRequest', () => {
 });
 
 describe('resolveTierOverride', () => {
-  it('applies only when the var is set, not production, and the host is local', () => {
-    expect(resolveTierOverride(dev, 'localhost:8787')).toBe('pro');
-    expect(resolveTierOverride({ ...dev, DEV_TIER_OVERRIDE: 'elite' }, '127.0.0.1')).toBe('elite');
+  it('applies only when the var is set, not production, and both the host and URL hostname are local', () => {
+    expect(resolveTierOverride(dev, 'localhost:8787', 'localhost')).toBe('pro');
+    expect(resolveTierOverride({ ...dev, DEV_TIER_OVERRIDE: 'elite' }, '127.0.0.1', '127.0.0.1')).toBe('elite');
   });
 
   it('never applies in production, even on a local host', () => {
-    expect(resolveTierOverride({ ENVIRONMENT: 'production', DEV_TIER_OVERRIDE: 'pro' }, 'localhost')).toBeNull();
+    expect(resolveTierOverride({ ENVIRONMENT: 'production', DEV_TIER_OVERRIDE: 'pro' }, 'localhost', 'localhost')).toBeNull();
   });
 
   it('never applies to a non-local host, even in development', () => {
-    expect(resolveTierOverride(dev, 'filmroom-api.earle2001.workers.dev')).toBeNull();
+    expect(resolveTierOverride(dev, 'filmroom-api.earle2001.workers.dev', 'filmroom-api.earle2001.workers.dev')).toBeNull();
   });
 
   it('ignores unset or invalid values', () => {
-    expect(resolveTierOverride({ ENVIRONMENT: 'development' }, 'localhost')).toBeNull();
-    expect(resolveTierOverride({ ENVIRONMENT: 'development', DEV_TIER_OVERRIDE: 'admin' }, 'localhost')).toBeNull();
-    expect(resolveTierOverride({ ENVIRONMENT: 'development', DEV_TIER_OVERRIDE: 'free' }, 'localhost')).toBeNull();
+    expect(resolveTierOverride({ ENVIRONMENT: 'development' }, 'localhost', 'localhost')).toBeNull();
+    expect(resolveTierOverride({ ENVIRONMENT: 'development', DEV_TIER_OVERRIDE: 'admin' }, 'localhost', 'localhost')).toBeNull();
+    expect(resolveTierOverride({ ENVIRONMENT: 'development', DEV_TIER_OVERRIDE: 'free' }, 'localhost', 'localhost')).toBeNull();
+  });
+
+  it('never applies when the Host header is local but the request URL hostname is not (spoofed Host)', () => {
+    expect(resolveTierOverride(dev, 'localhost', 'filmroom-api.earle2001.workers.dev')).toBeNull();
+  });
+
+  it('never applies when the request URL hostname is local but the Host header is not', () => {
+    expect(resolveTierOverride(dev, 'filmroom-api.earle2001.workers.dev', 'localhost')).toBeNull();
   });
 });
 
 describe('resolveEffectiveTier', () => {
   it('raises a free user to the override tier locally and flags it', () => {
-    expect(resolveEffectiveTier({ subscriptionTier: 'free' }, dev, 'localhost:8787')).toEqual({ tier: 'pro', overridden: true });
+    expect(resolveEffectiveTier({ subscriptionTier: 'free' }, dev, 'localhost:8787', 'localhost')).toEqual({ tier: 'pro', overridden: true });
   });
 
   it('never lowers a real tier', () => {
-    expect(resolveEffectiveTier({ subscriptionTier: 'elite' }, dev, 'localhost')).toEqual({ tier: 'elite', overridden: false });
+    expect(resolveEffectiveTier({ subscriptionTier: 'elite' }, dev, 'localhost', 'localhost')).toEqual({ tier: 'elite', overridden: false });
   });
 
   it('returns the real tier when the override does not apply', () => {
     expect(
-      resolveEffectiveTier({ subscriptionTier: null }, { ENVIRONMENT: 'production', DEV_TIER_OVERRIDE: 'pro' }, 'localhost'),
+      resolveEffectiveTier({ subscriptionTier: null }, { ENVIRONMENT: 'production', DEV_TIER_OVERRIDE: 'pro' }, 'localhost', 'localhost'),
+    ).toEqual({ tier: 'free', overridden: false });
+  });
+
+  it('never applies the override when the Host header and URL hostname disagree', () => {
+    expect(
+      resolveEffectiveTier({ subscriptionTier: 'free' }, dev, 'localhost', 'filmroom-api.earle2001.workers.dev'),
     ).toEqual({ tier: 'free', overridden: false });
   });
 });
