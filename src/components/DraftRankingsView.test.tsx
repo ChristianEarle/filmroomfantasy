@@ -617,4 +617,26 @@ describe('DraftRankingsView — Market source toggle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Market' }));
     expect(await screen.findByText(/Market rankings generate after the projections sync\./i)).toBeInTheDocument();
   });
+
+  it('caches the Market board per scoring/season: toggling Market -> AI -> Market issues exactly one market request', async () => {
+    renderView();
+    await loaded();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Market Bell Cow');
+
+    const marketCallCount = () =>
+      hoisted.mockGet.mock.calls.filter(c => (c[0] as string).includes('/market-rankings')).length;
+    expect(marketCallCount()).toBe(1);
+
+    // Flip back to FilmRoom AI, then back to Market — nothing about the query
+    // (scoring/season) changed, so the cached board should be reused as-is.
+    fireEvent.click(screen.getByRole('button', { name: 'FilmRoom AI' }));
+    await screen.findByRole('button', { name: 'Redraft' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    expect(await screen.findByText('Market Bell Cow')).toBeInTheDocument();
+
+    expect(marketCallCount()).toBe(1);
+  });
 });
