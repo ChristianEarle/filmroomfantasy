@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { useLeaguesContext } from './LeaguesContext';
-import api from '../services/api';
+import api, { ApiError } from '../services/api';
 
 // Types
 export interface LeagueTeam {
@@ -168,6 +168,15 @@ interface LeagueContextType {
   matchup: Matchup | null;
   matchupLoading: boolean;
 
+  // Week picker on the Matchup page: null means "the league's current week".
+  // matchupCurrentWeek/matchupAvailableWeeks come from the API response (see
+  // GET /matchups/my/current) and describe the *team's* synced weeks, not
+  // just the league's nominal current week.
+  selectedMatchupWeek: number | null;
+  setSelectedMatchupWeek: (week: number | null) => void;
+  matchupCurrentWeek: number;
+  matchupAvailableWeeks: number[];
+
   // League standings
   standings: Standing[];
   standingsLoading: boolean;
@@ -225,6 +234,9 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   const [rosterLoading, setRosterLoading] = useState(false);
   const [matchup, setMatchup] = useState<Matchup | null>(null);
   const [matchupLoading, setMatchupLoading] = useState(false);
+  const [selectedMatchupWeek, setSelectedMatchupWeek] = useState<number | null>(null);
+  const [matchupCurrentWeek, setMatchupCurrentWeek] = useState(1);
+  const [matchupAvailableWeeks, setMatchupAvailableWeeks] = useState<number[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
   const [standingsLoading, setStandingsLoading] = useState(false);
   const [allMatchups, setAllMatchups] = useState<LeagueMatchup[]>([]);
@@ -397,13 +409,19 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
 
     setMatchupLoading(true);
     try {
+      const weekQuery = selectedMatchupWeek != null ? `&week=${selectedMatchupWeek}` : '';
       const response = await api.get<{
         matchupId?: string;
         week?: number;
         myTeam?: { id: string; name: string; score: number };
         opponent?: { id: string; name: string; owner: string; score: number };
         isComplete?: boolean;
-      }>(`/matchups/my/current?leagueId=${selectedLeagueId}`);
+        currentWeek?: number;
+        availableWeeks?: number[];
+      }>(`/matchups/my/current?leagueId=${selectedLeagueId}${weekQuery}`);
+
+      if (response.currentWeek != null) setMatchupCurrentWeek(response.currentWeek);
+      if (response.availableWeeks) setMatchupAvailableWeeks(response.availableWeeks);
 
       // Transform API response to Matchup interface
       if (response.matchupId) {
@@ -488,12 +506,19 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
         setMatchup(null);
       }
     } catch (err) {
-      // No matchup exists for current week (404 is expected, not an error)
+      // No matchup for the requested week (404 is expected, not an error) —
+      // the API still returns currentWeek/availableWeeks on 404 so the week
+      // picker/empty state can render correctly.
+      if (err instanceof ApiError && err.data && typeof err.data === 'object') {
+        const data = err.data as { currentWeek?: number; availableWeeks?: number[] };
+        if (data.currentWeek != null) setMatchupCurrentWeek(data.currentWeek);
+        if (data.availableWeeks) setMatchupAvailableWeeks(data.availableWeeks);
+      }
       setMatchup(null);
     } finally {
       setMatchupLoading(false);
     }
-  }, [selectedLeagueId, userTeam, isAuthenticated]);
+  }, [selectedLeagueId, userTeam, isAuthenticated, selectedMatchupWeek]);
 
   // Fetch league standings
   const refreshStandings = useCallback(async () => {
@@ -592,13 +617,19 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
     }
   }, [viewedTeamId, isAuthenticated, refreshRoster]);
 
-  // Fetch matchup and standings when userTeam is set
+  // Fetch matchup and standings when userTeam is set, or when the week
+  // picker on the Matchup page changes the selected week.
   useEffect(() => {
     if (userTeam && isAuthenticated) {
       refreshMatchup();
       refreshStandings();
     }
-  }, [userTeam, isAuthenticated, refreshMatchup, refreshStandings]);
+  }, [userTeam, isAuthenticated, selectedMatchupWeek, refreshMatchup, refreshStandings]);
+
+  // Reset the week picker back to "current week" when switching leagues.
+  useEffect(() => {
+    setSelectedMatchupWeek(null);
+  }, [selectedLeagueId]);
 
   return (
     <LeagueContext.Provider
@@ -615,6 +646,10 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
         rosterLoading,
         matchup,
         matchupLoading,
+        selectedMatchupWeek,
+        setSelectedMatchupWeek,
+        matchupCurrentWeek,
+        matchupAvailableWeeks,
         standings,
         standingsLoading,
         allMatchups,

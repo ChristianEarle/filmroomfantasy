@@ -547,3 +547,49 @@ export async function syncDraftPicks(
 
   return stats;
 }
+
+// ----------------------------------------------------------------
+// In-memory cache for the Sleeper players blob (~5MB JSON).
+// Persists across requests within a single Worker isolate. TTL 6h
+// because the players list changes slowly (depth-chart updates,
+// injuries, trades). Cuts sync wall-time by 1-3s on cache hits.
+// For cross-isolate caching, move to KV / R2 — needs a binding the
+// user provisions in Cloudflare, so left as an in-isolate cache.
+// Shared by the user-triggered league sync route and the admin
+// batch sync service (server/src/services/leagueSync.ts).
+// ----------------------------------------------------------------
+type SleeperPlayersBlob = Record<string, any>;
+interface PlayerCacheEntry { data: SleeperPlayersBlob; fetchedAt: number; }
+const PLAYER_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function getCachedSleeperPlayers(): SleeperPlayersBlob | null {
+  const entry = (globalThis as any).__sleeperPlayerCache as PlayerCacheEntry | undefined;
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > PLAYER_CACHE_TTL_MS) return null;
+  return entry.data;
+}
+
+function setCachedSleeperPlayers(data: SleeperPlayersBlob) {
+  (globalThis as any).__sleeperPlayerCache = { data, fetchedAt: Date.now() } satisfies PlayerCacheEntry;
+}
+
+// Fetch the Sleeper players blob with caching. Returns {} on failure
+// so callers can continue with degraded player matching.
+export async function fetchSleeperPlayersCached(): Promise<SleeperPlayersBlob> {
+  const cached = getCachedSleeperPlayers();
+  if (cached) return cached;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const res = await fetch('https://api.sleeper.app/v1/players/nfl', { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json() as SleeperPlayersBlob;
+      setCachedSleeperPlayers(data);
+      return data;
+    }
+  } catch (e) {
+    console.error('Failed to fetch Sleeper players blob:', e);
+  }
+  return {};
+}
