@@ -129,12 +129,41 @@ curl -X POST https://your-api.workers.dev/api/admin/sync-projections \
 # Sync news
 curl -X POST https://your-api.workers.dev/api/admin/sync-news \
   -H "X-Admin-Key: YOUR_SYNC_SECRET"
+
+# Sync deterministic Market (VORP) projections — runs on the projections cron,
+# but can be triggered manually too
+curl -X POST https://your-api.workers.dev/api/admin/sync-market-projections \
+  -H "X-Admin-Key: YOUR_SYNC_SECRET"
+
+# Import season-long sportsbook prop lines (season totals) — no automated
+# source exists, so this is a manual paste of CSV/JSON exported from a
+# sportsbook (also available as an "Import Season Props" card in AdminView)
+curl -X POST https://your-api.workers.dev/api/admin/sync-season-props \
+  -H "X-Admin-Key: YOUR_SYNC_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"season": 2026, "input": "playerName,team,position,market,line,overOdds,underOdds,book,sourceUrl,capturedAt\n..."}'
+
+# Check season-prop import coverage (counts by position/book, top 10 by PPR total)
+curl https://your-api.workers.dev/api/admin/season-props/summary?season=2026 \
+  -H "X-Admin-Key: YOUR_SYNC_SECRET"
 ```
 
 After initial sync, Cloudflare Cron Triggers handle automated updates:
 - Daily 6 AM UTC: players, news, games
-- Every 4 hours: stats, projections
+- Every 4 hours: stats, projections, market projections (runs right after
+  the projections sync)
 - Every 6 hours: RSS news
+
+The AI draft-rankings prompts (redraft/dynasty) depend on
+FantasyFootballCalculator's public ADP endpoint (`api.fantasyfootballcalculator.com`)
+as a fallback/secondary signal (Market VORP rank is now the primary anchor
+once a market sync has run) — no API key required, but there's no fallback
+if FFC goes down or changes shape; an ADP-coverage canary fails loudly (a
+`failed` `ranking_batch_jobs` row) rather than proceeding on sparse data.
+Season-long prop lines have no automated source at all — re-run
+`sync-season-props` with a fresh export before each new season (ideally
+before Week 1, before books pull the lines) since coverage decays as the
+season progresses and books stop offering season totals.
 
 ## CI/CD (GitHub Actions)
 
