@@ -551,6 +551,32 @@ export const playerProps = sqliteTable('player_props', {
   playerPropsExternalIdIdx: index('idx_player_props_external_id').on(table.playerExternalId),
 }));
 
+// Season-long sportsbook player prop lines (season O/U totals), imported
+// manually via /api/admin/sync-season-props — there's no API source for
+// these the way there is for weekly game props.
+export const playerSeasonProps = sqliteTable('player_season_props', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').references(() => nflPlayers.id, { onDelete: 'set null' }),
+  playerName: text('player_name').notNull(),
+  team: text('team'),
+  position: text('position'),
+  season: integer('season').notNull(),
+  stat: text('stat').notNull(), // pass_yds|pass_tds|rush_yds|rush_tds|rec_yds|receptions|rec_tds|interceptions
+  line: real('line').notNull(),
+  overPrice: integer('over_price'),
+  underPrice: integer('under_price'),
+  book: text('book').notNull(),
+  sourceUrl: text('source_url'),
+  capturedAt: text('captured_at').notNull(), // YYYY-MM-DD
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  seasonPropsUnique: uniqueIndex('idx_season_props_unique').on(table.season, table.playerName, table.stat, table.book, table.capturedAt),
+  seasonPropsPlayerIdx: index('idx_season_props_player').on(table.season, table.playerId),
+}));
+
+export type PlayerSeasonProp = typeof playerSeasonProps.$inferSelect;
+export type NewPlayerSeasonProp = typeof playerSeasonProps.$inferInsert;
+
 // ============================================
 // ARTICLES / BLOG
 // ============================================
