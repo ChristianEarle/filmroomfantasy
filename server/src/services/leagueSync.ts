@@ -4,16 +4,17 @@
  * (POST /api/admin/sync-leagues, server/src/routes/admin.ts). Extracted so
  * both call exactly the same logic instead of drifting apart.
  *
- * Ownership rule (the bug this refactor fixes): historically every new
- * "opponent" team row was defaulted to `ownerId: <whichever app user ran
- * the sync>` "for app access". That meant the first app user to sync a
- * league ended up owning every team in it, and `findCurrentMatchupForTeam` /
- * `resolveUserTeamId` (which resolve "my matchup" via `teams.ownerId`)
- * could resolve to the wrong team. The fix: `ownerId` is only ever set to a
- * *known* app member's id (resolved via `league_members.externalUsername`
- * matched against the Sleeper roster's `owner_id`); everything else is left
- * `null` unless it's already owned by a different known app member, in
- * which case it's left untouched so we never clobber someone else's team.
+ * Ownership rule: `teams.ownerId` is NOT NULL (a team always has some app
+ * user "owning" it for access purposes), so `decideTeamOwnerId` below never
+ * returns null. It corrects a real bug — historically every new "opponent"
+ * team row was defaulted to `ownerId: <whichever app user ran the sync>`,
+ * so the first app user to sync a shared league ended up "owning" every
+ * team in it, and `findCurrentMatchupForTeam` / `resolveUserTeamId` (which
+ * resolve "my matchup" via `teams.ownerId`) could resolve to the wrong
+ * team — by preferring a *known* app member's id (resolved via
+ * `league_members.externalUsername` matched against the Sleeper roster's
+ * `owner_id`) whenever one is available, and otherwise falling back to
+ * today's placeholder-ownership status quo instead of clobbering it.
  */
 
 import { eq, and, inArray } from 'drizzle-orm';
@@ -66,28 +67,104 @@ export interface SyncSleeperLeagueOptions {
 
 /**
  * Pure ownership decision for one Sleeper roster during sync. Exported so it
- * can be unit tested without a database or network.
+ * can be unit tested without a database or network. Never returns null —
+ * `teams.ownerId` is NOT NULL — applying these rules in order:
  *
- * - A roster whose Sleeper `owner_id` resolves to a known app member (via
- *   `sleeperIdToAppUserId`) is owned by that member — always, on both
- *   insert and update, which is what corrects historically wrong rows.
- * - A roster with no known app member is never defaulted to whoever is
- *   running the sync. It's cleared to `null` unless it's already owned by a
- *   *different* known app member (`currentOwnerId` set and not equal to
- *   `actingUserId`), in which case it's left alone.
+ *   (a) The roster is the acting user's own Sleeper roster (matched via
+ *       `actingUserSleeperId`) — always theirs, even before their own
+ *       `league_members` row resolves into `sleeperIdToAppUserId`.
+ *   (b) The roster's Sleeper `owner_id` resolves to a *different* known app
+ *       member (via `sleeperIdToAppUserId`) — always theirs, on both insert
+ *       and update, which is what corrects historically wrong rows.
+ *   (c) The team row already belongs to a different app user — left alone
+ *       so we never clobber someone else's team.
+ *   (d) Otherwise: keep the existing owner if the row already has one, or
+ *       fall back to whoever is running the sync — the pre-existing
+ *       "placeholder ownership" status quo for an unmatched opponent roster
+ *       with no other information available.
  */
 export function decideTeamOwnerId(params: {
   sleeperOwnerId: string;
   sleeperIdToAppUserId: Map<string, string>;
   currentOwnerId: string | null;
   actingUserId?: string | null;
-}): string | null {
-  const matched = params.sleeperIdToAppUserId.get(params.sleeperOwnerId);
-  if (matched) return matched;
-  if (params.currentOwnerId && params.currentOwnerId !== params.actingUserId) {
-    return params.currentOwnerId;
+  actingUserSleeperId?: string | null;
+}): string {
+  const { sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId, actingUserId, actingUserSleeperId } = params;
+
+  if (actingUserId && actingUserSleeperId && sleeperOwnerId === actingUserSleeperId) {
+    return actingUserId;
   }
-  return null;
+
+  const matched = sleeperIdToAppUserId.get(sleeperOwnerId);
+  if (matched) return matched;
+
+  if (currentOwnerId && currentOwnerId !== actingUserId) {
+    return currentOwnerId;
+  }
+
+  // Every real call site reaches this point with at least one of the two
+  // set: the user-triggered sync always has an actingUserId, and the
+  // admin/cron sync (no actingUserId) only hits the "brand new row" case
+  // for rosters that resolve via rule (b) above.
+  return (currentOwnerId ?? actingUserId) as string;
+}
+
+/**
+ * Resolve a single league member's Sleeper user id from their stored
+ * `league_members.externalUsername`, which may already be a Sleeper
+ * `user_id` (numeric string) or a username/display_name typed in when they
+ * joined. Shared by `resolveUserTeamId` (server/src/routes/rosters.ts) and
+ * the `/api/matchups/my/current` resolution so both match a team's
+ * `externalOwnerId` against the *actual* Sleeper id, not just whatever
+ * string happens to be stored.
+ *
+ * Unlike the bulk `sleeperIdToAppUserId` map built during a full sync
+ * (which matches against a live roster of every league member in one
+ * `/v1/league/:id/users` call), this resolves one user on demand via
+ * Sleeper's `/v1/user/<username>` lookup — so callers should pass a `cache`
+ * to memoize repeat lookups within the same request (e.g. resolving every
+ * team's owner in a matchup list).
+ */
+export async function resolveMemberSleeperId(
+  db: DB,
+  leagueId: string,
+  userId: string,
+  cache?: Map<string, string | null>
+): Promise<string | null> {
+  const cacheKey = `${leagueId}:${userId}`;
+  if (cache?.has(cacheKey)) return cache.get(cacheKey)!;
+
+  const member = await db.query.leagueMembers.findFirst({
+    where: and(eq(schema.leagueMembers.leagueId, leagueId), eq(schema.leagueMembers.userId, userId)),
+  });
+  const stored = member?.externalUsername;
+
+  let resolved: string | null = null;
+  if (stored) {
+    if (/^\d+$/.test(stored)) {
+      // Already a Sleeper user_id.
+      resolved = stored;
+    } else {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(`https://api.sleeper.app/v1/user/${encodeURIComponent(stored)}`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = (await res.json()) as { user_id?: string } | null;
+          resolved = data?.user_id ?? null;
+        }
+      } catch (e) {
+        console.error(`Failed to resolve Sleeper username "${stored}" for user ${userId}:`, e);
+      }
+    }
+  }
+
+  cache?.set(cacheKey, resolved);
+  return resolved;
 }
 
 // Sleeper uses "Invalid"/"0" for empty IR/starter slots - skip these
@@ -280,7 +357,7 @@ export async function syncSleeperLeague(
       userRosterAssigned = true;
       await db.update(schema.teams)
         .set({
-          ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: team.ownerId, actingUserId }),
+          ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: team.ownerId, actingUserId, actingUserSleeperId: userSleeperUserId }),
           externalOwnerId: sleeperOwnerId,
           ownerDisplayName,
           name: teamName,
@@ -312,7 +389,7 @@ export async function syncSleeperLeague(
         team = existingTeam;
         await db.update(schema.teams)
           .set({
-            ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: existingTeam.ownerId, actingUserId }),
+            ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: existingTeam.ownerId, actingUserId, actingUserSleeperId: userSleeperUserId }),
             externalOwnerId: sleeperOwnerId,
             ownerDisplayName,
             name: teamName,
@@ -326,15 +403,15 @@ export async function syncSleeperLeague(
           })
           .where(eq(schema.teams.id, team.id));
       } else {
-        // Create new team for this roster. ownerId is only set when the
-        // roster resolves to a known app member — an unmatched opponent
-        // roster gets ownerId: null rather than defaulting to whoever is
-        // running the sync (see decideTeamOwnerId doc comment above).
+        // Create new team for this roster. ownerId prefers a known app
+        // member match — an unmatched opponent roster falls back to
+        // whoever is running the sync, since teams.ownerId is NOT NULL
+        // (see decideTeamOwnerId doc comment above).
         const teamId = generateId();
         await db.insert(schema.teams).values({
           id: teamId,
           leagueId: league.id,
-          ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: null, actingUserId }),
+          ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: null, actingUserId, actingUserSleeperId: userSleeperUserId }),
           externalOwnerId: sleeperOwnerId,
           ownerDisplayName,
           name: teamName,

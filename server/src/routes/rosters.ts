@@ -3,6 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
+import { resolveMemberSleeperId } from '../services/leagueSync';
 import type { Env, Variables } from '../index';
 
 const rostersRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -171,11 +172,18 @@ export async function buildTeamRoster(
  * synced first), falling back to direct `ownerId` ownership for custom,
  * non-synced leagues. Shared by the /mine route and the Ask AI v2
  * `get_matchup` / `get_my_lineup` tools (services/askTools.ts).
+ *
+ * `externalOwnerId` on a team is always the Sleeper `user_id`, but
+ * `externalUsername` on the member's row may have been stored as a
+ * username/display_name instead (typed in when they joined) rather than
+ * the numeric id — so this matches against both the raw stored value AND
+ * the actual Sleeper id it resolves to (via `resolveMemberSleeperId`).
  */
 export async function resolveUserTeamId(
   db: ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>,
   leagueId: string,
   userId: string,
+  sleeperIdCache?: Map<string, string | null>,
 ): Promise<string | null> {
   const allTeams = await db.query.teams.findMany({
     where: eq(schema.teams.leagueId, leagueId),
@@ -190,6 +198,12 @@ export async function resolveUserTeamId(
   });
   if (membership?.externalUsername) {
     team = allTeams.find((t) => t.externalOwnerId === membership.externalUsername);
+  }
+  if (!team) {
+    const sleeperId = await resolveMemberSleeperId(db, leagueId, userId, sleeperIdCache);
+    if (sleeperId) {
+      team = allTeams.find((t) => t.externalOwnerId === sleeperId);
+    }
   }
   if (!team) {
     team = allTeams.find((t) => t.ownerId === userId);

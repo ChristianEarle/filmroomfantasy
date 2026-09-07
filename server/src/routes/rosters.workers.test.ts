@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
@@ -16,6 +16,11 @@ import { resolveUserTeamId } from './rosters';
  * back to direct ownerId only for leagues with no external sync.
  */
 describe('resolveUserTeamId (workers pool)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+
   it('resolves via externalOwnerId even when ownerId is stamped with a different app user', async () => {
     const db = drizzle(env.DB, { schema });
 
@@ -109,15 +114,15 @@ describe('resolveUserTeamId (workers pool)', () => {
     expect(resolved).toBe(teamId);
   });
 
-  it('returns null (never someone else\'s team) when a roster has no known owner', async () => {
+  it('returns null (never someone else\'s team) when no roster matches this user', async () => {
     const db = drizzle(env.DB, { schema });
 
     const userD = generateId();
-    await db.insert(schema.users).values({
-      id: userD,
-      email: `${userD}@test.local`,
-      username: `user-${userD}`,
-    });
+    const placeholderOwner = generateId();
+    await db.insert(schema.users).values([
+      { id: userD, email: `${userD}@test.local`, username: `user-${userD}` },
+      { id: placeholderOwner, email: `${placeholderOwner}@test.local`, username: `user-${placeholderOwner}` },
+    ]);
 
     const leagueId = generateId();
     await db.insert(schema.leagues).values({
@@ -134,18 +139,70 @@ describe('resolveUserTeamId (workers pool)', () => {
       externalUsername: 'sleeper-user-d',
     });
 
-    // An opponent roster with no matching app member — ownerId is null,
-    // exactly what a corrected sync now produces (see leagueSync.ts
-    // decideTeamOwnerId) instead of defaulting to whoever ran the sync.
+    // An opponent roster with no matching app member — ownerId is stamped
+    // with whoever ran the sync (placeholder ownership; teams.ownerId is
+    // NOT NULL — see leagueSync.ts decideTeamOwnerId), not userD, and its
+    // externalOwnerId doesn't match userD's Sleeper identity either.
     await db.insert(schema.teams).values({
       id: generateId(),
       leagueId,
-      ownerId: null,
+      ownerId: placeholderOwner,
       externalOwnerId: 'sleeper-user-unmatched',
       name: 'Nobody\'s Team',
     });
 
     const resolved = await resolveUserTeamId(db, leagueId, userD);
     expect(resolved).toBeNull();
+  });
+
+  it('resolves via a username-based externalUsername by looking up the Sleeper user id', async () => {
+    const db = drizzle(env.DB, { schema });
+
+    const userE = generateId();
+    await db.insert(schema.users).values({
+      id: userE,
+      email: `${userE}@test.local`,
+      username: `user-${userE}`,
+    });
+
+    const leagueId = generateId();
+    await db.insert(schema.leagues).values({
+      id: leagueId,
+      name: 'Username Member League',
+      platform: 'sleeper',
+      externalId: 'sleeper-league-3',
+      seasonYear: 2099,
+    });
+    // externalUsername stored as a raw Sleeper *username* (typed in when
+    // they joined) rather than the numeric user_id teams.externalOwnerId
+    // actually stores.
+    await db.insert(schema.leagueMembers).values({
+      id: generateId(),
+      userId: userE,
+      leagueId,
+      externalUsername: 'gridiron_gary',
+    });
+
+    const teamId = generateId();
+    await db.insert(schema.teams).values({
+      id: teamId,
+      leagueId,
+      ownerId: userE,
+      externalOwnerId: '999888777', // numeric Sleeper user_id
+      name: "E's Team",
+    });
+
+    const mockFetch = vi.fn(async (url: string | URL) => {
+      expect(String(url)).toBe('https://api.sleeper.app/v1/user/gridiron_gary');
+      return new Response(JSON.stringify({ user_id: '999888777', username: 'gridiron_gary' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const resolved = await resolveUserTeamId(db, leagueId, userE);
+    expect(resolved).toBe(teamId);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });
