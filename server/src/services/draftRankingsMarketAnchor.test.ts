@@ -88,6 +88,24 @@ describe('buildRedraftPrompt — superflex variant still carries the 1-QB market
     expect(prompt).toMatch(/MARKET RANK.*primary anchor/s);
     // Superflex branch swaps out the 1-QB positional scarcity backstop text.
     expect(prompt).toContain('SUPERFLEX OVERRIDE');
+    // Market rank is a 1-QB number: the ±10 anchor must be waived for QBs in superflex.
+    expect(prompt).toContain('Market rank reflects 1-QB value');
+    expect(prompt).toMatch(/do NOT apply the ±10 rule against Market rank/);
+  });
+
+  it('omits the superflex caveat for 1-QB variants and when no market data exists', () => {
+    const withMarket = buildRedraftPrompt(
+      [makePlayer({ name: 'One QB', position: 'QB', adp: 8, marketRank: 5, marketProjection: 340 })],
+      'ppr',
+      false,
+    );
+    expect(withMarket).not.toContain('Market rank reflects 1-QB value');
+    const noMarketSuperflex = buildRedraftPrompt(
+      [makePlayer({ name: 'SF QB', position: 'QB', adp: 8 })],
+      'ppr',
+      true,
+    );
+    expect(noMarketSuperflex).not.toContain('Market rank reflects 1-QB value');
   });
 });
 

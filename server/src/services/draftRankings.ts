@@ -590,8 +590,14 @@ export function buildRedraftPrompt(
     })
     .join('\n');
 
+  // Market ranks are computed for 1-QB lineups only. In superflex the ±10 rule
+  // must not suppress the QB inflation the SUPERFLEX OVERRIDE asks for.
+  const superflexMarketCaveat = superflex && hasMarketData
+    ? ` NOTE: Market rank reflects 1-QB value. For QBs in this SUPERFLEX league, do NOT apply the ±10 rule against Market rank — rank QBs per the SUPERFLEX OVERRIDE below and justify the uplift briefly in the rationale; the ±10 rule still applies to non-QBs.`
+    : '';
+
   const taskIntro = hasMarketData
-    ? `TASK: Rank these players for a full-season redraft draft. The MARKET RANK (labeled "Market" below) is your primary anchor — a deterministic ranking computed from sportsbook prop lines and replacement-level (VORP) math, so it already reflects the market's forward-looking view on production. ADP is secondary context, useful mainly for players with no Market rank. Stay within ±10 spots of a player's Market rank (or ADP when Market is unavailable for that player) unless you have a SPECIFIC, CONCRETE reason the market hasn't priced in yet (recent injury, post-market-close trade, confirmed role change, coaching hire that shifts scheme). "Scored a lot last year" is NOT a reason — Market and ADP already reflect last year's performance.`
+    ? `TASK: Rank these players for a full-season redraft draft. The MARKET RANK (labeled "Market" below) is your primary anchor — a deterministic ranking computed from sportsbook prop lines and replacement-level (VORP) math, so it already reflects the market's forward-looking view on production. ADP is secondary context, useful mainly for players with no Market rank. Stay within ±10 spots of a player's Market rank (or ADP when Market is unavailable for that player) unless you have a SPECIFIC, CONCRETE reason the market hasn't priced in yet (recent injury, post-market-close trade, confirmed role change, coaching hire that shifts scheme). "Scored a lot last year" is NOT a reason — Market and ADP already reflect last year's performance.${superflexMarketCaveat}`
     : `TASK: Rank these players for a full-season redraft draft. ADP is your primary anchor — stay within ±10 spots of ADP for any player unless you have a SPECIFIC, CONCRETE reason ADP hasn't priced in yet (recent injury, post-ADP trade, confirmed role change, coaching hire that shifts scheme). "Scored a lot last year" is NOT a reason — ADP already reflects last year's performance.`;
 
   const deviationBullet = hasMarketData
