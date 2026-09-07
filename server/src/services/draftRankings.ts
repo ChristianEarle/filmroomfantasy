@@ -22,6 +22,7 @@ import { eq, and, desc, inArray, gte, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
+import { inferPlayerTenure } from './playerTenure';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -34,11 +35,16 @@ const MAX_TOKENS = 64000;
 const ANTHROPIC_BATCH_URL = 'https://api.anthropic.com/v1/messages/batches';
 
 // ── ADP sources ─────────────────────────────────────────────────────
-// Redraft ADP comes from FantasyPros — their public page defaults to 1-QB
-// PPR/Half/Standard, which is what most fantasy users actually play. MFL's
-// JSON endpoint is free and JSON but their pool is dominated by superflex
-// drafts (Josh Allen @ ADP 2.21 instead of ~20), which pollutes 1-QB
-// rankings badly.
+// Redraft 1-QB ADP comes from FantasyFootballCalculator's public JSON API
+// — free, no key, no scraping. MFL's JSON endpoint is free and JSON too,
+// but their pool is dominated by superflex drafts (Josh Allen @ ADP 2.21
+// instead of ~20), which pollutes 1-QB rankings badly, so MFL stays
+// reserved for the superflex redraft variant where that skew IS the
+// anchor we want.
+//
+// (FantasyPros used to be the 1-QB source, but their public ADP page is
+// now client-rendered and login-walled to 5 rows — scraping it silently
+// returned an empty map, so every stored redraft row had ADP = null.)
 //
 // Dynasty rookie ADP comes from FantasyCalc (primary) — they publish
 // dynasty values that include rookies with age/prospect-adjusted ranks;
@@ -46,13 +52,20 @@ const ANTHROPIC_BATCH_URL = 'https://api.anthropic.com/v1/messages/batches';
 // pecking order. MFL IS_KEEPER=R is kept as a fallback for rookies that
 // FantasyCalc doesn't cover yet (e.g. late-breaking rookies).
 
+/** Below this many entries, an ADP feed is almost certainly broken (empty
+ * page, blocked request, API shape change) rather than genuinely sparse —
+ * FFC and FantasyCalc both cover 250+ fantasy-relevant players in a normal
+ * response. Used as a canary so a broken feed is recorded instead of
+ * silently shipping all-null (or near-null) ADP. */
+export const ADP_CANARY_MIN_ENTRIES = 100;
+
 /**
  * Normalize a player name for cross-feed matching. Strips punctuation and
  * generational suffixes (Jr./III/etc.) that vary between sources, so
  * "A.J. Brown" matches "AJ Brown", and "Kenneth Walker III" matches
  * "Kenneth Walker".
  */
-function normalizePlayerName(name: string): string {
+export function normalizePlayerName(name: string): string {
   return name
     .toLowerCase()
     // Strip common punctuation (periods, apostrophes, hyphens, quotes).
@@ -63,69 +76,74 @@ function normalizePlayerName(name: string): string {
     .trim();
 }
 
+interface FfcAdpResponse {
+  meta?: unknown;
+  players?: Array<{
+    player_id?: number;
+    name?: string;
+    position?: string;
+    team?: string;
+    adp?: number;
+    adp_formatted?: string;
+    times_drafted?: number;
+    high?: number;
+    low?: number;
+    stdev?: number;
+    bye?: number;
+  }>;
+}
+
 /**
- * Fetch FantasyPros 1-QB redraft ADP for the given scoring format. Returns
- * Map<normalizedName, adpRank>. We use table position (1, 2, 3, ...) as the
- * ADP value rather than parsing the avg-pick column — it's cleaner signal
- * for the model and robust to FantasyPros layout tweaks.
+ * Fetch FantasyFootballCalculator's public 1-QB redraft ADP for the given
+ * scoring format. Returns Map<normalizedName, adp> using FFC's own `adp`
+ * value (their consensus average draft position across ~12-team mocks and
+ * real drafts). No auth, no scraping — a straight JSON GET.
+ *
+ * Docs/endpoint: https://fantasyfootballcalculator.com/api/v1/adp/{format}
  */
-async function fetchFantasyProsADP(
+export async function fetchFfcAdp(
   scoringFormat: 'ppr' | 'half-ppr' | 'standard',
+  season: number,
 ): Promise<Map<string, number>> {
-  const url = scoringFormat === 'ppr'
-    ? 'https://www.fantasypros.com/nfl/adp/ppr-overall.php'
-    : scoringFormat === 'half-ppr'
-    ? 'https://www.fantasypros.com/nfl/adp/half-point-ppr-overall.php'
-    : 'https://www.fantasypros.com/nfl/adp/overall.php';
+  const url = `https://fantasyfootballcalculator.com/api/v1/adp/${scoringFormat}?teams=12&year=${season}`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
 
   try {
     const res = await fetch(url, {
       headers: {
-        // FantasyPros 403s on bare fetches — a normal UA string unblocks it.
         'User-Agent': 'Mozilla/5.0 (compatible; FilmRoomFantasy/1.0)',
       },
+      signal: controller.signal,
     });
     if (!res.ok) {
-      console.warn(`[draftRankings] FantasyPros ADP ${scoringFormat} HTTP ${res.status}`);
+      console.warn(`[draftRankings] FFC ADP ${scoringFormat} HTTP ${res.status}`);
       return new Map();
     }
 
-    const fullHtml = await res.text();
-    // FantasyPros's main ADP table has id="data". Scope extraction to just
-    // that <table>…</table> block so the regex doesn't scan sidebar widgets
-    // and inline scripts (which pushes the worker over the CPU limit and
-    // pollutes ranks with non-ADP players).
-    const tableStart = fullHtml.indexOf('<table') !== -1
-      ? fullHtml.indexOf('id="data"')
-      : -1;
-    let html: string;
-    if (tableStart > 0) {
-      const tableEnd = fullHtml.indexOf('</table>', tableStart);
-      html = tableEnd > 0 ? fullHtml.slice(tableStart, tableEnd) : fullHtml.slice(tableStart, tableStart + 200_000);
-    } else {
-      // Fallback: bound the scan to a prefix if the id= attribute moves.
-      html = fullHtml.slice(0, 200_000);
+    const data = (await res.json()) as FfcAdpResponse;
+    const players = data.players;
+    if (!Array.isArray(players)) {
+      console.warn('[draftRankings] FFC ADP returned no players array');
+      return new Map();
     }
 
-    // Match anchors in the ADP table: each player row has
-    //   <a class="player-name fp-player-link fp-id-XXXX" ... >Full Name</a>
-    // Document order within the main table corresponds to ADP rank.
-    const nameRegex = /<a class="player-name[^"]*"[^>]*>([^<]+)<\/a>/g;
     const result = new Map<string, number>();
-    let match: RegExpExecArray | null;
-    let rank = 0;
-    while ((match = nameRegex.exec(html)) !== null) {
-      const normalized = normalizePlayerName(match[1].trim());
+    for (const p of players) {
+      if (!p.name || typeof p.adp !== 'number' || !Number.isFinite(p.adp)) continue;
+      const normalized = normalizePlayerName(p.name);
       if (result.has(normalized)) continue;
-      rank += 1;
-      result.set(normalized, rank);
+      result.set(normalized, p.adp);
     }
 
-    console.log(`[draftRankings] FantasyPros ADP (${scoringFormat}): ${result.size} entries`);
+    console.log(`[draftRankings] FFC ADP (${scoringFormat}, ${season}): ${result.size} entries`);
     return result;
   } catch (err) {
-    console.error('[draftRankings] FantasyPros ADP fetch failed:', err);
+    console.error('[draftRankings] FFC ADP fetch failed:', err);
     return new Map();
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -330,6 +348,43 @@ interface PlayerContext {
   adp: number | null;
 }
 
+/**
+ * Decide whether a player belongs in the rookie draft pool.
+ *
+ * Sleeper's `years_exp` is the naive signal ("=== 0" means rookie"), but a
+ * `sync-players` run can transiently write `null` instead of `0` for
+ * brand-new players — under a strict `=== 0` filter that zeroes the entire
+ * rookie pool for that run (a confirmed cause of rookie rankings
+ * silently going stale for months: zero eligible players → zero contexts →
+ * the batch submission skipped the variant entirely). Delegating to
+ * `inferPlayerTenure` cross-references our own stats table (has this
+ * player ever produced?) so `yearsExp` being blank doesn't matter — a
+ * player with no prior/current-season production is still recognized as
+ * an incoming rookie.
+ */
+export function isRookieEligible(
+  player: { id: string; yearsExp: number | null },
+  args: {
+    playedInCurrentSeason: boolean;
+    playedInPreviousSeason: boolean;
+    seasonYear: number;
+  },
+): boolean {
+  const tenure = inferPlayerTenure({
+    yearsExp: player.yearsExp,
+    playedInCurrentSeason: args.playedInCurrentSeason,
+    playedInPreviousSeason: args.playedInPreviousSeason,
+    seasonYear: args.seasonYear,
+    // Dynasty rookie rankings are generated/regenerated across the whole
+    // year (weekly cron), but the rookie *class* itself is anchored to the
+    // upcoming/current season's incoming draftees either way — 'offseason'
+    // phase gives inferPlayerTenure the right anchor-year semantics for
+    // that without needing to thread the real season phase through here.
+    seasonPhase: 'offseason',
+  });
+  return tenure.rookieStatus === 'incoming-rookie' || tenure.rookieStatus === 'rookie-active';
+}
+
 async function buildPlayerContexts(
   db: DB,
   rankingType: 'redraft' | 'dynasty' | 'rookie',
@@ -342,13 +397,6 @@ async function buildPlayerContexts(
     where: inArray(schema.nflPlayers.position, posFilter),
   });
 
-  // 'dynasty' uses the full active-player pool, same as 'redraft' — it's
-  // ranking every rosterable player (veterans included) by multi-year
-  // value, not just this year's rookie class.
-  let players = rankingType === 'rookie'
-    ? allPlayers.filter(p => p.yearsExp === 0)
-    : allPlayers.filter(p => p.status !== 'inactive' && p.team !== 'FA');
-
   const prevSeason = seasonYear - 1;
   const pointsCol = scoringFormat === 'ppr'
     ? 'fantasyPointsPPR'
@@ -356,9 +404,15 @@ async function buildPlayerContexts(
     ? 'fantasyPointsHalf'
     : 'fantasyPointsStd';
 
-  const statsRows = await db.query.playerWeeklyStats.findMany({
-    where: eq(schema.playerWeeklyStats.seasonYear, prevSeason),
-  });
+  const [statsRows, currentSeasonRows] = await Promise.all([
+    db.query.playerWeeklyStats.findMany({
+      where: eq(schema.playerWeeklyStats.seasonYear, prevSeason),
+    }),
+    db.query.playerWeeklyStats.findMany({
+      columns: { playerId: true },
+      where: eq(schema.playerWeeklyStats.seasonYear, seasonYear),
+    }),
+  ]);
 
   const statsByPlayer = new Map<string, { totalPoints: number; gamesPlayed: number }>();
   for (const row of statsRows) {
@@ -369,6 +423,20 @@ async function buildPlayerContexts(
     entry.gamesPlayed += 1;
     statsByPlayer.set(row.playerId, entry);
   }
+  const currentSeasonPlayerIds = new Set(currentSeasonRows.map(r => r.playerId));
+
+  // 'dynasty' uses the full active-player pool, same as 'redraft' — it's
+  // ranking every rosterable player (veterans included) by multi-year
+  // value, not just this year's rookie class. 'rookie' uses
+  // isRookieEligible (playerTenure-backed) rather than a bare
+  // `yearsExp === 0` check — see that function's docstring.
+  let players = rankingType === 'rookie'
+    ? allPlayers.filter(p => isRookieEligible(p, {
+        playedInCurrentSeason: currentSeasonPlayerIds.has(p.id),
+        playedInPreviousSeason: statsByPlayer.has(p.id),
+        seasonYear,
+      }))
+    : allPlayers.filter(p => p.status !== 'inactive' && p.team !== 'FA');
 
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -460,7 +528,9 @@ Typical 1-QB draft shape (reflects expert consensus and real ADP):
 - Rounds 8-10 (picks 85-120): Late-round QBs, bench RBs, WR3/WR4, TE2s.
 - Rounds 11+ (picks 121+): Dart-throw QBs (Drake Maye, Caleb Williams, Trevor Lawrence tier), handcuffs, rookies, sleepers.
 
-RULE: No more than 3 QBs inside the top 40 overall. No QB inside the top 15 overall unless the consensus ADP agrees. If your instinct says "this QB is underranked because of points" — stop. ADP already accounts for points; the anchor is positional scarcity.${superflex ? '\n\nSUPERFLEX OVERRIDE: Because you can start a second QB in the flex, QB value roughly doubles. Top QBs belong in Round 1-2; the QB12 belongs in Round 6-7. Disregard the 1-QB round guidance above.' : ''}
+RULE: No more than 3 QBs inside the top 40 overall. No QB inside the top 15 overall unless the consensus ADP agrees. If your instinct says "this QB is underranked because of points" — stop. ADP already accounts for points; the anchor is positional scarcity.${superflex ? '\n\nSUPERFLEX OVERRIDE: Because you can start a second QB in the flex, QB value roughly doubles. Top QBs belong in Round 1-2; the QB12 belongs in Round 6-7. Disregard the 1-QB round guidance above.' : `
+
+POSITIONAL SCARCITY BACKSTOP: This is a 1-QB league — only one QB slot and only one TE slot start each week, so raw projected points at those positions are misleading. QBs ranked outside the top ~3 at the position, and TEs ranked outside the top ~3 at the position, must NOT be ranked ahead of an RB or WR with similar projectedPoints; RB/WR touches convert to fantasy value at a much higher replacement-level premium than QB/TE points do past that point. ADP (when present) is the anchor — treat any deviation of more than 10 spots from a player's ADP as requiring a specific, concrete justification written into that player's rationale.`}
 
 TIER RULES:
 - Tier 1: Elite studs (top ~8-10 overall)
@@ -656,6 +726,42 @@ function variantCustomId(v: RankingVariant): string {
 }
 
 /**
+ * Insert a `ranking_batch_jobs` row for a variant that never made it to the
+ * Anthropic Batch API — either because it had zero eligible players, or an
+ * ADP feed's coverage canary tripped. No real batch exists for either case,
+ * so a synthetic-but-unique `anthropicBatchId` satisfies the NOT NULL
+ * UNIQUE constraint while staying obviously distinguishable from a real
+ * batch id in any query/dashboard.
+ *
+ * Without this, the old code just `continue`d past the variant — which is
+ * exactly how rookie ranking regeneration silently stopped for two months:
+ * "zero eligible players" never left a trace, so nothing was queryable to
+ * notice the staleness.
+ */
+async function recordJobProblem(
+  db: DB,
+  seasonYear: number,
+  meta: BatchVariantMeta,
+  errorMessage: string,
+): Promise<void> {
+  const now = new Date();
+  try {
+    await db.insert(schema.rankingBatchJobs).values({
+      id: generateId(),
+      anthropicBatchId: `no-batch-${meta.customId}-${now.getTime()}`,
+      status: 'failed',
+      seasonYear,
+      variants: JSON.stringify([meta]),
+      submittedAt: now,
+      completedAt: now,
+      errorMessage,
+    });
+  } catch (err) {
+    console.error('[draftRankings] Failed to record job-problem row:', err);
+  }
+}
+
+/**
  * Build prompts for every variant and submit them as a single Anthropic batch.
  * Returns immediately with the batch id; use processPendingBatches() to ingest
  * results once the batch ends.
@@ -673,13 +779,21 @@ export async function submitDraftRankingsBatch(
   const metas: BatchVariantMeta[] = [];
 
   for (const v of variants) {
+    const meta: BatchVariantMeta = {
+      customId: variantCustomId(v),
+      rankingType: v.rankingType,
+      scoringFormat: v.scoringFormat,
+      superflex: v.superflex,
+    };
+
     // ADP source per ranking type:
-    //  Redraft 1-QB → FantasyPros 1-QB ADP (MFL is dominated by superflex drafts)
+    //  Redraft 1-QB → FantasyFootballCalculator 1-QB ADP (MFL is dominated
+    //    by superflex drafts)
     //  Redraft superflex → MFL ADP (their pool being superflex-dominated is
     //    exactly the anchor we want for SF variants)
     //  Dynasty → FantasyCalc dynasty values, UNFILTERED (full player pool,
     //    veterans included) — their own overall dynasty rank used directly
-    //  Dynasty rookie → FantasyCalc dynasty values filtered to rookies
+    //  Rookie → FantasyCalc dynasty values filtered to rookies
     //    (clean age/prospect-adjusted ranks) + MFL IS_KEEPER=R fallback
     const adp = v.rankingType === 'rookie'
       ? await buildRookieAdpMap(db, v.scoringFormat, v.superflex, seasonYear)
@@ -687,10 +801,29 @@ export async function submitDraftRankingsBatch(
       ? await buildDynastyAdpMap(v.scoringFormat, v.superflex)
       : v.superflex
       ? await fetchMFLADP(seasonYear, v.scoringFormat, 'N')
-      : await fetchFantasyProsADP(v.scoringFormat);
+      : await fetchFfcAdp(v.scoringFormat, seasonYear);
+
+    // Canary: rookie's ADP map is intentionally small (re-indexed
+    // 1..N over this year's rookie class, typically well under 100), so
+    // only gate redraft/dynasty here — both draw from a 250+ player feed
+    // when the source is actually working.
+    if (v.rankingType !== 'rookie' && adp.size < ADP_CANARY_MIN_ENTRIES) {
+      const msg = `ADP coverage canary tripped: only ${adp.size} entries for ${meta.customId} (source feed likely broken/blocked)`;
+      console.error(`[draftRankings] ${msg}`);
+      await recordJobProblem(db, seasonYear, meta, msg);
+      // Skip submitting this variant entirely — submitting it with all-null
+      // ADP would still go through the atomic delete+insert on write and
+      // overwrite last week's good rankings with an ADP-blind regeneration.
+      // Recording the problem above is enough to make the outage visible;
+      // leaving the previous rankings in place is strictly better than that.
+      continue;
+    }
+
     const contexts = await buildPlayerContexts(db, v.rankingType, v.scoringFormat, seasonYear, adp);
     if (contexts.length === 0) {
-      console.warn(`[draftRankings] No players found for ${v.rankingType}/${v.scoringFormat}; skipping`);
+      const msg = `zero eligible players for ${v.rankingType} ${v.scoringFormat}${v.superflex ? ' superflex' : ''}`;
+      console.warn(`[draftRankings] ${msg}; recording failed job and skipping`);
+      await recordJobProblem(db, seasonYear, meta, msg);
       continue;
     }
     const prompt = v.rankingType === 'redraft'
@@ -699,21 +832,15 @@ export async function submitDraftRankingsBatch(
       ? buildDynastyPrompt(contexts, v.scoringFormat, v.superflex)
       : buildRookiePrompt(contexts, v.scoringFormat, v.superflex);
 
-    const customId = variantCustomId(v);
     requests.push({
-      custom_id: customId,
+      custom_id: meta.customId,
       params: {
         model: ANTHROPIC_MODEL,
         max_tokens: MAX_TOKENS,
         messages: [{ role: 'user', content: prompt }],
       },
     });
-    metas.push({
-      customId,
-      rankingType: v.rankingType,
-      scoringFormat: v.scoringFormat,
-      superflex: v.superflex,
-    });
+    metas.push(meta);
   }
 
   if (requests.length === 0) {
@@ -792,6 +919,17 @@ export interface ProcessBatchesResult {
   totalRankingsInserted: number;
 }
 
+// Writing a variant rebuilds player contexts (a few hundred KB of string
+// work) and runs a ~201-statement atomic D1 batch — heavy enough that
+// draining an unbounded number of ended batches in one worker invocation
+// risks the 30s CPU cap. Cap both the count per tick and the wall-clock
+// time spent on heavy work; with up to 12 variants/week landing on
+// Anthropic's side over several hours, one-per-hour was letting results
+// trickle in for most of a day. Bound instead of a hard 1-per-tick limit so
+// a cluster of batches ending around the same time drains promptly.
+const MAX_ENDED_BATCHES_PER_TICK = 6;
+const PROCESS_TIME_BUDGET_MS = 20_000;
+
 export async function processPendingBatches(
   db: DB,
   anthropicKey: string,
@@ -807,13 +945,8 @@ export async function processPendingBatches(
   let failedJobs = 0;
   let totalRankingsInserted = 0;
 
-  // Process at most one ENDED batch per invocation. Writing a variant
-  // rebuilds player contexts (a few hundred KB of string work) and runs a
-  // ~201-statement atomic D1 batch, which is heavy enough that draining
-  // multiple batches in one worker invocation trips the 30s CPU cap. Poll
-  // the rest cheaply (status check only) so the job-state row stays fresh,
-  // and pick them up on subsequent hourly ticks.
-  let processedOneEnded = false;
+  const startedAt = Date.now();
+  let processedEndedCount = 0;
 
   for (const job of pending) {
     let statusRes: Response;
@@ -847,9 +980,16 @@ export async function processPendingBatches(
       continue;
     }
 
-    // Already processed one ended batch this invocation — skip heavy work and
-    // let the next hourly tick handle remaining ended batches.
-    if (processedOneEnded) {
+    // Bounded drain: stop taking on new heavy work once we've hit the
+    // per-tick count cap or spent our wall-clock budget. Status-only polls
+    // above this point already ran cheaply for every pending job, so the
+    // job-state rows (submitted→in_progress) stay fresh regardless; only
+    // the results-fetch + write-to-DB work for ended batches is bounded
+    // here, and any batches left over are picked up on the next tick.
+    if (
+      processedEndedCount >= MAX_ENDED_BATCHES_PER_TICK ||
+      Date.now() - startedAt >= PROCESS_TIME_BUDGET_MS
+    ) {
       continue;
     }
 
@@ -885,73 +1025,94 @@ export async function processPendingBatches(
     }
 
     const bodyText = await resultsRes.text();
-    const variantMetas = JSON.parse(job.variants) as BatchVariantMeta[];
 
-    let inserted = 0;
-    let jobErrored = false;
+    // One job's results shouldn't be able to abort the whole tick: an
+    // unexpected throw anywhere in here (malformed variants JSON, a
+    // writeVariantRankings/db.batch() failure, etc.) is caught below so the
+    // remaining jobs in `pending` still get processed this tick instead of
+    // being starved until the next one.
+    try {
+      const variantMetas = JSON.parse(job.variants) as BatchVariantMeta[];
 
-    for (const rawLine of bodyText.split('\n')) {
-      const line = rawLine.trim();
-      if (!line) continue;
+      let inserted = 0;
+      let jobErrored = false;
 
-      let parsed: BatchResultLine;
-      try {
-        parsed = JSON.parse(line) as BatchResultLine;
-      } catch {
-        console.warn(`[draftRankings] Skipping unparseable line in ${job.anthropicBatchId}`);
-        continue;
+      for (const rawLine of bodyText.split('\n')) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        let parsed: BatchResultLine;
+        try {
+          parsed = JSON.parse(line) as BatchResultLine;
+        } catch {
+          console.warn(`[draftRankings] Skipping unparseable line in ${job.anthropicBatchId}`);
+          continue;
+        }
+
+        const meta = variantMetas.find(m => m.customId === parsed.custom_id);
+        if (!meta) {
+          console.warn(`[draftRankings] Unknown custom_id ${parsed.custom_id}`);
+          continue;
+        }
+
+        if (parsed.result.type !== 'succeeded') {
+          console.error(`[draftRankings] Variant ${parsed.custom_id} ${parsed.result.type}`);
+          jobErrored = true;
+          continue;
+        }
+
+        const textBlock = parsed.result.message.content?.find(b => b.type === 'text');
+        const rawText = textBlock?.text?.trim();
+        if (!rawText) {
+          console.error(`[draftRankings] Variant ${parsed.custom_id} returned empty text`);
+          jobErrored = true;
+          continue;
+        }
+
+        const writeResult = await writeVariantRankings({
+          db,
+          anthropicKey,
+          meta,
+          rawText,
+          seasonYear: job.seasonYear,
+        });
+
+        if (!writeResult.ok) {
+          console.error(`[draftRankings] Failed to write ${parsed.custom_id}: ${writeResult.error}`);
+          jobErrored = true;
+          continue;
+        }
+        inserted += writeResult.count;
       }
 
-      const meta = variantMetas.find(m => m.customId === parsed.custom_id);
-      if (!meta) {
-        console.warn(`[draftRankings] Unknown custom_id ${parsed.custom_id}`);
-        continue;
-      }
+      await db.update(schema.rankingBatchJobs)
+        .set({
+          status: jobErrored ? 'failed' : 'completed',
+          completedAt: new Date(),
+          errorMessage: jobErrored ? 'One or more variants failed to parse or write' : null,
+        })
+        .where(eq(schema.rankingBatchJobs.id, job.id));
 
-      if (parsed.result.type !== 'succeeded') {
-        console.error(`[draftRankings] Variant ${parsed.custom_id} ${parsed.result.type}`);
-        jobErrored = true;
-        continue;
-      }
+      if (jobErrored) failedJobs += 1;
+      else completedJobs += 1;
+      totalRankingsInserted += inserted;
+      processedEndedCount += 1;
 
-      const textBlock = parsed.result.message.content?.find(b => b.type === 'text');
-      const rawText = textBlock?.text?.trim();
-      if (!rawText) {
-        console.error(`[draftRankings] Variant ${parsed.custom_id} returned empty text`);
-        jobErrored = true;
-        continue;
-      }
-
-      const writeResult = await writeVariantRankings({
-        db,
-        anthropicKey,
-        meta,
-        rawText,
-        seasonYear: job.seasonYear,
-      });
-
-      if (!writeResult.ok) {
-        console.error(`[draftRankings] Failed to write ${parsed.custom_id}: ${writeResult.error}`);
-        jobErrored = true;
-        continue;
-      }
-      inserted += writeResult.count;
+      console.log(`[draftRankings] Batch ${job.anthropicBatchId} ${jobErrored ? 'partially failed' : 'completed'}; inserted ${inserted} rows`);
+    } catch (err) {
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      console.error(`[draftRankings] Unexpected error processing batch ${job.anthropicBatchId}:`, err);
+      await db.update(schema.rankingBatchJobs)
+        .set({
+          status: 'failed',
+          completedAt: new Date(),
+          errorMessage: rawMessage.slice(0, 500),
+        })
+        .where(eq(schema.rankingBatchJobs.id, job.id));
+      failedJobs += 1;
+      processedEndedCount += 1;
+      continue;
     }
-
-    await db.update(schema.rankingBatchJobs)
-      .set({
-        status: jobErrored ? 'failed' : 'completed',
-        completedAt: new Date(),
-        errorMessage: jobErrored ? 'One or more variants failed to parse or write' : null,
-      })
-      .where(eq(schema.rankingBatchJobs.id, job.id));
-
-    if (jobErrored) failedJobs += 1;
-    else completedJobs += 1;
-    totalRankingsInserted += inserted;
-    processedOneEnded = true;
-
-    console.log(`[draftRankings] Batch ${job.anthropicBatchId} ${jobErrored ? 'partially failed' : 'completed'}; inserted ${inserted} rows`);
   }
 
   return {
@@ -1040,7 +1201,7 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
     ? await buildDynastyAdpMap(meta.scoringFormat, meta.superflex)
     : meta.superflex
     ? await fetchMFLADP(seasonYear, meta.scoringFormat, 'N')
-    : await fetchFantasyProsADP(meta.scoringFormat);
+    : await fetchFfcAdp(meta.scoringFormat, seasonYear);
   const contexts = await buildPlayerContexts(
     db, meta.rankingType, meta.scoringFormat, seasonYear, adp,
   );

@@ -481,6 +481,14 @@ function OverviewTab({
         textSecondary={textSecondary}
       />
 
+      {/* Season props import */}
+      <SeasonPropsImportAdminCard
+        isDarkMode={isDarkMode}
+        cardClass={cardClass}
+        textPrimary={textPrimary}
+        textSecondary={textSecondary}
+      />
+
       {/* Recent Users */}
       {stats?.recentUsers && stats.recentUsers.length > 0 && (
         <div className={cardClass}>
@@ -825,6 +833,137 @@ function PlayerPropsSyncAdminCard({
             : isDarkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-700'
         }`}>
           {result.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Season Props Import Admin Card ────────────────────────────────────────
+interface SeasonPropsSyncResponse {
+  inserted: number;
+  skipped: number;
+  unmatched: { playerName: string; market: string }[];
+  coverage: { QB: number; RB: number; WR: number; TE: number };
+  parseErrors?: { row: number; message: string }[];
+}
+
+function SeasonPropsImportAdminCard({
+  isDarkMode, cardClass, textPrimary, textSecondary,
+}: {
+  isDarkMode: boolean;
+  cardClass: string;
+  textPrimary: string;
+  textSecondary: string;
+}) {
+  const [season, setSeason] = useState(new Date().getFullYear());
+  const [input, setInput] = useState('');
+  const [replaceSameCapture, setReplaceSameCapture] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [summary, setSummary] = useState<SeasonPropsSyncResponse | null>(null);
+
+  const runImport = async () => {
+    if (!input.trim()) return;
+    setImporting(true);
+    setResult(null);
+    setSummary(null);
+    try {
+      const data = await api.post<SeasonPropsSyncResponse>('/admin/sync-season-props', {
+        season,
+        input,
+        replaceSameCapture,
+      });
+      setSummary(data);
+      setResult({
+        type: 'success',
+        message: `Imported ${data.inserted} row${data.inserted === 1 ? '' : 's'}, skipped ${data.skipped}${
+          data.unmatched.length > 0 ? `, ${data.unmatched.length} unmatched` : ''
+        }.`,
+      });
+    } catch (err) {
+      setResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to import season props' });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const inputClass = `w-24 px-3 py-2 rounded-lg border text-sm ${
+    isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+  }`;
+  const textareaClass = `w-full px-3 py-2 rounded-lg border text-xs font-mono ${
+    isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+  }`;
+
+  return (
+    <div className={cardClass}>
+      <h2 className={`text-lg font-semibold mb-2 ${textPrimary}`}>
+        <RefreshCw className="w-5 h-5 inline mr-2" />
+        Import Season Props
+      </h2>
+      <p className={`text-sm mb-4 ${textSecondary}`}>
+        Season-long sportsbook O/U totals have no API source — paste a JSON array or CSV
+        (header: <code>playerName,team,position,market,line,overOdds,underOdds,book,sourceUrl,capturedAt</code>)
+        and it'll be matched to players and used to build season projections.
+      </p>
+      <div className="flex flex-wrap items-end gap-3 mb-3">
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Season</label>
+          <input
+            type="number"
+            value={season}
+            onChange={(e) => setSeason(Number(e.target.value))}
+            className={inputClass}
+          />
+        </div>
+        <label className={`flex items-center gap-2 text-sm ${textSecondary}`}>
+          <input
+            type="checkbox"
+            checked={replaceSameCapture}
+            onChange={(e) => setReplaceSameCapture(e.target.checked)}
+          />
+          Replace rows with the same capture date
+        </label>
+      </div>
+      <textarea
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        placeholder="playerName,team,position,market,line,overOdds,underOdds,book,sourceUrl,capturedAt&#10;Josh Allen,BUF,QB,pass_yds,4300,-110,-110,DraftKings,,2026-08-20"
+        rows={8}
+        className={`${textareaClass} mb-3`}
+      />
+      <button
+        onClick={runImport}
+        disabled={importing || !input.trim()}
+        className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+      >
+        {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+        Import
+      </button>
+      {result && (
+        <div className={`mt-4 px-3 py-2 rounded-lg text-sm ${
+          result.type === 'success'
+            ? isDarkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-50 text-green-700'
+            : isDarkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-700'
+        }`}>
+          {result.message}
+        </div>
+      )}
+      {summary && (
+        <div className={`mt-3 text-xs ${textSecondary}`}>
+          <p>
+            Coverage (≥2 stat markets): QB {summary.coverage.QB}, RB {summary.coverage.RB}, WR {summary.coverage.WR}, TE {summary.coverage.TE}
+          </p>
+          {summary.unmatched.length > 0 && (
+            <p className="mt-1">
+              Unmatched: {summary.unmatched.map((u) => `${u.playerName} (${u.market})`).join(', ')}
+            </p>
+          )}
+          {summary.parseErrors && summary.parseErrors.length > 0 && (
+            <p className="mt-1">
+              Parse errors: {summary.parseErrors.map((e) => `row ${e.row}: ${e.message}`).join('; ')}
+            </p>
+          )}
         </div>
       )}
     </div>
