@@ -106,7 +106,11 @@ export const leagueMembers = sqliteTable('league_members', {
 export const teams = sqliteTable('teams', {
   id: text('id').primaryKey(),
   leagueId: text('league_id').notNull().references(() => leagues.id, { onDelete: 'cascade' }),
-  ownerId: text('owner_id').notNull().references(() => users.id),
+  // Nullable: a synced opponent roster with no matching app user has no
+  // owner (see server/src/services/leagueSync.ts decideTeamOwnerId — this
+  // used to be defaulted to whichever app user ran the sync, which caused
+  // every team in a league to end up "owned" by the last person to sync).
+  ownerId: text('owner_id').references(() => users.id),
   externalOwnerId: text('external_owner_id'), // Sleeper/ESPN user ID - identifies which platform user owns this team
   ownerDisplayName: text('owner_display_name'), // Display name from Sleeper/ESPN/Yahoo (so we don't show the app user for every team)
   name: text('name').notNull(),
