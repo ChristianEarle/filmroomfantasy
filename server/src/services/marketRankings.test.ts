@@ -1,0 +1,236 @@
+import { describe, it, expect } from 'vitest';
+import {
+  computeRemainingGames,
+  seasonPointsFromSeasonProps,
+  seasonPointsFromWeeklyRate,
+  computeReplacementLevels,
+  rankByVORP,
+  type VORPInputPlayer,
+} from './marketRankings';
+
+describe('computeRemainingGames', () => {
+  it('counts scheduled weeks after asOfWeek, excluding the bye week', () => {
+    const result = computeRemainingGames({
+      teamScheduleWeeks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      playedWeeks: [1, 2, 3, 4, 5],
+      byeWeek: 7,
+      asOfWeek: 5,
+    });
+    // weeks after 5: 6,7,8,9,10 minus bye(7) => 6,8,9,10
+    expect(result).toBe(4);
+  });
+
+  it('excludes already-played weeks even if they appear after asOfWeek (guards double counting)', () => {
+    const result = computeRemainingGames({
+      teamScheduleWeeks: [1, 2, 3, 4, 5, 6],
+      playedWeeks: [1, 2, 3, 4, 5, 6], // all played somehow, despite asOfWeek being lower
+      byeWeek: null,
+      asOfWeek: 3,
+    });
+    expect(result).toBe(0);
+  });
+
+  it('returns 0 remaining when asOfWeek is at the end of the schedule', () => {
+    const result = computeRemainingGames({
+      teamScheduleWeeks: Array.from({ length: 17 }, (_, i) => i + 1),
+      playedWeeks: Array.from({ length: 17 }, (_, i) => i + 1),
+      byeWeek: 9,
+      asOfWeek: 17,
+    });
+    expect(result).toBe(0);
+  });
+
+  it('handles a null bye week without filtering anything extra', () => {
+    const result = computeRemainingGames({
+      teamScheduleWeeks: [1, 2, 3],
+      playedWeeks: [1],
+      byeWeek: null,
+      asOfWeek: 1,
+    });
+    expect(result).toBe(2);
+  });
+});
+
+describe('seasonPointsFromSeasonProps', () => {
+  const proj = { ppr: 300, halfPpr: 270, standard: 240 };
+
+  it('selects ppr', () => {
+    expect(seasonPointsFromSeasonProps(proj, 'ppr')).toBe(300);
+  });
+
+  it('selects half-ppr', () => {
+    expect(seasonPointsFromSeasonProps(proj, 'half-ppr')).toBe(270);
+  });
+
+  it('selects standard', () => {
+    expect(seasonPointsFromSeasonProps(proj, 'standard')).toBe(240);
+  });
+});
+
+describe('seasonPointsFromWeeklyRate', () => {
+  it('shrinks the rate toward the position average with fewer than 3 weeks of history', () => {
+    const result = seasonPointsFromWeeklyRate({
+      playedPoints: 20,
+      weeklyRate: 20,
+      posAvgRate: 10,
+      weeksOfHistory: 2,
+      remainingGames: 10,
+    });
+    // blended = 20*0.8 + 10*0.2 = 18
+    expect(result).toBeCloseTo(20 + 18 * 10, 5);
+  });
+
+  it('uses the raw rate with no shrinkage at 3+ weeks of history', () => {
+    const result = seasonPointsFromWeeklyRate({
+      playedPoints: 45,
+      weeklyRate: 15,
+      posAvgRate: 5,
+      weeksOfHistory: 3,
+      remainingGames: 10,
+    });
+    expect(result).toBeCloseTo(45 + 15 * 10, 5);
+  });
+
+  it('returns just the played points when no games remain', () => {
+    const result = seasonPointsFromWeeklyRate({
+      playedPoints: 200,
+      weeklyRate: 12,
+      posAvgRate: 8,
+      weeksOfHistory: 1,
+      remainingGames: 0,
+    });
+    expect(result).toBe(200);
+  });
+});
+
+describe('computeReplacementLevels', () => {
+  it('uses 1-QB replacement levels by default', () => {
+    expect(computeReplacementLevels({ superflex: false })).toEqual({
+      QB: 12,
+      RB: 30,
+      WR: 42,
+      TE: 12,
+    });
+  });
+
+  it('doubles QB replacement level in superflex', () => {
+    expect(computeReplacementLevels({ superflex: true })).toEqual({
+      QB: 24,
+      RB: 30,
+      WR: 42,
+      TE: 12,
+    });
+  });
+});
+
+describe('rankByVORP', () => {
+  const replacement = computeReplacementLevels({ superflex: false });
+
+  function player(id: string, position: string, seasonPoints: number): VORPInputPlayer {
+    return { playerId: id, name: id, position, seasonPoints };
+  }
+
+  it('computes VORP as seasonPoints minus the replacement-rank player at that position', () => {
+    // 2 RBs only, replacement level RB=30 clamps to pool size (2) -> replacement is the 2nd (worst) RB.
+    const players = [player('rb1', 'RB', 200), player('rb2', 'RB', 100)];
+    const result = rankByVORP(players, replacement);
+    const rb1 = result.find((r) => r.playerId === 'rb1')!;
+    const rb2 = result.find((r) => r.playerId === 'rb2')!;
+    expect(rb2.vorp).toBe(0); // rb2 IS the replacement level
+    expect(rb1.vorp).toBe(100); // 200 - 100
+  });
+
+  it('assigns overallRank and positionRank correctly across positions', () => {
+    const players = [
+      player('qb1', 'QB', 300),
+      player('rb1', 'RB', 250),
+      player('rb2', 'RB', 150),
+      player('wr1', 'WR', 220),
+    ];
+    const result = rankByVORP(players, replacement);
+    // Sorted by VORP desc; ranks assigned 1..n
+    const ranks = result.map((r) => r.overallRank);
+    expect(ranks).toEqual([1, 2, 3, 4]);
+    const rbRanks = result.filter((r) => r.position === 'RB').map((r) => r.positionRank);
+    expect(rbRanks.sort()).toEqual([1, 2]);
+  });
+
+  it('creates a new tier when the VORP drop exceeds 15% of the running tier average', () => {
+    // Clear stair-step: 100, 95, 90 (tight cluster) then a big cliff to 20.
+    const players = [
+      player('a', 'WR', 200), // vorp baseline before replacement subtraction; use only WRs so no cross-position noise
+      player('b', 'WR', 195),
+      player('c', 'WR', 190),
+      player('d', 'WR', 40),
+      player('e', 'WR', 10), // WR replacement level (42nd) — pool has only 5, clamps to worst (e)
+    ];
+    const result = rankByVORP(players, replacement);
+    const byId = new Map(result.map((r) => [r.playerId, r]));
+    // a, b, c should stay in tier 1 (small drops relative to running avg)
+    expect(byId.get('a')!.tier).toBe(1);
+    expect(byId.get('b')!.tier).toBe(1);
+    expect(byId.get('c')!.tier).toBe(1);
+    // d has a big cliff from c -> new tier
+    expect(byId.get('d')!.tier).toBeGreaterThan(byId.get('c')!.tier!);
+  });
+
+  it('never produces more than 8 tiers', () => {
+    // 20 WRs each with a huge cliff between them to try to force >8 tier breaks.
+    const players = Array.from({ length: 20 }, (_, i) => player(`wr${i}`, 'WR', (20 - i) * 1000));
+    const result = rankByVORP(players, replacement);
+    const maxTier = Math.max(...result.map((r) => r.tier ?? 0));
+    expect(maxTier).toBeLessThanOrEqual(8);
+  });
+
+  it('excludes K and DEF from ranking, keeping seasonPoints only with null rank/vorp/tier', () => {
+    const players = [
+      player('qb1', 'QB', 300),
+      player('k1', 'K', 130),
+      player('def1', 'DEF', 120),
+    ];
+    const result = rankByVORP(players, replacement);
+    const k = result.find((r) => r.playerId === 'k1')!;
+    const def = result.find((r) => r.playerId === 'def1')!;
+    expect(k.overallRank).toBeNull();
+    expect(k.positionRank).toBeNull();
+    expect(k.tier).toBeNull();
+    expect(k.vorp).toBeNull();
+    expect(k.seasonPoints).toBe(130);
+    expect(def.overallRank).toBeNull();
+    expect(def.seasonPoints).toBe(120);
+  });
+
+  it('breaks exact ties deterministically by name', () => {
+    const players = [
+      player('zeta', 'WR', 150),
+      player('alpha', 'WR', 150),
+      player('mike', 'WR', 150),
+    ];
+    const result = rankByVORP(players, replacement);
+    const orderedNames = [...result].sort((a, b) => (a.overallRank ?? 0) - (b.overallRank ?? 0)).map((r) => r.name);
+    expect(orderedNames).toEqual(['alpha', 'mike', 'zeta']);
+  });
+
+  it('is deterministic across repeated calls with the same input', () => {
+    const players = [
+      player('a', 'RB', 123.456),
+      player('b', 'RB', 123.456),
+      player('c', 'WR', 99.9),
+    ];
+    const run1 = rankByVORP(players, replacement);
+    const run2 = rankByVORP(players, replacement);
+    expect(run1).toEqual(run2);
+  });
+
+  it('handles an empty player list', () => {
+    expect(rankByVORP([], replacement)).toEqual([]);
+  });
+
+  it('handles a pool smaller than the replacement level by clamping to the worst player', () => {
+    const players = [player('te1', 'TE', 80), player('te2', 'TE', 40)];
+    // TE replacement level is 12, but pool only has 2 — should clamp to the 2nd (worst).
+    const result = rankByVORP(players, replacement);
+    const te2 = result.find((r) => r.playerId === 'te2')!;
+    expect(te2.vorp).toBe(0);
+  });
+});

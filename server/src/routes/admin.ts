@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, or, inArray } from 'drizzle-orm';
+import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { getMappedPlayers, fetchSleeperPlayers, buildHeadshotUrl, sleep } from '../services/sleeper';
 import { fetchTwitterTweets } from '../services/twitter';
@@ -2191,6 +2191,337 @@ adminRoutes.get('/season-props/summary', async (c) => {
     console.error('Season props summary error:', err);
     return c.json(
       { error: 'Failed to load season props summary', message: err instanceof Error ? err.message : 'Unknown error' },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-market-projections
+ *
+ * Deterministic "Market" (sportsbook-implied) season projection + VORP
+ * ranking layer. For every active QB/RB/WR/TE/K/DEF:
+ *   Tier A ('season_props'): season-long prop lines via #305's
+ *     buildSeasonProjectionsFromSeasonProps.
+ *   Tier B ('weekly_extrapolation'): the latest 'props'-sourced weekly
+ *     player_projections row as a per-game rate, extrapolated over the
+ *     player's remaining schedule (nfl_games, excluding byeWeek).
+ *   'none': neither is available — not persisted, just counted.
+ * QB/RB/WR/TE are then ranked by VORP (1-QB replacement levels; superflex
+ * is a follow-up — see PR notes). K/DEF get points only (rank/vorp/tier
+ * stay null). Upserts player_market_projections, chunked to stay under D1's
+ * per-statement param limits.
+ *
+ * Body: { season?: number, asOfWeek?: number, scoringFormat?: 'ppr' | 'half-ppr' | 'standard' | 'all' }
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ */
+adminRoutes.post('/sync-market-projections', async (c) => {
+  const db = c.get('db');
+
+  try {
+    c.header('Content-Type', 'application/json');
+
+    let body: { season?: number; asOfWeek?: number; scoringFormat?: string } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body - use defaults
+    }
+
+    const { getNflSeasonContext } = await import('../services/espn');
+    const season = body.season ?? getNflSeasonContext().season;
+
+    let asOfWeek = body.asOfWeek;
+    if (asOfWeek == null) {
+      const anyLeague = await db.query.leagues.findFirst({
+        columns: { currentWeek: true },
+        orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
+      });
+      asOfWeek = anyLeague?.currentWeek || 1;
+    }
+
+    const VALID_FORMATS = ['ppr', 'half-ppr', 'standard'] as const;
+    type ScoringFormat = (typeof VALID_FORMATS)[number];
+    const requestedFormat = body.scoringFormat || 'all';
+    if (requestedFormat !== 'all' && !VALID_FORMATS.includes(requestedFormat as ScoringFormat)) {
+      return c.json({ error: `Invalid scoringFormat "${requestedFormat}"` }, 400);
+    }
+    const formats: ScoringFormat[] = requestedFormat === 'all' ? [...VALID_FORMATS] : [requestedFormat as ScoringFormat];
+
+    const {
+      computeRemainingGames,
+      seasonPointsFromSeasonProps,
+      seasonPointsFromWeeklyRate,
+      computeReplacementLevels,
+      rankByVORP,
+    } = await import('../services/marketRankings');
+    const { buildSeasonProjectionsFromSeasonProps } = await import('../services/seasonProps');
+
+    // ── Shared data (same across all scoring formats) ──
+    const RELEVANT_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DEF']);
+    const allPlayers = await db.query.nflPlayers.findMany({
+      where: eq(schema.nflPlayers.status, 'active'),
+      columns: { id: true, name: true, position: true, team: true, byeWeek: true },
+    });
+    const relevantPlayers = allPlayers.filter((p) => RELEVANT_POSITIONS.has(p.position));
+
+    // Tier A source: season props already matched to a playerId at import time.
+    const seasonPropRows = await db.query.playerSeasonProps.findMany({
+      where: eq(schema.playerSeasonProps.season, season),
+    });
+    const resolvedSeasonPropRows = seasonPropRows
+      .filter((r): r is typeof r & { playerId: string } => r.playerId != null)
+      .map((r) => ({
+        playerId: r.playerId,
+        playerName: r.playerName,
+        team: r.team,
+        position: r.position,
+        stat: r.stat as any,
+        line: r.line,
+        overPrice: r.overPrice,
+        underPrice: r.underPrice,
+        book: r.book,
+        sourceUrl: r.sourceUrl,
+        capturedAt: r.capturedAt,
+      }));
+    const seasonPropsByPlayer = buildSeasonProjectionsFromSeasonProps(resolvedSeasonPropRows);
+
+    // Played-so-far stats (for playedPoints + playedWeeks / weeksOfHistory).
+    const weeklyStats = await db.query.playerWeeklyStats.findMany({
+      where: eq(schema.playerWeeklyStats.seasonYear, season),
+    });
+    const statsByPlayer = new Map<string, typeof weeklyStats>();
+    for (const s of weeklyStats) {
+      if (!statsByPlayer.has(s.playerId)) statsByPlayer.set(s.playerId, []);
+      statsByPlayer.get(s.playerId)!.push(s);
+    }
+
+    // Each team's regular-season schedule weeks (for remaining-games math).
+    const games = await db.query.nflGames.findMany({
+      where: and(eq(schema.nflGames.seasonYear, season), eq(schema.nflGames.seasonType, 'regular')),
+      columns: { week: true, homeTeam: true, awayTeam: true },
+    });
+    const scheduleByTeam = new Map<string, number[]>();
+    for (const g of games) {
+      for (const team of [g.homeTeam, g.awayTeam]) {
+        if (!scheduleByTeam.has(team)) scheduleByTeam.set(team, []);
+        scheduleByTeam.get(team)!.push(g.week);
+      }
+    }
+
+    // Tier B source: latest 'props'-sourced weekly projection at asOfWeek.
+    const weekPropsProjections = await db.query.playerProjections.findMany({
+      where: and(
+        eq(schema.playerProjections.seasonYear, season),
+        eq(schema.playerProjections.week, asOfWeek),
+        eq(schema.playerProjections.source, 'props')
+      ),
+      columns: { playerId: true, scoringFormat: true, projectedPoints: true },
+    });
+    const weekProjByPlayerFormat = new Map<string, number>();
+    for (const p of weekPropsProjections) {
+      weekProjByPlayerFormat.set(`${p.playerId}::${p.scoringFormat}`, p.projectedPoints);
+    }
+
+    const PTS_COL_BY_FORMAT: Record<ScoringFormat, 'fantasyPointsPPR' | 'fantasyPointsHalf' | 'fantasyPointsStd'> = {
+      ppr: 'fantasyPointsPPR',
+      'half-ppr': 'fantasyPointsHalf',
+      standard: 'fantasyPointsStd',
+    };
+
+    const counts: Record<'season_props' | 'weekly_extrapolation' | 'none', number> = {
+      season_props: 0,
+      weekly_extrapolation: 0,
+      none: 0,
+    };
+    const topByFormat: Record<string, any[]> = {};
+    const now = new Date();
+    const UPSERT_CHUNK = 50;
+
+    for (const format of formats) {
+      const ptsCol = PTS_COL_BY_FORMAT[format];
+
+      interface Row {
+        playerId: string;
+        name: string;
+        position: string;
+        playedPoints: number;
+        weeksOfHistory: number;
+        remaining: number;
+        confidence: 'season_props' | 'weekly_extrapolation';
+        seasonPoints: number;
+        weeklyRate?: number;
+      }
+      const rows: Row[] = [];
+      const weeklyRatesByPosition = new Map<string, number[]>();
+
+      for (const player of relevantPlayers) {
+        const stats = statsByPlayer.get(player.id) || [];
+        const playedPoints = stats.reduce((sum, s: any) => sum + (s[ptsCol] || 0), 0);
+        const playedWeeks = stats.map((s: any) => s.week as number);
+        const schedule = scheduleByTeam.get(player.team) || [];
+        const remaining = computeRemainingGames({
+          teamScheduleWeeks: schedule,
+          playedWeeks,
+          byeWeek: player.byeWeek ?? null,
+          asOfWeek,
+        });
+
+        const seasonPropProj = seasonPropsByPlayer.get(player.id);
+        if (seasonPropProj) {
+          const seasonPoints = seasonPointsFromSeasonProps(seasonPropProj, format);
+          rows.push({
+            playerId: player.id,
+            name: player.name,
+            position: player.position,
+            playedPoints,
+            weeksOfHistory: playedWeeks.length,
+            remaining,
+            confidence: 'season_props',
+            seasonPoints,
+          });
+          continue;
+        }
+
+        const weeklyRate = weekProjByPlayerFormat.get(`${player.id}::${format}`);
+        if (weeklyRate != null) {
+          if (!weeklyRatesByPosition.has(player.position)) weeklyRatesByPosition.set(player.position, []);
+          weeklyRatesByPosition.get(player.position)!.push(weeklyRate);
+          rows.push({
+            playerId: player.id,
+            name: player.name,
+            position: player.position,
+            playedPoints,
+            weeksOfHistory: playedWeeks.length,
+            remaining,
+            confidence: 'weekly_extrapolation',
+            seasonPoints: NaN, // finalized below once position averages are known
+            weeklyRate,
+          });
+          continue;
+        }
+
+        counts.none++;
+      }
+
+      // Position-average weekly rate, used to shrink small-sample Tier B rates.
+      const posAvgRate = new Map<string, number>();
+      for (const [pos, rates] of weeklyRatesByPosition) {
+        posAvgRate.set(pos, rates.reduce((a, b) => a + b, 0) / rates.length);
+      }
+
+      for (const row of rows) {
+        if (row.confidence === 'weekly_extrapolation' && row.weeklyRate != null) {
+          row.seasonPoints = seasonPointsFromWeeklyRate({
+            playedPoints: row.playedPoints,
+            weeklyRate: row.weeklyRate,
+            posAvgRate: posAvgRate.get(row.position) ?? row.weeklyRate,
+            weeksOfHistory: row.weeksOfHistory,
+            remainingGames: row.remaining,
+          });
+        }
+        counts[row.confidence]++;
+      }
+
+      // 1-QB replacement levels only for now; superflex market rankings are a follow-up
+      // (see PR description) — the schema/table already support a second stored
+      // variant later without a migration.
+      const replacement = computeReplacementLevels({ superflex: false });
+      const ranked = rankByVORP(
+        rows.map((r) => ({ playerId: r.playerId, name: r.name, position: r.position, seasonPoints: r.seasonPoints })),
+        replacement
+      );
+      const rankedById = new Map(ranked.map((r) => [r.playerId, r]));
+
+      const upsertRows = rows.map((row) => {
+        const perGameRate = row.seasonPoints / 17;
+        const rosPoints = row.playedPoints + perGameRate * row.remaining;
+        const rankInfo = rankedById.get(row.playerId);
+        return {
+          id: generateId(),
+          playerId: row.playerId,
+          seasonYear: season,
+          asOfWeek,
+          scoringFormat: format,
+          seasonPoints: row.seasonPoints,
+          rosPoints,
+          perGameRate,
+          remainingGames: row.remaining,
+          marketRank: rankInfo?.overallRank ?? null,
+          positionRank: rankInfo?.positionRank ?? null,
+          tier: rankInfo?.tier ?? null,
+          vorp: rankInfo?.vorp ?? null,
+          confidence: row.confidence,
+          source: 'market' as const,
+          computedAt: now,
+        };
+      });
+
+      for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
+        const chunk = upsertRows.slice(i, i + UPSERT_CHUNK);
+        if (chunk.length === 0) continue;
+        await db
+          .insert(schema.playerMarketProjections)
+          .values(chunk)
+          .onConflictDoUpdate({
+            target: [
+              schema.playerMarketProjections.playerId,
+              schema.playerMarketProjections.seasonYear,
+              schema.playerMarketProjections.asOfWeek,
+              schema.playerMarketProjections.scoringFormat,
+            ],
+            set: {
+              seasonPoints: sql`excluded.season_points`,
+              rosPoints: sql`excluded.ros_points`,
+              perGameRate: sql`excluded.per_game_rate`,
+              remainingGames: sql`excluded.remaining_games`,
+              marketRank: sql`excluded.market_rank`,
+              positionRank: sql`excluded.position_rank`,
+              tier: sql`excluded.tier`,
+              vorp: sql`excluded.vorp`,
+              confidence: sql`excluded.confidence`,
+              computedAt: sql`excluded.computed_at`,
+            },
+          });
+      }
+
+      topByFormat[format] = upsertRows
+        .filter((r) => r.marketRank != null)
+        .sort((a, b) => (a.marketRank ?? 0) - (b.marketRank ?? 0))
+        .slice(0, 10)
+        .map((r) => {
+          const player = relevantPlayers.find((p) => p.id === r.playerId);
+          return {
+            playerId: r.playerId,
+            name: player?.name,
+            position: player?.position,
+            team: player?.team,
+            marketRank: r.marketRank,
+            positionRank: r.positionRank,
+            tier: r.tier,
+            seasonPoints: Math.round(r.seasonPoints * 10) / 10,
+            rosPoints: Math.round(r.rosPoints * 10) / 10,
+            confidence: r.confidence,
+          };
+        });
+    }
+
+    invalidateCache('market-rankings', true);
+    invalidateCache('draft-rankings:', true);
+
+    return c.json({
+      success: true,
+      season,
+      asOfWeek,
+      scoringFormats: formats,
+      counts,
+      top10: topByFormat,
+    });
+  } catch (err) {
+    console.error('Sync market projections error:', err);
+    return c.json(
+      { error: 'Sync failed', message: err instanceof Error ? err.message : 'Unknown error' },
       500
     );
   }

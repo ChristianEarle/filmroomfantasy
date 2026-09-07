@@ -99,6 +99,34 @@ draftRankingsRoutes.get('/', async (c) => {
       (d): d is string => d !== null,
     ))];
 
+    // Deterministic Market VORP rank, joined by player id. Only computed for
+    // the redraft/1-QB variant today (see marketRankings.ts / the
+    // sync-market-projections admin route) — a later PR can add superflex.
+    const marketRankByPlayer = new Map<string, number>();
+    if (rankingType === 'redraft' && !superflex) {
+      const latestMarketRow = await db.query.playerMarketProjections.findFirst({
+        where: and(
+          eq(schema.playerMarketProjections.seasonYear, season),
+          eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
+        ),
+        orderBy: desc(schema.playerMarketProjections.asOfWeek),
+        columns: { asOfWeek: true },
+      });
+      if (latestMarketRow) {
+        const marketRows = await db.query.playerMarketProjections.findMany({
+          where: and(
+            eq(schema.playerMarketProjections.seasonYear, season),
+            eq(schema.playerMarketProjections.asOfWeek, latestMarketRow.asOfWeek),
+            eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
+          ),
+          columns: { playerId: true, marketRank: true },
+        });
+        for (const row of marketRows) {
+          if (row.marketRank != null) marketRankByPlayer.set(row.playerId, row.marketRank);
+        }
+      }
+    }
+
     // playerId|date → overallRank
     const rankByPlayerDate = new Map<string, number>();
     if (neededDates.length > 0) {
@@ -129,6 +157,7 @@ draftRankingsRoutes.get('/', async (c) => {
         positionRank: r.positionRank,
         tier: r.tier,
         projectedPoints: r.projectedPoints,
+        marketRank: marketRankByPlayer.get(r.playerId) ?? null,
         adp: r.adp,
         adpDelta: r.adpDelta,
         rationale: r.rationale,
@@ -337,4 +366,95 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
     console.error('[draft-rankings/ask] error:', err);
     return c.json({ error: 'An unexpected error occurred.' }, 500);
   }
+});
+
+// ── Market rankings (deterministic sportsbook-implied projections) ─────
+// Mounted separately at /api/market-rankings (not under /api/draft-rankings)
+// — see index.ts. Kept in this file since it's the natural home next to the
+// AI draft-rankings endpoint it complements, and shares the same imports.
+
+export const marketRankingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+/**
+ * GET /api/market-rankings?scoring=ppr&season=2026
+ *
+ * Deterministic "Market" (sportsbook-implied) season projection + VORP
+ * ranking, populated by POST /api/admin/sync-market-projections. Public,
+ * read-only — no auth required, same posture as GET /api/draft-rankings.
+ * Returns the most recently computed as_of_week's rows for the season +
+ * scoring format. 1-QB only for now (see services/marketRankings.ts).
+ */
+marketRankingsRoutes.get('/', async (c) => {
+  const db = c.get('db');
+  const scoringFormat = (c.req.query('scoring') || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()), 10);
+
+  if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
+    return c.json({ error: 'Invalid scoring format' }, 400);
+  }
+
+  const cacheKey = `market-rankings:${scoringFormat}:${season}`;
+  const result = await cached(cacheKey, 5 * 60 * 1000, async () => {
+    const latestRow = await db.query.playerMarketProjections.findFirst({
+      where: and(
+        eq(schema.playerMarketProjections.seasonYear, season),
+        eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
+      ),
+      orderBy: desc(schema.playerMarketProjections.asOfWeek),
+      columns: { asOfWeek: true },
+    });
+    if (!latestRow) return { asOfWeek: null as number | null, rankings: [] as any[] };
+
+    const rows = await db.query.playerMarketProjections.findMany({
+      where: and(
+        eq(schema.playerMarketProjections.seasonYear, season),
+        eq(schema.playerMarketProjections.asOfWeek, latestRow.asOfWeek),
+        eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
+      ),
+      orderBy: asc(schema.playerMarketProjections.marketRank),
+    });
+
+    // Batch-fetch player name/team/position — chunked to stay under D1's
+    // bound-parameter limit for inArray.
+    const playerIds = rows.map((r) => r.playerId);
+    const CHUNK = 50;
+    const chunks: string[][] = [];
+    for (let i = 0; i < playerIds.length; i += CHUNK) chunks.push(playerIds.slice(i, i + CHUNK));
+    const playerChunks = await Promise.all(
+      chunks.map((chunk) =>
+        db.query.nflPlayers.findMany({
+          where: inArray(schema.nflPlayers.id, chunk),
+          columns: { id: true, name: true, team: true, position: true, status: true, injuryNote: true, headshotUrl: true },
+        })
+      )
+    );
+    const playerById = new Map(playerChunks.flat().map((p) => [p.id, p]));
+
+    return {
+      asOfWeek: latestRow.asOfWeek,
+      rankings: rows.map((r) => ({
+        playerId: r.playerId,
+        player: playerById.get(r.playerId) ?? null,
+        marketRank: r.marketRank,
+        positionRank: r.positionRank,
+        tier: r.tier,
+        vorp: r.vorp,
+        seasonPoints: r.seasonPoints,
+        rosPoints: r.rosPoints,
+        perGameRate: r.perGameRate,
+        remainingGames: r.remainingGames,
+        confidence: r.confidence,
+      })),
+    };
+  });
+
+  return c.json({
+    rankings: result.rankings,
+    meta: {
+      scoringFormat,
+      season,
+      asOfWeek: result.asOfWeek,
+      count: result.rankings.length,
+    },
+  });
 });

@@ -131,6 +131,20 @@ export interface EnrichedPlayerFields {
    * points for the requested scoring format.
    */
   seasonActualPoints?: number | null;
+  /**
+   * Season mode only: which source seasonProjectedPoints came from —
+   * 'market' (deterministic sportsbook-implied projection, highest
+   * precedence), 'ai' (draft-rankings AI total), or 'actual' (neither
+   * available — seasonProjectedPoints is null and the client shows
+   * seasonActualPoints instead). Null in week mode.
+   */
+  projectionSource?: 'market' | 'ai' | 'actual' | null;
+  /** Season mode only: 1-QB overall rank from the Market VORP ranking, or null if unranked/uncovered. */
+  marketRank?: number | null;
+  /** Season mode only: Market rest-of-season points (played + rate×remaining games), or null if uncovered. */
+  rosProjectedPoints?: number | null;
+  /** Season mode only: 'season_props' | 'weekly_extrapolation' | 'none' | null. */
+  marketConfidence?: string | null;
 }
 
 export type EnrichedPlayer = Player & EnrichedPlayerFields;
