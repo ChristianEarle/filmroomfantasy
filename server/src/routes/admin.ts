@@ -1953,6 +1953,243 @@ adminRoutes.post('/generate-projections', async (c) => {
 });
 
 /**
+ * POST /api/admin/sync-season-props
+ * Imports season-long sportsbook prop lines (season O/U totals) — there's no
+ * API source for these, so they're pasted in as JSON or CSV.
+ * Body: { season?: number, input: string | object[], replaceSameCapture?: boolean }
+ * CSV header: playerName,team,position,market,line,overOdds,underOdds,book,sourceUrl,capturedAt
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ */
+adminRoutes.post('/sync-season-props', async (c) => {
+  const db = c.get('db');
+
+  const body = await c.req.json<{
+    season?: number;
+    input?: string | Record<string, unknown>[];
+    replaceSameCapture?: boolean;
+  }>().catch(() => ({} as { season?: number; input?: string | Record<string, unknown>[]; replaceSameCapture?: boolean }));
+
+  if (body.input == null || (typeof body.input === 'string' && body.input.trim() === '')) {
+    return c.json({ error: 'input is required (JSON array or CSV text)' }, 400);
+  }
+
+  try {
+    c.header('Content-Type', 'application/json');
+
+    const { getNflSeasonContext } = await import('../services/espn');
+    const season = body.season || getNflSeasonContext().season;
+    const replaceSameCapture = body.replaceSameCapture === true;
+
+    const { parseSeasonPropsInput, matchSeasonPropsToPlayers } = await import('../services/seasonProps');
+    const { rows, errors: parseErrors } = parseSeasonPropsInput(body.input);
+
+    const allPlayers = await db.query.nflPlayers.findMany({
+      columns: { id: true, name: true, position: true, team: true },
+    });
+    const { matched, unmatched } = matchSeasonPropsToPlayers(rows, allPlayers);
+    const playerById = new Map(allPlayers.map((p) => [p.id, p]));
+
+    // Look up which (season, playerName, stat, book, capturedAt) keys already
+    // exist so we can report accurate inserted/skipped counts — onConflictDoNothing
+    // alone doesn't tell the caller which rows it silently dropped.
+    const existingRows = await db.query.playerSeasonProps.findMany({
+      where: eq(schema.playerSeasonProps.season, season),
+      columns: { playerName: true, stat: true, book: true, capturedAt: true },
+    });
+    const existingKeys = new Set(
+      existingRows.map((r) => `${r.playerName}::${r.stat}::${r.book}::${r.capturedAt}`)
+    );
+
+    let inserted = 0;
+    let skipped = 0;
+    const seenInBatch = new Set<string>();
+    const statements: any[] = [];
+    const BATCH_SIZE = 50;
+
+    for (const row of matched) {
+      const key = `${row.playerName}::${row.stat}::${row.book}::${row.capturedAt}`;
+      const alreadyExists = existingKeys.has(key);
+
+      if (seenInBatch.has(key) || (alreadyExists && !replaceSameCapture)) {
+        skipped++;
+        continue;
+      }
+      seenInBatch.add(key);
+
+      const values = {
+        playerId: row.playerId,
+        playerName: row.playerName,
+        team: row.team,
+        position: row.position,
+        season,
+        stat: row.stat,
+        line: row.line,
+        overPrice: row.overPrice,
+        underPrice: row.underPrice,
+        book: row.book,
+        sourceUrl: row.sourceUrl,
+        capturedAt: row.capturedAt,
+      };
+
+      if (alreadyExists && replaceSameCapture) {
+        statements.push(
+          db.update(schema.playerSeasonProps)
+            .set(values)
+            .where(
+              and(
+                eq(schema.playerSeasonProps.season, season),
+                eq(schema.playerSeasonProps.playerName, row.playerName),
+                eq(schema.playerSeasonProps.stat, row.stat),
+                eq(schema.playerSeasonProps.book, row.book),
+                eq(schema.playerSeasonProps.capturedAt, row.capturedAt)
+              )
+            )
+        );
+      } else {
+        statements.push(
+          db.insert(schema.playerSeasonProps).values({
+            id: generateId(),
+            ...values,
+            createdAt: new Date(),
+          }).onConflictDoNothing()
+        );
+      }
+      inserted++;
+
+      if (statements.length >= BATCH_SIZE) {
+        await db.batch(statements as any);
+        statements.length = 0;
+      }
+    }
+
+    if (statements.length > 0) {
+      await db.batch(statements as any);
+    }
+
+    // Coverage: distinct matched players with >= 2 stat markets, by their
+    // canonical roster position (not whatever the import row happened to say).
+    const coverage: Record<'QB' | 'RB' | 'WR' | 'TE', number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    const statsByPlayer = new Map<string, Set<string>>();
+    for (const row of matched) {
+      if (!statsByPlayer.has(row.playerId)) statsByPlayer.set(row.playerId, new Set());
+      statsByPlayer.get(row.playerId)!.add(row.stat);
+    }
+    for (const [playerId, stats] of statsByPlayer) {
+      const position = playerById.get(playerId)?.position;
+      if (stats.size >= 2 && position && position in coverage) {
+        coverage[position as 'QB' | 'RB' | 'WR' | 'TE']++;
+      }
+    }
+
+    invalidateCache('season-props', true);
+
+    return c.json({
+      inserted,
+      skipped,
+      unmatched: unmatched.map((r) => ({ playerName: r.playerName, market: r.stat })),
+      coverage,
+      ...(parseErrors.length > 0 ? { parseErrors } : {}),
+    });
+  } catch (err) {
+    console.error('Sync season props error:', err);
+    return c.json(
+      { error: 'Sync failed', message: err instanceof Error ? err.message : 'Unknown error' },
+      500
+    );
+  }
+});
+
+/**
+ * GET /api/admin/season-props/summary?season=2026
+ * Verification aid: counts by position/book, latest capturedAt, and the top
+ * 10 players by PPR season projection built from the stored season props.
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ */
+adminRoutes.get('/season-props/summary', async (c) => {
+  const db = c.get('db');
+
+  try {
+    c.header('Content-Type', 'application/json');
+
+    const { getNflSeasonContext } = await import('../services/espn');
+    const seasonParam = c.req.query('season');
+    const season = seasonParam ? parseInt(seasonParam, 10) : getNflSeasonContext().season;
+
+    const allRows = await db.query.playerSeasonProps.findMany({
+      where: eq(schema.playerSeasonProps.season, season),
+    });
+
+    if (allRows.length === 0) {
+      return c.json({ season, totalRows: 0, byPosition: {}, byBook: {}, latestCapturedAt: null, topPlayers: [] });
+    }
+
+    const byPosition: Record<string, number> = {};
+    const byBook: Record<string, number> = {};
+    let latestCapturedAt: string | null = null;
+
+    for (const row of allRows) {
+      const pos = row.position ?? 'UNKNOWN';
+      byPosition[pos] = (byPosition[pos] ?? 0) + 1;
+      byBook[row.book] = (byBook[row.book] ?? 0) + 1;
+      if (!latestCapturedAt || row.capturedAt > latestCapturedAt) {
+        latestCapturedAt = row.capturedAt;
+      }
+    }
+
+    const { buildSeasonProjectionsFromSeasonProps } = await import('../services/seasonProps');
+    const matchedRows = allRows
+      .filter((r): r is typeof r & { playerId: string } => r.playerId != null)
+      .map((r) => ({
+        playerName: r.playerName,
+        team: r.team,
+        position: r.position,
+        stat: r.stat as any,
+        line: r.line,
+        overPrice: r.overPrice,
+        underPrice: r.underPrice,
+        book: r.book,
+        sourceUrl: r.sourceUrl,
+        capturedAt: r.capturedAt,
+        playerId: r.playerId,
+      }));
+
+    const projections = buildSeasonProjectionsFromSeasonProps(matchedRows);
+
+    const playerIds = Array.from(projections.keys());
+    const players = playerIds.length > 0
+      ? await db.query.nflPlayers.findMany({
+          where: inArray(schema.nflPlayers.id, playerIds),
+          columns: { id: true, name: true, team: true, position: true },
+        })
+      : [];
+    const playerById = new Map(players.map((p) => [p.id, p]));
+
+    const topPlayers = Array.from(projections.entries())
+      .map(([playerId, proj]) => ({
+        playerId,
+        playerName: playerById.get(playerId)?.name ?? 'Unknown',
+        team: playerById.get(playerId)?.team ?? null,
+        position: playerById.get(playerId)?.position ?? null,
+        ppr: proj.ppr,
+        halfPpr: proj.halfPpr,
+        standard: proj.standard,
+        marketsUsed: proj.marketsUsed,
+        books: proj.books,
+      }))
+      .sort((a, b) => b.ppr - a.ppr)
+      .slice(0, 10);
+
+    return c.json({ season, totalRows: allRows.length, byPosition, byBook, latestCapturedAt, topPlayers });
+  } catch (err) {
+    console.error('Season props summary error:', err);
+    return c.json(
+      { error: 'Failed to load season props summary', message: err instanceof Error ? err.message : 'Unknown error' },
+      500
+    );
+  }
+});
+
+/**
  * POST /api/admin/set-tier
  * Manually set a user's subscription tier (e.g. grant pro status without payment).
  * Body: { email: string, tier: 'free' | 'pro', expiresAt?: string }
