@@ -114,6 +114,44 @@ function parseCsvTable(text: string): string[][] {
   return rows.filter((r) => !(r.length === 1 && r[0].trim() === ''));
 }
 
+/**
+ * Maps a lowercased/trimmed CSV header cell to its canonical field name.
+ * Lets hand-pasted CSVs use header spellings other than our exact field
+ * names (e.g. exported from a spreadsheet with "Player"/"Odds Over"/"URL").
+ */
+const HEADER_ALIASES: Record<string, string> = {
+  playername: 'playerName',
+  player: 'playerName',
+  name: 'playerName',
+  team: 'team',
+  position: 'position',
+  pos: 'position',
+  market: 'market',
+  stat: 'market',
+  line: 'line',
+  overodds: 'overOdds',
+  odds_over: 'overOdds',
+  over: 'overOdds',
+  underodds: 'underOdds',
+  odds_under: 'underOdds',
+  under: 'underOdds',
+  book: 'book',
+  sportsbook: 'book',
+  sourceurl: 'sourceUrl',
+  url: 'sourceUrl',
+  source: 'sourceUrl',
+  capturedat: 'capturedAt',
+  date: 'capturedAt',
+  captured: 'capturedAt',
+};
+
+const REQUIRED_CSV_FIELDS = ['playerName', 'market', 'line'] as const;
+
+/** Resolve a raw CSV header cell to its canonical field name, or null if unrecognized. */
+function canonicalizeHeader(rawHeader: string): string | null {
+  return HEADER_ALIASES[rawHeader.trim().toLowerCase()] ?? null;
+}
+
 function coerceString(value: unknown): string | undefined {
   if (value == null) return undefined;
   const str = String(value).trim();
@@ -122,7 +160,11 @@ function coerceString(value: unknown): string | undefined {
 
 function coerceNumber(value: unknown): number | undefined {
   if (value == null || value === '') return undefined;
-  const num = typeof value === 'number' ? value : Number(String(value).trim());
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  // Strip thousands separators ("3,950.5") and a leading "+" ("+120", common
+  // in American odds) before parsing, so hand-pasted numbers still coerce.
+  const cleaned = String(value).trim().replace(/,/g, '').replace(/^\+/, '');
+  const num = Number(cleaned);
   return Number.isFinite(num) ? num : undefined;
 }
 
@@ -226,7 +268,14 @@ export function parseSeasonPropsInput(input: string | unknown[]): ParsedSeasonPr
     } else {
       const table = parseCsvTable(trimmed);
       if (table.length === 0) return { rows, errors };
-      const header = table[0].map((h) => h.trim());
+      const header = table[0].map((h) => canonicalizeHeader(h) ?? h.trim());
+
+      const missing = REQUIRED_CSV_FIELDS.filter((field) => !header.includes(field));
+      if (missing.length > 0) {
+        errors.push({ row: 0, message: `missing required column(s): ${missing.join(', ')}` });
+        return { rows, errors };
+      }
+
       for (let i = 1; i < table.length; i++) {
         const data: Record<string, unknown> = {};
         header.forEach((col, colIdx) => {
@@ -395,6 +444,7 @@ export function buildSeasonProjectionsFromSeasonProps(
       projReceptions: statTotals.receptions,
       projRecYards: statTotals.rec_yds,
       projRecTDs: statTotals.rec_tds,
+      interceptions: statTotals.interceptions,
     };
 
     result.set(playerId, {

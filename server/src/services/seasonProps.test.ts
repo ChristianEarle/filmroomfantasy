@@ -105,6 +105,93 @@ describe('parseSeasonPropsInput', () => {
     expect(parseSeasonPropsInput('')).toEqual({ rows: [], errors: [] });
     expect(parseSeasonPropsInput('   ')).toEqual({ rows: [], errors: [] });
   });
+
+  it('matches CSV headers case-insensitively', () => {
+    const csv = [
+      'PLAYERNAME,TEAM,POSITION,MARKET,LINE,OVERODDS,UNDERODDS,BOOK,SOURCEURL,CAPTUREDAT',
+      'Josh Allen,BUF,QB,pass_yds,4300,-110,-110,FanDuel,,2026-08-21',
+    ].join('\n');
+
+    const { rows, errors } = parseSeasonPropsInput(csv);
+
+    expect(errors).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ playerName: 'Josh Allen', stat: 'pass_yds', line: 4300 });
+  });
+
+  it('accepts aliased header names (player/stat/odds_over/odds_under/sportsbook/url/date/pos)', () => {
+    const csv = [
+      'player,team,pos,stat,line,odds_over,odds_under,sportsbook,url,date',
+      'Josh Allen,BUF,QB,pass_yds,4300,-110,-110,FanDuel,https://example.com,2026-08-21',
+    ].join('\n');
+
+    const { rows, errors } = parseSeasonPropsInput(csv);
+
+    expect(errors).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      playerName: 'Josh Allen',
+      position: 'QB',
+      stat: 'pass_yds',
+      line: 4300,
+      overPrice: -110,
+      underPrice: -110,
+      book: 'FanDuel',
+      sourceUrl: 'https://example.com',
+      capturedAt: '2026-08-21',
+    });
+  });
+
+  it('accepts the alternate "name"/"over"/"under"/"source" aliases too', () => {
+    const csv = [
+      'name,team,position,market,line,over,under,book,source,captured',
+      'Josh Allen,BUF,QB,pass_yds,4300,-110,-110,FanDuel,https://example.com,2026-08-21',
+    ].join('\n');
+
+    const { rows, errors } = parseSeasonPropsInput(csv);
+
+    expect(errors).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ playerName: 'Josh Allen', overPrice: -110, underPrice: -110, sourceUrl: 'https://example.com' });
+  });
+
+  it('returns a single clear error when a required column is missing after aliasing, instead of per-row errors', () => {
+    const csv = [
+      'playerName,team,position,line,book',
+      'Josh Allen,BUF,QB,4300,FanDuel',
+      'Patrick Mahomes,KC,QB,4500,DraftKings',
+    ].join('\n');
+
+    const { rows, errors } = parseSeasonPropsInput(csv);
+
+    expect(rows).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toBe('missing required column(s): market');
+  });
+
+  it('reports every missing required column in one error', () => {
+    const csv = ['team,position,book', 'BUF,QB,FanDuel'].join('\n');
+
+    const { rows, errors } = parseSeasonPropsInput(csv);
+
+    expect(rows).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toBe('missing required column(s): playerName, market, line');
+  });
+
+  it('strips thousands separators and a leading "+" before parsing numeric fields', () => {
+    const csv = [
+      CSV_HEADER,
+      'Josh Allen,BUF,QB,pass_yds,"3,950.5",+120,-110,FanDuel,,2026-08-21',
+    ].join('\n');
+
+    const { rows, errors } = parseSeasonPropsInput(csv);
+
+    expect(errors).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].line).toBe(3950.5);
+    expect(rows[0].overPrice).toBe(120);
+  });
 });
 
 describe('matchSeasonPropsToPlayers', () => {
@@ -212,8 +299,8 @@ describe('buildSeasonProjectionsFromSeasonProps', () => {
     expect(proj.books).toEqual(['DraftKings', 'FanDuel']);
   });
 
-  it('computes ppr/half-ppr/standard season points for a QB from pass + rush lines', () => {
-    const rows: ResolvedSeasonPropRow[] = [
+  it('computes ppr/half-ppr/standard season points for a QB from pass + rush lines, deducting 1 pt per projected INT', () => {
+    const rowsWithInts: ResolvedSeasonPropRow[] = [
       resolvedRow({ playerId: 'qb1', stat: 'pass_yds', line: 4500, book: 'DraftKings' }),
       resolvedRow({ playerId: 'qb1', stat: 'pass_tds', line: 30, book: 'DraftKings' }),
       resolvedRow({ playerId: 'qb1', stat: 'rush_yds', line: 350, book: 'DraftKings' }),
@@ -221,15 +308,30 @@ describe('buildSeasonProjectionsFromSeasonProps', () => {
       resolvedRow({ playerId: 'qb1', stat: 'interceptions', line: 10, book: 'DraftKings' }),
     ];
 
-    const proj = buildSeasonProjectionsFromSeasonProps(rows).get('qb1')!;
+    const rowsWithoutInts: ResolvedSeasonPropRow[] = [
+      resolvedRow({ playerId: 'qb2', stat: 'pass_yds', line: 4500, book: 'DraftKings' }),
+      resolvedRow({ playerId: 'qb2', stat: 'pass_tds', line: 30, book: 'DraftKings' }),
+      resolvedRow({ playerId: 'qb2', stat: 'rush_yds', line: 350, book: 'DraftKings' }),
+      resolvedRow({ playerId: 'qb2', stat: 'rush_tds', line: 3, book: 'DraftKings' }),
+    ];
 
-    // 4500 * 0.04 + 30 * 4 + 350 * 0.1 + 3 * 6 = 180 + 120 + 35 + 18 = 353
-    const expectedPoints = 4500 * 0.04 + 30 * 4 + 350 * 0.1 + 3 * 6;
-    expect(proj.ppr).toBeCloseTo(expectedPoints);
-    expect(proj.halfPpr).toBeCloseTo(expectedPoints);
-    expect(proj.standard).toBeCloseTo(expectedPoints);
-    expect(proj.stats.interceptions).toBe(10);
-    expect(proj.marketsUsed).toBe(5);
+    const results = buildSeasonProjectionsFromSeasonProps([...rowsWithInts, ...rowsWithoutInts]);
+    const projWithInts = results.get('qb1')!;
+    const projWithoutInts = results.get('qb2')!;
+
+    // 4500 * 0.04 + 30 * 4 + 350 * 0.1 + 3 * 6 - 10 * 1 = 180 + 120 + 35 + 18 - 10 = 343
+    const expectedPoints = 4500 * 0.04 + 30 * 4 + 350 * 0.1 + 3 * 6 - 10 * 1;
+    expect(projWithInts.ppr).toBeCloseTo(expectedPoints);
+    expect(projWithInts.halfPpr).toBeCloseTo(expectedPoints);
+    expect(projWithInts.standard).toBeCloseTo(expectedPoints);
+    expect(projWithInts.stats.interceptions).toBe(10);
+    expect(projWithInts.marketsUsed).toBe(5);
+
+    // 10 INTs vs 0 INTs must differ by exactly 10 points (1 pt deducted per INT) in every format.
+    expect(projWithoutInts.stats.interceptions).toBe(0);
+    expect(projWithoutInts.ppr - projWithInts.ppr).toBeCloseTo(10);
+    expect(projWithoutInts.halfPpr - projWithInts.halfPpr).toBeCloseTo(10);
+    expect(projWithoutInts.standard - projWithInts.standard).toBeCloseTo(10);
   });
 
   it('computes ppr/half-ppr/standard season points for a WR from receiving lines, with scoring format differences', () => {
