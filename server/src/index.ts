@@ -38,6 +38,10 @@ export type Env = {
   DB: D1Database;
   JWT_SECRET: string;
   ENVIRONMENT: string;
+  /** Local-only: 'pro' | 'elite' bypasses tier gates on localhost (see middleware/tier.ts). */
+  DEV_TIER_OVERRIDE?: string;
+  /** Local-only: email of a local user to auto-login when no token is sent (see middleware/auth.ts). */
+  DEV_AUTO_LOGIN_EMAIL?: string;
   SYNC_SECRET?: string; // Optional: required for POST /api/admin/sync-players
   ODDS_API_KEY?: string; // Optional: The Odds API key for fetching NFL odds
   TWITTER_RSS_URLS?: string; // Comma-separated RSS URLs, e.g. https://nitter.net/AdamSchefter/rss
@@ -347,7 +351,11 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // Refresh the deterministic Market (sportsbook-implied) season
     // projection + VORP ranking layer now that this week's props/projections
     // are current. Cheap: mostly re-derives from data already synced above.
-    await callSync('/api/admin/sync-market-projections', { asOfWeek: currentWeek, season: currentSeason });
+    // Let the endpoint default asOfWeek to the last COMPLETED week
+    // (max(0, currentWeek - 1)) instead of passing the in-progress week —
+    // matching the "week <= asOfWeek is already played" semantics it uses
+    // for computeRemainingGames.
+    await callSync('/api/admin/sync-market-projections', { season: currentSeason });
 
     // Sync current odds during NFL season
     if (currentWeek <= 18) {

@@ -20,6 +20,19 @@
 > Separately, ~30 open draft PRs have accumulated from repeated runs of
 > this backlog-picking routine, some duplicating the same item — still
 > pending a triage/close pass before picking new items off this list.
+>
+> **2026-09-07:** a deterministic, sportsbook-implied "Market" projection +
+> VORP ranking layer shipped (`player_market_projections`, #309; coverage
+> fixes #311, #313), fed by a manual season-long prop-line import
+> (`player_season_props`, #305; 206 lines / 106 players imported to prod
+> from public DraftKings-sourced listings the same day — the source CSV
+> isn't committed, so the Admin → Import Season Props card is the only
+> path back in). AI draft rankings now anchor on Market VORP rank instead
+> of ADP alone (#312). Ask AI moved to a real tool-calling loop with
+> player cards and league awareness (#310, "Ask AI v2"). Redraft ADP
+> (originally scoped as Sleeper/Underdog) is done via
+> FantasyFootballCalculator's public API, which also fixed a
+> previously-silent dynasty-rookie regeneration outage (#306).
 
 ---
 
@@ -171,6 +184,7 @@
 - [ ] **Top waiver pickups from multiple platforms** - Source trending waiver pickups from multiple league platforms (Sleeper, ESPN, Yahoo) for better consensus recommendations.
 - [ ] **Draft rankings** - Pre-draft player rankings with tiers, positional scarcity analysis, and ADP comparison. Sidebar nav item removed for beta — re-add `{ icon: Medal, label: 'Draft Rankings', view: 'DraftRankings' }` to `Sidebar.tsx` menuItems. Route and `ComingSoonView` still exist in `App.tsx`.
 - [x] **Season projections** - `GET /players` in season mode now returns genuine `seasonProjectedPoints` from `draft_rankings` (redraft, matching scoring format), with `seasonActualPoints` as a labeled fallback; `PlayerTable`'s Full Season view sorts by and badges the displayed value (#301).
+- [x] **Redraft ADP** - Originally scoped as Sleeper/Underdog; shipped via FantasyFootballCalculator's public JSON ADP API instead (`fetchFfcAdp()`), replacing a FantasyPros scrape that had gone silently near-empty behind a login wall. Feeds both the AI draft-rankings prompts and `adpDelta`; an ADP-coverage canary now fails the batch loudly instead of proceeding on sparse/null data (#306). ECR and Best Ball ADP below remain open.
 
 ### Trade Finder — API Cost & Rate-Limit Hardening
 > **OBSOLETE (2026-09-06):** the Trade Finder feature (`tradeFinder.ts`, `tradeConstructor.ts`,

@@ -104,3 +104,88 @@ describe('AiChatModal', () => {
     expect(screen.queryByText(/Looked up:/)).not.toBeInTheDocument();
   });
 });
+
+describe('AiChatModal — context changes reset conversation state', () => {
+  it('clears prior turns and sends empty history when contextParams changes (e.g. Redraft -> Dynasty)', async () => {
+    h.post.mockResolvedValue({ answer: 'Answer for redraft.' });
+    const { rerender } = render(
+      <AiChatModal
+        isOpen
+        onClose={vi.fn()}
+        isDarkMode={false}
+        title="Ask"
+        endpoint="/draft-rankings/ask"
+        contextParams={{ type: 'redraft', scoring: 'ppr' }}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/ask a question/i), { target: { value: 'Who at 1.01?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(screen.getByText('Answer for redraft.')).toBeInTheDocument());
+
+    // Same mounted instance, but the caller's contextParams changed underneath it.
+    rerender(
+      <AiChatModal
+        isOpen
+        onClose={vi.fn()}
+        isDarkMode={false}
+        title="Ask"
+        endpoint="/draft-rankings/ask"
+        contextParams={{ type: 'dynasty', scoring: 'ppr' }}
+      />,
+    );
+
+    expect(screen.queryByText('Answer for redraft.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Who at 1.01?')).not.toBeInTheDocument();
+
+    h.post.mockResolvedValue({ answer: 'Answer for dynasty.' });
+    fireEvent.change(screen.getByPlaceholderText(/ask a question/i), { target: { value: 'Who at 1.01 in dynasty?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(screen.getByText('Answer for dynasty.')).toBeInTheDocument());
+
+    const lastCall = h.post.mock.calls[h.post.mock.calls.length - 1];
+    expect(lastCall[1]).toEqual(expect.objectContaining({ conversationHistory: [], type: 'dynasty' }));
+  });
+
+  it('preserves turns when closed and reopened with the identical contextParams', async () => {
+    h.post.mockResolvedValue({ answer: 'Same context answer.' });
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <AiChatModal
+        isOpen
+        onClose={onClose}
+        isDarkMode={false}
+        title="Ask"
+        endpoint="/draft-rankings/ask"
+        contextParams={{ type: 'redraft', scoring: 'ppr' }}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/ask a question/i), { target: { value: 'Question one?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(screen.getByText('Same context answer.')).toBeInTheDocument());
+
+    // Close the modal (isOpen=false), then reopen with a fresh but value-equal contextParams object.
+    rerender(
+      <AiChatModal
+        isOpen={false}
+        onClose={onClose}
+        isDarkMode={false}
+        title="Ask"
+        endpoint="/draft-rankings/ask"
+        contextParams={{ type: 'redraft', scoring: 'ppr' }}
+      />,
+    );
+    rerender(
+      <AiChatModal
+        isOpen
+        onClose={onClose}
+        isDarkMode={false}
+        title="Ask"
+        endpoint="/draft-rankings/ask"
+        contextParams={{ type: 'redraft', scoring: 'ppr' }}
+      />,
+    );
+
+    expect(screen.getByText('Question one?')).toBeInTheDocument();
+    expect(screen.getByText('Same context answer.')).toBeInTheDocument();
+  });
+});

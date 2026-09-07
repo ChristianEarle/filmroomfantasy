@@ -143,6 +143,23 @@ export function AiChatModal({
   const scrollRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
+  // The modal is mounted once per call site and toggled with `isOpen`, so its
+  // turn history would otherwise survive across unrelated context changes
+  // (e.g. Redraft -> Dynasty, AI -> Market, a scoring/week change). Fingerprint
+  // the endpoint + contextParams and wipe local state whenever that changes;
+  // reopening with the SAME context (isOpen toggling off/on) intentionally
+  // leaves the history alone.
+  const contextKey = `${endpoint}::${JSON.stringify(contextParams ?? {})}`;
+  const prevContextKeyRef = useRef(contextKey);
+
+  useEffect(() => {
+    if (prevContextKeyRef.current === contextKey) return;
+    prevContextKeyRef.current = contextKey;
+    setTurns([]);
+    setInput('');
+    setError(null);
+  }, [contextKey]);
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };

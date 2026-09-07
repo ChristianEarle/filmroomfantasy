@@ -5,6 +5,7 @@ import { eq, and, isNull, gt } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
+import { resolveEffectiveTier } from '../middleware/tier';
 import { rateLimit } from '../middleware/rateLimit';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { generateId } from '../utils/id';
@@ -359,6 +360,14 @@ authRoutes.get('/me', authMiddleware, async (c) => {
     return c.json({ error: 'Not authenticated' }, 401);
   }
 
+  let urlHostname: string | null = null;
+  try {
+    urlHostname = new URL(c.req.url).hostname;
+  } catch {
+    urlHostname = null;
+  }
+  const effectiveTier = resolveEffectiveTier(user, c.env, c.req.header('host'), urlHostname);
+
   // Get user's leagues
   const db = c.get('db');
   const memberships = await db.query.leagueMembers.findMany({
@@ -380,8 +389,10 @@ authRoutes.get('/me', authMiddleware, async (c) => {
       notificationsEnabled: user.notificationsEnabled ?? true,
       hasGoogle: !!user.googleId,
       hasPassword: !!user.passwordHash,
-      subscriptionTier: user.subscriptionTier ?? 'free',
+      subscriptionTier: effectiveTier.tier,
       subscriptionExpiresAt: user.subscriptionExpiresAt ?? null,
+      // Present only while the local DEV_TIER_OVERRIDE is in effect.
+      ...(effectiveTier.overridden ? { tierOverride: true } : {}),
       role: user.role ?? 'user',
       emailVerifiedAt: user.emailVerifiedAt ?? null,
     },

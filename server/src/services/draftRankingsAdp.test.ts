@@ -42,6 +42,37 @@ function stubFetch(body: unknown, ok = true) {
   );
 }
 
+/**
+ * Route fetch by URL so the MFL IS_KEEPER=R rookie fallback returns real
+ * entries while the FantasyCalc dynasty-values call (which doesn't match
+ * MFL's shape) falls back to an empty map, same as it would for a real
+ * partial outage. Used to give buildRookieAdpMap a non-zero result without
+ * needing a matching player row in the fake DB (FC contributes 0 rookies
+ * when the DB has none, same as `makeFakeDb`'s default empty findMany).
+ */
+function stubMflRookieAdpOnly(entries: Array<{ id: string; lastFirst: string; adp: number }>) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async (url: string) => {
+      const respond = (body: unknown) => ({
+        ok: true,
+        status: 200,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+      } as unknown as Response);
+
+      if (url.includes('TYPE=adp')) {
+        return respond({ adp: { player: entries.map((e) => ({ id: e.id, averagePick: String(e.adp) })) } });
+      }
+      if (url.includes('TYPE=players')) {
+        return respond({ players: { player: entries.map((e) => ({ id: e.id, name: e.lastFirst, position: 'WR' })) } });
+      }
+      // FantasyCalc (or anything else) — non-array payload, handled gracefully.
+      return respond({});
+    }),
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -237,7 +268,11 @@ describe('isRookieEligible', () => {
 
 describe('submitDraftRankingsBatch — zero-context variants', () => {
   it('inserts a failed ranking_batch_jobs row instead of silently skipping the variant', async () => {
-    stubFetch({ players: [] }); // any ADP source; irrelevant here
+    // Non-empty MFL rookie ADP fallback so the ADP map is non-zero and the
+    // rookie-specific empty-ADP canary (tested separately below)
+    // doesn't intercept this before it reaches the zero-eligible-players
+    // check this test is actually about.
+    stubMflRookieAdpOnly([{ id: '1', lastFirst: 'Doe, John', adp: 1 }]);
 
     const inserted: any[] = [];
     const db = makeFakeDb(inserted);
@@ -262,7 +297,9 @@ describe('submitDraftRankingsBatch — zero-context variants', () => {
   });
 
   it('leaves multiple variants each with their own failed job row', async () => {
-    stubFetch({ players: [] });
+    // Same reasoning as above: keep the ADP map non-zero so the empty-ADP
+    // canary doesn't fire ahead of the zero-eligible-players check.
+    stubMflRookieAdpOnly([{ id: '1', lastFirst: 'Doe, John', adp: 1 }]);
 
     const inserted: any[] = [];
     const db = makeFakeDb(inserted);
@@ -279,6 +316,62 @@ describe('submitDraftRankingsBatch — zero-context variants', () => {
 
     const zeroEligibleRows = inserted.filter((r) => /zero eligible players/.test(r.errorMessage ?? ''));
     expect(zeroEligibleRows).toHaveLength(2);
+  });
+});
+
+// ── Rookie ADP outage canary (empty map, not just a small pool) ─────
+
+describe('submitDraftRankingsBatch — rookie empty ADP canary', () => {
+  it('rookies eligible but ADP map empty (total outage) → failed job row, no submission', async () => {
+    // Both the FantasyCalc dynasty feed and the MFL IS_KEEPER=R fallback
+    // return payloads that resolve to an empty ADP map — a total outage,
+    // not just a small rookie class.
+    stubFetch({});
+
+    const inserted: any[] = [];
+    // Rookies ARE eligible (unlike the zero-eligible-players tests above) —
+    // this proves the skip is caused by the empty-ADP guard specifically,
+    // not by there being no players to rank.
+    const nflPlayersFindMany = vi.fn(async () => [
+      {
+        id: 'p1',
+        externalId: 'e1',
+        name: 'Eligible Rookie',
+        position: 'WR',
+        team: 'KC',
+        age: 22,
+        yearsExp: 0,
+        status: 'active',
+        injuryNote: null,
+        depthChartOrder: 1,
+      },
+    ]);
+    const db = makeFakeDb(inserted);
+    db.query.nflPlayers.findMany = nflPlayersFindMany;
+
+    const result = await submitDraftRankingsBatch({
+      db,
+      anthropicKey: 'test-key',
+      variants: [{ rankingType: 'rookie', scoringFormat: 'ppr', superflex: false }],
+      seasonYear: 2026,
+    });
+
+    expect(result.ok).toBe(false);
+
+    // buildRookieAdpMap makes its own single nflPlayers.findMany call to
+    // filter FC's dynasty ranks down to rookies; buildPlayerContexts would
+    // make a second, separate call. Exactly one call proves the empty-ADP
+    // guard skipped the variant before buildPlayerContexts ever ran.
+    expect(nflPlayersFindMany).toHaveBeenCalledTimes(1);
+
+    const canaryRow = inserted.find((r) => /Rookie ADP coverage canary tripped/.test(r.errorMessage ?? ''));
+    expect(canaryRow).toBeTruthy();
+    expect(canaryRow.status).toBe('failed');
+    expect(canaryRow.anthropicBatchId).toMatch(/^no-batch-/);
+
+    // No separate "zero eligible players" row — the variant never reaches
+    // that check, and last week's rankings for it are left untouched.
+    expect(inserted).toHaveLength(1);
   });
 });
 
