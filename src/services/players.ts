@@ -18,6 +18,7 @@ export interface Player {
   headshotUrl?: string;
   age?: number;
   yearsExp?: number;
+  depthChartOrder?: number | null;
 }
 
 export interface PlayerWeeklyStats {
