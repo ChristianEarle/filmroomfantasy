@@ -16,6 +16,7 @@ import {
 } from '../utils/prompt';
 import { buildProjectionsFromProps } from '../services/projections';
 import { resolveWeekComplete, computeFetchWindow } from './playersLogic';
+import { resolveMarketAsOfWeek } from '../services/marketRankingsQueries';
 import type { Env, Variables } from '../index';
 
 // Rate limits for player routes
@@ -466,6 +467,15 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         chunks.push(playerIds.slice(i, i + CHUNK));
       }
 
+      // Market rankings (season mode only): the most recently computed
+      // as_of_week for this season/format, so precedence resolution below
+      // doesn't need to know "the current NFL week" — it just uses whatever
+      // sync-market-projections last wrote.
+      let marketAsOfWeek: number | null = null;
+      if (week === undefined) {
+        marketAsOfWeek = await resolveMarketAsOfWeek(db, season, scoringFormat);
+      }
+
       // Fetch all chunks in parallel
       const chunkResults = await Promise.all(
         chunks.map(chunk => {
@@ -491,6 +501,20 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
                 columns: { playerId: true, projectedPoints: true },
               })
             : Promise.resolve([] as { playerId: string; projectedPoints: number | null }[]);
+          // Market (sportsbook-implied) season projections take precedence over
+          // the AI draft-rankings total when both are available — see the
+          // seasonProjectedPoints precedence resolution below.
+          const marketProjectionsPromise = week === undefined && marketAsOfWeek != null
+            ? db.query.playerMarketProjections.findMany({
+                where: and(
+                  inArray(schema.playerMarketProjections.playerId, chunk),
+                  eq(schema.playerMarketProjections.seasonYear, season),
+                  eq(schema.playerMarketProjections.asOfWeek, marketAsOfWeek),
+                  eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
+                ),
+                columns: { playerId: true, seasonPoints: true, rosPoints: true, marketRank: true, confidence: true },
+              })
+            : Promise.resolve([] as { playerId: string; seasonPoints: number | null; rosPoints: number | null; marketRank: number | null; confidence: string }[]);
           return Promise.all([
             db.query.playerWeeklyStats.findMany({
               where: and(
@@ -503,6 +527,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
               orderBy: week !== undefined ? undefined : desc(schema.playerProjections.week),
             }),
             draftRankingsPromise,
+            marketProjectionsPromise,
           ]);
         })
       );
@@ -511,10 +536,12 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       const allStats: { playerId: string; [k: string]: any }[] = [];
       const allProjections: { playerId: string; [k: string]: any }[] = [];
       const allDraftRankings: { playerId: string; projectedPoints: number | null }[] = [];
-      for (const [statsChunk, projChunk, draftChunk] of chunkResults) {
+      const allMarketProjections: { playerId: string; seasonPoints: number | null; rosPoints: number | null; marketRank: number | null; confidence: string }[] = [];
+      for (const [statsChunk, projChunk, draftChunk, marketChunk] of chunkResults) {
         allStats.push(...statsChunk);
         allProjections.push(...projChunk);
         allDraftRankings.push(...draftChunk);
+        allMarketProjections.push(...marketChunk);
       }
 
       const statsByPlayer = new Map<string, typeof allStats>();
@@ -535,6 +562,13 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       const seasonProjectionByPlayer = new Map<string, number>();
       for (const dr of allDraftRankings) {
         if (dr.projectedPoints != null) seasonProjectionByPlayer.set(dr.playerId, dr.projectedPoints);
+      }
+
+      // Deterministic Market (sportsbook-implied) season projections, keyed
+      // by player — takes precedence over the AI total when present.
+      const marketProjectionByPlayer = new Map<string, { seasonPoints: number | null; rosPoints: number | null; marketRank: number | null; confidence: string }>();
+      for (const mp of allMarketProjections) {
+        marketProjectionByPlayer.set(mp.playerId, mp);
       }
 
       // Column key for the requested scoring format — used for sparkline history
@@ -635,9 +669,21 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         // instead of labelling summed actuals as "projected".
         const seasonPtsCol = scoringFormat === 'standard' ? 'fantasyPointsStd' : scoringFormat === 'half-ppr' ? 'fantasyPointsHalf' : 'fantasyPointsPPR';
         const seasonActualPoints = Math.round(((ss as any)[seasonPtsCol] ?? 0) * 10) / 10;
+
+        // Precedence: deterministic Market projection > AI draft-rankings total > null
+        // (the client falls back to seasonActualPoints and labels it 'actual' when null).
+        const marketProjection = week === undefined ? marketProjectionByPlayer.get(player.id) : undefined;
+        const hasMarketProjection = marketProjection?.seasonPoints != null;
+        const hasAiProjection = seasonProjectionByPlayer.has(player.id);
         const seasonProjectedPoints = week === undefined
-          ? (seasonProjectionByPlayer.get(player.id) ?? null)
+          ? (hasMarketProjection ? (marketProjection!.seasonPoints as number) : (hasAiProjection ? seasonProjectionByPlayer.get(player.id)! : null))
           : null;
+        const projectionSource: 'market' | 'ai' | 'actual' | null = week === undefined
+          ? (hasMarketProjection ? 'market' : hasAiProjection ? 'ai' : 'actual')
+          : null;
+        const marketRank = week === undefined ? (marketProjection?.marketRank ?? null) : null;
+        const rosProjectedPoints = week === undefined ? (marketProjection?.rosPoints ?? null) : null;
+        const marketConfidence = week === undefined ? (marketProjection?.confidence ?? null) : null;
 
         return {
           ...player,
@@ -646,6 +692,10 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           projectedPoints: projPts,
           seasonActualPoints,
           seasonProjectedPoints,
+          projectionSource,
+          marketRank,
+          rosProjectedPoints,
+          marketConfidence,
           recentWeeklyScores,
           isRostered: rosteredPlayerIds.includes(player.id),
         };

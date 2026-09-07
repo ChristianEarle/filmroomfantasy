@@ -257,6 +257,43 @@ export const playerProjections = sqliteTable('player_projections', {
   playerProjectionUnique: uniqueIndex('player_projection_unique').on(table.playerId, table.week, table.seasonYear, table.scoringFormat),
 }));
 
+// Deterministic "Market" (sportsbook-implied) season projection + VORP
+// ranking layer. Tier A rows are built from season-long prop lines
+// (services/seasonProps.ts's buildSeasonProjectionsFromSeasonProps); Tier B
+// rows extrapolate from the latest weekly prop-based projection when a
+// player has no season prop coverage. See services/marketRankings.ts for
+// the pure ranking/VORP math and routes/admin.ts's
+// POST /sync-market-projections for the sync job.
+export const playerMarketProjections = sqliteTable('player_market_projections', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  asOfWeek: integer('as_of_week').notNull(),
+  scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
+
+  seasonPoints: real('season_points'),
+  rosPoints: real('ros_points'),
+  perGameRate: real('per_game_rate'),
+  remainingGames: integer('remaining_games'),
+
+  marketRank: integer('market_rank'),
+  positionRank: integer('position_rank'),
+  tier: integer('tier'),
+  vorp: real('vorp'),
+
+  // 'season_props' | 'weekly_extrapolation' | 'none'
+  confidence: text('confidence').notNull().default('none'),
+  source: text('source').notNull().default('market'),
+
+  computedAt: integer('computed_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  marketProjUnique: uniqueIndex('idx_market_proj_unique').on(table.playerId, table.seasonYear, table.asOfWeek, table.scoringFormat),
+  marketProjWeekIdx: index('idx_market_proj_week').on(table.seasonYear, table.asOfWeek, table.scoringFormat, table.marketRank),
+}));
+
+export type PlayerMarketProjection = typeof playerMarketProjections.$inferSelect;
+export type NewPlayerMarketProjection = typeof playerMarketProjections.$inferInsert;
+
 // Historical projection snapshots for trends (biggest movers, etc.)
 export const projectionLineSnapshots = sqliteTable('projection_line_snapshots', {
   id: text('id').primaryKey(),

@@ -27,7 +27,7 @@ import { rostersRoutes } from './routes/rosters';
 import { tradeHistoryRoutes } from './routes/tradeHistory';
 import { analyticsRoutes } from './routes/analytics';
 import { articleRoutes } from './routes/articles';
-import { draftRankingsRoutes } from './routes/draftRankings';
+import { draftRankingsRoutes, marketRankingsRoutes } from './routes/draftRankings';
 import { watchlistRoutes } from './routes/watchlist';
 import { notificationRoutes } from './routes/notifications';
 import { leagueAnalyzerRoutes } from './routes/leagueAnalyzer';
@@ -215,6 +215,7 @@ app.route('/api/admin', adminStatsRoutes);
 app.route('/api/analytics', analyticsRoutes);
 app.route('/api/articles', articleRoutes);
 app.route('/api/draft-rankings', draftRankingsRoutes);
+app.route('/api/market-rankings', marketRankingsRoutes);
 app.route('/api/watchlist', watchlistRoutes);
 app.route('/api/notifications', notificationRoutes);
 app.route('/api/league-analyzer', leagueAnalyzerRoutes);
@@ -342,6 +343,11 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     }
 
     await callSync('/api/admin/sync-projections', { week: currentWeek });
+
+    // Refresh the deterministic Market (sportsbook-implied) season
+    // projection + VORP ranking layer now that this week's props/projections
+    // are current. Cheap: mostly re-derives from data already synced above.
+    await callSync('/api/admin/sync-market-projections', { asOfWeek: currentWeek, season: currentSeason });
 
     // Sync current odds during NFL season
     if (currentWeek <= 18) {
