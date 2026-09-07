@@ -15,6 +15,7 @@ import {
   type ConversationTurn,
 } from '../utils/prompt';
 import { buildProjectionsFromProps } from '../services/projections';
+import { resolveWeekComplete, computeFetchWindow } from './playersLogic';
 import type { Env, Variables } from '../index';
 
 // Rate limits for player routes
@@ -22,6 +23,18 @@ const playerSearchRateLimit = rateLimit(30, 60 * 1000); // 30 req/min for search
 const playerReadRateLimit = rateLimit(120, 60 * 1000); // 120 req/min for reads
 const playerAnalysisRateLimit = rateLimit(10, 60 * 1000); // 10 req/min for AI analysis
 const playerAskRateLimit = rateLimit(20, 60 * 1000); // 20 req/min for Ask AI
+
+// Display labels for prop market keys from The Odds API (mirrors the market
+// keys defined in services/projections.ts). Binary markets like anytime-TD
+// have no point line and are excluded from /prop-movements.
+const PROP_MARKET_LABELS: Record<string, string> = {
+  player_pass_yds: 'Pass Yards',
+  player_pass_tds: 'Pass TDs',
+  player_rush_yds: 'Rush Yards',
+  player_rush_tds: 'Rush TDs',
+  player_reception_yds: 'Rec Yards',
+  player_receptions: 'Receptions',
+};
 
 function mapSleeperStatsToRow(internalPlayerId: string, seasonYear: number, week: number, playerStats: any) {
   return {
@@ -188,10 +201,11 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         where: and(eq(schema.nflGames.week, week), eq(schema.nflGames.seasonYear, season)),
         columns: { id: true, isComplete: true, homeScore: true, awayScore: true },
       });
-      weekComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
+      const gamesComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
 
       // Fallback: if we have stats for this week (Sleeper only has stats for completed weeks), treat as past week
-      if (!weekComplete && includeStats) {
+      let hasAnyStat = false;
+      if (!gamesComplete && includeStats) {
         const anyStat = await db.query.playerWeeklyStats.findFirst({
           where: and(
             eq(schema.playerWeeklyStats.week, week),
@@ -199,14 +213,12 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           ),
           columns: { id: true },
         });
-        if (anyStat) weekComplete = true;
+        hasAnyStat = !!anyStat;
       }
 
-      // Offseason fallback: if we're in the offseason (Feb-Aug), the entire NFL season is over
-      if (!weekComplete) {
-        const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 7=Aug
-        if (currentMonth >= 1 && currentMonth <= 7) weekComplete = true;
-      }
+      // See playersLogic.ts:resolveWeekComplete for the games/stats/offseason
+      // fallback logic (kept there so it can be unit tested without D1).
+      weekComplete = resolveWeekComplete({ gamesForWeek, includeStats, hasAnyStat });
     }
 
     if (week !== undefined && weekComplete && includeStats && !availableOnly) {
@@ -401,14 +413,26 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       return columns[sortBy] || schema.nflPlayers.name;
     };
 
-    // When sorting by projected/avg points, we must fetch more, enrich, then sort in memory
-    const sortByComputed = sortBy === 'projectedPoints' || sortBy === 'avgPointsPPR';
-    // When availableOnly, fetch extra to compensate for rostered players we'll filter out
-    const availableMultiplier = availableOnly && leagueId ? 3 : 1;
-    const fetchLimit = (sortByComputed && includeStats) || availableOnly
-      ? Math.max((limit + offset) * availableMultiplier, 500)
-      : limit + offset;
-    const fetchOffset = (sortByComputed && includeStats) || availableOnly ? 0 : offset;
+    // Total players matching the filters — computed once up front so it can size
+    // the computed-sort fetch below AND serve as the pagination total (previously
+    // this was a second, identical query run after enrichment/sorting).
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.nflPlayers)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+    const total = countResult[0]?.count || 0;
+
+    // seasonProjectedPoints is only meaningful in full-season mode (week === undefined);
+    // if a client passes it alongside a week, treat it as projectedPoints instead.
+    const effectiveSortBy = sortBy === 'seasonProjectedPoints' && week !== undefined
+      ? 'projectedPoints'
+      : sortBy;
+    // When sorting by projected/avg/season points, we must fetch the FULL matching
+    // pool, enrich, then sort in memory — see playersLogic.ts:computeFetchWindow for
+    // the sizing rationale (kept there so it can be unit tested without D1).
+    const sortByComputed = effectiveSortBy === 'projectedPoints' || effectiveSortBy === 'avgPointsPPR'
+      || effectiveSortBy === 'seasonProjectedPoints';
+    const { fetchLimit, fetchOffset } = computeFetchWindow({ sortByComputed, includeStats, availableOnly, leagueId, limit, offset, total });
 
     // Get players
     const players = await db.query.nflPlayers.findMany({
@@ -451,6 +475,22 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           const projCond = week !== undefined
             ? and(inArray(schema.playerProjections.playerId, chunk), eq(schema.playerProjections.seasonYear, season), eq(schema.playerProjections.week, week), eq(schema.playerProjections.scoringFormat, scoringFormat))
             : and(inArray(schema.playerProjections.playerId, chunk), eq(schema.playerProjections.seasonYear, season), eq(schema.playerProjections.scoringFormat, scoringFormat));
+          // Season mode (week omitted): also pull the AI-generated full-season
+          // redraft projection so the client can show a genuine season total
+          // instead of mislabeling summed actuals as "projected". Only queried
+          // in season mode — week mode has no use for it.
+          const draftRankingsPromise = week === undefined
+            ? db.query.draftRankings.findMany({
+                where: and(
+                  inArray(schema.draftRankings.playerId, chunk),
+                  eq(schema.draftRankings.rankingType, 'redraft'),
+                  eq(schema.draftRankings.scoringFormat, scoringFormat),
+                  eq(schema.draftRankings.superflex, false),
+                  eq(schema.draftRankings.seasonYear, season),
+                ),
+                columns: { playerId: true, projectedPoints: true },
+              })
+            : Promise.resolve([] as { playerId: string; projectedPoints: number | null }[]);
           return Promise.all([
             db.query.playerWeeklyStats.findMany({
               where: and(
@@ -462,6 +502,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
               where: projCond,
               orderBy: week !== undefined ? undefined : desc(schema.playerProjections.week),
             }),
+            draftRankingsPromise,
           ]);
         })
       );
@@ -469,9 +510,11 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       // Flatten results
       const allStats: { playerId: string; [k: string]: any }[] = [];
       const allProjections: { playerId: string; [k: string]: any }[] = [];
-      for (const [statsChunk, projChunk] of chunkResults) {
+      const allDraftRankings: { playerId: string; projectedPoints: number | null }[] = [];
+      for (const [statsChunk, projChunk, draftChunk] of chunkResults) {
         allStats.push(...statsChunk);
         allProjections.push(...projChunk);
+        allDraftRankings.push(...draftChunk);
       }
 
       const statsByPlayer = new Map<string, typeof allStats>();
@@ -484,6 +527,14 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       const projectionByPlayer = new Map<string, (typeof allProjections)[0]>();
       for (const p of allProjections) {
         if (!projectionByPlayer.has(p.playerId)) projectionByPlayer.set(p.playerId, p);
+      }
+
+      // Genuine full-season AI-projected total per player (redraft pool only
+      // covers ~top 200 players; anyone else falls back to season actuals
+      // on the client).
+      const seasonProjectionByPlayer = new Map<string, number>();
+      for (const dr of allDraftRankings) {
+        if (dr.projectedPoints != null) seasonProjectionByPlayer.set(dr.playerId, dr.projectedPoints);
       }
 
       // Column key for the requested scoring format — used for sparkline history
@@ -577,11 +628,24 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           projPts = projection?.projectedPoints || 0;
         }
         const { snapPctSum, ...ss } = seasonStats as any;
+
+        // Season mode only: the genuine full-season AI-projected total (from
+        // the redraft draft-rankings pool) alongside the already-computed sum
+        // of played weeks' actuals, so the client can display each truthfully
+        // instead of labelling summed actuals as "projected".
+        const seasonPtsCol = scoringFormat === 'standard' ? 'fantasyPointsStd' : scoringFormat === 'half-ppr' ? 'fantasyPointsHalf' : 'fantasyPointsPPR';
+        const seasonActualPoints = Math.round(((ss as any)[seasonPtsCol] ?? 0) * 10) / 10;
+        const seasonProjectedPoints = week === undefined
+          ? (seasonProjectionByPlayer.get(player.id) ?? null)
+          : null;
+
         return {
           ...player,
           seasonStats: { ...ss, averageSnapPct: avgSnapPct },
           avgPointsPPR: avgPts,
           projectedPoints: projPts,
+          seasonActualPoints,
+          seasonProjectedPoints,
           recentWeeklyScores,
           isRostered: rosteredPlayerIds.includes(player.id),
         };
@@ -593,10 +657,15 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       }
       // Sort by computed field and apply pagination
       if (sortByComputed) {
-        const key = sortBy === 'projectedPoints' ? 'projectedPoints' : 'avgPointsPPR';
+        const useSeasonProjected = effectiveSortBy === 'seasonProjectedPoints';
+        const key = effectiveSortBy === 'projectedPoints' ? 'projectedPoints' : 'avgPointsPPR';
         enrichedPlayers = [...enrichedPlayers].sort((a, b) => {
-          const aVal = (a as any)[key] ?? 0;
-          const bVal = (b as any)[key] ?? 0;
+          const aVal = useSeasonProjected
+            ? ((a as any).seasonProjectedPoints ?? (a as any).seasonActualPoints ?? 0)
+            : ((a as any)[key] ?? 0);
+          const bVal = useSeasonProjected
+            ? ((b as any).seasonProjectedPoints ?? (b as any).seasonActualPoints ?? 0)
+            : ((b as any)[key] ?? 0);
           return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
         });
         enrichedPlayers = enrichedPlayers.slice(offset, offset + limit);
@@ -611,14 +680,6 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         enrichedPlayers = enrichedPlayers.filter((p: any) => !p.isRostered);
       }
     }
-
-    // Get total count
-    const countResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.nflPlayers)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
-
-    const total = countResult[0]?.count || 0;
 
     return c.json({
       players: enrichedPlayers,
@@ -716,6 +777,134 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
   } catch (error) {
     console.error('Projection movements error:', error);
     return c.json({ error: 'Failed to fetch projection movements' }, 500);
+  }
+});
+
+// Prop line movements - players whose Vegas prop O/U lines have moved the
+// most since the week's props started syncing (for Trends "Prop Movers" tab).
+// Cached for 5 minutes — props only refresh server-side every 12h per game.
+playerRoutes.get('/prop-movements', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const week = parseInt(c.req.query('week') || '1');
+  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
+
+  try {
+    const cacheKey = `prop-movements:${season}:${week}:${limit}`;
+    const movements = await cached(cacheKey, 5 * 60 * 1000, async () => {
+      const rows = await db.query.playerProps.findMany({
+        where: and(eq(schema.playerProps.week, week), eq(schema.playerProps.season, season)),
+        orderBy: asc(schema.playerProps.snapshotTime),
+        columns: {
+          playerName: true,
+          playerExternalId: true,
+          market: true,
+          overPoint: true,
+          bookmaker: true,
+          homeTeam: true,
+          awayTeam: true,
+        },
+      });
+
+      // overPoint is null for binary markets (e.g. anytime TD), which have
+      // no point line to move — only track markets with an actual number.
+      type PropPoint = {
+        point: number;
+        bookmaker: string;
+        homeTeam: string | null;
+        awayTeam: string | null;
+        playerName: string;
+        playerExternalId: string | null;
+        market: string;
+      };
+      const earliestByKey = new Map<string, PropPoint>();
+      const latestByKey = new Map<string, PropPoint>();
+
+      for (const row of rows) {
+        if (row.overPoint == null) continue;
+        const key = `${row.playerExternalId ?? row.playerName}::${row.market}`;
+        const point: PropPoint = {
+          point: row.overPoint,
+          bookmaker: row.bookmaker,
+          homeTeam: row.homeTeam,
+          awayTeam: row.awayTeam,
+          playerName: row.playerName,
+          playerExternalId: row.playerExternalId,
+          market: row.market,
+        };
+        if (!earliestByKey.has(key)) earliestByKey.set(key, point);
+        latestByKey.set(key, point);
+      }
+
+      // Enrich with team/position/headshot via the internal player record —
+      // playerProps only stores the game's home/away teams, not the
+      // player's own team, and has no position at all.
+      const externalIds = [...new Set(rows.map((r) => r.playerExternalId).filter((id): id is string => !!id))];
+      const playersByExternalId = new Map<string, { id: string; team: string; position: string; headshotUrl: string | null }>();
+      const CHUNK = 50;
+      for (let i = 0; i < externalIds.length; i += CHUNK) {
+        const chunk = externalIds.slice(i, i + CHUNK);
+        const chunkPlayers = await db.query.nflPlayers.findMany({
+          where: inArray(schema.nflPlayers.externalId, chunk),
+          columns: { id: true, externalId: true, team: true, position: true, headshotUrl: true },
+        });
+        for (const p of chunkPlayers) {
+          if (p.externalId) playersByExternalId.set(p.externalId, { id: p.id, team: p.team, position: p.position, headshotUrl: p.headshotUrl });
+        }
+      }
+
+      const results: Array<{
+        playerId: string | null;
+        name: string;
+        team: string;
+        position: string;
+        headshotUrl: string | null;
+        opponent: string | null;
+        market: string;
+        marketLabel: string;
+        bookmaker: string;
+        oldLine: number;
+        newLine: number;
+        movement: number;
+        direction: 'up' | 'down';
+      }> = [];
+
+      for (const [key, latest] of latestByKey) {
+        const earliest = earliestByKey.get(key)!;
+        const movement = latest.point - earliest.point;
+        // Prop lines move in 0.5 increments — anything smaller is noise.
+        if (Math.abs(movement) < 0.5) continue;
+
+        const playerInfo = latest.playerExternalId ? playersByExternalId.get(latest.playerExternalId) : undefined;
+        const opponent = playerInfo && latest.homeTeam && latest.awayTeam
+          ? (playerInfo.team === latest.homeTeam ? `vs ${latest.awayTeam}` : `@ ${latest.homeTeam}`)
+          : null;
+
+        results.push({
+          playerId: playerInfo?.id ?? null,
+          name: latest.playerName,
+          team: playerInfo?.team ?? latest.homeTeam ?? '',
+          position: playerInfo?.position ?? '',
+          headshotUrl: playerInfo?.headshotUrl ?? null,
+          opponent,
+          market: latest.market,
+          marketLabel: PROP_MARKET_LABELS[latest.market] ?? latest.market,
+          bookmaker: latest.bookmaker,
+          oldLine: earliest.point,
+          newLine: latest.point,
+          movement,
+          direction: movement > 0 ? 'up' : 'down',
+        });
+      }
+
+      results.sort((a, b) => Math.abs(b.movement) - Math.abs(a.movement));
+      return results.slice(0, limit);
+    });
+
+    return c.json({ movements });
+  } catch (error) {
+    console.error('Prop movements error:', error);
+    return c.json({ error: 'Failed to fetch prop movements' }, 500);
   }
 });
 
@@ -1772,14 +1961,22 @@ playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
       }
     }
 
-    // Enrich with player info
+    // Enrich with player info. Chunked — a week with full prop coverage
+    // across every game can produce 300-400+ unique player names, and a
+    // single unbatched inArray() blows D1's SQL variable limit ("too many
+    // SQL variables"), 500ing the whole endpoint.
     const playerNames = Object.keys(propsByPlayer);
+    const NAME_CHUNK = 100;
     if (playerNames.length > 0) {
-      const players = await db.query.nflPlayers.findMany({
-        where: inArray(schema.nflPlayers.name, playerNames),
-      });
+      const playerMap = new Map<string, (typeof schema.nflPlayers.$inferSelect)>();
+      for (let i = 0; i < playerNames.length; i += NAME_CHUNK) {
+        const chunk = playerNames.slice(i, i + NAME_CHUNK);
+        const players = await db.query.nflPlayers.findMany({
+          where: inArray(schema.nflPlayers.name, chunk),
+        });
+        for (const p of players) playerMap.set(p.name, p);
+      }
 
-      const playerMap = new Map(players.map(p => [p.name, p]));
       for (const [name, propData] of Object.entries(propsByPlayer)) {
         const player = playerMap.get(name);
         if (player) {

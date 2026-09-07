@@ -247,6 +247,18 @@ export const mflApi = {
 
 // Yahoo API - Requires OAuth (handled by backend)
 export const yahooApi = {
+  // Whether this deploy has Yahoo OAuth secrets. Lets the UI mark Yahoo
+  // unavailable before the user clicks it. Treated as available if the check
+  // itself fails — a flaky status call shouldn't hide a working platform.
+  isConfigured: async (): Promise<boolean> => {
+    try {
+      const res = await api.get<{ configured: boolean }>('/yahoo/status');
+      return res.configured !== false;
+    } catch {
+      return true;
+    }
+  },
+
   getAuthUrl: async (): Promise<string> => {
     const res = await api.post<{ url: string }>('/yahoo/auth-url');
     return res.url;

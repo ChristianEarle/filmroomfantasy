@@ -2,6 +2,27 @@
 
 All notable changes to FilmRoom Fantasy Football are documented here.
 
+## [Unreleased] - 2026-09-06
+
+### Rankings
+- Genuine full-season projected points (`seasonProjectedPoints`, sourced from `draft_rankings`) on Player Rankings' Full Season view, with an honest `Actual`/`Proj` badge and a labeled actual-points fallback before projections exist
+- True veteran-inclusive "Dynasty" ranking type, split out from the rookie-only `dynasty_rookie`; Draft Rankings now shows Redraft / Dynasty / Rookie pills, plus 4 additional dynasty batch variants in the weekly ranking cron
+- Fixed Player Rankings excluding real top-projected players past row 500 (was sorting a 500-row alphabetical page instead of the full pool); tightened the offseason-fallback calendar window (Feb–Jul, not Feb–Aug)
+
+### League Analyzer
+- AI-generated per-team scouting narratives and a league-wide AI "pulse" power ranking, cached per (team/league, season, week)
+- `GET /yahoo/status` endpoint and a disabled Yahoo tile in Settings when OAuth isn't configured; league sync now invalidates the AI narrative cache so it regenerates against fresh rosters
+
+### Mobile & Accessibility
+- Ask AI chat modal, bottom nav sizing, and landing header overflow fixed at phone widths
+- Sidebar mobile drawer: auto-closes on resize past the desktop breakpoint, Escape-to-close, Tab focus trap, `aria-current`/`aria-expanded`/`aria-controls` on nav
+- Removed the "Research" nav item and its dead placeholder view; fixed modals rendering off-screen due to a `transform` on the page-transition wrapper, and a Waivers filter row overflowing at 375px
+
+### Infrastructure
+- Restored a real Tailwind v4 build (`src/index.css` is source again, `@tailwindcss/vite` wired into `vite.config.mts`) after ~515 utility classes silently no-op'd under the old precompiled bundle
+- Added a backend Vitest harness (unit + `@cloudflare/vitest-pool-workers` projects, 45 tests) and a CI test step; updated Wrangler to `^4.124`
+- Dropped the orphaned `team_scouting_reports` table (migration `0044`)
+
 ## [1.0.0] - 2026-03-05
 
 ### Core Features

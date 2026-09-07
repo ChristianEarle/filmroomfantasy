@@ -120,6 +120,17 @@ export interface EnrichedPlayerFields {
    */
   recentWeeklyScores?: number[];
   seasonStats?: PlayerSeasonStats;
+  /**
+   * Season mode only (week omitted): the genuine full-season AI-projected
+   * total from the redraft draft-rankings pool, or null when the player
+   * isn't covered (outside the ranked pool). Null in week mode.
+   */
+  seasonProjectedPoints?: number | null;
+  /**
+   * Season mode only: sum of the player's played weeks' actual fantasy
+   * points for the requested scoring format.
+   */
+  seasonActualPoints?: number | null;
 }
 
 export type EnrichedPlayer = Player & EnrichedPlayerFields;
