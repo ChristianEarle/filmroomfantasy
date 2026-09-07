@@ -297,7 +297,15 @@
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
 - [ ] **Audit WaiversView** - Waiver claims, player search, bid management
 - [ ] **Audit GameSlateView + GameDetailModal** - NFL schedule, live scores, game detail overlay
-- [ ] **Audit TrendsView** - Roster trends, projection movers
+- [x] **Audit TrendsView** - Roster trends, projection movers. Found and fixed a
+  real data bug in `GET /players/recent-leaders` (the "Recent Best Performers"
+  tab): `posRank` (the "RB3" label) was computed by counting positions within
+  the SQL query's already `LIMIT`-ed top-N-overall slice, so it only reflected
+  a player's rank among the top overall scorers that made the cut — not their
+  true rank among all same-position players in the window. Fixed by ranking
+  against the full window aggregate before slicing to the response limit;
+  extracted as a unit-tested pure helper (`computePosRanks` in
+  `routes/playersLogic.ts`). No other correctness bugs found in this view.
 - [ ] **Audit AllPlayersView** - Full player list with filters, pagination
 - [ ] **Audit ProfileView** - User profile, password change, Google link status
 - [ ] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth
