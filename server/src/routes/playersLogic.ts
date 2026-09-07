@@ -95,6 +95,33 @@ export interface FetchWindow {
  * When availableOnly, fetch extra (up to 3x, floor 500) to compensate for
  * rostered players that get filtered out post-fetch.
  */
+export interface PosRankRow {
+  playerId: string;
+  position: string | null;
+}
+
+/**
+ * Ranks each row within its own position (1-based, in the order given), used
+ * by GET /players/recent-leaders to label a player "RB3" etc.
+ *
+ * Callers must pass the FULL ppg-sorted window aggregate, not a slice already
+ * truncated to the response's `limit` — ranking against a pre-truncated slice
+ * mislabels players (e.g. the only RB inside a top-25-overall cut showing as
+ * "RB1" even though several other RBs outscored them that week but didn't
+ * crack the top 25 overall).
+ */
+export function computePosRanks(rows: PosRankRow[]): Map<string, number> {
+  const posCounter = new Map<string, number>();
+  const posRankByPlayer = new Map<string, number>();
+  for (const row of rows) {
+    const posKey = row.position || 'NA';
+    const nextRank = (posCounter.get(posKey) ?? 0) + 1;
+    posCounter.set(posKey, nextRank);
+    posRankByPlayer.set(row.playerId, nextRank);
+  }
+  return posRankByPlayer;
+}
+
 export function computeFetchWindow({
   sortByComputed,
   includeStats,
