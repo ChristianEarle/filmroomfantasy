@@ -530,7 +530,7 @@ Typical 1-QB draft shape (reflects expert consensus and real ADP):
 
 RULE: No more than 3 QBs inside the top 40 overall. No QB inside the top 15 overall unless the consensus ADP agrees. If your instinct says "this QB is underranked because of points" — stop. ADP already accounts for points; the anchor is positional scarcity.${superflex ? '\n\nSUPERFLEX OVERRIDE: Because you can start a second QB in the flex, QB value roughly doubles. Top QBs belong in Round 1-2; the QB12 belongs in Round 6-7. Disregard the 1-QB round guidance above.' : `
 
-POSITIONAL SCARCITY BACKSTOP: This is a 1-QB league — only one QB slot and only one TE slot start each week, so raw projected points at those positions are misleading. QBs ranked outside the top ~3 at the position, and TEs ranked outside the top ~3 at the position, must NOT be ranked ahead of an RB or WR with similar projectedPoints; RB/WR touches convert to fantasy value at a much higher replacement-level premium than QB/TE points do past that point. ADP (when present) is the anchor — treat any deviation of more than 15 spots from a player's ADP as requiring a specific, concrete justification written into that player's rationale.`}
+POSITIONAL SCARCITY BACKSTOP: This is a 1-QB league — only one QB slot and only one TE slot start each week, so raw projected points at those positions are misleading. QBs ranked outside the top ~3 at the position, and TEs ranked outside the top ~3 at the position, must NOT be ranked ahead of an RB or WR with similar projectedPoints; RB/WR touches convert to fantasy value at a much higher replacement-level premium than QB/TE points do past that point. ADP (when present) is the anchor — treat any deviation of more than 10 spots from a player's ADP as requiring a specific, concrete justification written into that player's rationale.`}
 
 TIER RULES:
 - Tier 1: Elite studs (top ~8-10 overall)
@@ -811,6 +811,12 @@ export async function submitDraftRankingsBatch(
       const msg = `ADP coverage canary tripped: only ${adp.size} entries for ${meta.customId} (source feed likely broken/blocked)`;
       console.error(`[draftRankings] ${msg}`);
       await recordJobProblem(db, seasonYear, meta, msg);
+      // Skip submitting this variant entirely — submitting it with all-null
+      // ADP would still go through the atomic delete+insert on write and
+      // overwrite last week's good rankings with an ADP-blind regeneration.
+      // Recording the problem above is enough to make the outage visible;
+      // leaving the previous rankings in place is strictly better than that.
+      continue;
     }
 
     const contexts = await buildPlayerContexts(db, v.rankingType, v.scoringFormat, seasonYear, adp);
@@ -1019,73 +1025,94 @@ export async function processPendingBatches(
     }
 
     const bodyText = await resultsRes.text();
-    const variantMetas = JSON.parse(job.variants) as BatchVariantMeta[];
 
-    let inserted = 0;
-    let jobErrored = false;
+    // One job's results shouldn't be able to abort the whole tick: an
+    // unexpected throw anywhere in here (malformed variants JSON, a
+    // writeVariantRankings/db.batch() failure, etc.) is caught below so the
+    // remaining jobs in `pending` still get processed this tick instead of
+    // being starved until the next one.
+    try {
+      const variantMetas = JSON.parse(job.variants) as BatchVariantMeta[];
 
-    for (const rawLine of bodyText.split('\n')) {
-      const line = rawLine.trim();
-      if (!line) continue;
+      let inserted = 0;
+      let jobErrored = false;
 
-      let parsed: BatchResultLine;
-      try {
-        parsed = JSON.parse(line) as BatchResultLine;
-      } catch {
-        console.warn(`[draftRankings] Skipping unparseable line in ${job.anthropicBatchId}`);
-        continue;
+      for (const rawLine of bodyText.split('\n')) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        let parsed: BatchResultLine;
+        try {
+          parsed = JSON.parse(line) as BatchResultLine;
+        } catch {
+          console.warn(`[draftRankings] Skipping unparseable line in ${job.anthropicBatchId}`);
+          continue;
+        }
+
+        const meta = variantMetas.find(m => m.customId === parsed.custom_id);
+        if (!meta) {
+          console.warn(`[draftRankings] Unknown custom_id ${parsed.custom_id}`);
+          continue;
+        }
+
+        if (parsed.result.type !== 'succeeded') {
+          console.error(`[draftRankings] Variant ${parsed.custom_id} ${parsed.result.type}`);
+          jobErrored = true;
+          continue;
+        }
+
+        const textBlock = parsed.result.message.content?.find(b => b.type === 'text');
+        const rawText = textBlock?.text?.trim();
+        if (!rawText) {
+          console.error(`[draftRankings] Variant ${parsed.custom_id} returned empty text`);
+          jobErrored = true;
+          continue;
+        }
+
+        const writeResult = await writeVariantRankings({
+          db,
+          anthropicKey,
+          meta,
+          rawText,
+          seasonYear: job.seasonYear,
+        });
+
+        if (!writeResult.ok) {
+          console.error(`[draftRankings] Failed to write ${parsed.custom_id}: ${writeResult.error}`);
+          jobErrored = true;
+          continue;
+        }
+        inserted += writeResult.count;
       }
 
-      const meta = variantMetas.find(m => m.customId === parsed.custom_id);
-      if (!meta) {
-        console.warn(`[draftRankings] Unknown custom_id ${parsed.custom_id}`);
-        continue;
-      }
+      await db.update(schema.rankingBatchJobs)
+        .set({
+          status: jobErrored ? 'failed' : 'completed',
+          completedAt: new Date(),
+          errorMessage: jobErrored ? 'One or more variants failed to parse or write' : null,
+        })
+        .where(eq(schema.rankingBatchJobs.id, job.id));
 
-      if (parsed.result.type !== 'succeeded') {
-        console.error(`[draftRankings] Variant ${parsed.custom_id} ${parsed.result.type}`);
-        jobErrored = true;
-        continue;
-      }
+      if (jobErrored) failedJobs += 1;
+      else completedJobs += 1;
+      totalRankingsInserted += inserted;
+      processedEndedCount += 1;
 
-      const textBlock = parsed.result.message.content?.find(b => b.type === 'text');
-      const rawText = textBlock?.text?.trim();
-      if (!rawText) {
-        console.error(`[draftRankings] Variant ${parsed.custom_id} returned empty text`);
-        jobErrored = true;
-        continue;
-      }
-
-      const writeResult = await writeVariantRankings({
-        db,
-        anthropicKey,
-        meta,
-        rawText,
-        seasonYear: job.seasonYear,
-      });
-
-      if (!writeResult.ok) {
-        console.error(`[draftRankings] Failed to write ${parsed.custom_id}: ${writeResult.error}`);
-        jobErrored = true;
-        continue;
-      }
-      inserted += writeResult.count;
+      console.log(`[draftRankings] Batch ${job.anthropicBatchId} ${jobErrored ? 'partially failed' : 'completed'}; inserted ${inserted} rows`);
+    } catch (err) {
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      console.error(`[draftRankings] Unexpected error processing batch ${job.anthropicBatchId}:`, err);
+      await db.update(schema.rankingBatchJobs)
+        .set({
+          status: 'failed',
+          completedAt: new Date(),
+          errorMessage: rawMessage.slice(0, 500),
+        })
+        .where(eq(schema.rankingBatchJobs.id, job.id));
+      failedJobs += 1;
+      processedEndedCount += 1;
+      continue;
     }
-
-    await db.update(schema.rankingBatchJobs)
-      .set({
-        status: jobErrored ? 'failed' : 'completed',
-        completedAt: new Date(),
-        errorMessage: jobErrored ? 'One or more variants failed to parse or write' : null,
-      })
-      .where(eq(schema.rankingBatchJobs.id, job.id));
-
-    if (jobErrored) failedJobs += 1;
-    else completedJobs += 1;
-    totalRankingsInserted += inserted;
-    processedEndedCount += 1;
-
-    console.log(`[draftRankings] Batch ${job.anthropicBatchId} ${jobErrored ? 'partially failed' : 'completed'}; inserted ${inserted} rows`);
   }
 
   return {

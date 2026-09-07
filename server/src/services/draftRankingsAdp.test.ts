@@ -127,13 +127,32 @@ describe('ADP_CANARY_MIN_ENTRIES canary', () => {
     expect(ADP_CANARY_MIN_ENTRIES).toBe(100);
   });
 
-  it('records a failed ranking_batch_jobs row when the FFC map comes back under the canary threshold', async () => {
+  it('records a failed ranking_batch_jobs row and skips submitting the variant when the FFC map comes back under the canary threshold', async () => {
     // Fewer than ADP_CANARY_MIN_ENTRIES players — simulates a broken/blocked
     // feed (e.g. FantasyPros's old login-walled page returning ~5 rows).
     stubFetch(ffcFixture([{ name: 'Only Player', adp: 1 }]));
 
     const inserted: any[] = [];
+    // Give the variant a real eligible player so that, absent the canary
+    // skip, buildPlayerContexts/the batch submission would proceed normally
+    // (proving the skip is what stops it, not an unrelated zero-context
+    // bailout like the "zero eligible players" tests below).
+    const nflPlayersFindMany = vi.fn(async () => [
+      {
+        id: 'p1',
+        externalId: 'e1',
+        name: 'Eligible Player',
+        position: 'WR',
+        team: 'KC',
+        age: 25,
+        yearsExp: 3,
+        status: 'active',
+        injuryNote: null,
+        depthChartOrder: 1,
+      },
+    ]);
     const db = makeFakeDb(inserted);
+    db.query.nflPlayers.findMany = nflPlayersFindMany;
 
     const result = await submitDraftRankingsBatch({
       db,
@@ -142,14 +161,23 @@ describe('ADP_CANARY_MIN_ENTRIES canary', () => {
       seasonYear: 2026,
     });
 
-    // No eligible players either (fake DB returns none), so submission bails
-    // out overall — but the canary row must still have been written before
-    // that point.
+    // The canary trip must skip the variant entirely — it never reaches
+    // buildPlayerContexts (proven by the spy never firing), so no batch gets
+    // submitted for it and any previously-written rankings for this variant
+    // are left untouched (a full FFC outage keeps last week's board instead
+    // of regenerating it without ADP).
     expect(result.ok).toBe(false);
+    expect(nflPlayersFindMany).not.toHaveBeenCalled();
+
     const canaryRow = inserted.find((r) => /ADP coverage canary tripped/.test(r.errorMessage));
     expect(canaryRow).toBeTruthy();
     expect(canaryRow.status).toBe('failed');
     expect(canaryRow.anthropicBatchId).toMatch(/^no-batch-/);
+
+    // Only the canary problem row should exist for this variant — no
+    // separate "zero eligible players" row, since the variant is skipped
+    // before that check is ever reached.
+    expect(inserted).toHaveLength(1);
   });
 });
 
