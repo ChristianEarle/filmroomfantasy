@@ -197,6 +197,24 @@ export interface Player {
    * really a sum of already-played actuals shown as a fallback.
    */
   pointsType?: 'actual' | 'projected';
+  /**
+   * Full Season mode only: which source `projectedPoints` came from —
+   * 'market' (deterministic sportsbook-implied projection), 'ai' (AI
+   * draft-rankings total), or 'actual' (neither available — points are a
+   * sum of already-played actuals). Drives the Market/AI/Actual badge.
+   */
+  projectionSource?: 'market' | 'ai' | 'actual' | null;
+  /** Full Season mode only: Market rest-of-season points, shown as a secondary number when it differs from the season total. */
+  rosProjectedPoints?: number | null;
+  /**
+   * Full Season mode only, when projectionSource is 'market': how complete
+   * the season-prop coverage behind the Market projection was —
+   * 'season_props' (all core stats from season lines), 'blended' (some
+   * core stats filled in from weekly extrapolation), or
+   * 'weekly_extrapolation' (no season-prop coverage at all). Drives the
+   * Market badge's tooltip.
+   */
+  marketConfidence?: string | null;
 }
 
 // URL path <-> view mapping for client-side routing (BUG-001/002 fix)

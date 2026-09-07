@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type CSSProperties } from 'react';
+import { useState, useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
 import { MessageSquare, X, Send, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import { useIsMobile } from './ui/use-mobile';
@@ -6,6 +6,13 @@ import { useIsMobile } from './ui/use-mobile';
 interface ChatTurn {
   role: 'user' | 'assistant';
   content: string;
+  /** Ask AI v2: tool calls the server made while answering this turn (assistant turns only). */
+  toolCalls?: AskToolCall[];
+}
+
+interface AskToolCall {
+  name: string;
+  input?: Record<string, unknown>;
 }
 
 interface AiChatModalProps {
@@ -13,12 +20,97 @@ interface AiChatModalProps {
   onClose: () => void;
   isDarkMode: boolean;
   title: string;
-  /** API endpoint that accepts { conversationHistory, question, ...contextParams } and returns { answer }. */
+  /** API endpoint that accepts { conversationHistory, question, ...contextParams } and returns { answer, toolCalls? }. */
   endpoint: string;
   /** Extra fields merged into the POST body (e.g. the ranking variant selectors). */
   contextParams?: Record<string, unknown>;
   placeholder?: string;
   quickActions?: string[];
+}
+
+// ── Minimal, safe markdown-lite renderer ─────────────────────────────
+// Ask AI v2 answers may use light markdown (bold, bullet/numbered lists).
+// Rather than pull in a markdown dependency, render just those constructs by
+// hand: no raw HTML is ever interpreted, only **bold**, "- "/"* " bullets,
+// and "1. " numbered lines. Everything else renders as plain text exactly as
+// received, so this is always at least as safe as the old plain-text mode.
+function renderInlineBold(text: string, keyPrefix: string): (string | ReactElement)[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={`${keyPrefix}-b${i}`}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={`${keyPrefix}-t${i}`}>{part}</span>;
+  });
+}
+
+function renderMarkdownLite(content: string): ReactElement {
+  const lines = content.split('\n');
+  const blocks: ReactElement[] = [];
+  let listItems: string[] | null = null;
+  let listOrdered = false;
+
+  const flushList = (key: string) => {
+    if (!listItems || listItems.length === 0) {
+      listItems = null;
+      return;
+    }
+    const items = listItems;
+    const ordered = listOrdered;
+    const Tag = ordered ? 'ol' : 'ul';
+    blocks.push(
+      <Tag key={key} style={{ margin: '4px 0', paddingLeft: 20 }}>
+        {items.map((item, i) => (
+          <li key={i}>{renderInlineBold(item, `${key}-li${i}`)}</li>
+        ))}
+      </Tag>,
+    );
+    listItems = null;
+  };
+
+  lines.forEach((line, i) => {
+    const bulletMatch = line.match(/^\s*[-*]\s+(.*)$/);
+    const numberedMatch = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (bulletMatch) {
+      if (listItems && listOrdered) flushList(`list-${i}`);
+      listOrdered = false;
+      listItems = listItems ?? [];
+      listItems.push(bulletMatch[1]);
+      return;
+    }
+    if (numberedMatch) {
+      if (listItems && !listOrdered) flushList(`list-${i}`);
+      listOrdered = true;
+      listItems = listItems ?? [];
+      listItems.push(numberedMatch[1]);
+      return;
+    }
+    flushList(`list-${i}`);
+    if (line.trim().length === 0) {
+      blocks.push(<div key={`br-${i}`} style={{ height: 8 }} />);
+    } else {
+      blocks.push(<div key={`line-${i}`}>{renderInlineBold(line, `line-${i}`)}</div>);
+    }
+  });
+  flushList('list-end');
+
+  return <>{blocks}</>;
+}
+
+/** Friendly label for the "Looked up:" line under an Ask AI v2 answer. */
+function toolCallLabel(call: AskToolCall): string | null {
+  switch (call.name) {
+    case 'lookup_player':
+      return typeof call.input?.name === 'string' ? call.input.name : 'a player';
+    case 'search_players':
+      return 'the player board';
+    case 'get_matchup':
+      return 'your matchup';
+    case 'get_my_lineup':
+      return 'your lineup';
+    default:
+      return null;
+  }
 }
 
 // NOTE on styling: src/index.css is a precompiled Tailwind build, so utilities not
@@ -77,12 +169,12 @@ export function AiChatModal({
     setInput('');
     setSending(true);
     try {
-      const data = await api.post<{ answer: string }>(endpoint, {
+      const data = await api.post<{ answer: string; toolCalls?: AskToolCall[] }>(endpoint, {
         conversationHistory: history,
         question,
         ...contextParams,
       });
-      setTurns((prev) => [...prev, { role: 'assistant', content: data.answer }]);
+      setTurns((prev) => [...prev, { role: 'assistant', content: data.answer, toolCalls: data.toolCalls }]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
@@ -178,28 +270,41 @@ export function AiChatModal({
             </div>
           )}
 
-          {turns.map((t, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: t.role === 'user' ? 'flex-end' : 'flex-start' }}>
-              <div
-                className={`text-sm ${
-                  t.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-800'
-                }`}
-                style={{
-                  maxWidth: '85%',
-                  padding: '8px 12px',
-                  borderRadius: 16,
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere',
-                  textAlign: 'left',
-                  lineHeight: 1.5,
-                }}
-              >
-                {t.content}
+          {turns.map((t, i) => {
+            const lookedUp = t.role === 'assistant'
+              ? [...new Set((t.toolCalls ?? []).map(toolCallLabel).filter((l): l is string => !!l))]
+              : [];
+            return (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: t.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div
+                  className={`text-sm ${
+                    t.role === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-800'
+                  }`}
+                  style={{
+                    maxWidth: '85%',
+                    padding: '8px 12px',
+                    borderRadius: 16,
+                    whiteSpace: t.role === 'user' ? 'pre-wrap' : 'normal',
+                    overflowWrap: 'anywhere',
+                    textAlign: 'left',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {t.role === 'assistant' ? renderMarkdownLite(t.content) : t.content}
+                </div>
+                {lookedUp.length > 0 && (
+                  <div
+                    className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+                    style={{ marginTop: 4, maxWidth: '85%' }}
+                  >
+                    Looked up: {lookedUp.join(', ')}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {sending && (
             <div>

@@ -52,6 +52,9 @@ function makePlayer(over: Record<string, any>) {
     isRostered: false,
     seasonProjectedPoints: over.seasonProjectedPoints ?? null,
     seasonActualPoints: over.seasonActualPoints ?? null,
+    projectionSource: over.projectionSource ?? null,
+    rosProjectedPoints: over.rosProjectedPoints ?? null,
+    marketConfidence: over.marketConfidence ?? null,
     seasonStats: over.seasonStats,
     recentWeeklyScores: over.recentWeeklyScores ?? [],
   };
@@ -62,6 +65,7 @@ const ALLEN = makePlayer({
   id: 'a', name: 'Josh Allen', team: 'BUF', position: 'QB',
   seasonProjectedPoints: 380.4,
   seasonActualPoints: 120.5,
+  projectionSource: 'ai',
   seasonStats: { games: 5, gamesPlayed: 5, fantasyPointsPPR: 120.5, fantasyPointsHalf: 118, fantasyPointsStd: 110, passYards: 1500, passTDs: 12, rushYards: 100, rushTDs: 1, receptions: 0, receivingYards: 0, receivingTDs: 0 },
 });
 
@@ -70,13 +74,54 @@ const OBSCURE = makePlayer({
   id: 'b', name: 'Obscure Backup', team: 'NYJ', position: 'RB',
   seasonProjectedPoints: null,
   seasonActualPoints: 45.2,
+  projectionSource: 'actual',
   seasonStats: { games: 5, gamesPlayed: 5, fantasyPointsPPR: 45.2, fantasyPointsHalf: 40, fantasyPointsStd: 35, passYards: 0, passTDs: 0, rushYards: 300, rushTDs: 2, receptions: 5, receivingYards: 30, receivingTDs: 0 },
+});
+
+// A player covered by the deterministic Market projection (highest precedence).
+const MAHOMES = makePlayer({
+  id: 'c', name: 'Patrick Mahomes', team: 'KC', position: 'QB',
+  seasonProjectedPoints: 350.2,
+  seasonActualPoints: 140.1,
+  projectionSource: 'market',
+  rosProjectedPoints: 210.9,
+  marketConfidence: 'season_props',
+  seasonStats: { games: 5, gamesPlayed: 5, fantasyPointsPPR: 140.1, fantasyPointsHalf: 135, fantasyPointsStd: 128, passYards: 1600, passTDs: 14, rushYards: 40, rushTDs: 0, receptions: 0, receivingYards: 0, receivingTDs: 0 },
+});
+
+// A player whose Market projection is blended (partial season-prop coverage,
+// filled out with weekly extrapolation for the missing core stats).
+const TAYLOR = makePlayer({
+  id: 'd', name: 'Jonathan Taylor', team: 'IND', position: 'RB',
+  seasonProjectedPoints: 280.6,
+  seasonActualPoints: 90.3,
+  projectionSource: 'market',
+  marketConfidence: 'blended',
+  seasonStats: { games: 5, gamesPlayed: 5, fantasyPointsPPR: 90.3, fantasyPointsHalf: 85, fantasyPointsStd: 78, passYards: 0, passTDs: 0, rushYards: 600, rushTDs: 6, receptions: 10, receivingYards: 80, receivingTDs: 0 },
 });
 
 function seasonModeResponse() {
   return {
     players: [ALLEN, OBSCURE],
     pagination: { page: 1, limit: 500, total: 2, totalPages: 1 },
+    weekComplete: false,
+    pointsType: 'projected',
+  };
+}
+
+function seasonModeResponseWithMarket() {
+  return {
+    players: [MAHOMES, ALLEN, OBSCURE],
+    pagination: { page: 1, limit: 500, total: 3, totalPages: 1 },
+    weekComplete: false,
+    pointsType: 'projected',
+  };
+}
+
+function seasonModeResponseWithBlendedMarket() {
+  return {
+    players: [TAYLOR, ALLEN, OBSCURE],
+    pagination: { page: 1, limit: 500, total: 3, totalPages: 1 },
     weekComplete: false,
     pointsType: 'projected',
   };
@@ -163,7 +208,7 @@ describe('PlayerTable — Full Season projected vs actual', () => {
     });
   });
 
-  it('shows the genuine AI season projection with a "Proj" badge when available', async () => {
+  it('shows the genuine AI season projection with an "AI" badge when available', async () => {
     hoisted.mockGet.mockResolvedValue(seasonModeResponse());
     renderTable();
     fireEvent.click(screen.getByRole('button', { name: 'Full Season' }));
@@ -171,7 +216,7 @@ describe('PlayerTable — Full Season projected vs actual', () => {
     await screen.findByText('Josh Allen');
     const row = screen.getByText('Josh Allen').closest('tr') as HTMLElement;
     expect(within(row).getByText('380.4')).toBeInTheDocument();
-    expect(within(row).getByText('Proj')).toBeInTheDocument();
+    expect(within(row).getByText('AI')).toBeInTheDocument();
   });
 
   it('falls back to the summed actual points with an "Actual" badge when no projection is covered', async () => {
@@ -200,5 +245,52 @@ describe('PlayerTable — Full Season projected vs actual', () => {
     const dataRows = within(grid).getAllByRole('button');
     const names = dataRows.map(r => (within(r).queryByText('Josh Allen') ? 'Josh Allen' : 'Obscure Backup'));
     expect(names).toEqual(['Josh Allen', 'Obscure Backup']);
+  });
+});
+
+describe('PlayerTable — Market projection source', () => {
+  it('shows a "Market" badge for a player with a deterministic Market season projection', async () => {
+    hoisted.mockGet.mockResolvedValue(seasonModeResponseWithMarket());
+    renderTable();
+    fireEvent.click(screen.getByRole('button', { name: 'Full Season' }));
+
+    await screen.findByText('Patrick Mahomes');
+    const row = screen.getByText('Patrick Mahomes').closest('tr') as HTMLElement;
+    expect(within(row).getByText('350.2')).toBeInTheDocument();
+    expect(within(row).getByText('Market')).toBeInTheDocument();
+    // Distinct from the AI-sourced badge on another row in the same table.
+    expect(within(row).queryByText('AI')).toBeNull();
+  });
+
+  it('shows a secondary rest-of-season number when it differs from the season total', async () => {
+    hoisted.mockGet.mockResolvedValue(seasonModeResponseWithMarket());
+    renderTable();
+    fireEvent.click(screen.getByRole('button', { name: 'Full Season' }));
+
+    await screen.findByText('Patrick Mahomes');
+    const row = screen.getByText('Patrick Mahomes').closest('tr') as HTMLElement;
+    expect(within(row).getByText('ROS 210.9')).toBeInTheDocument();
+  });
+
+  it('does not show a secondary rest-of-season number when there is no rosProjectedPoints', async () => {
+    hoisted.mockGet.mockResolvedValue(seasonModeResponseWithMarket());
+    renderTable();
+    fireEvent.click(screen.getByRole('button', { name: 'Full Season' }));
+
+    await screen.findByText('Josh Allen');
+    const row = screen.getByText('Josh Allen').closest('tr') as HTMLElement;
+    expect(within(row).queryByText(/^ROS /)).toBeNull();
+  });
+
+  it('shows a "Market" badge with a blended tooltip for marketConfidence "blended"', async () => {
+    hoisted.mockGet.mockResolvedValue(seasonModeResponseWithBlendedMarket());
+    renderTable();
+    fireEvent.click(screen.getByRole('button', { name: 'Full Season' }));
+
+    await screen.findByText('Jonathan Taylor');
+    const row = screen.getByText('Jonathan Taylor').closest('tr') as HTMLElement;
+    const badge = within(row).getByText('Market');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute('title', 'Market (blended with weekly lines)');
   });
 });
