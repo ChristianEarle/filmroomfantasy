@@ -523,9 +523,13 @@ export async function syncSleeperLeague(
       await db.delete(schema.rosterSpots)
         .where(eq(schema.rosterSpots.teamId, team.id));
       if (newSpots.length > 0) {
-        // Chunk inserts to stay well under D1's bound-parameter ceiling.
-        for (let i = 0; i < newSpots.length; i += 50) {
-          await db.insert(schema.rosterSpots).values(newSpots.slice(i, i + 50));
+        // Chunk inserts to stay under D1's ~100 bound-parameter ceiling:
+        // each roster_spots row binds 6 values, so 12 rows = 72 params.
+        // (50 rows = 300 params failed with "too many SQL variables" on every
+        // roster deeper than ~16 spots, which silently broke league re-sync.)
+        const ROSTER_INSERT_CHUNK = 12;
+        for (let i = 0; i < newSpots.length; i += ROSTER_INSERT_CHUNK) {
+          await db.insert(schema.rosterSpots).values(newSpots.slice(i, i + ROSTER_INSERT_CHUNK));
         }
       }
     }
