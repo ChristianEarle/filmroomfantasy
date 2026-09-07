@@ -1147,7 +1147,7 @@ export function PlayerTable({
         isDarkMode={isDarkMode}
         title="Ask AI — Player Rankings"
         endpoint="/players/ask"
-        contextParams={{ scoringFormat, week: currentWeek, season: seasonYear }}
+        contextParams={{ scoringFormat, week: currentWeek, season: seasonYear, leagueId: league?.id }}
         placeholder="e.g. Who should I start at FLEX this week?"
         quickActions={['Best waiver targets this week?', 'Compare my top 2 RBs', 'Who has the best matchup?']}
       />
