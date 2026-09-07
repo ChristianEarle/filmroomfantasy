@@ -35,6 +35,16 @@ Deploy notes: migrations `0037`–`0041` auto-apply on merge; superflex +
 ceiling/floor data appears after the next Monday ranking batch; rank
 history accrues from the first daily cron.
 
+## Shipped since the completion sprint
+
+- PlayerCard Compare quick action: a client-only (localStorage) compare
+  basket (`useCompareBasket`, up to 4 players) with a "Compare" toggle
+  next to Watch/Share and a `PlayerCompareModal` showing season PPG /
+  games / season total side by side. Independent from the Draft Rankings
+  page's own compare feature (that one compares rank/tier/ADP within a
+  single ranking variant; this compares season stats for any player from
+  any context).
+
 ---
 
 ## Shipped since the completion sprint
@@ -93,9 +103,10 @@ history accrues from the first daily cron.
   genuine full-season `seasonProjectedPoints` from `draft_rankings`
   (redraft, matching scoring format), with `seasonActualPoints` as a
   labeled fallback (#301).
-- [ ] **PlayerCard Alert/Pin/Compare actions** — deliberately skipped in
-  the sprint (Watch/Share shipped). Compare could reuse the Draft
-  Rankings compare-basket pattern.
+- [ ] **PlayerCard Alert/Pin actions** — Compare shipped as a follow-up
+  (see "Shipped since the completion sprint" above); Alert needs
+  notification delivery (see push/email item below) and Pin needs its
+  own persistence layer.
 - [x] **Redraft / Dynasty / Rookie three-way split** — true veteran-inclusive
   `dynasty` ranking type added alongside `redraft` and the existing
   rookie-only `dynasty_rookie`; Draft Rankings now has Redraft/Dynasty/
