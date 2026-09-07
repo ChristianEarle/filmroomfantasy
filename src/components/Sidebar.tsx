@@ -252,7 +252,9 @@ export function Sidebar({ activeView, onViewChange, isDarkMode, isAuthenticated 
 
           {/* Bottom items */}
           <div className={`mt-4 pt-3 border-t space-y-1 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-            {bottomItems.map((item) => renderItem(item))}
+            {bottomItems.map((item) => (
+              <div key={item.view}>{renderItem(item)}</div>
+            ))}
           </div>
         </nav>
 
