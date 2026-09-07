@@ -15,7 +15,7 @@ import {
   type ConversationTurn,
 } from '../utils/prompt';
 import { buildProjectionsFromProps } from '../services/projections';
-import { resolveWeekComplete, computeFetchWindow } from './playersLogic';
+import { resolveWeekComplete, computeFetchWindow, computePosRanks } from './playersLogic';
 import { resolveMarketAsOfWeek } from '../services/marketRankingsQueries';
 import { buildPlayerCard, buildPlayerCards } from '../services/playerCard';
 import { extractMentionedPlayers, type MentionCandidate } from '../utils/playerMentions';
@@ -1052,9 +1052,13 @@ playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
       if (position) {
         windowConditions.push(eq(schema.nflPlayers.position, position));
       }
+      // Intentionally unlimited here: posRank (below) needs every scoring player in the
+      // window to compute a player's true rank within their own position, not just their
+      // rank among the top `limit` overall performers (see step 7).
       const windowAgg = await db
         .select({
           playerId: schema.playerWeeklyStats.playerId,
+          position: schema.nflPlayers.position,
           ppg: sql<number>`ROUND(AVG(${schema.playerWeeklyStats.fantasyPointsPPR}), 2)`.as('ppg'),
           games: sql<number>`COUNT(*)`.as('games'),
           total: sql<number>`ROUND(SUM(${schema.playerWeeklyStats.fantasyPointsPPR}), 2)`.as('total'),
@@ -1063,8 +1067,7 @@ playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
         .innerJoin(schema.nflPlayers, eq(schema.nflPlayers.id, schema.playerWeeklyStats.playerId))
         .where(and(...windowConditions))
         .groupBy(schema.playerWeeklyStats.playerId)
-        .orderBy(sql`ppg DESC, total DESC`)
-        .limit(limit);
+        .orderBy(sql`ppg DESC, total DESC`);
 
       if (windowAgg.length === 0) {
         return {
@@ -1079,7 +1082,15 @@ playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
         };
       }
 
-      const topIds = windowAgg.map(r => r.playerId);
+      // 3b. Rank every player within their own position across the FULL window aggregate
+      //     (not just the top `limit` slice below) — otherwise a player's posRank only
+      //     reflects how many same-position players outrank them among the top overall
+      //     scorers, which mislabels them (e.g. a real "RB4" showing as "RB1" because no
+      //     other RB happened to crack the top `limit` overall that week).
+      const posRankByPlayer = computePosRanks(windowAgg);
+
+      const topRows = windowAgg.slice(0, limit);
+      const topIds = topRows.map(r => r.playerId);
 
       // 4. Hydrate player metadata.
       const players = await db.query.nflPlayers.findMany({
@@ -1127,19 +1138,17 @@ playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
         }
       }
 
-      // 7. Build leader rows + compute posRank within the result set (1..N per position).
+      // 7. Build leader rows for the top-`limit` slice, using the posRank computed
+      //    against the full window aggregate in step 3b.
       const POS_THRESHOLDS: Record<string, number> = { QB: 18, RB: 12, WR: 12, TE: 8, K: 8, DEF: 8 };
       const ownershipAvailable = leagueId !== undefined && leagueTeamCount > 0;
-      const posCounter = new Map<string, number>();
-      const leaders = windowAgg
+      const leaders = topRows
         .map(row => {
           const player = playerById.get(row.playerId);
           if (!player) return null;
           const seasonPpg = window === 'stf' ? row.ppg : (seasonPpgById.get(row.playerId) ?? row.ppg);
           const delta = window === 'stf' ? 0 : Number((row.ppg - seasonPpg).toFixed(2));
           const posKey = player.position || 'NA';
-          const nextRank = (posCounter.get(posKey) ?? 0) + 1;
-          posCounter.set(posKey, nextRank);
 
           const ownedInLeague = ownershipAvailable ? rosteredPlayerIds.has(player.id) : null;
           const ownedPct = ownedInLeague === null ? null : (ownedInLeague ? 100 : 0);
@@ -1157,7 +1166,7 @@ playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
             ppg: row.ppg,
             seasonPpg,
             delta,
-            posRank: nextRank,
+            posRank: posRankByPlayer.get(row.playerId) ?? 1,
             ownedPct,
             ownedInLeague,
             tradeTarget,
@@ -1662,7 +1671,7 @@ ${newsBlock}`;
   },
 );
 
-// ── POST /api/players/ask — board-scoped Ask AI (Pro/Elite) ─────────
+// ── POST /api/players/ask — board-scoped Ask AI (Pro/Elite) ─────
 
 interface PlayersAskBody {
   /** Prior conversation turns (alternating user/assistant); may be empty. */
