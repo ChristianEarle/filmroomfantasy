@@ -245,6 +245,14 @@ app.onError((err, c) => {
   }, 500);
 });
 
+// NFL regular/postseason months, UTC. Used to decide how often the league
+// sync cron (POST /api/admin/sync-leagues) runs — every 4h in-season to keep
+// matchups/rosters fresh, once a day off-season since nothing changes.
+function isInSeasonMonth(date: Date = new Date()): boolean {
+  const month = date.getUTCMonth() + 1; // 1-12
+  return month >= 9 || month === 1;
+}
+
 // Scheduled handler for Cloudflare Cron Triggers
 // Uses app.fetch() to call existing admin endpoints internally
 async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -319,6 +327,12 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     } catch (err) {
       console.error('[cron] rank-history snapshot failed:', err);
     }
+
+    // Off-season: league matchups/rosters barely change, so once a day here
+    // is plenty (in-season this instead runs every 4h — see below).
+    if (!isInSeasonMonth()) {
+      await callSync('/api/admin/sync-leagues');
+    }
   } else if (event.cron === '0 */4 * * *') {
     // Every 4 hours: sync stats, projections, and odds for current week only (not all 18)
     // This keeps us within subrequest limits while keeping data fresh
@@ -335,6 +349,15 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
 
     await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
+
+    // In-season, keep league matchups/rosters/ownership fresh every 4h so
+    // "my matchup" doesn't 404 for leagues no one has manually re-synced
+    // since the season rolled over. Runs the same sync logic as the
+    // user-triggered "Sync" button (see server/src/services/leagueSync.ts).
+    // Off-season this instead runs once daily — see the 0 12 * * * block.
+    if (isInSeasonMonth()) {
+      await callSync('/api/admin/sync-leagues');
+    }
 
     // Sync player prop lines (per-player Vegas O/U) for the current week.
     // The endpoint itself loops over every game and skips any it already

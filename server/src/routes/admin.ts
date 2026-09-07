@@ -14,6 +14,7 @@ import {
   processPendingBatches,
 } from '../services/draftRankings';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
+import { syncSleeperLeague } from '../services/leagueSync';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -2927,6 +2928,109 @@ adminRoutes.get('/ranking-batch-jobs', async (c) => {
     console.error('[admin] ranking-batch-jobs error:', err);
     return c.json({
       error: 'Failed to load ranking batch jobs',
+      message: err instanceof Error ? err.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * POST /api/admin/sync-leagues
+ *
+ * Batch-syncs Sleeper leagues so matchup/roster/ownership data stays fresh
+ * without requiring a user to click "Sync" in the UI. Runs the exact same
+ * logic as the user-triggered POST /api/leagues/:id/sync route (both call
+ * `syncSleeperLeague` in server/src/services/leagueSync.ts) — just with no
+ * single acting user, since ownership for every *known* league member is
+ * corrected from their own `league_members.externalUsername` regardless of
+ * who (or what cron) triggers the sync.
+ *
+ * Requires X-Admin-Key header matching SYNC_SECRET env var (or JWT admin).
+ * Body: { leagueId?: string, platform?: 'sleeper', season?: number, limit?: number }
+ * - leagueId: sync just this one league (season/limit are ignored)
+ * - season: defaults to the current NFL season (Sep–Jan rolls into the new year)
+ * - limit: max leagues processed this call, default 25, ordered by
+ *   `updatedAt` ascending so the least-recently-synced leagues go first and
+ *   one slow/broken league can't starve the rest across repeated cron runs
+ * - platform: only 'sleeper' is implemented today; Yahoo/ESPN leagues are
+ *   counted in `skipped` rather than erroring the whole batch
+ *
+ * Each league's sync is isolated in its own try/catch so one failure
+ * doesn't abort the batch; failures are returned in `failed` for visibility.
+ */
+adminRoutes.post('/sync-leagues', async (c) => {
+  const db = c.get('db');
+
+  try {
+    let body: { leagueId?: string; platform?: string; season?: number; limit?: number } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body or invalid JSON - use defaults
+    }
+
+    const platform = body.platform || 'sleeper';
+    if (platform !== 'sleeper') {
+      return c.json({ error: `Unsupported platform "${platform}" — only "sleeper" is implemented` }, 400);
+    }
+
+    // Dynamic default: NFL season spans Sep–Feb, so Jan–Jul = previous year
+    const now = new Date();
+    const defaultSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
+    const season = body.season ?? defaultSeason;
+    if (season < 2000 || season > 2100) {
+      return c.json({ error: 'Invalid season year' }, 400);
+    }
+
+    const limit = Math.min(Math.max(Math.trunc(body.limit ?? 25) || 25, 1), 100);
+
+    let leaguesToSync: (typeof schema.leagues.$inferSelect)[];
+    if (body.leagueId) {
+      const one = await db.query.leagues.findFirst({ where: eq(schema.leagues.id, body.leagueId) });
+      leaguesToSync = one ? [one] : [];
+    } else {
+      leaguesToSync = await db.query.leagues.findMany({
+        where: and(eq(schema.leagues.platform, 'sleeper'), eq(schema.leagues.seasonYear, season)),
+        orderBy: (l, { asc }) => [asc(l.updatedAt)],
+        limit,
+      });
+    }
+
+    let synced = 0;
+    let skipped = 0;
+    const failed: { leagueId: string; error: string }[] = [];
+
+    for (const league of leaguesToSync) {
+      if (league.platform !== 'sleeper' || !league.externalId) {
+        skipped++;
+        continue;
+      }
+      try {
+        const teams = await db.query.teams.findMany({ where: eq(schema.teams.leagueId, league.id) });
+        // No acting user — ownership is corrected per known league member
+        // inside syncSleeperLeague, not tied to whoever triggers the sync.
+        await syncSleeperLeague(db, { ...league, teams });
+        synced++;
+      } catch (err) {
+        console.error(`[admin] sync-leagues failed for league ${league.id}:`, err);
+        failed.push({ leagueId: league.id, error: err instanceof Error ? err.message : String(err) });
+      }
+      // Small pause between leagues so a big batch doesn't hammer Sleeper's
+      // API back-to-back (each league sync already throttles its own
+      // per-week matchup/stat fetches via throttledFetchAll).
+      await sleep(150);
+    }
+
+    return c.json({
+      synced,
+      skipped,
+      failed,
+      totalConsidered: leaguesToSync.length,
+    });
+  } catch (err) {
+    console.error('[admin] sync-leagues error:', err);
+    return c.json({
+      error: 'Failed to sync leagues',
       message: err instanceof Error ? err.message : 'Unknown error',
     }, 500);
   }
