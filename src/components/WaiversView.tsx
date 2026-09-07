@@ -214,7 +214,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                 <div className={`w-px h-6 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
 
                 {/* Scoring Type */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Score:</span>
                   {scoringOptions.map((option) => (
                     <button
@@ -237,7 +237,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
                 <div className={`w-px h-6 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
 
                 {/* Position Filter */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Position:</span>
                   {positions.map((position) => (
                     <button
