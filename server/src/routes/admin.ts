@@ -2157,10 +2157,17 @@ adminRoutes.get('/season-props/summary', async (c) => {
 
     const playerIds = Array.from(projections.keys());
     const players = playerIds.length > 0
-      ? await db.query.nflPlayers.findMany({
-          where: inArray(schema.nflPlayers.id, playerIds),
-          columns: { id: true, name: true, team: true, position: true },
-        })
+      ? (
+          await Promise.all(
+            // Chunk to stay under D1's ~100 bound-parameter limit per statement.
+            Array.from({ length: Math.ceil(playerIds.length / 50) }, (_, i) =>
+              db.query.nflPlayers.findMany({
+                where: inArray(schema.nflPlayers.id, playerIds.slice(i * 50, i * 50 + 50)),
+                columns: { id: true, name: true, team: true, position: true },
+              }),
+            ),
+          )
+        ).flat()
       : [];
     const playerById = new Map(players.map((p) => [p.id, p]));
 
