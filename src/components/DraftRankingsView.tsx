@@ -557,7 +557,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
         isDarkMode={isDarkMode}
         title="Ask AI about the draft"
         endpoint="/draft-rankings/ask"
-        contextParams={{ type: rankingType, scoring: scoringFormat, superflex, season: new Date().getFullYear() }}
+        contextParams={{ type: rankingType, scoring: scoringFormat, superflex, season: new Date().getFullYear(), leagueId: league?.id }}
         placeholder="e.g. Who should I draft at pick 5?"
         quickActions={['Who are the top 3 RBs?', 'Best value in round 5?', 'Should I draft a QB early?']}
       />
