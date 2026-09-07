@@ -6,7 +6,11 @@ import {
   computeReplacementLevels,
   rankByVORP,
   computeRosPoints,
+  pickTierBWeek,
+  mergeSeasonStatVector,
+  EMPTY_SEASON_STAT_VECTOR,
   type VORPInputPlayer,
+  type SeasonStatKey,
 } from './marketRankings';
 
 describe('computeRemainingGames', () => {
@@ -299,5 +303,135 @@ describe('rankByVORP', () => {
     const result = rankByVORP(players, replacement);
     const te2 = result.find((r) => r.playerId === 'te2')!;
     expect(te2.vorp).toBe(0);
+  });
+});
+
+describe('pickTierBWeek', () => {
+  it('picks the upcoming week (asOfWeek + 1) when it has props coverage', () => {
+    expect(pickTierBWeek(3, [1, 2, 3, 4, 5])).toBe(4);
+  });
+
+  it('pre-season (asOfWeek 0) picks week 1 when available', () => {
+    expect(pickTierBWeek(0, [1, 2, 3])).toBe(1);
+  });
+
+  it('falls back to the latest available week at or before the upcoming week', () => {
+    // Upcoming week (5) has no props yet — fall back to the latest week <= 5.
+    expect(pickTierBWeek(4, [1, 2, 3])).toBe(3);
+  });
+
+  it('returns null when no available week qualifies (nothing at or before the upcoming week)', () => {
+    expect(pickTierBWeek(0, [3, 4, 5])).toBeNull();
+  });
+
+  it('returns null with no available weeks at all', () => {
+    expect(pickTierBWeek(2, [])).toBeNull();
+  });
+
+  it('prefers the exact upcoming week over an earlier fallback candidate', () => {
+    expect(pickTierBWeek(2, [1, 2, 3])).toBe(3);
+  });
+});
+
+describe('mergeSeasonStatVector', () => {
+  const emptyPresent = new Set<SeasonStatKey>();
+
+  it('RB with rush-only season lines gets receptions/rec_yds/rec_tds filled from weekly x remaining, and is "blended"', () => {
+    const result = mergeSeasonStatVector({
+      seasonLines: { ...EMPTY_SEASON_STAT_VECTOR, rushYds: 1200, rushTds: 10 },
+      seasonStatsPresent: new Set<SeasonStatKey>(['rushYds', 'rushTds']),
+      weeklyStats: { receptions: 3, recYds: 25, recTds: 0.2 },
+      remainingGames: 17,
+      position: 'RB',
+    });
+
+    expect(result.confidence).toBe('blended');
+    expect(result.sourcesByStat.rushYds).toBe('season');
+    expect(result.sourcesByStat.rushTds).toBe('season');
+    expect(result.sourcesByStat.receptions).toBe('weekly');
+    expect(result.sourcesByStat.recYds).toBe('weekly');
+    expect(result.sourcesByStat.recTds).toBe('weekly');
+    expect(result.stats.rushYds).toBe(1200);
+    expect(result.stats.rushTds).toBe(10);
+    expect(result.stats.receptions).toBeCloseTo(3 * 17, 5);
+    expect(result.stats.recYds).toBeCloseTo(25 * 17, 5);
+    expect(result.stats.recTds).toBeCloseTo(0.2 * 17, 5);
+  });
+
+  it('WR with all core stats from season lines is "season_props", even without a rush_yds line (optional stat)', () => {
+    const result = mergeSeasonStatVector({
+      seasonLines: { ...EMPTY_SEASON_STAT_VECTOR, receptions: 90, recYds: 1100, recTds: 8 },
+      seasonStatsPresent: new Set<SeasonStatKey>(['receptions', 'recYds', 'recTds']),
+      weeklyStats: {},
+      remainingGames: 17,
+      position: 'WR',
+    });
+
+    expect(result.confidence).toBe('season_props');
+    expect(result.sourcesByStat.receptions).toBe('season');
+    expect(result.sourcesByStat.recYds).toBe('season');
+    expect(result.sourcesByStat.recTds).toBe('season');
+    // Optional stat with no season line and no weekly data — missing, but doesn't affect confidence.
+    expect(result.sourcesByStat.rushYds).toBe('missing');
+    expect(result.stats.receptions).toBe(90);
+  });
+
+  it('no season lines at all falls back entirely to weekly extrapolation', () => {
+    const result = mergeSeasonStatVector({
+      seasonLines: EMPTY_SEASON_STAT_VECTOR,
+      seasonStatsPresent: emptyPresent,
+      weeklyStats: { receptions: 5, recYds: 60, recTds: 0.5 },
+      remainingGames: 14,
+      position: 'WR',
+    });
+
+    expect(result.confidence).toBe('weekly_extrapolation');
+    expect(result.sourcesByStat.receptions).toBe('weekly');
+    expect(result.sourcesByStat.recYds).toBe('weekly');
+    expect(result.sourcesByStat.recTds).toBe('weekly');
+    expect(result.stats.receptions).toBeCloseTo(5 * 14, 5);
+  });
+
+  it('QB with all core stats from season lines is "season_props" regardless of interceptions (optional) coverage', () => {
+    const withInterceptions = mergeSeasonStatVector({
+      seasonLines: {
+        ...EMPTY_SEASON_STAT_VECTOR,
+        passYds: 4200,
+        passTds: 28,
+        rushYds: 300,
+        rushTds: 3,
+        interceptions: 11,
+      },
+      seasonStatsPresent: new Set<SeasonStatKey>(['passYds', 'passTds', 'rushYds', 'rushTds', 'interceptions']),
+      weeklyStats: {},
+      remainingGames: 17,
+      position: 'QB',
+    });
+    expect(withInterceptions.confidence).toBe('season_props');
+    expect(withInterceptions.sourcesByStat.interceptions).toBe('season');
+
+    const withoutInterceptions = mergeSeasonStatVector({
+      seasonLines: { ...EMPTY_SEASON_STAT_VECTOR, passYds: 4200, passTds: 28, rushYds: 300, rushTds: 3 },
+      seasonStatsPresent: new Set<SeasonStatKey>(['passYds', 'passTds', 'rushYds', 'rushTds']),
+      weeklyStats: {}, // no weekly interceptions market exists (see projections.ts)
+      remainingGames: 17,
+      position: 'QB',
+    });
+    expect(withoutInterceptions.confidence).toBe('season_props');
+    expect(withoutInterceptions.sourcesByStat.interceptions).toBe('missing');
+    expect(withoutInterceptions.stats.interceptions).toBe(0);
+  });
+
+  it('a QB missing one core stat from season lines, filled from weekly, is "blended"', () => {
+    const result = mergeSeasonStatVector({
+      seasonLines: { ...EMPTY_SEASON_STAT_VECTOR, passYds: 4200, passTds: 28 },
+      seasonStatsPresent: new Set<SeasonStatKey>(['passYds', 'passTds']),
+      weeklyStats: { rushYds: 15, rushTds: 0.1 },
+      remainingGames: 17,
+      position: 'QB',
+    });
+    expect(result.confidence).toBe('blended');
+    expect(result.sourcesByStat.rushYds).toBe('weekly');
+    expect(result.stats.rushYds).toBeCloseTo(15 * 17, 5);
   });
 });

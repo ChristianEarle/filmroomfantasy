@@ -281,7 +281,10 @@ export const playerMarketProjections = sqliteTable('player_market_projections', 
   tier: integer('tier'),
   vorp: real('vorp'),
 
-  // 'season_props' | 'weekly_extrapolation' | 'none'
+  // 'season_props' (all core stats from season-long prop lines) |
+  // 'blended' (some core stats from season lines, the rest filled in from
+  // weekly-projection extrapolation) | 'weekly_extrapolation' (no core
+  // stats from season lines) | 'none' (not persisted, just counted)
   confidence: text('confidence').notNull().default('none'),
   source: text('source').notNull().default('market'),
 

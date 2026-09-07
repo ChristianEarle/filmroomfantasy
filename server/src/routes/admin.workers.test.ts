@@ -26,9 +26,14 @@ describe('POST /api/admin/sync-market-projections (workers pool)', () => {
     const PLAYER_COUNT = 120; // > UPSERT_CHUNK(50) so this forces multiple db.batch() calls
     const now = new Date();
 
-    // Tier A ('season_props') needs nothing but a matched season-prop row per
-    // player — no weekly stats, games, or league needed — so every player
-    // produces an upsert row deterministically.
+    // Tier A needs nothing but a matched season-prop row per player — no
+    // weekly stats, games, or league needed — so every player produces an
+    // upsert row deterministically. Each player only has a rec_yds season
+    // line (not the full WR core stat set of receptions+rec_yds+rec_tds),
+    // and no Tier B weekly projection exists to fill the rest, so the merge
+    // in mergeSeasonStatVector classifies these as 'blended' rather than
+    // 'season_props' — that partial-coverage handling is the point of this
+    // fixture, not just a batching regression test.
     const playerRows = Array.from({ length: PLAYER_COUNT }, (_, i) => ({
       id: `mp-batch-test-${i}`,
       externalId: `ext-mp-batch-test-${i}`,
@@ -97,7 +102,7 @@ describe('POST /api/admin/sync-market-projections (workers pool)', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as { counts: Record<string, number> };
-    expect(body.counts.season_props).toBe(PLAYER_COUNT);
+    expect(body.counts.blended).toBe(PLAYER_COUNT);
 
     // 120 rows / ~50-per-batch => at least 3 db.batch() calls.
     expect(batchCalls.length).toBeGreaterThan(1);
