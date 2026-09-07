@@ -86,6 +86,34 @@ export function seasonPointsFromWeeklyRate(input: WeeklyRateInput): number {
   return input.playedPoints + blendedRate * input.remainingGames;
 }
 
+// ── Rest-of-season points ────────────────────────────────────────────────
+
+export interface RosPointsResult {
+  rosPoints: number;
+  perGameRate: number | null;
+}
+
+/**
+ * Rest-of-season points still to come, plus the implied per-game rate.
+ *
+ * `seasonPoints` already includes `playedPoints`: Tier B builds its season
+ * total as playedPoints + rate*remaining (see seasonPointsFromWeeklyRate),
+ * and Tier A's season-prop total is a whole-season number that inherently
+ * covers weeks already played. So rosPoints must *subtract* playedPoints,
+ * not add it — adding would double-count games already played. Floored at
+ * 0 for the rare case seasonPoints undershoots actual playedPoints (e.g. a
+ * stale/lower market line after a big game).
+ *
+ * perGameRate is rosPoints spread evenly over the remaining games, or null
+ * once there are no games left to spread it over (rather than a stale/
+ * misleading season-long average).
+ */
+export function computeRosPoints(seasonPoints: number, playedPoints: number, remaining: number): RosPointsResult {
+  const rosPoints = Math.max(0, seasonPoints - playedPoints);
+  const perGameRate = remaining > 0 ? rosPoints / remaining : null;
+  return { rosPoints, perGameRate };
+}
+
 // ── Replacement levels ──────────────────────────────────────────────────
 
 export type RankedPosition = 'QB' | 'RB' | 'WR' | 'TE';

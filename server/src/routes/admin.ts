@@ -2209,8 +2209,14 @@ adminRoutes.get('/season-props/summary', async (c) => {
  *   'none': neither is available — not persisted, just counted.
  * QB/RB/WR/TE are then ranked by VORP (1-QB replacement levels; superflex
  * is a follow-up — see PR notes). K/DEF get points only (rank/vorp/tier
- * stay null). Upserts player_market_projections, chunked to stay under D1's
- * per-statement param limits.
+ * stay null). Upserts player_market_projections via db.batch() of
+ * single-row insert…onConflictDoUpdate statements (~50 per batch call) to
+ * stay under D1's per-statement bound-param limit.
+ *
+ * asOfWeek (when not passed explicitly) defaults to the last COMPLETED
+ * week (league.currentWeek - 1, floored at 0 pre-Week-1) — see
+ * computeRemainingGames in services/marketRankings.ts, which treats
+ * `week <= asOfWeek` as already played.
  *
  * Body: { season?: number, asOfWeek?: number, scoringFormat?: 'ppr' | 'half-ppr' | 'standard' | 'all' }
  * Requires X-Admin-Key header matching SYNC_SECRET env var.
@@ -2238,7 +2244,12 @@ adminRoutes.post('/sync-market-projections', async (c) => {
         columns: { currentWeek: true },
         orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
       });
-      asOfWeek = anyLeague?.currentWeek || 1;
+      const currentWeek = anyLeague?.currentWeek || 1;
+      // asOfWeek means "last COMPLETED week" — computeRemainingGames treats
+      // `week <= asOfWeek` as already played, so using the week *in progress*
+      // (league.currentWeek) here would count that week's games as played
+      // before they've happened. 0 before Week 1 (nothing completed yet).
+      asOfWeek = Math.max(0, currentWeek - 1);
     }
 
     const VALID_FORMATS = ['ppr', 'half-ppr', 'standard'] as const;
@@ -2255,6 +2266,7 @@ adminRoutes.post('/sync-market-projections', async (c) => {
       seasonPointsFromWeeklyRate,
       computeReplacementLevels,
       rankByVORP,
+      computeRosPoints,
     } = await import('../services/marketRankings');
     const { buildSeasonProjectionsFromSeasonProps } = await import('../services/seasonProps');
 
@@ -2435,8 +2447,7 @@ adminRoutes.post('/sync-market-projections', async (c) => {
       const rankedById = new Map(ranked.map((r) => [r.playerId, r]));
 
       const upsertRows = rows.map((row) => {
-        const perGameRate = row.seasonPoints / 17;
-        const rosPoints = row.playedPoints + perGameRate * row.remaining;
+        const { rosPoints, perGameRate } = computeRosPoints(row.seasonPoints, row.playedPoints, row.remaining);
         const rankInfo = rankedById.get(row.playerId);
         return {
           id: generateId(),
@@ -2458,32 +2469,42 @@ adminRoutes.post('/sync-market-projections', async (c) => {
         };
       });
 
+      // Each row is its own insert…onConflictDoUpdate statement (~16 bound
+      // params) rather than one multi-row `.values(chunk)` insert — D1 caps
+      // bound params per statement at ~100, and 50 rows × 16 columns in a
+      // single multi-row VALUES clause would blow well past that. Batching
+      // ~50 single-row statements per db.batch() call keeps each statement's
+      // param count low while still executing them together as one
+      // subrequest, mirroring the sync-players upsert above.
       for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
         const chunk = upsertRows.slice(i, i + UPSERT_CHUNK);
         if (chunk.length === 0) continue;
-        await db
-          .insert(schema.playerMarketProjections)
-          .values(chunk)
-          .onConflictDoUpdate({
-            target: [
-              schema.playerMarketProjections.playerId,
-              schema.playerMarketProjections.seasonYear,
-              schema.playerMarketProjections.asOfWeek,
-              schema.playerMarketProjections.scoringFormat,
-            ],
-            set: {
-              seasonPoints: sql`excluded.season_points`,
-              rosPoints: sql`excluded.ros_points`,
-              perGameRate: sql`excluded.per_game_rate`,
-              remainingGames: sql`excluded.remaining_games`,
-              marketRank: sql`excluded.market_rank`,
-              positionRank: sql`excluded.position_rank`,
-              tier: sql`excluded.tier`,
-              vorp: sql`excluded.vorp`,
-              confidence: sql`excluded.confidence`,
-              computedAt: sql`excluded.computed_at`,
-            },
-          });
+        const statements = chunk.map((row) =>
+          db
+            .insert(schema.playerMarketProjections)
+            .values(row)
+            .onConflictDoUpdate({
+              target: [
+                schema.playerMarketProjections.playerId,
+                schema.playerMarketProjections.seasonYear,
+                schema.playerMarketProjections.asOfWeek,
+                schema.playerMarketProjections.scoringFormat,
+              ],
+              set: {
+                seasonPoints: sql`excluded.season_points`,
+                rosPoints: sql`excluded.ros_points`,
+                perGameRate: sql`excluded.per_game_rate`,
+                remainingGames: sql`excluded.remaining_games`,
+                marketRank: sql`excluded.market_rank`,
+                positionRank: sql`excluded.position_rank`,
+                tier: sql`excluded.tier`,
+                vorp: sql`excluded.vorp`,
+                confidence: sql`excluded.confidence`,
+                computedAt: sql`excluded.computed_at`,
+              },
+            })
+        );
+        await db.batch(statements as any);
       }
 
       topByFormat[format] = upsertRows

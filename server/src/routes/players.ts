@@ -16,6 +16,7 @@ import {
 } from '../utils/prompt';
 import { buildProjectionsFromProps } from '../services/projections';
 import { resolveWeekComplete, computeFetchWindow } from './playersLogic';
+import { resolveMarketAsOfWeek } from '../services/marketRankingsQueries';
 import type { Env, Variables } from '../index';
 
 // Rate limits for player routes
@@ -472,15 +473,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
       // sync-market-projections last wrote.
       let marketAsOfWeek: number | null = null;
       if (week === undefined) {
-        const latestMarketRow = await db.query.playerMarketProjections.findFirst({
-          where: and(
-            eq(schema.playerMarketProjections.seasonYear, season),
-            eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
-          ),
-          orderBy: desc(schema.playerMarketProjections.asOfWeek),
-          columns: { asOfWeek: true },
-        });
-        marketAsOfWeek = latestMarketRow?.asOfWeek ?? null;
+        marketAsOfWeek = await resolveMarketAsOfWeek(db, season, scoringFormat);
       }
 
       // Fetch all chunks in parallel

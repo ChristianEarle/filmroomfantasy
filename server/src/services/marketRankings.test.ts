@@ -5,6 +5,7 @@ import {
   seasonPointsFromWeeklyRate,
   computeReplacementLevels,
   rankByVORP,
+  computeRosPoints,
   type VORPInputPlayer,
 } from './marketRankings';
 
@@ -48,6 +49,72 @@ describe('computeRemainingGames', () => {
       asOfWeek: 1,
     });
     expect(result).toBe(2);
+  });
+
+  // asOfWeek is defined as "last COMPLETED week" (see admin.ts's
+  // sync-market-projections: asOfWeek = currentWeek - 1, floored at 0
+  // before Week 1) — these pin down that semantics at the boundaries.
+
+  it('pre-season (asOfWeek 0) counts the full season as remaining, bye included in the schedule input', () => {
+    const result = computeRemainingGames({
+      teamScheduleWeeks: Array.from({ length: 18 }, (_, i) => i + 1), // full 18-week calendar
+      playedWeeks: [],
+      byeWeek: 7,
+      asOfWeek: 0,
+    });
+    // 18 calendar weeks minus the bye week => 17 remaining, nothing played yet.
+    expect(result).toBe(17);
+  });
+
+  it('mid-season with 3 completed weeks and a later bye counts remaining weeks minus the bye', () => {
+    const result = computeRemainingGames({
+      teamScheduleWeeks: Array.from({ length: 17 }, (_, i) => i + 1), // weeks 1-17
+      playedWeeks: [1, 2, 3],
+      byeWeek: 10, // after asOfWeek — still ahead, should be excluded
+      asOfWeek: 3,
+    });
+    // Weeks 4-17 = 14 weeks, minus the bye (10) => 13 remaining.
+    expect(result).toBe(13);
+  });
+
+  it('does not double-remove a bye week that already fell on or before asOfWeek', () => {
+    const result = computeRemainingGames({
+      teamScheduleWeeks: Array.from({ length: 18 }, (_, i) => i + 1),
+      playedWeeks: [1, 3, 4], // team didn't play its own bye week (2)
+      byeWeek: 2,
+      asOfWeek: 4,
+    });
+    // Weeks 5-18 = 14 weeks. The bye (2) is already <= asOfWeek and would
+    // never reach the bye check, so it must not also be subtracted here.
+    expect(result).toBe(14);
+  });
+});
+
+describe('computeRosPoints', () => {
+  it('does not double count games already played (Tier B: seasonPoints already includes playedPoints)', () => {
+    // playedPoints=80 over weeks so far, seasonPoints=250 for the full year
+    // (i.e. 170 still to come), 10 games remaining.
+    const result = computeRosPoints(250, 80, 10);
+    expect(result.rosPoints).toBe(170);
+    expect(result.perGameRate).toBeCloseTo(17, 5);
+  });
+
+  it('pre-season (no games played yet) treats rosPoints as the full season total', () => {
+    const result = computeRosPoints(340, 0, 17);
+    expect(result.rosPoints).toBe(340);
+    expect(result.perGameRate).toBeCloseTo(340 / 17, 5);
+  });
+
+  it('floors rosPoints at 0 when seasonPoints undershoots playedPoints', () => {
+    const result = computeRosPoints(100, 120, 5);
+    expect(result.rosPoints).toBe(0);
+    expect(result.perGameRate).toBe(0);
+  });
+
+  it('returns a null perGameRate once no games remain', () => {
+    const result = computeRosPoints(250, 250, 0);
+    expect(result.rosPoints).toBe(0);
+    expect(result.perGameRate).toBeNull();
   });
 });
 

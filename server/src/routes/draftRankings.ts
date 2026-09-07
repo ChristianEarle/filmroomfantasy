@@ -7,6 +7,7 @@ import { rateLimit } from '../middleware/rateLimit';
 import { sanitizePromptInput, getTodayKey, buildCachedSystemBlocks, type ConversationTurn } from '../utils/prompt';
 import { requireTier } from '../middleware/tier';
 import { generateId } from '../utils/id';
+import { resolveMarketAsOfWeek } from '../services/marketRankingsQueries';
 import type { Env, Variables } from '../index';
 
 export const draftRankingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -104,19 +105,12 @@ draftRankingsRoutes.get('/', async (c) => {
     // sync-market-projections admin route) — a later PR can add superflex.
     const marketRankByPlayer = new Map<string, number>();
     if (rankingType === 'redraft' && !superflex) {
-      const latestMarketRow = await db.query.playerMarketProjections.findFirst({
-        where: and(
-          eq(schema.playerMarketProjections.seasonYear, season),
-          eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
-        ),
-        orderBy: desc(schema.playerMarketProjections.asOfWeek),
-        columns: { asOfWeek: true },
-      });
-      if (latestMarketRow) {
+      const marketAsOfWeek = await resolveMarketAsOfWeek(db, season, scoringFormat);
+      if (marketAsOfWeek != null) {
         const marketRows = await db.query.playerMarketProjections.findMany({
           where: and(
             eq(schema.playerMarketProjections.seasonYear, season),
-            eq(schema.playerMarketProjections.asOfWeek, latestMarketRow.asOfWeek),
+            eq(schema.playerMarketProjections.asOfWeek, marketAsOfWeek),
             eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
           ),
           columns: { playerId: true, marketRank: true },
@@ -376,13 +370,16 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
 export const marketRankingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
- * GET /api/market-rankings?scoring=ppr&season=2026
+ * GET /api/market-rankings?scoring=ppr&season=2026&limit=300&offset=0
  *
  * Deterministic "Market" (sportsbook-implied) season projection + VORP
  * ranking, populated by POST /api/admin/sync-market-projections. Public,
  * read-only — no auth required, same posture as GET /api/draft-rankings.
  * Returns the most recently computed as_of_week's rows for the season +
  * scoring format. 1-QB only for now (see services/marketRankings.ts).
+ *
+ * limit (default 300, max 500) and offset (default 0) page through the
+ * full ranked list; `pagination.total` is the full count before paging.
  */
 marketRankingsRoutes.get('/', async (c) => {
   const db = c.get('db');
@@ -393,22 +390,20 @@ marketRankingsRoutes.get('/', async (c) => {
     return c.json({ error: 'Invalid scoring format' }, 400);
   }
 
+  const rawLimit = parseInt(c.req.query('limit') || '300', 10);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 300;
+  const rawOffset = parseInt(c.req.query('offset') || '0', 10);
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+
   const cacheKey = `market-rankings:${scoringFormat}:${season}`;
   const result = await cached(cacheKey, 5 * 60 * 1000, async () => {
-    const latestRow = await db.query.playerMarketProjections.findFirst({
-      where: and(
-        eq(schema.playerMarketProjections.seasonYear, season),
-        eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
-      ),
-      orderBy: desc(schema.playerMarketProjections.asOfWeek),
-      columns: { asOfWeek: true },
-    });
-    if (!latestRow) return { asOfWeek: null as number | null, rankings: [] as any[] };
+    const asOfWeek = await resolveMarketAsOfWeek(db, season, scoringFormat);
+    if (asOfWeek == null) return { asOfWeek: null as number | null, rankings: [] as any[] };
 
     const rows = await db.query.playerMarketProjections.findMany({
       where: and(
         eq(schema.playerMarketProjections.seasonYear, season),
-        eq(schema.playerMarketProjections.asOfWeek, latestRow.asOfWeek),
+        eq(schema.playerMarketProjections.asOfWeek, asOfWeek),
         eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
       ),
       orderBy: asc(schema.playerMarketProjections.marketRank),
@@ -431,7 +426,7 @@ marketRankingsRoutes.get('/', async (c) => {
     const playerById = new Map(playerChunks.flat().map((p) => [p.id, p]));
 
     return {
-      asOfWeek: latestRow.asOfWeek,
+      asOfWeek,
       rankings: rows.map((r) => ({
         playerId: r.playerId,
         player: playerById.get(r.playerId) ?? null,
@@ -448,13 +443,21 @@ marketRankingsRoutes.get('/', async (c) => {
     };
   });
 
+  // The cached fetch above always holds the full ranked list for this
+  // season/scoring format (one D1 round trip, reused across every page) —
+  // limit/offset are applied here so paging doesn't require re-querying or
+  // a separate cache entry per page. `total` is that full list's length.
+  const total = result.rankings.length;
+  const page = result.rankings.slice(offset, offset + limit);
+
   return c.json({
-    rankings: result.rankings,
+    rankings: page,
+    pagination: { limit, offset, total },
     meta: {
       scoringFormat,
       season,
       asOfWeek: result.asOfWeek,
-      count: result.rankings.length,
+      count: page.length,
     },
   });
 });
