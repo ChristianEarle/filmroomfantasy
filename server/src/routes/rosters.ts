@@ -164,11 +164,13 @@ export async function buildTeamRoster(
 }
 
 /**
- * Resolve the app user's team id in a league: prefer direct `ownerId`
- * ownership (custom, non-synced leagues), falling back to the
+ * Resolve the app user's team id in a league: prefer the
  * `externalOwnerId` <-> `leagueMembers.externalUsername` link used for
- * Sleeper/ESPN/Yahoo-synced leagues. Shared by the /mine route and the
- * Ask AI v2 `get_matchup` / `get_my_lineup` tools (services/askTools.ts).
+ * Sleeper/ESPN/Yahoo-synced leagues (reliable even if `teams.ownerId` was
+ * ever mis-assigned by a sync bug or is shared with another app user who
+ * synced first), falling back to direct `ownerId` ownership for custom,
+ * non-synced leagues. Shared by the /mine route and the Ask AI v2
+ * `get_matchup` / `get_my_lineup` tools (services/askTools.ts).
  */
 export async function resolveUserTeamId(
   db: ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>,
@@ -179,17 +181,18 @@ export async function resolveUserTeamId(
     where: eq(schema.teams.leagueId, leagueId),
   });
 
-  let team = allTeams.find((t) => t.ownerId === userId);
+  let team;
+  const membership = await db.query.leagueMembers.findFirst({
+    where: and(
+      eq(schema.leagueMembers.userId, userId),
+      eq(schema.leagueMembers.leagueId, leagueId)
+    ),
+  });
+  if (membership?.externalUsername) {
+    team = allTeams.find((t) => t.externalOwnerId === membership.externalUsername);
+  }
   if (!team) {
-    const membership = await db.query.leagueMembers.findFirst({
-      where: and(
-        eq(schema.leagueMembers.userId, userId),
-        eq(schema.leagueMembers.leagueId, leagueId)
-      ),
-    });
-    if (membership?.externalUsername) {
-      team = allTeams.find((t) => t.externalOwnerId === membership.externalUsername);
-    }
+    team = allTeams.find((t) => t.ownerId === userId);
   }
   return team?.id ?? null;
 }
