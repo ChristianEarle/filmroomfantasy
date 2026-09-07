@@ -383,6 +383,92 @@ matchupRoutes.get('/league/:leagueId/week/:week', authMiddleware, async (c) => {
   }
 });
 
+export interface CurrentMatchupResult {
+  matchupId: string;
+  week: number;
+  myTeam: { id: string; name: string; score: number };
+  opponent: { id: string; name: string; owner: string; score: number };
+  isComplete: boolean;
+}
+
+/**
+ * Resolve `teamId`'s current-week matchup in `leagueId`: the current week's
+ * matchup if one is synced, else the most recent week that has one (covers
+ * offseason / a currentWeek past the last synced week). Shared by the
+ * GET /my/current route and the Ask AI v2 `get_matchup` tool
+ * (services/askTools.ts) so the resolution logic lives in exactly one place.
+ * Returns null if the league or a matchup for this team can't be found.
+ */
+export async function findCurrentMatchupForTeam(
+  db: ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>,
+  leagueId: string,
+  teamId: string,
+): Promise<CurrentMatchupResult | null> {
+  const league = await db.query.leagues.findFirst({
+    where: eq(schema.leagues.id, leagueId),
+  });
+  if (!league) return null;
+
+  let matchup = await db.query.matchups.findFirst({
+    where: and(
+      eq(schema.matchups.leagueId, leagueId),
+      eq(schema.matchups.week, league.currentWeek),
+      or(
+        eq(schema.matchups.homeTeamId, teamId),
+        eq(schema.matchups.awayTeamId, teamId)
+      )
+    ),
+    with: {
+      homeTeam: { with: { owner: true } },
+      awayTeam: { with: { owner: true } },
+    },
+  });
+
+  // If no matchup found for current week (e.g. offseason, currentWeek past last synced week),
+  // fall back to the most recent week that has a matchup for this team
+  if (!matchup) {
+    matchup = await db.query.matchups.findFirst({
+      where: and(
+        eq(schema.matchups.leagueId, leagueId),
+        or(
+          eq(schema.matchups.homeTeamId, teamId),
+          eq(schema.matchups.awayTeamId, teamId)
+        )
+      ),
+      orderBy: desc(schema.matchups.week),
+      with: {
+        homeTeam: { with: { owner: true } },
+        awayTeam: { with: { owner: true } },
+      },
+    });
+  }
+
+  if (!matchup) return null;
+
+  const isHome = matchup.homeTeamId === teamId;
+  const myTeam = isHome ? matchup.homeTeam : matchup.awayTeam;
+  const opponent = isHome ? matchup.awayTeam : matchup.homeTeam;
+  const myScore = isHome ? matchup.homeScore : matchup.awayScore;
+  const opponentScore = isHome ? matchup.awayScore : matchup.homeScore;
+
+  return {
+    matchupId: matchup.id,
+    week: matchup.week,
+    myTeam: {
+      id: myTeam.id,
+      name: myTeam.name,
+      score: myScore || 0,
+    },
+    opponent: {
+      id: opponent.id,
+      name: opponent.name,
+      owner: opponent.ownerDisplayName || opponent.owner.username,
+      score: opponentScore || 0,
+    },
+    isComplete: matchup.isComplete,
+  };
+}
+
 // Get user's current matchup
 matchupRoutes.get('/my/current', authMiddleware, async (c) => {
   const user = c.get('user');
@@ -398,15 +484,6 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
   }
 
   try {
-    // Get league and current week
-    const league = await db.query.leagues.findFirst({
-      where: eq(schema.leagues.id, leagueId),
-    });
-
-    if (!league) {
-      return c.json({ error: 'League not found' }, 404);
-    }
-
     // Get user's team
     const team = await db.query.teams.findFirst({
       where: and(
@@ -419,67 +496,12 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
       return c.json({ error: 'Team not found' }, 404);
     }
 
-    // Find matchup where user's team is home or away for the current week
-    let matchup = await db.query.matchups.findFirst({
-      where: and(
-        eq(schema.matchups.leagueId, leagueId),
-        eq(schema.matchups.week, league.currentWeek),
-        or(
-          eq(schema.matchups.homeTeamId, team.id),
-          eq(schema.matchups.awayTeamId, team.id)
-        )
-      ),
-      with: {
-        homeTeam: { with: { owner: true } },
-        awayTeam: { with: { owner: true } },
-      },
-    });
-
-    // If no matchup found for current week (e.g. offseason, currentWeek past last synced week),
-    // fall back to the most recent week that has a matchup for this team
-    if (!matchup) {
-      matchup = await db.query.matchups.findFirst({
-        where: and(
-          eq(schema.matchups.leagueId, leagueId),
-          or(
-            eq(schema.matchups.homeTeamId, team.id),
-            eq(schema.matchups.awayTeamId, team.id)
-          )
-        ),
-        orderBy: desc(schema.matchups.week),
-        with: {
-          homeTeam: { with: { owner: true } },
-          awayTeam: { with: { owner: true } },
-        },
-      });
-    }
-
-    if (!matchup) {
+    const result = await findCurrentMatchupForTeam(db, leagueId, team.id);
+    if (!result) {
       return c.json({ error: 'No matchup found for current week' }, 404);
     }
 
-    const isHome = matchup.homeTeamId === team.id;
-    const myTeam = isHome ? matchup.homeTeam : matchup.awayTeam;
-    const opponent = isHome ? matchup.awayTeam : matchup.homeTeam;
-    const myScore = isHome ? matchup.homeScore : matchup.awayScore;
-    const opponentScore = isHome ? matchup.awayScore : matchup.homeScore;
-
-    return c.json({
-      matchupId: matchup.id,
-      week: matchup.week,
-      myTeam: {
-        id: myTeam.id,
-        name: myTeam.name,
-        score: myScore || 0,
-      },
-      opponent: {
-        id: opponent.id,
-        name: opponent.name,
-        owner: opponent.ownerDisplayName || opponent.owner.username,
-        score: opponentScore || 0,
-      },
-      isComplete: matchup.isComplete,
-    });
+    return c.json(result);
   } catch (error) {
     console.error('Get current matchup error:', error);
     return c.json({ error: 'Failed to fetch current matchup' }, 500);

@@ -84,7 +84,7 @@ async function fetchLeaguePicksByOwner(
   return byOwner;
 }
 
-async function buildTeamRoster(
+export async function buildTeamRoster(
   db: ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>,
   teamId: string,
   picks: TeamPickOut[] = []
@@ -161,6 +161,37 @@ async function buildTeamRoster(
     roster: { starters, bench, ir },
     picks,
   };
+}
+
+/**
+ * Resolve the app user's team id in a league: prefer direct `ownerId`
+ * ownership (custom, non-synced leagues), falling back to the
+ * `externalOwnerId` <-> `leagueMembers.externalUsername` link used for
+ * Sleeper/ESPN/Yahoo-synced leagues. Shared by the /mine route and the
+ * Ask AI v2 `get_matchup` / `get_my_lineup` tools (services/askTools.ts).
+ */
+export async function resolveUserTeamId(
+  db: ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>,
+  leagueId: string,
+  userId: string,
+): Promise<string | null> {
+  const allTeams = await db.query.teams.findMany({
+    where: eq(schema.teams.leagueId, leagueId),
+  });
+
+  let team = allTeams.find((t) => t.ownerId === userId);
+  if (!team) {
+    const membership = await db.query.leagueMembers.findFirst({
+      where: and(
+        eq(schema.leagueMembers.userId, userId),
+        eq(schema.leagueMembers.leagueId, leagueId)
+      ),
+    });
+    if (membership?.externalUsername) {
+      team = allTeams.find((t) => t.externalOwnerId === membership.externalUsername);
+    }
+  }
+  return team?.id ?? null;
 }
 
 /**
