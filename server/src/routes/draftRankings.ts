@@ -273,10 +273,12 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
 
   const db = c.get('db');
 
-  // Light daily cap so questions can't run away.
+  // Daily cap so questions can't run away: Pro 20/day, Elite 200/day (a high
+  // ceiling, not unlimited — unlimited let a single account's usage grow
+  // without bound).
   const today = getTodayKey();
-  const askLimit = tier === 'elite' ? Infinity : 20;
-  if (askLimit !== Infinity) {
+  const askLimit = tier === 'elite' ? 200 : 20;
+  {
     const usage = await db
       .select()
       .from(schema.tradeAnalysisUsage)
@@ -382,17 +384,15 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
     // Record usage. tradeAnalysisUsage has no free-form column for
     // rounds/toolCalls, so log them for now instead of dropping the info.
     console.log('[draft-rankings/ask] rounds:', rounds, 'toolCalls:', toolCalls.map((t) => t.name));
-    if (askLimit !== Infinity) {
-      try {
-        await db.insert(schema.tradeAnalysisUsage).values({
-          id: generateId(),
-          userId: `draftask:${user.id}`,
-          usedAt: new Date().toISOString(),
-          dateKey: today,
-        });
-      } catch (err) {
-        console.error('[draft-rankings/ask] Failed to record usage:', err);
-      }
+    try {
+      await db.insert(schema.tradeAnalysisUsage).values({
+        id: generateId(),
+        userId: `draftask:${user.id}`,
+        usedAt: new Date().toISOString(),
+        dateKey: today,
+      });
+    } catch (err) {
+      console.error('[draft-rankings/ask] Failed to record usage:', err);
     }
 
     return c.json({ answer, toolCalls });

@@ -360,7 +360,13 @@ authRoutes.get('/me', authMiddleware, async (c) => {
     return c.json({ error: 'Not authenticated' }, 401);
   }
 
-  const effectiveTier = resolveEffectiveTier(user, c.env, c.req.header('host'));
+  let urlHostname: string | null = null;
+  try {
+    urlHostname = new URL(c.req.url).hostname;
+  } catch {
+    urlHostname = null;
+  }
+  const effectiveTier = resolveEffectiveTier(user, c.env, c.req.header('host'), urlHostname);
 
   // Get user's leagues
   const db = c.get('db');
