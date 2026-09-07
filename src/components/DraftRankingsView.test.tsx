@@ -44,6 +44,7 @@ function makeRanking(over: Record<string, any>): any {
     projectedPoints: over.projectedPoints ?? null,
     adp: over.adp ?? null,
     adpDelta: over.adpDelta ?? null,
+    marketRank: over.marketRank ?? null,
     rationale: over.rationale ?? 'rationale',
     analysis: over.analysis ?? null,
     ceilingRank: over.ceilingRank ?? null,
@@ -63,6 +64,40 @@ function makeRanking(over: Record<string, any>): any {
       headshotUrl: null,
       externalId: null,
     },
+  };
+}
+
+// ── Market ranking fixtures ─────────────────────────────────────────
+
+function makeMarketRanking(over: Record<string, any>): any {
+  return {
+    playerId: over.playerId,
+    player: {
+      id: over.playerId,
+      name: over.name,
+      team: over.team,
+      position: over.position,
+      status: over.status ?? 'active',
+      injuryNote: null,
+      headshotUrl: null,
+    },
+    marketRank: over.marketRank,
+    positionRank: over.positionRank ?? 1,
+    tier: over.tier ?? 1,
+    vorp: over.vorp ?? 50,
+    seasonPoints: over.seasonPoints ?? null,
+    rosPoints: over.rosPoints ?? null,
+    perGameRate: over.perGameRate ?? null,
+    remainingGames: over.remainingGames ?? null,
+    confidence: over.confidence ?? 'season_props',
+  };
+}
+
+function marketResponse(rankings: any[], asOfWeek: number | null = 3) {
+  return {
+    rankings,
+    pagination: { limit: 300, offset: 0, total: rankings.length },
+    meta: { scoringFormat: 'ppr', season: 2026, asOfWeek, count: rankings.length },
   };
 }
 
@@ -451,5 +486,135 @@ describe('DraftRankingsView — empty state', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dynasty' }));
     expect(await screen.findByText(/No Dynasty Rankings Yet/i)).toBeInTheDocument();
     expect(screen.getByText(/weekly Monday AI ranking run/i)).toBeInTheDocument();
+  });
+});
+
+describe('DraftRankingsView — vs Mkt column (AI view)', () => {
+  it('shows a green pill with the market rank in its tooltip when AI ranks the player well above market', async () => {
+    // Allen: overallRank 1, marketRank 6 → delta = 6 - 1 = 5 → AI is higher on the player → green.
+    const withMarket = makeRanking({
+      id: 'a', overallRank: 1, position: 'QB', name: 'Josh Allen', team: 'BUF', marketRank: 6,
+    });
+    hoisted.mockGet.mockResolvedValue(response([withMarket]));
+    renderView();
+    await loaded();
+    const pill = table().getByTitle('Market rank #6');
+    expect(pill).toHaveTextContent('+5');
+  });
+
+  it('shows a red pill when AI ranks the player well below market', async () => {
+    // overallRank 20, marketRank 5 → delta = 5 - 20 = -15 → AI is lower on the player → red.
+    const withMarket = makeRanking({
+      id: 'a', overallRank: 20, position: 'RB', name: 'Faded Vet', team: 'SF', marketRank: 5,
+    });
+    hoisted.mockGet.mockResolvedValue(response([withMarket]));
+    renderView();
+    await loaded();
+    const pill = table().getByTitle('Market rank #5');
+    expect(pill).toHaveTextContent('-15');
+  });
+
+  it('shows a neutral dash for a small gap (|delta| <= 3) even though a market rank exists', async () => {
+    const withMarket = makeRanking({
+      id: 'a', overallRank: 10, position: 'WR', name: 'Close Call', team: 'KC', marketRank: 12,
+    });
+    hoisted.mockGet.mockResolvedValue(response([withMarket]));
+    renderView();
+    await loaded();
+    const pill = table().getByTitle('Market rank #12');
+    expect(pill).toHaveTextContent('—');
+  });
+
+  it('shows a neutral dash with no tooltip when the player has no market rank', async () => {
+    renderView();
+    await loaded();
+    // Fixtures (ALLEN/CMC/CHASE) all have marketRank: null by default.
+    expect(table().queryByTitle(/Market rank/)).toBeNull();
+  });
+});
+
+describe('DraftRankingsView — Market source toggle', () => {
+  beforeEach(() => {
+    hoisted.mockGet.mockImplementation((url: string) => {
+      if (url.includes('/market-rankings')) {
+        return Promise.resolve(marketResponse([
+          makeMarketRanking({ playerId: 'm1', marketRank: 1, positionRank: 1, tier: 1, position: 'RB', name: 'Market Bell Cow', team: 'DET', seasonPoints: 312.4, rosPoints: 260.1, confidence: 'season_props' }),
+          makeMarketRanking({ playerId: 'm2', marketRank: 2, positionRank: 1, tier: 1, position: 'WR', name: 'Market Alpha', team: 'MIA', seasonPoints: 298.7, rosPoints: 240.5, confidence: 'weekly_extrapolation' }),
+        ]));
+      }
+      return Promise.resolve(response(ALL));
+    });
+  });
+
+  it('defaults to the FilmRoom AI source and requests draft-rankings', async () => {
+    renderView();
+    await loaded();
+    expect(screen.getByRole('button', { name: 'FilmRoom AI' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Market' })).toBeInTheDocument();
+    const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
+    expect(urls.some(u => u.includes('/draft-rankings'))).toBe(true);
+    expect(urls.some(u => u.includes('/market-rankings'))).toBe(false);
+  });
+
+  it('fetches and renders the Market board when the Market pill is clicked, hiding Redraft/Dynasty/Rookie pills', async () => {
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+
+    await waitFor(() => {
+      const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
+      expect(urls.some(u => u.includes('/market-rankings') && u.includes('scoring=ppr'))).toBe(true);
+    });
+
+    expect(await screen.findByText('Market Bell Cow')).toBeInTheDocument();
+    expect(table().getByText('Market Alpha')).toBeInTheDocument();
+
+    // AI-only ranking-view pills are gone while Market is selected.
+    expect(screen.queryByRole('button', { name: 'Redraft' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Dynasty' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Rookie' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Superflex' })).toBeNull();
+  });
+
+  it('renders the Market table shape: rank, player, season proj, ROS, tier, confidence badge', async () => {
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Market Bell Cow');
+
+    expect(table().getByText('Season Proj')).toBeInTheDocument();
+    expect(table().getByText('ROS')).toBeInTheDocument();
+    expect(table().getByText('Tier')).toBeInTheDocument();
+    expect(table().getByText('Confidence')).toBeInTheDocument();
+
+    expect(table().getByText('312.4')).toBeInTheDocument(); // season proj
+    expect(table().getByText('260.1')).toBeInTheDocument(); // ROS
+    expect(table().getByText('HIGH')).toBeInTheDocument(); // season_props confidence
+    expect(table().getByText('EST')).toBeInTheDocument(); // weekly_extrapolation confidence
+  });
+
+  it('disables rationale expand for Market rows (no chevron, no expand panel on click)', async () => {
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Market Bell Cow');
+
+    const row = table().getByText('Market Bell Cow').closest('div');
+    fireEvent.click(row as Element);
+    // No AI-only panels ever appear for Market rows.
+    expect(screen.queryByText('FilmRoom AI Take')).toBeNull();
+    expect(screen.queryByText('Ceiling / Floor')).toBeNull();
+    expect(screen.queryByTestId('trend-sparkline')).toBeNull();
+  });
+
+  it('shows the empty state copy once no market sync has run yet', async () => {
+    hoisted.mockGet.mockImplementation((url: string) => {
+      if (url.includes('/market-rankings')) return Promise.resolve(marketResponse([], null));
+      return Promise.resolve(response(ALL));
+    });
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    expect(await screen.findByText(/Market rankings generate after the projections sync\./i)).toBeInTheDocument();
   });
 });
