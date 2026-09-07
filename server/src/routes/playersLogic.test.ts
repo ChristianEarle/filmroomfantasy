@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveWeekComplete, computeFetchWindow } from './playersLogic';
+import { resolveWeekComplete, computeFetchWindow, computePosRanks } from './playersLogic';
 
 describe('resolveWeekComplete', () => {
   it('is complete when every game is isComplete=true, or lacks isComplete but has both final scores', () => {
@@ -121,5 +121,50 @@ describe('computeFetchWindow', () => {
     });
     expect(fetchLimit).toBe(250);
     expect(fetchOffset).toBe(200);
+  });
+});
+
+describe('computePosRanks', () => {
+  it('ranks each position independently, 1-based, in the order given', () => {
+    const ranks = computePosRanks([
+      { playerId: 'wr-1', position: 'WR' },
+      { playerId: 'rb-1', position: 'RB' },
+      { playerId: 'wr-2', position: 'WR' },
+      { playerId: 'rb-2', position: 'RB' },
+      { playerId: 'wr-3', position: 'WR' },
+    ]);
+    expect(ranks.get('wr-1')).toBe(1);
+    expect(ranks.get('wr-2')).toBe(2);
+    expect(ranks.get('wr-3')).toBe(3);
+    expect(ranks.get('rb-1')).toBe(1);
+    expect(ranks.get('rb-2')).toBe(2);
+  });
+
+  it('ranks against the FULL set, not a slice already truncated to the response limit', () => {
+    // Regression case: an RB1 (best PPG among RBs, but 26th overall) must still rank
+    // above an RB2 even though a top-25-overall slice would have dropped RB1 entirely
+    // and left RB2 as the only RB row — mislabeling it "RB1".
+    const fullWindow = [
+      { playerId: 'wr-1', position: 'WR' },
+      { playerId: 'rb-1', position: 'RB' }, // best RB by ppg, ranked ahead of rb-2
+      { playerId: 'wr-2', position: 'WR' },
+      { playerId: 'rb-2', position: 'RB' },
+    ];
+    const ranks = computePosRanks(fullWindow);
+    expect(ranks.get('rb-1')).toBe(1);
+    expect(ranks.get('rb-2')).toBe(2);
+  });
+
+  it('treats a null/missing position as its own "NA" bucket rather than throwing', () => {
+    const ranks = computePosRanks([
+      { playerId: 'p1', position: null },
+      { playerId: 'p2', position: null },
+    ]);
+    expect(ranks.get('p1')).toBe(1);
+    expect(ranks.get('p2')).toBe(2);
+  });
+
+  it('returns an empty map for an empty input', () => {
+    expect(computePosRanks([]).size).toBe(0);
   });
 });
