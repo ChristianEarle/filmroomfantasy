@@ -230,6 +230,12 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketAsOfWeek, setMarketAsOfWeek] = useState<number | null>(null);
+  // Market-only ranking dimension: 'season' ranks by the full-season VORP
+  // rank already returned by the API; 'ros' re-sorts the (already-fetched)
+  // board by remaining-season points and renumbers rank position within
+  // that order — a dedicated ROS ranking type, no extra fetch needed since
+  // every market row already carries rosPoints.
+  const [marketSort, setMarketSort] = useState<'season' | 'ros'>('season');
 
   const { user, isAuthenticated } = useAuth();
   const watchlist = useWatchlist();
@@ -380,8 +386,20 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     if (watchingOnly) {
       filtered = filtered.filter(r => watchlist.watchedIds.has(r.player.id));
     }
+    // ROS ranking type: re-sort by remaining-season points (nulls last) and
+    // renumber rank position within that order, instead of the full-season
+    // VORP rank the API returns rows in.
+    if (marketSort === 'ros') {
+      filtered = [...filtered].sort((a, b) => {
+        if (a.rosPoints == null && b.rosPoints == null) return 0;
+        if (a.rosPoints == null) return 1;
+        if (b.rosPoints == null) return -1;
+        return b.rosPoints - a.rosPoints;
+      });
+      filtered = filtered.map((r, i) => ({ ...r, overallRank: i + 1 }));
+    }
     return filtered;
-  }, [marketRankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
+  }, [marketRankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds, marketSort]);
 
   const handlePlayerClick = useCallback((ranking: DraftRanking) => {
     const p = ranking.player;
@@ -472,6 +490,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
                 <>
                   {marketAsOfWeek != null && <>As of week {marketAsOfWeek} · </>}
                   {activeCount} players ranked
+                  {marketSort === 'ros' && <> · <span className="text-blue-500">sorted by ROS value</span></>}
                 </>
               ) : (
                 <>
@@ -534,6 +553,18 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
         </div>
 
         <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+
+        {isMarket && (
+          <>
+            {/* Ranking dimension: full-season VORP rank vs rest-of-season value */}
+            <div className="flex gap-1">
+              {pill(marketSort === 'season', () => setMarketSort('season'), 'Season')}
+              {pill(marketSort === 'ros', () => setMarketSort('ros'), 'ROS')}
+            </div>
+
+            <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+          </>
+        )}
 
         {!isMarket && (
           <>
