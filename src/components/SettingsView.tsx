@@ -29,6 +29,8 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
   const preferredScoring = user?.preferredScoring ?? 'ppr';
   const notificationsEnabled = user?.notificationsEnabled ?? true;
+  const emailNotificationsEnabled = user?.emailNotificationsEnabled ?? false;
+  const emailVerified = !!user?.emailVerifiedAt;
 
   // Preference update error state
   const [prefError, setPrefError] = useState<string | null>(null);
@@ -683,6 +685,28 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                 aria-labelledby="notifications-label"
                 role="switch"
                 aria-checked={notificationsEnabled}
+              />
+              <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-300'}`}></div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div id="email-notifications-label" className={`font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Email Alerts</div>
+              <div className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                {emailVerified ? 'Also send injury alerts to your email' : 'Verify your email address to enable email alerts'}
+              </div>
+            </div>
+            <label className={`relative inline-flex items-center ${emailVerified ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={emailNotificationsEnabled}
+                disabled={!emailVerified}
+                onChange={(e) => handleUpdatePreference({ emailNotificationsEnabled: e.target.checked })}
+                aria-labelledby="email-notifications-label"
+                role="switch"
+                aria-checked={emailNotificationsEnabled}
               />
               <div className={`w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-300'}`}></div>
             </label>

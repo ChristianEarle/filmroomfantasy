@@ -77,6 +77,7 @@ components:
         preferredScoring: { type: string, enum: [ppr, half_ppr, standard] }
         darkMode: { type: boolean }
         notificationsEnabled: { type: boolean }
+        emailNotificationsEnabled: { type: boolean }
         hasGoogle: { type: boolean }
         hasPassword: { type: boolean }
 
@@ -128,7 +129,7 @@ components:
         error: { type: string }
 
 paths:
-  # ─── AUTH ────────────────────────────────────────
+  # ─── AUTH ────────────────────────
   /api/auth/register:
     post:
       tags: [Auth]
@@ -239,6 +240,7 @@ paths:
                 preferredScoring: { type: string, enum: [ppr, half_ppr, standard] }
                 darkMode: { type: boolean }
                 notificationsEnabled: { type: boolean }
+                emailNotificationsEnabled: { type: boolean }
       responses:
         '200':
           description: Profile updated
@@ -270,7 +272,7 @@ paths:
         '200':
           description: Session revoked
 
-  # ─── PLAYERS ─────────────────────────────────────
+  # ─── PLAYERS ─────────────────────
   /api/players:
     get:
       tags: [Players]
@@ -332,7 +334,7 @@ paths:
         '200':
           description: Injured players list
 
-  # ─── GAMES ──────────────────────────────────────
+  # ─── GAMES ────────────────────
   /api/games/slate:
     get:
       tags: [Games]
@@ -391,7 +393,7 @@ paths:
         '200':
           description: Line movement data
 
-  # ─── LEAGUES ─────────────────────────────────────
+  # ─── LEAGUES ─────────────────────
   /api/leagues:
     get:
       tags: [Leagues]
@@ -447,7 +449,7 @@ paths:
         '200':
           description: League standings
 
-  # ─── TEAMS ──────────────────────────────────────
+  # ─── TEAMS ────────────────────
   /api/teams/{id}:
     get:
       tags: [Teams]
@@ -498,7 +500,7 @@ paths:
         '200':
           description: Lineup updated
 
-  # ─── MATCHUPS ────────────────────────────────────
+  # ─── MATCHUPS ────────────────────
   /api/matchups/{id}:
     get:
       tags: [Matchups]
@@ -541,7 +543,7 @@ paths:
         '200':
           description: Current matchup
 
-  # ─── ADMIN ──────────────────────────────────────
+  # ─── ADMIN ────────────────────
   /api/admin/sync-players:
     post:
       tags: [Admin]
@@ -612,7 +614,7 @@ paths:
         '200':
           description: RSS news sync results
 
-  # ─── YAHOO ──────────────────────────────────────
+  # ─── YAHOO ────────────────────
   /api/yahoo/auth-url:
     post:
       tags: [Yahoo]
@@ -640,7 +642,7 @@ paths:
         '200':
           description: Yahoo account disconnected
 
-  # ─── FEEDBACK ────────────────────────────────────
+  # ─── FEEDBACK ────────────────────
   /api/feedback:
     post:
       tags: [Feedback]

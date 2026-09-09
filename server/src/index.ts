@@ -311,8 +311,8 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // players. Idempotent (dedupe keys), and failures never break the sync.
     try {
       const db = drizzle(env.DB, { schema });
-      const res = await generateInjuryNewsNotifications(db);
-      console.log(`[cron] injury notifications: ${res.attempted} rows for ${res.relevantNews} news items (${res.scannedNews} scanned)`);
+      const res = await generateInjuryNewsNotifications(db, { resendApiKey: env.RESEND_API_KEY, appUrl: env.APP_URL });
+      console.log(`[cron] injury notifications: ${res.attempted} rows for ${res.relevantNews} news items (${res.scannedNews} scanned), ${res.emailsSent} digest emails sent`);
     } catch (err) {
       console.error('[cron] injury notification generation failed:', err);
     }
@@ -394,8 +394,8 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // RSS syncs above. Idempotent via dedupe keys; never breaks the sync.
     try {
       const db = drizzle(env.DB, { schema });
-      const res = await generateInjuryNewsNotifications(db);
-      console.log(`[cron] injury notifications: ${res.attempted} rows for ${res.relevantNews} news items (${res.scannedNews} scanned)`);
+      const res = await generateInjuryNewsNotifications(db, { resendApiKey: env.RESEND_API_KEY, appUrl: env.APP_URL });
+      console.log(`[cron] injury notifications: ${res.attempted} rows for ${res.relevantNews} news items (${res.scannedNews} scanned), ${res.emailsSent} digest emails sent`);
     } catch (err) {
       console.error('[cron] injury notification generation failed:', err);
     }
