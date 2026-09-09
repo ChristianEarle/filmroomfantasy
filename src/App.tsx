@@ -345,6 +345,14 @@ function AppContent() {
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Clear stale login/register errors when the auth screen changes — otherwise
+  // switching Login -> Register -> Login (or -> Forgot -> Login) redisplays a
+  // failed-attempt banner from before the user ever touched the new form.
+  useEffect(() => {
+    setLoginError(null);
+    setRegisterError(null);
+  }, [authView]);
+
   // Sync URL when activeView changes (BUG-001 fix: URL now updates on sidebar nav)
   useEffect(() => {
     // Keep the user's typo'd URL visible when they hit a 404 — don't rewrite it.
