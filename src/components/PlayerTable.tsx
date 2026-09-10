@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { useOdds } from '../hooks/useOdds';
 import { usePlayerProps, formatPropLine } from '../hooks/usePlayerProps';
-import { type APIPlayer, convertAPIPlayerToPlayer, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
+import { type APIPlayer, convertAPIPlayerToPlayer, getDefaultSeason, getEffectiveSeason, scoringToFormat, NFL_WEEKS } from '../utils/playerUtils';
 import type { EnrichedPlayerFields } from '../services/players';
 import { AdUnit } from './AdUnit';
 import { Breadcrumb } from './shared/Breadcrumb';
@@ -112,6 +112,38 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
       {/* PTS (actual points when available, else projection) */}
       <td className="px-2 sm:px-4 py-3 sm:py-4 text-right">
         <span className={`font-bold text-base sm:text-lg tabular-nums ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+        {seasonMode && (() => {
+          // projectionSource (when the server sends it) truthfully names where the
+          // season total came from; pointsType is the older, coarser fallback.
+          const source = player.projectionSource ?? (player.pointsType === 'actual' ? 'actual' : 'ai');
+          const label = source === 'market' ? 'Market' : source === 'ai' ? 'AI' : 'Actual';
+          const title = source === 'market'
+            ? player.marketConfidence === 'blended'
+              ? 'Market (blended with weekly lines)'
+              : 'Deterministic sportsbook-implied season projection'
+            : source === 'ai'
+            ? 'AI-projected full-season total'
+            : 'No season projection available — showing actual points scored so far';
+          const colorClass = source === 'market'
+            ? 'bg-emerald-500/15 text-emerald-500'
+            : source === 'ai'
+            ? 'bg-blue-500/15 text-blue-500'
+            : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500';
+          return (
+            <span
+              className={`ml-1.5 fr-text-9 font-bold uppercase fr-tracking-wider px-1 py-0.5 rounded align-middle ${colorClass}`}
+              title={title}
+              aria-label={`Season points source: ${label}`}
+            >
+              {label}
+            </span>
+          );
+        })()}
+        {seasonMode && player.rosProjectedPoints != null && Math.round(player.rosProjectedPoints * 10) / 10 !== player.projectedPoints && (
+          <div className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            ROS {player.rosProjectedPoints.toFixed(1)}
+          </div>
+        )}
       </td>
 
       {/* PROJ (weekly projection) */}
@@ -331,16 +363,27 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
             {/* Panel 3 — Week summary */}
             <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}>
               <div className={`fr-text-10 font-bold uppercase fr-tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
-                {seasonMode ? 'SEASON TOTAL' : pointsType === 'actual' ? 'WEEK SUMMARY' : 'PROJECTION'}
+                {seasonMode
+                  ? (player.projectionSource === 'market' ? 'SEASON MARKET' : player.projectionSource === 'ai' ? 'SEASON PROJECTED' : 'SEASON ACTUAL')
+                  : pointsType === 'actual' ? 'WEEK SUMMARY' : 'PROJECTION'}
               </div>
               <div className={`text-2xl font-extrabold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 {player.projectedPoints.toFixed(1)}
               </div>
               <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {seasonMode
-                  ? `${player.position} · Full season`
+                  ? (player.projectionSource === 'market'
+                    ? `${player.position} · Full season (deterministic Market projection)`
+                    : player.projectionSource === 'ai'
+                    ? `${player.position} · Full season (AI-projected total)`
+                    : `${player.position} · Full season (actual so far — no season projection available)`)
                   : pointsType === 'actual' ? `${player.position} · Week ${currentWeek}` : `${player.position} · Proj Wk ${currentWeek}`}
               </div>
+              {seasonMode && player.rosProjectedPoints != null && Math.round(player.rosProjectedPoints * 10) / 10 !== player.projectedPoints && (
+                <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  Rest of season: <b className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{player.rosProjectedPoints.toFixed(1)}</b>
+                </div>
+              )}
               {!seasonMode && pointsType === 'actual' && player.weeklyProjectedPoints != null && (
                 <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   Proj was <b className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{player.weeklyProjectedPoints.toFixed(1)}</b>
@@ -455,7 +498,7 @@ export function PlayerTable({
   const weekDropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch odds and player props for the current week
-  const season = 2025;
+  const season = getDefaultSeason();
   const { odds } = useOdds(currentWeek, season);
   const { getPropsForPlayer } = usePlayerProps(currentWeek, season);
 
@@ -485,12 +528,15 @@ export function PlayerTable({
     setError(null);
     try {
       // Full Season mode omits the week param — the API then returns
-      // season aggregates (seasonStats totals + avgPointsPPR per game).
+      // season aggregates (seasonStats totals + the genuine AI-projected
+      // season total). Sort by that displayed total, not the per-game
+      // average, so high full-season projections aren't truncated out of
+      // the response before the client can re-sort (see #296/#301).
       const params = new URLSearchParams({
         page: '1',
         limit: '500',
         includeStats: 'true',
-        sortBy: fullSeason ? 'avgPointsPPR' : 'projectedPoints',
+        sortBy: fullSeason ? 'seasonProjectedPoints' : 'projectedPoints',
         sortOrder: 'desc',
         season: String(seasonYear),
         scoringFormat,
@@ -522,7 +568,11 @@ export function PlayerTable({
       const pagination = response?.pagination;
       setPlayers(playersList);
       setTotalPlayers(pagination?.total ?? playersList.length);
-      // Season totals are actuals but don't carry week-level proj/outcome context
+      // Table-wide pointsType only gates week-level UI (OUTCOME column, weekly
+      // +/- pill) — Full Season mode never shows those regardless of whether
+      // an individual row's value is a real projection or a fallback actual
+      // (that per-row distinction is tracked on each Player via `pointsType`,
+      // set below in sortedAndFilteredPlayers).
       setPointsType(fullSeason ? 'projected' : response?.pointsType ?? 'projected');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch players';
@@ -581,15 +631,28 @@ export function PlayerTable({
         d.weekChange = Math.round((scores[scores.length - 1] - scores[scores.length - 2]) * 10) / 10;
       }
       if (fullSeason) {
-        // Show season totals for the selected scoring format in the PTS column
+        // Full Season mode: prefer the genuine AI-generated full-season
+        // projection (redraft draft-rankings pool). Not every player is
+        // covered by that pool (it tops out around 200 players), so fall
+        // back to the sum of already-played weeks' actuals — and label
+        // that fallback truthfully as 'actual', not 'projected'.
         const totals = p.seasonStats;
-        const total = selectedScoring === 'PPR'
+        const actualTotal = selectedScoring === 'PPR'
           ? totals?.fantasyPointsPPR
           : selectedScoring === 'Half PPR'
           ? totals?.fantasyPointsHalf
           : totals?.fantasyPointsStd;
-        d.projectedPoints = Math.round((total ?? 0) * 10) / 10;
+        const seasonActual = p.seasonActualPoints ?? actualTotal ?? 0;
+        const hasSeasonProjection = p.seasonProjectedPoints != null;
+        const seasonValue = hasSeasonProjection ? (p.seasonProjectedPoints as number) : seasonActual;
+        d.projectedPoints = Math.round(seasonValue * 10) / 10;
         d.weeklyProjectedPoints = undefined;
+        d.pointsType = hasSeasonProjection ? 'projected' : 'actual';
+        // Truthful source label: prefer the server's explicit projectionSource
+        // (market/ai/actual) over the coarser pointsType above.
+        d.projectionSource = p.projectionSource ?? (hasSeasonProjection ? 'ai' : 'actual');
+        d.rosProjectedPoints = p.rosProjectedPoints ?? null;
+        d.marketConfidence = p.marketConfidence ?? null;
       }
       return d;
     });
@@ -694,7 +757,7 @@ export function PlayerTable({
             </h1>
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               {fullSeason
-                ? <>{seasonYear} Season · Full Season · Season total points</>
+                ? <>{seasonYear} Season · Full Season · AI-projected season totals (actual points where a projection isn't available)</>
                 : <>{seasonYear} Season · Week {currentWeek} {pointsType === 'actual' ? '(Final)' : '(Projections)'} · {pointsType === 'actual' ? 'Actual points scored' : 'Projected points'}</>}
               {totalPlayers > 0 && <> · {totalPlayers} players</>}
             </p>
@@ -1087,7 +1150,7 @@ export function PlayerTable({
         isDarkMode={isDarkMode}
         title="Ask AI — Player Rankings"
         endpoint="/players/ask"
-        contextParams={{ scoringFormat, week: currentWeek, season: seasonYear }}
+        contextParams={{ scoringFormat, week: currentWeek, season: seasonYear, leagueId: league?.id }}
         placeholder="e.g. Who should I start at FLEX this week?"
         quickActions={['Best waiver targets this week?', 'Compare my top 2 RBs', 'Who has the best matchup?']}
       />

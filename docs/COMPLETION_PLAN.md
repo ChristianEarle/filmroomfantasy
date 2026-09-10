@@ -22,7 +22,28 @@ Verified against the actual codebase by a 3-way scout pass (frontend, backend, i
 
 ## Deferred (needs external data sources / platform sync that doesn't exist yet)
 
-- Odds Movement tab on Trends (needs prop-line *history* source), full-season projections (weekly-props-derived only today), ESPN/Yahoo league sync + their draft picks (Phases 2/3), FantasyPros ECR / Underdog ADP, AI post-game recaps (follow-up), push notifications (in-app lands now; push is follow-up).
+- Odds Movement tab on Trends (needs prop-line *history* source), ESPN/Yahoo league sync + their draft picks (Phases 2/3), FantasyPros ECR / Underdog ADP, AI post-game recaps (follow-up), push notifications (in-app lands now; push is follow-up).
+
+> **Update 2026-09-06 — all three waves plus follow-on work are complete.**
+> Full-season projections shipped (genuine `seasonProjectedPoints` from
+> `draft_rankings`, #301), so it's no longer on the deferred list above.
+> Also since this plan was written: the true `dynasty` ranking type
+> (Redraft/Dynasty/Rookie split, #301), League Analyzer AI narratives +
+> league-wide pulse ranking (#299), a backend Vitest test harness (#302),
+> the real Tailwind v4 build replacing the precompiled `index.css` (#300),
+> and further mobile fixes (#297, #303) on top of the Wave C mobile pass.
+> Remaining gaps are owner-blocked credentials and the external-data-source
+> items above — see `TODO.md` for the live list.
+
+> **Update 2026-09-07 — Market layer + Ask AI v2.** A deterministic,
+> sportsbook-implied "Market" projection + VORP ranking layer shipped
+> (`player_market_projections`, #309, coverage fixes #311/#313), fed by a
+> manual season-long prop-line import (`player_season_props`, #305) since
+> there's no free API source for season-long O/U lines. AI draft rankings
+> now anchor on Market rank instead of ADP alone (#312), and Ask AI moved
+> to a real tool-calling loop with player cards and league awareness
+> (#310). Redraft ADP — deferred above — is done, via
+> FantasyFootballCalculator rather than Sleeper/Underdog (#306).
 
 ---
 
