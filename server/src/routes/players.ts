@@ -1489,9 +1489,9 @@ async function resolvePlayerRow(db: any, idParam: string) {
 // requests so the cache_control marker in buildCachedSystemBlocks applies.
 const PLAYER_ANALYSIS_SYSTEM_PROMPT = `You are FilmRoom's fantasy football analyst writing a concise weekly "AI take" on a single NFL player for fantasy managers.
 
-You will receive a data block from our live database: player bio, season stats to date, recent weekly fantasy scores, the current-week projection, the upcoming opponent, Vegas game context (spread, total, implied team total), and recent news headlines.
+You will receive a data block from our live database: player bio, season stats to date, recent weekly fantasy scores, how this player's actual production has tracked their weekly projections so far this season, the current-week projection, the upcoming opponent, Vegas game context (spread, total, implied team total), and recent news headlines.
 
-Write 2-4 short paragraphs (under 180 words total) covering: recent form and role, the upcoming matchup and what the Vegas context implies about game environment, and clear start/sit or roster guidance for this week. Reference specific numbers from the data block.
+Write 2-4 short paragraphs (under 180 words total) covering: recent form and role, how reliable this week's projection is likely to be given the player's season-long projection accuracy, the upcoming matchup and what the Vegas context implies about game environment, and clear start/sit or roster guidance for this week. Reference specific numbers from the data block.
 
 Rules:
 - Use ONLY the facts in the data block. If a data point is missing (no projection, no Vegas line, no stats), acknowledge the gap rather than inventing numbers.
@@ -1547,11 +1547,55 @@ playerRoutes.get(
 
       // ── Build the prompt server-side from our own data (via the shared
       // player-card assembly — see services/playerCard.ts) ──
-      const card = await buildPlayerCard(db, player.id, { season, week, scoringFormat: 'ppr' });
+      const [card, stats, seasonProjRows] = await Promise.all([
+        buildPlayerCard(db, player.id, { season, week, scoringFormat: 'ppr' }),
+        db.query.playerWeeklyStats.findMany({
+          where: and(
+            eq(schema.playerWeeklyStats.playerId, player.id),
+            eq(schema.playerWeeklyStats.seasonYear, season),
+          ),
+          orderBy: asc(schema.playerWeeklyStats.week),
+        }),
+        // All season projections (not just this week's) so we can compare
+        // each completed week's projection against what actually happened.
+        db.query.playerProjections.findMany({
+          where: and(
+            eq(schema.playerProjections.playerId, player.id),
+            eq(schema.playerProjections.seasonYear, season),
+            eq(schema.playerProjections.scoringFormat, 'ppr'),
+          ),
+        }),
+      ]);
 
       const matchupLine = card?.thisWeek?.opponent
         ? `Week ${week} ${card.thisWeek.home ? 'vs' : 'at'} ${card.thisWeek.opponent}`
         : 'No game found for this week.';
+
+      // Projection accuracy this season: for each completed week that has both
+      // a projection and a final stat line, diff = actual − projected. Feeds
+      // the AI a sense of whether this player tends to beat, miss, or match
+      // their projections, rather than treating each week's projection as
+      // ground truth.
+      const accuracyDiffs = seasonProjRows
+        .filter((p: any) => p.week < week)
+        .map((p: any) => {
+          const stat = stats.find((s: any) => s.week === p.week);
+          return stat && stat.fantasyPointsPPR != null ? stat.fantasyPointsPPR - p.projectedPoints : null;
+        })
+        .filter((diff: number | null): diff is number => diff !== null);
+      let accuracyLine = '(not enough completed weeks yet to assess projection accuracy)';
+      if (accuracyDiffs.length >= 2) {
+        const avgDiff = accuracyDiffs.reduce((a: number, d: number) => a + d, 0) / accuracyDiffs.length;
+        const withinThree = accuracyDiffs.filter((d: number) => Math.abs(d) <= 3).length;
+        const overCount = accuracyDiffs.filter((d: number) => d > 3).length;
+        const underCount = accuracyDiffs.filter((d: number) => d < -3).length;
+        const tendency = overCount > underCount && overCount >= accuracyDiffs.length / 3
+          ? 'tends to outperform projection'
+          : underCount > overCount && underCount >= accuracyDiffs.length / 3
+          ? 'tends to underperform projection'
+          : 'projections have tracked actual production closely';
+        accuracyLine = `${withinThree}/${accuracyDiffs.length} weeks within 3 pts of projection, avg diff ${avgDiff >= 0 ? '+' : ''}${avgDiff.toFixed(1)} pts — ${tendency}.`;
+      }
 
       let vegasLine = 'No Vegas line available.';
       if (card?.thisWeek && (card.thisWeek.spread != null || card.thisWeek.total != null)) {
@@ -1588,6 +1632,7 @@ Status: ${player.status || 'active'}${player.injuryNote ? ` — ${sanitizePrompt
 
 Season to date: ${statLine}
 Last weeks: ${lastWeeksStr}
+Projection accuracy this season: ${accuracyLine}
 This week's projection: ${card?.thisWeek?.proj != null ? `${card.thisWeek.proj.toFixed(1)} PPR pts` : '(none available)'}
 Matchup: ${matchupLine}
 Vegas: ${vegasLine}
