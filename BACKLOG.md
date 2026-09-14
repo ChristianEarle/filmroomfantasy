@@ -313,7 +313,13 @@
   close) and added `aria-current`/`aria-expanded`/`aria-controls`/nav
   `aria-label` for screen readers.
 - [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
-- [ ] **Audit PlayerAvatar** - Image loading, fallback initials
+- [x] **Audit PlayerAvatar** - Fixed a real fallback-chain bug: the component
+  accepted both `headshotUrl` and `imageUrl` props but picked one source
+  permanently via `headshotUrl || imageUrl`, so a broken `headshotUrl`
+  fell straight to initials instead of trying `imageUrl`. Now tracks failed
+  urls in a set and tries each candidate in order. Added a test file
+  (previously untested) covering the fallback chain, initials generation,
+  and blank/whitespace-only names.
 - [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget
 - [ ] **Audit ErrorBoundary** - Error catch/display, recovery
 - [ ] **Audit App.tsx** - Routing, state management, context wiring, page transitions
