@@ -201,3 +201,40 @@ export async function getNflState(db: DB, now: Date = new Date()): Promise<NflSt
   cache = { state, cachedAtMs: now.getTime() };
   return state;
 }
+
+/** Subset of a league row that `pickLeagueWeek`/`resolveLeagueWeek` need. */
+export interface LeagueWeekInput {
+  seasonYear: number | null;
+  currentWeek: number | null;
+}
+
+function clampWeek(week: number): number {
+  return Math.min(18, Math.max(1, week));
+}
+
+/**
+ * Pure decision for which week/season a league-scoped view should default
+ * to: the live NFL week for a league on the current season (or no league
+ * at all), the league's own stored week for a league parked on a past
+ * season (an archived league should open where it left off, not jump to
+ * whatever week it is today).
+ */
+export function pickLeagueWeek(
+  state: NflState,
+  league: LeagueWeekInput | null | undefined
+): { week: number; season: number } {
+  if (league?.seasonYear != null && league.seasonYear !== state.season) {
+    return { week: clampWeek(league.currentWeek ?? 1), season: league.seasonYear };
+  }
+  return { week: state.week, season: state.season };
+}
+
+/** Week a league-scoped view should default to: the live NFL week for a league on the current season, the league's own stored week for an archived season. */
+export async function resolveLeagueWeek(
+  db: DB,
+  league: LeagueWeekInput | null | undefined,
+  now: Date = new Date()
+): Promise<{ week: number; season: number }> {
+  const state = await getNflState(db, now);
+  return pickLeagueWeek(state, league);
+}

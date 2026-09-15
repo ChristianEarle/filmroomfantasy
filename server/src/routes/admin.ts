@@ -15,7 +15,8 @@ import {
 } from '../services/draftRankings';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
 import { syncSleeperLeague } from '../services/leagueSync';
-import { resolveWeekFromCalendar } from '../services/nflState';
+import { resolveWeekFromCalendar, getNflState } from '../services/nflState';
+import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -1002,10 +1003,7 @@ adminRoutes.post('/sync-stats', async (c) => {
     } catch {
       // No body or invalid JSON - use defaults
     }
-    // Dynamic default: NFL season spans Sep–Feb, so Jan–Jul = previous year
-    const now = new Date();
-    const defaultSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
-    const seasonYear = body.seasonYear ?? defaultSeason;
+    const seasonYear = body.seasonYear ?? getDefaultSeason();
     if (seasonYear < 2000 || seasonYear > 2100) {
       return c.json({ error: 'Invalid season year' }, 400);
     }
@@ -1017,8 +1015,8 @@ adminRoutes.post('/sync-stats', async (c) => {
     } else if (typeof body.week === 'number' && body.week >= 1 && body.week <= 22) {
       weeksToSync = [body.week];
     } else {
-      // Default to week 1 (not all 18)
-      weeksToSync = [1];
+      // Default to the resolver's current week (not all 18)
+      weeksToSync = [(await getNflState(db)).week];
     }
 
     if (weeksToSync.length === 0) {
@@ -1196,7 +1194,7 @@ adminRoutes.post('/sync-projections', async (c) => {
       // No body - use defaults
     }
 
-    const seasonYear = body.seasonYear ?? new Date().getFullYear();
+    const seasonYear = body.seasonYear ?? getDefaultSeason();
     const scoringFormats = body.scoringFormats ?? ['ppr', 'half_ppr', 'standard'];
     const source = body.source || 'auto'; // 'props' | 'sleeper' | 'auto'
 
@@ -1209,11 +1207,7 @@ adminRoutes.post('/sync-projections', async (c) => {
     } else if (body.week) {
       weeksToSync = [body.week];
     } else {
-      const anyLeague = await db.query.leagues.findFirst({
-        columns: { currentWeek: true },
-        orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
-      });
-      const currentWeek = anyLeague?.currentWeek || 1;
+      const currentWeek = (await getNflState(db)).week;
       weeksToSync = [currentWeek];
     }
 
@@ -1692,13 +1686,16 @@ adminRoutes.post('/sync-player-props', async (c) => {
     return c.json({ error: 'Odds API not configured' }, 500);
   }
 
-  const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string; season?: number; snapshotTime?: string; skipProjections?: boolean }>();
-  const { week, date, gameIndex, eventId } = body;
+  const body = await c.req.json<{ week?: number; date?: string; gameIndex?: number; eventId?: string; season?: number; snapshotTime?: string; skipProjections?: boolean }>();
+  const { date, gameIndex, eventId } = body;
   const { getNflSeasonContext } = await import('../services/espn');
   const seasonYear = body.season || getNflSeasonContext().season;
   const providedSnapshotTime = body.snapshotTime;
+  // Missing week defaults to the resolver's current week rather than being
+  // rejected; an explicitly out-of-range week is still an error.
+  const week = body.week ?? (await getNflState(db)).week;
 
-  if (!week || week < 1 || week > 18) {
+  if (week < 1 || week > 18) {
     return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
   }
 
@@ -1928,7 +1925,7 @@ adminRoutes.post('/generate-projections', async (c) => {
 
   const body = await c.req.json().catch(() => ({}));
   const week = body.week;
-  const seasonYear = body.season || 2025;
+  const seasonYear = body.season || getDefaultSeason();
 
   if (!week) {
     return c.json({ error: 'week is required' }, 400);
@@ -2257,15 +2254,11 @@ adminRoutes.post('/sync-market-projections', async (c) => {
 
     let asOfWeek = body.asOfWeek;
     if (asOfWeek == null) {
-      const anyLeague = await db.query.leagues.findFirst({
-        columns: { currentWeek: true },
-        orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
-      });
-      const currentWeek = anyLeague?.currentWeek || 1;
+      const currentWeek = (await getNflState(db)).week;
       // asOfWeek means "last COMPLETED week" — computeRemainingGames treats
       // `week <= asOfWeek` as already played, so using the week *in progress*
-      // (league.currentWeek) here would count that week's games as played
-      // before they've happened. 0 before Week 1 (nothing completed yet).
+      // (the resolver's current week) here would count that week's games as
+      // played before they've happened. 0 before Week 1 (nothing completed yet).
       asOfWeek = Math.max(0, currentWeek - 1);
     }
 
@@ -2822,6 +2815,8 @@ adminRoutes.post('/generate-draft-rankings', async (c) => {
     const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty' | 'dynasty_rookie';
     const scoringFormat = (body.scoring || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
     const superflex = body.superflex ?? false;
+    // Draft rankings target the upcoming draft class, which the calendar
+    // year — not the NFL season resolver — identifies correctly.
     const seasonYear = body.season || new Date().getFullYear();
 
     if (!['redraft', 'dynasty', 'dynasty_rookie'].includes(rankingType)) {

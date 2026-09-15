@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { User, TrendingUp, ArrowUpDown, Star, Sparkles, Trophy, Target, ChevronDown, AlertCircle, Loader2 } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
+import { useNflState } from '../hooks/useNflState';
 
 import { sortByPosition } from '../utils/rosterPositions';
 import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
@@ -44,7 +45,10 @@ const gradeRank = (grade: string): number => {
 
 export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   const { league, userTeam, viewedTeamId, setViewedTeamId, roster, rosterLoading, standings, allMatchups } = useLeagueContext();
-  const [selectedWeek, setSelectedWeek] = useState(league?.currentWeek || 1);
+  const { week: nflWeek, season: nflSeason } = useNflState();
+  // Starts unresolved (not a placeholder 1) so the header/dropdown wait for
+  // a real default instead of flashing "Week 1" for the wrong season.
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [showTeamDropdown, setShowTeamDropdown] = useState(false);
   const teamDropdownRef = useRef<HTMLDivElement>(null);
@@ -53,13 +57,24 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   // Get the currently viewed team from the league teams
   const viewedTeam = league?.teams?.find(t => t.id === viewedTeamId) || league?.teams?.[0];
 
-  // Sync the selected week once the league (and its current week) loads —
-  // the useState initializer only runs on mount, before the league arrives.
-  useEffect(() => {
-    if (league?.currentWeek) {
-      setSelectedWeek(league.currentWeek);
+  // Default week: the current NFL week for a league in the current season
+  // (or no league at all), but a past-season league's own last-synced week
+  // — mirrors App.tsx's defaultWeek rule so an archived league opens where
+  // it left off instead of jumping to whatever week it is today.
+  const defaultWeek = useMemo(() => {
+    if (league?.seasonYear != null && nflSeason != null && league.seasonYear !== nflSeason) {
+      return league.currentWeek ?? null;
     }
-  }, [league?.currentWeek]);
+    return nflWeek;
+  }, [league?.id, league?.seasonYear, league?.currentWeek, nflSeason, nflWeek]);
+
+  // Only re-apply the default when the league changes or the default itself
+  // changes — never clobber a week the user picked manually from the dropdown.
+  useEffect(() => {
+    if (defaultWeek != null) {
+      setSelectedWeek(defaultWeek);
+    }
+  }, [league?.id, defaultWeek]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -200,7 +215,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
               )}
             </div>
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              {league?.name ? `${league.name} • ` : ''}Week {selectedWeek} roster and projections
+              {league?.name ? `${league.name} • ` : ''}Week {selectedWeek ?? '–'} roster and projections
             </p>
           </div>
 
@@ -233,7 +248,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                 aria-haspopup="listbox"
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors border ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
               >
-                <span className="text-sm font-medium">Week {selectedWeek}</span>
+                <span className="text-sm font-medium">Week {selectedWeek ?? '–'}</span>
                 <ChevronDown className={`w-4 h-4 transition-transform ${showWeekDropdown ? 'rotate-180' : ''}`} />
               </button>
               {showWeekDropdown && (

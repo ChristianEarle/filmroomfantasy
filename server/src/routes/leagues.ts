@@ -12,6 +12,7 @@ import { syncSleeperLeague } from '../services/leagueSync';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
+import { getDefaultSeason } from '../utils/seasons';
 import {
   fetchLeague as fetchMflLeague,
   fetchRosters as fetchMflRosters,
@@ -76,7 +77,7 @@ leagueRoutes.post('/', authMiddleware, async (c) => {
       name,
       scoringFormat = 'ppr',
       teamCount = 12,
-      seasonYear = new Date().getFullYear(),
+      seasonYear = getDefaultSeason(),
       playoffWeeks = 3,
       playoffTeams = 6,
       waiverType = 'faab',
@@ -438,7 +439,7 @@ leagueRoutes.post('/connect', connectRateLimit, authMiddleware, async (c) => {
       name,
       scoringFormat = 'ppr',
       teamCount = 12,
-      seasonYear = new Date().getFullYear(),
+      seasonYear = getDefaultSeason(),
       sleeperUsername, // User's Sleeper username to identify their team
       sleeperUserId,   // User's Sleeper user_id for reliable matching
     } = body;
@@ -1191,7 +1192,7 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
   // Handle MFL sync
   if (league.platform === 'mfl' && league.externalId) {
     try {
-      const year = league.seasonYear || new Date().getFullYear();
+      const year = league.seasonYear || getDefaultSeason();
 
       // 1. Fetch league settings from MFL
       const mflLeagueData = await fetchMflLeague(league.externalId, year);
@@ -1531,7 +1532,7 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
   // ESPN_S2 cookies, which we don't store yet. See TODO at the end of this file.)
   if (league.platform === 'espn' && league.externalId) {
     try {
-      const year = league.seasonYear || new Date().getFullYear();
+      const year = league.seasonYear || getDefaultSeason();
       const espnUrl = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${year}/segments/0/leagues/${encodeURIComponent(league.externalId)}?view=mTeam&view=mRoster&view=mMatchup&view=mSettings`;
 
       const controller = new AbortController();

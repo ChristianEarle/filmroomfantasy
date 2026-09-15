@@ -5,6 +5,7 @@
  */
 
 import staticSchedule from '../data/nfl-schedule-2025.json';
+import { resolveWeekFromCalendar } from './nflState';
 
 // The bundled static schedule is a point-in-time snapshot of ONE specific
 // season (see filename). It must never be used as a stand-in for a
@@ -51,38 +52,27 @@ const INDOOR_TEAMS = new Set(['NO', 'DET', 'MIN', 'LV', 'IND', 'ATL', 'DAL', 'HO
  * Determine the current NFL season year and phase based on the calendar date.
  * ESPN season types: '1' = preseason, '2' = regular season, '3' = postseason.
  *
- * NFL calendar (approximate):
- *   Jan 1 – Feb 15:   Previous year's postseason
- *   Feb 16 – Jul 31:  Offseason (return previous year's regular season for historical data)
- *   Aug 1 – Sep 4:    Current year's preseason
- *   Sep 5 – Jan 15*:  Current year's regular season (* extends into next calendar year)
- *
- * Note: The exact cutoff dates shift year-to-year. These are close enough for
- * default context when the caller doesn't specify an explicit week/season.
+ * Derived from the calendar resolver (services/nflState.ts) — the single
+ * source of truth for "what NFL week/season is it" — so this stays in sync
+ * with the server and frontend resolvers. Offseason still returns the
+ * previous season's regular-season data (seasontype '2'), matching this
+ * function's historical behavior for callers that want default context.
  */
 export function getNflSeasonContext(): { season: number; seasontype: string } {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-indexed
-  const day = now.getDate();
-
-  // Jan 1 – Feb 15: previous year's postseason
-  if (month === 0 || (month === 1 && day <= 15)) {
-    return { season: year - 1, seasontype: '3' };
+  const calendar = resolveWeekFromCalendar(new Date());
+  switch (calendar.seasonType) {
+    case 'preseason':
+      return { season: calendar.season, seasontype: '1' };
+    case 'regular':
+      return { season: calendar.season, seasontype: '2' };
+    case 'postseason':
+      return { season: calendar.season, seasontype: '3' };
+    case 'offseason':
+    default:
+      // Offseason: the current calendar-year season has no data yet, so
+      // point at the previous (completed) season's regular-season data.
+      return { season: calendar.season, seasontype: '2' };
   }
-
-  // Feb 16 – Jul 31: offseason — show previous year's regular season data
-  if (month <= 6) {
-    return { season: year - 1, seasontype: '2' };
-  }
-
-  // Aug 1 – Sep 4: preseason
-  if (month === 7 || (month === 8 && day <= 4)) {
-    return { season: year, seasontype: '1' };
-  }
-
-  // Sep 5 – Dec 31: regular season
-  return { season: year, seasontype: '2' };
 }
 
 export interface EspnGameRow {

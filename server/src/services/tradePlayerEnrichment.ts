@@ -21,6 +21,7 @@ import { eq, and, desc, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { inferPlayerTenure, type PlayerTenureInfo } from './playerTenure';
+import { resolveWeekFromCalendar } from './nflState';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -112,7 +113,7 @@ export async function fetchPlayerData(
   if (matchedPlayers.length === 0) return new Map();
 
   const playerIds = matchedPlayers.map((p) => p.id);
-  const currentYear = new Date().getFullYear();
+  const currentYear = resolveWeekFromCalendar(new Date()).season;
   const previousYear = currentYear - 1;
 
   const [weeklyStats, prevWeeklyStats, projections, news] = await Promise.all([
@@ -166,12 +167,14 @@ export async function fetchPlayerData(
     if (active) playedPrevByPlayer.add(s.playerId);
   }
 
-  // In-season stats don't flow into this module's "current year"
-  // window until games start; treat Jan–Jul as offseason for tenure
-  // purposes (same rubric as tradeContext.computeSeasonPhase).
-  const monthNow = new Date().getUTCMonth();
+  // Same calendar rubric as tradeContext.computeSeasonPhase, mapped onto
+  // the tenure phase type (postseason -> playoffs). No currentWeek is
+  // available here, so unlike computeSeasonPhase this can't distinguish
+  // fantasy playoff weeks (15+) within the regular season — inferPlayerTenure
+  // treats 'regular' and 'playoffs' identically anyway.
+  const calendarPhase = resolveWeekFromCalendar(new Date()).seasonType;
   const seasonPhaseForTenure: 'offseason' | 'preseason' | 'regular' | 'playoffs' =
-    monthNow >= 1 && monthNow <= 6 ? 'offseason' : monthNow === 7 ? 'preseason' : 'regular';
+    calendarPhase === 'postseason' ? 'playoffs' : calendarPhase;
 
   const statsByPlayer = new Map<string, typeof weeklyStats>();
   for (const s of weeklyStats) {

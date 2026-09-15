@@ -5,6 +5,8 @@
  * sites in players.ts for how these are wired back in.
  */
 
+import { resolveWeekFromCalendar } from '../services/nflState';
+
 export interface GameForWeek {
   isComplete?: boolean | null;
   homeScore?: number | null;
@@ -36,12 +38,11 @@ export interface ResolveWeekCompleteArgs {
  *  2. Otherwise, complete if `includeStats` and we already know a stat row
  *     exists for the week (Sleeper only has stats for completed weeks).
  *  3. Otherwise, complete if there are NO game records at all for the
- *     week/season AND the current calendar month falls in the Feb-Jul
- *     offseason window (getMonth() 1..6). August (7) is deliberately
- *     excluded — that's the *preseason* window for the upcoming season in
- *     getNflSeasonContext() (see services/espn.ts), not offseason, so
- *     treating it as offseason here would misreport Week 1 as "complete"
- *     before games are synced.
+ *     week/season AND the calendar resolver (services/nflState.ts) says
+ *     we're in the offseason or postseason. Preseason is deliberately
+ *     excluded — that's the window for the upcoming season's games not
+ *     being synced yet, so treating it as "complete" here would
+ *     misreport Week 1 as done before games are synced.
  */
 export function resolveWeekComplete({
   gamesForWeek,
@@ -58,8 +59,8 @@ export function resolveWeekComplete({
   }
 
   if (!weekComplete && gamesForWeek.length === 0) {
-    const currentMonth = now.getMonth(); // 0=Jan, 1=Feb, ... 6=Jul
-    if (currentMonth >= 1 && currentMonth <= 6) weekComplete = true;
+    const { seasonType } = resolveWeekFromCalendar(now);
+    if (seasonType === 'offseason' || seasonType === 'postseason') weekComplete = true;
   }
 
   return weekComplete;

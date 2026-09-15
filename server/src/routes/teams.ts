@@ -4,6 +4,7 @@ import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
+import { resolveLeagueWeek } from '../services/nflState';
 import type { Env, Variables } from '../index';
 
 // Rate limit for team routes: 60 req/min per IP
@@ -255,9 +256,8 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     },
   });
 
-  const seasonYear = team.league?.seasonYear || new Date().getFullYear();
+  const { week: currentWeek, season: seasonYear } = await resolveLeagueWeek(db, team.league ?? null);
   const scoringFormat = team.league?.scoringFormat || 'ppr';
-  const currentWeek = team.league?.currentWeek || 1;
 
   // Enrich roster with stats and projections
   const enrichedRoster = await Promise.all(roster.map(async (r) => {
