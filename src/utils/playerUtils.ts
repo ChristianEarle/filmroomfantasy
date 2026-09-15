@@ -9,6 +9,8 @@ export interface APIPlayer {
   status: string;
   byeWeek: number | null;
   headshotUrl?: string | null;
+  /** Position depth-chart rank on the player's team (1 = starter), when synced. */
+  depthChartOrder?: number | null;
   avgPointsPPR: number;
   projectedPoints: number;
   weeklyProjectedPoints?: number;
@@ -84,6 +86,7 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
     weekChange: 0,
     weeklyProjectedPoints: player.weeklyProjectedPoints,
     headshotUrl: player.headshotUrl ?? null,
+    depthChartOrder: player.depthChartOrder ?? null,
   };
 }
 
