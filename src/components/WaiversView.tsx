@@ -2,6 +2,7 @@ import { User, Loader2, RefreshCw, Search } from 'lucide-react';
 import { Player } from '../App';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLeagueContext } from '../context/LeagueContext';
+import { useNflState } from '../hooks';
 import api from '../services/api';
 import { getEffectiveSeason, type APIPlayer } from '../utils/playerUtils';
 
@@ -30,14 +31,19 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
 
   const seasonYear = getEffectiveSeason(league?.seasonYear);
 
-  // In the offseason (Feb-Aug), default to week 18 (last regular season week)
-  const currentWeek = (() => {
-    const leagueWeek = league?.currentWeek;
-    if (leagueWeek && leagueWeek > 1) return leagueWeek;
-    const month = new Date().getMonth(); // 0-indexed
-    if (month >= 1 && month <= 7) return 18; // offseason
-    return leagueWeek ?? 1;
-  })();
+  // Default week: the actual current NFL week, unless this is a past-season
+  // league — then show that league's own last-synced week instead (see
+  // server/src/services/nflState.ts for how the NFL week is resolved).
+  const nflState = useNflState();
+  const currentWeek = useMemo(() => {
+    if (league?.seasonYear != null && nflState.season != null && league.seasonYear !== nflState.season) {
+      return league.currentWeek != null && league.currentWeek >= 1 && league.currentWeek <= 18
+        ? league.currentWeek
+        : null;
+    }
+    return nflState.week;
+  }, [league?.seasonYear, league?.currentWeek, nflState.season, nflState.week]);
+  const weekLabel = currentWeek ?? '…'; // display placeholder while the NFL week resolves
 
   // API /players endpoint accepts hyphenated scoring format: 'ppr', 'half-ppr', 'standard'
   // (per openapi.yaml — user preferences endpoint uses 'half_ppr' with underscore, but that's a separate route)
@@ -70,6 +76,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
 
   // Fetch players from API
   const fetchPlayers = useCallback(async () => {
+    if (currentWeek == null) return; // NFL week not resolved yet — avoid fetching against week 1 of the wrong season
     const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
@@ -175,7 +182,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
             <div className={`p-3 sm:p-4 md:p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
               <div className="flex items-center justify-between mb-1">
                 <h1 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Fantasy Football Waiver Wire — Week {currentWeek}
+                  Fantasy Football Waiver Wire — Week {weekLabel}
                 </h1>
                 <button
                   onClick={fetchPlayers}
@@ -188,8 +195,8 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
               </div>
               <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {pointsType === 'actual'
-                  ? `Sorted by Week ${currentWeek} scores (${selectedScoring})`
-                  : `Sorted by Week ${currentWeek} projections (${selectedScoring})`
+                  ? `Sorted by Week ${weekLabel} scores (${selectedScoring})`
+                  : `Sorted by Week ${weekLabel} projections (${selectedScoring})`
                 }
               </p>
 

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Calendar, TrendingUp, Cloud, CloudRain, Sun, CloudSnow, Loader2, Warehouse, TreePine, Star, Trophy, CheckCircle } from 'lucide-react';
-import { useEspnScoreboard } from '../hooks';
+import { useEspnScoreboard, useNflState } from '../hooks';
 import { useOdds, type GameOdds } from '../hooks/useOdds';
 import { getDefaultSeason } from '../utils/playerUtils';
 import type { TopPerformer } from '../services/games';
@@ -120,10 +120,12 @@ function OddsSection({ game, gameOdds, isDarkMode }: { game: Game; gameOdds: Gam
 export function GameSlateView({ onSelectGame, isDarkMode = true }: GameSlateViewProps = {}) {
   const [selectedWeek, setSelectedWeek] = useState<number | undefined>(undefined);
   const { games: espnGames, week, weekLabel, isLoading, error, espnUnavailable, refetch } = useEspnScoreboard(selectedWeek);
+  const { week: nflWeek } = useNflState();
 
-  // Fetch odds data for the displayed week. Prefer the user's explicit selection so a
-  // week change doesn't first fetch odds for the previous (stale) resolved week.
-  const currentWeek = selectedWeek ?? week ?? 1;
+  // Fetch odds data for the displayed week. Prefer the user's explicit selection, then
+  // the week the slate resolved to, then today's actual NFL week — so a week change or
+  // an unresolved slate never falls back to a hardcoded week 1 of the wrong season.
+  const currentWeek = selectedWeek ?? week ?? nflWeek ?? 1;
   const season = getDefaultSeason();
   const { odds } = useOdds(currentWeek, season);
 

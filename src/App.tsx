@@ -73,6 +73,7 @@ import { trackPageView } from './services/analytics';
 import { trackSignUp } from './services/tracking';
 import { authService } from './services/auth';
 import { buildPlayerProfilePath, parsePlayerProfilePath } from './utils/slug';
+import { useNflState } from './hooks';
 
 // Page transition wrapper component
 function PageTransition({ children, viewKey }: { children: React.ReactNode; viewKey: string }) {
@@ -302,15 +303,32 @@ function AppContent() {
 
   const [selectedScoring, setSelectedScoring] = useState<'PPR' | 'Half PPR' | 'Standard'>('PPR');
   const [selectedPosition, setSelectedPosition] = useState<string>('ALL');
-  const [currentWeek, setCurrentWeek] = useState(1);
+  // Starts unresolved (not a placeholder 1) so week-dependent views wait for
+  // a real default instead of firing requests against the wrong week/season.
+  const [currentWeek, setCurrentWeek] = useState<number | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const { week: nflWeek, season: nflSeason } = useNflState();
 
-  // Sync currentWeek when league data arrives or league changes
-  useEffect(() => {
-    if (league?.currentWeek != null && league.currentWeek >= 1 && league.currentWeek <= 18) {
-      setCurrentWeek(league.currentWeek);
+  // Default week: the current NFL week for a league in the current season
+  // (or no league at all), but a past-season league's own last-synced week
+  // — users opening an archived league want to see where it left off, not
+  // whatever week it is today.
+  const defaultWeek = useMemo(() => {
+    if (league?.seasonYear != null && nflSeason != null && league.seasonYear !== nflSeason) {
+      return league.currentWeek != null && league.currentWeek >= 1 && league.currentWeek <= 18
+        ? league.currentWeek
+        : null;
     }
-  }, [league?.id, league?.currentWeek]);
+    return nflWeek;
+  }, [league?.id, league?.seasonYear, league?.currentWeek, nflSeason, nflWeek]);
+
+  // Only re-apply the default when the league changes or the default itself
+  // changes — never clobber a week the user picked manually via onWeekChange.
+  useEffect(() => {
+    if (defaultWeek != null) {
+      setCurrentWeek(defaultWeek);
+    }
+  }, [league?.id, defaultWeek]);
   // Initialize activeView from URL so direct navigation works
   const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'PlayerProfile' | 'Privacy' | 'Terms' | 'CookiePolicy' | 'DMCA' | 'Refunds' | 'DoNotSell' | 'Disclaimer' | 'Accessibility' | 'AcceptableUse' | 'NotFound'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
@@ -672,35 +690,39 @@ function AppContent() {
                 </Suspense>
               )
             ) : activeView === 'Board' ? (
-              <div className="max-w-[1600px] mx-auto">
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                  {/* Main Content - 2/3 width */}
-                  <div className="xl:col-span-2 space-y-6">
-                    <PlayerTable
-                      selectedScoring={selectedScoring}
-                      onScoringChange={setSelectedScoring}
-                      selectedPosition={selectedPosition}
-                      onPositionChange={setSelectedPosition}
-                      currentWeek={currentWeek}
-                      onWeekChange={setCurrentWeek}
-                      onPlayerClick={setSelectedPlayer}
-                      onViewAll={handleViewAllFromBoard}
-                      isDarkMode={isDarkMode}
-                    />
-                  </div>
+              currentWeek == null ? (
+                suspenseFallback
+              ) : (
+                <div className="max-w-[1600px] mx-auto">
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    {/* Main Content - 2/3 width */}
+                    <div className="xl:col-span-2 space-y-6">
+                      <PlayerTable
+                        selectedScoring={selectedScoring}
+                        onScoringChange={setSelectedScoring}
+                        selectedPosition={selectedPosition}
+                        onPositionChange={setSelectedPosition}
+                        currentWeek={currentWeek}
+                        onWeekChange={setCurrentWeek}
+                        onPlayerClick={setSelectedPlayer}
+                        onViewAll={handleViewAllFromBoard}
+                        isDarkMode={isDarkMode}
+                      />
+                    </div>
 
-                  {/* Right Sidebar - 1/3 width */}
-                  <div className="space-y-6">
-                    <RosterBoardPanel
-                      currentWeek={currentWeek}
-                      onViewTeam={() => setActiveView('Team')}
-                      isDarkMode={isDarkMode}
-                    />
-                    <NewsPanel isDarkMode={isDarkMode} />
-                    <BiggestMovers currentWeek={currentWeek} isDarkMode={isDarkMode} />
+                    {/* Right Sidebar - 1/3 width */}
+                    <div className="space-y-6">
+                      <RosterBoardPanel
+                        currentWeek={currentWeek}
+                        onViewTeam={() => setActiveView('Team')}
+                        isDarkMode={isDarkMode}
+                      />
+                      <NewsPanel isDarkMode={isDarkMode} />
+                      <BiggestMovers currentWeek={currentWeek} isDarkMode={isDarkMode} />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )
             ) : activeView === 'Team' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
@@ -792,20 +814,24 @@ function AppContent() {
                 />
               )
             ) : activeView === 'AllPlayers' ? (
-              <Suspense fallback={suspenseFallback}>
-                <AllPlayersView
-                  selectedScoring={selectedScoring}
-                  onScoringChange={setSelectedScoring}
-                  selectedPosition={selectedPosition}
-                  onPositionChange={setSelectedPosition}
-                  currentWeek={currentWeek}
-                  onWeekChange={setCurrentWeek}
-                  onPlayerClick={setSelectedPlayer}
-                  onBack={handleBackFromAllPlayers}
-                  isDarkMode={isDarkMode}
-                  source={allPlayersSource}
-                />
-              </Suspense>
+              currentWeek == null ? (
+                suspenseFallback
+              ) : (
+                <Suspense fallback={suspenseFallback}>
+                  <AllPlayersView
+                    selectedScoring={selectedScoring}
+                    onScoringChange={setSelectedScoring}
+                    selectedPosition={selectedPosition}
+                    onPositionChange={setSelectedPosition}
+                    currentWeek={currentWeek}
+                    onWeekChange={setCurrentWeek}
+                    onPlayerClick={setSelectedPlayer}
+                    onBack={handleBackFromAllPlayers}
+                    isDarkMode={isDarkMode}
+                    source={allPlayersSource}
+                  />
+                </Suspense>
+              )
             ) : activeView === 'Waivers' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
@@ -863,17 +889,21 @@ function AppContent() {
                 />
               </Suspense>
             ) : activeView === 'PlayerProfile' && playerProfile ? (
-              <Suspense fallback={suspenseFallback}>
-                <PlayerProfileView
-                  playerId={playerProfile.id}
-                  isDarkMode={isDarkMode}
-                  seasonYear={league?.seasonYear}
-                  currentWeek={currentWeek}
-                  scoringFormat={league?.scoringFormat}
-                  onBack={handleBackFromPlayerProfile}
-                  onOpenQuickLook={handleQuickLookFromProfile}
-                />
-              </Suspense>
+              currentWeek == null ? (
+                suspenseFallback
+              ) : (
+                <Suspense fallback={suspenseFallback}>
+                  <PlayerProfileView
+                    playerId={playerProfile.id}
+                    isDarkMode={isDarkMode}
+                    seasonYear={league?.seasonYear}
+                    currentWeek={currentWeek}
+                    scoringFormat={league?.scoringFormat}
+                    onBack={handleBackFromPlayerProfile}
+                    onOpenQuickLook={handleQuickLookFromProfile}
+                  />
+                </Suspense>
+              )
             ) : activeView === 'Privacy' ? (
               <Suspense fallback={suspenseFallback}><PrivacyPolicyView isDarkMode={isDarkMode} /></Suspense>
             ) : activeView === 'Terms' ? (
@@ -969,7 +999,7 @@ function AppContent() {
           onClose={() => setSelectedPlayer(null)}
           isDarkMode={isDarkMode}
           seasonYear={league?.seasonYear}
-          currentWeek={currentWeek}
+          currentWeek={currentWeek ?? undefined}
           scoringFormat={league?.scoringFormat}
           onViewFullProfile={handleOpenPlayerProfile}
         />
