@@ -152,6 +152,7 @@ import {
   formatTradeContextForPrompt,
   type LeagueSettings,
 } from '../services/tradeContext';
+import { resolveLeagueWeek } from '../services/nflState';
 
 const tradeHistoryRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -986,12 +987,14 @@ tradeHistoryRoutes.post('/grade/:tradeId', authMiddleware, requireTier('pro', 'R
     teamCount: league?.teamCount || 12,
   };
 
+  const leagueWeek = await resolveLeagueWeek(db, league ?? null);
+
   const tradeContext = await buildTradeContext({
     db,
     playerIds,
     leagueSettings,
-    seasonYear: league?.seasonYear || new Date().getFullYear(),
-    currentWeek: league?.currentWeek || 1,
+    seasonYear: leagueWeek.season,
+    currentWeek: leagueWeek.week,
     userTeamId: null,
     leagueId: trade.leagueId,
   });
