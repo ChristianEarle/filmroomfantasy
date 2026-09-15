@@ -21,7 +21,7 @@ import { eq, and, desc, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { inferPlayerTenure, type PlayerTenureInfo } from './playerTenure';
-import { resolveWeekFromCalendar } from './nflState';
+import { resolveWeekFromCalendar, resolveSeasonInFocus } from './nflState';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -113,7 +113,9 @@ export async function fetchPlayerData(
   if (matchedPlayers.length === 0) return new Map();
 
   const playerIds = matchedPlayers.map((p) => p.id);
-  const currentYear = resolveWeekFromCalendar(new Date()).season;
+  // inferPlayerTenure expects the season in focus (the upcoming one during
+  // the offseason), not the season that last produced stats.
+  const currentYear = resolveSeasonInFocus(new Date());
   const previousYear = currentYear - 1;
 
   const [weeklyStats, prevWeeklyStats, projections, news] = await Promise.all([

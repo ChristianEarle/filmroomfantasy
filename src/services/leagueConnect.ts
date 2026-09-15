@@ -7,7 +7,7 @@
 // See server/src/routes/platformProxy.ts for the proxy endpoints.
 
 import api, { ApiError } from './api';
-import { getDefaultSeason } from '../utils/playerUtils';
+import { getSeasonInFocus } from '../utils/playerUtils';
 
 export type Platform = 'sleeper' | 'espn' | 'yahoo' | 'mfl';
 
@@ -183,7 +183,7 @@ export const sleeperApi = {
 // (requiring SWID/ESPN_S2 cookies) surface as a 403 from the proxy, which
 // proxyGet() maps to PlatformError('unknown', 'espn', ..., 403).
 export const espnApi = {
-  getLeague: async (leagueId: string, season: number = getDefaultSeason()): Promise<ExternalLeague | null> => {
+  getLeague: async (leagueId: string, season: number = getSeasonInFocus()): Promise<ExternalLeague | null> => {
     interface EspnLeagueRaw {
       settings?: {
         name?: string;
@@ -219,7 +219,7 @@ export const espnApi = {
 
 // MFL API — public read via /api/mfl/league/:id.
 export const mflApi = {
-  getLeague: async (leagueId: string, season: number = getDefaultSeason()): Promise<ExternalLeague | null> => {
+  getLeague: async (leagueId: string, season: number = getSeasonInFocus()): Promise<ExternalLeague | null> => {
     interface MflLeagueResponse {
       league?: {
         name?: string;

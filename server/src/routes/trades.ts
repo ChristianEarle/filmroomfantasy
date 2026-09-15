@@ -23,7 +23,7 @@ import {
   formatPlayerDataBlock,
   type EnrichedPlayerData,
 } from '../services/tradePlayerEnrichment';
-import { getNflState, resolveLeagueWeek, resolveWeekFromCalendar } from '../services/nflState';
+import { getNflState, resolveLeagueWeek, resolveWeekFromCalendar, resolveSeasonInFocus } from '../services/nflState';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -310,14 +310,15 @@ tradesRoutes.post(
         currentWeek = leagueWeek.week;
       } else {
         const state = await getNflState(db);
-        seasonYear = state.season;
+        // Tenure/phase reasoning in buildTradeContext expects the season in
+        // focus (upcoming during the offseason), not the season with data.
+        seasonYear = resolveSeasonInFocus();
         currentWeek = state.week;
       }
     } catch (err) {
       console.error('Failed to resolve season/week context for trade context:', err);
-      const fallback = resolveWeekFromCalendar(new Date());
-      seasonYear = fallback.season;
-      currentWeek = fallback.week;
+      seasonYear = resolveSeasonInFocus();
+      currentWeek = resolveWeekFromCalendar(new Date()).week;
     }
 
     // Merge defaults into leagueSettings

@@ -12,7 +12,7 @@ import { syncSleeperLeague } from '../services/leagueSync';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
-import { getDefaultSeason } from '../utils/seasons';
+import { getDefaultSeason, getSeasonInFocus } from '../utils/seasons';
 import {
   fetchLeague as fetchMflLeague,
   fetchRosters as fetchMflRosters,
@@ -77,7 +77,7 @@ leagueRoutes.post('/', authMiddleware, async (c) => {
       name,
       scoringFormat = 'ppr',
       teamCount = 12,
-      seasonYear = getDefaultSeason(),
+      seasonYear = getSeasonInFocus(),
       playoffWeeks = 3,
       playoffTeams = 6,
       waiverType = 'faab',
@@ -439,7 +439,7 @@ leagueRoutes.post('/connect', connectRateLimit, authMiddleware, async (c) => {
       name,
       scoringFormat = 'ppr',
       teamCount = 12,
-      seasonYear = getDefaultSeason(),
+      seasonYear = getSeasonInFocus(),
       sleeperUsername, // User's Sleeper username to identify their team
       sleeperUserId,   // User's Sleeper user_id for reliable matching
     } = body;

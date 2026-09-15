@@ -310,7 +310,10 @@ export async function syncSleeperLeague(
         }
       }
     }
-    const candidateIds = Array.from(managerIds).slice(0, 12);
+    // Any manager who moved to the successor league lists it, so a handful
+    // of lookups is enough; keep the fan-out small since this re-runs on
+    // every cron pass for a league that was never renewed.
+    const candidateIds = Array.from(managerIds).slice(0, 4);
 
     let successor: ReturnType<typeof findSuccessorLeague> = null;
     for (const managerId of candidateIds) {
@@ -357,11 +360,28 @@ export async function syncSleeperLeague(
         currentWeek: successor.settings?.leg || 1,
       };
 
-      const result = await syncSleeperLeague(db, rolledOverLeague, {
-        ...opts,
-        targetSeason,
-        _rolledOverFrom: fromExternalId,
-      });
+      let result: SyncSleeperLeagueResult;
+      try {
+        result = await syncSleeperLeague(db, rolledOverLeague, {
+          ...opts,
+          targetSeason,
+          _rolledOverFrom: fromExternalId,
+        });
+      } catch (err) {
+        // Don't leave the row pointing at a league we never managed to sync:
+        // restore the old identity so the next sync retries the rollover
+        // from a consistent state (the old matchups are re-imported then).
+        await db.update(schema.leagues)
+          .set({
+            externalId: fromExternalId,
+            seasonYear: league.seasonYear,
+            name: league.name,
+            currentWeek: league.currentWeek,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.leagues.id, league.id));
+        throw err;
+      }
       return { ...result, rolledOver: { fromExternalId, toExternalId: successor.league_id, season: targetSeason } };
     }
     // No successor found — the league genuinely ended, or the lookup

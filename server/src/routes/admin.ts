@@ -1695,7 +1695,7 @@ adminRoutes.post('/sync-player-props', async (c) => {
   // rejected; an explicitly out-of-range week is still an error.
   const week = body.week ?? (await getNflState(db)).week;
 
-  if (week < 1 || week > 18) {
+  if (!Number.isInteger(week) || week < 1 || week > 18) {
     return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
   }
 
@@ -2994,7 +2994,9 @@ adminRoutes.post('/sync-leagues', async (c) => {
         // last season's seasonYear get a chance to roll over to their
         // Sleeper successor instead of never being selected again.
         where: and(eq(schema.leagues.platform, 'sleeper'), gte(schema.leagues.seasonYear, season - 1)),
-        orderBy: (l, { asc }) => [asc(l.updatedAt)],
+        // Current-season leagues first so never-renewed prior-season rows
+        // can't crowd them out of the per-run limit.
+        orderBy: (l, { asc, desc }) => [desc(l.seasonYear), asc(l.updatedAt)],
         limit,
       });
     }

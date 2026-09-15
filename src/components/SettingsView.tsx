@@ -9,7 +9,7 @@ import api, { API_ORIGIN, ApiError } from '../services/api';
 import { UpgradeModal } from './UpgradeModal';
 import type { ScoringFormat } from '../services/auth';
 import { useNflState } from '../hooks';
-import { getDefaultSeason } from '../utils/playerUtils';
+import { getSeasonInFocus } from '../utils/playerUtils';
 
 interface SettingsViewProps {
   isDarkMode?: boolean;
@@ -31,8 +31,9 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
   const preferredScoring = user?.preferredScoring ?? 'ppr';
   const notificationsEnabled = user?.notificationsEnabled ?? true;
-  const { season: nflSeason } = useNflState();
-  const currentSeason = nflSeason ?? getDefaultSeason();
+  // Connecting a league targets the season in focus: platforms open the
+  // upcoming season's leagues during the offseason.
+  const currentSeason = getSeasonInFocus();
 
   // Preference update error state
   const [prefError, setPrefError] = useState<string | null>(null);

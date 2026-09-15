@@ -13,7 +13,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
-import { getDefaultSeason } from '../utils/seasons';
+import { getSeasonInFocus } from '../utils/seasons';
 import type { Env, Variables } from '../index';
 
 // 30 req/min per IP across all platform proxy endpoints. Generous enough for
@@ -101,7 +101,9 @@ platformProxyRoutes.get('/sleeper/user/:userId/leagues', async (c) => {
   const userId = c.req.param('userId');
   if (!isSafeIdent(userId, 32)) return c.json({ error: 'Invalid user id' }, 400);
 
-  const currentYear = getDefaultSeason();
+  // Platforms open the upcoming season's leagues during the offseason, so
+  // list from the season in focus backwards (not from the season with data).
+  const currentYear = getSeasonInFocus();
   const seasons = [currentYear, currentYear - 1, currentYear - 2];
 
   const results = await Promise.allSettled(
@@ -161,7 +163,7 @@ platformProxyRoutes.get('/espn/league/:leagueId', async (c) => {
   if (!isSafeIdent(leagueId, 32)) return c.json({ error: 'Invalid league id' }, 400);
 
   const yearParam = c.req.query('year');
-  const year = yearParam ? parseInt(yearParam, 10) : getDefaultSeason();
+  const year = yearParam ? parseInt(yearParam, 10) : getSeasonInFocus();
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     return c.json({ error: 'Invalid year' }, 400);
   }
@@ -187,7 +189,7 @@ platformProxyRoutes.get('/mfl/league/:leagueId', async (c) => {
   if (!isSafeIdent(leagueId, 32)) return c.json({ error: 'Invalid league id' }, 400);
 
   const yearParam = c.req.query('year');
-  const year = yearParam ? parseInt(yearParam, 10) : getDefaultSeason();
+  const year = yearParam ? parseInt(yearParam, 10) : getSeasonInFocus();
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     return c.json({ error: 'Invalid year' }, 400);
   }

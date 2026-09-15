@@ -3,6 +3,7 @@ import { User, TrendingUp, ArrowUpDown, Star, Sparkles, Trophy, Target, ChevronD
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import { useNflState } from '../hooks/useNflState';
+import { clampWeek } from '../utils/playerUtils';
 
 import { sortByPosition } from '../utils/rosterPositions';
 import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
@@ -63,7 +64,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
   // it left off instead of jumping to whatever week it is today.
   const defaultWeek = useMemo(() => {
     if (league?.seasonYear != null && nflSeason != null && league.seasonYear !== nflSeason) {
-      return league.currentWeek ?? null;
+      return clampWeek(league.currentWeek);
     }
     return nflWeek;
   }, [league?.id, league?.seasonYear, league?.currentWeek, nflSeason, nflWeek]);

@@ -1,5 +1,5 @@
 import type { Player } from '../App';
-import { resolveWeekFromCalendar } from '../hooks/useNflState';
+import { resolveWeekFromCalendar, resolveSeasonInFocus } from '../hooks/useNflState';
 
 /** API response shape for a player from the /players endpoint */
 export interface APIPlayer {
@@ -95,6 +95,20 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
  */
 export function getDefaultSeason(): number {
   return resolveWeekFromCalendar(new Date()).season;
+}
+
+/**
+ * The season the NFL world is focused on: the one in progress, or the
+ * upcoming one during the offseason. Use for connecting leagues and season
+ * pickers; use getDefaultSeason() for "which season has data to display".
+ */
+export function getSeasonInFocus(): number {
+  return resolveSeasonInFocus(new Date());
+}
+
+/** Clamp a stored league week into the 1..18 regular-season range. */
+export function clampWeek(week: number | null | undefined): number {
+  return Math.min(18, Math.max(1, week ?? 1));
 }
 
 /**

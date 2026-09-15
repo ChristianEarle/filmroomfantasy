@@ -74,6 +74,7 @@ import { trackSignUp } from './services/tracking';
 import { authService } from './services/auth';
 import { buildPlayerProfilePath, parsePlayerProfilePath } from './utils/slug';
 import { useNflState } from './hooks';
+import { clampWeek } from './utils/playerUtils';
 
 // Page transition wrapper component
 function PageTransition({ children, viewKey }: { children: React.ReactNode; viewKey: string }) {
@@ -315,9 +316,7 @@ function AppContent() {
   // whatever week it is today.
   const defaultWeek = useMemo(() => {
     if (league?.seasonYear != null && nflSeason != null && league.seasonYear !== nflSeason) {
-      return league.currentWeek != null && league.currentWeek >= 1 && league.currentWeek <= 18
-        ? league.currentWeek
-        : null;
+      return clampWeek(league.currentWeek);
     }
     return nflWeek;
   }, [league?.id, league?.seasonYear, league?.currentWeek, nflSeason, nflWeek]);

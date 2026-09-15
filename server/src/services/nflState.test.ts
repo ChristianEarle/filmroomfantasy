@@ -3,6 +3,7 @@ import {
   isGameFinished,
   resolveWeekFromSchedule,
   resolveWeekFromCalendar,
+  resolveSeasonInFocus,
   getNflState,
   clearNflStateCache,
   pickLeagueWeek,
@@ -169,6 +170,18 @@ describe('resolveWeekFromCalendar', () => {
     expect(resolveWeekFromCalendar(new Date('2026-05-01T12:00:00Z'))).toEqual({
       season: 2025, week: 18, seasonType: 'offseason',
     });
+  });
+});
+
+describe('resolveSeasonInFocus', () => {
+  it('is the season in progress during the regular season and playoffs', () => {
+    expect(resolveSeasonInFocus(new Date('2026-09-15T18:00:00Z'))).toBe(2026);
+    expect(resolveSeasonInFocus(new Date('2027-01-20T12:00:00Z'))).toBe(2026);
+  });
+  it('is the upcoming season during the preseason and the offseason', () => {
+    expect(resolveSeasonInFocus(new Date('2026-08-20T12:00:00Z'))).toBe(2026);
+    expect(resolveSeasonInFocus(new Date('2026-05-01T12:00:00Z'))).toBe(2026);
+    expect(resolveSeasonInFocus(new Date('2027-03-01T12:00:00Z'))).toBe(2027);
   });
 });
 
