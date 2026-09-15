@@ -928,6 +928,20 @@ export async function submitDraftRankingsBatch(
       ? await fetchMFLADP(seasonYear, v.scoringFormat, 'N')
       : await fetchFfcAdp(v.scoringFormat, seasonYear);
 
+    // Rookie-specific canary: dynasty_rookie's ADP map is intentionally
+    // small (re-indexed 1..N over this year's rookie class, typically well
+    // under 100), so it can't use the same ADP_CANARY_MIN_ENTRIES threshold
+    // as redraft/dynasty. But a fully EMPTY map is not "small pool" — it's a
+    // total outage of both the FantasyCalc rookie feed and the MFL
+    // IS_KEEPER=R fallback — so gate on size 0 specifically, mirroring the
+    // redraft/dynasty canary below.
+    if (v.rankingType === 'dynasty_rookie' && adp.size === 0) {
+      const msg = `Rookie ADP coverage canary tripped: 0 entries for ${meta.customId} (FantasyCalc rookie feed and MFL fallback both empty — likely outage)`;
+      console.error(`[draftRankings] ${msg}`);
+      await recordJobProblem(db, seasonYear, meta, msg);
+      continue;
+    }
+
     // Canary: dynasty_rookie's ADP map is intentionally small (re-indexed
     // 1..N over this year's rookie class, typically well under 100), so
     // only gate redraft/dynasty here — both draw from a 250+ player feed
@@ -1374,10 +1388,11 @@ async function writeVariantRankings(args: WriteVariantArgs): Promise<WriteVarian
       projectedPoints: r.projectedPoints,
       adp: player.adp,
       adpDelta: player.adp != null ? r.overallRank - player.adp : null,
-      // Snapshot of the Market rank the prompt/AI actually saw at generation
-      // time, for auditability — the live join in GET /api/draft-rankings
-      // stays the source of truth shown to users (see marketRank comment on
-      // the schema column).
+      // Snapshot of the Market rank as of write time (rebuilt here, same as
+      // the ADP re-fetch above — NOT what the prompt/AI actually saw hours
+      // earlier when the batch was submitted), for auditability — the live
+      // join in GET /api/draft-rankings stays the source of truth shown to
+      // users (see marketRank comment on the schema column).
       marketRank: player.marketRank,
       rationale: r.rationale || '',
       analysis: r.analysis || null,

@@ -4,6 +4,7 @@ import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
+import { resolveLeagueWeek } from '../services/nflState';
 import type { Env, Variables } from '../index';
 
 // Rate limit for team routes: 60 req/min per IP
@@ -136,10 +137,12 @@ teamRoutes.get('/:id', authMiddleware, async (c) => {
       waiverPriority: team.waiverPriority,
       faabBudget: team.faabBudget,
       isOwner: team.ownerId === user.id,
+      // team.owner is null for a synced roster with no matching app user
+      // (see leagueSync.ts decideTeamOwnerId).
       owner: {
-        id: team.owner.id,
-        username: team.owner.username,
-        avatarUrl: team.owner.avatarUrl,
+        id: team.owner?.id ?? null,
+        username: team.owner?.username || team.ownerDisplayName || team.name,
+        avatarUrl: team.owner?.avatarUrl ?? null,
       },
       league: {
         id: team.league.id,
@@ -253,9 +256,8 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     },
   });
 
-  const seasonYear = team.league?.seasonYear || new Date().getFullYear();
+  const { week: currentWeek, season: seasonYear } = await resolveLeagueWeek(db, team.league ?? null);
   const scoringFormat = team.league?.scoringFormat || 'ppr';
-  const currentWeek = team.league?.currentWeek || 1;
 
   // Enrich roster with stats and projections
   const enrichedRoster = await Promise.all(roster.map(async (r) => {

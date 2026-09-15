@@ -7,7 +7,7 @@ import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
 import { cached } from '../utils/cache';
 import { normalizePlayerName } from '../utils/playerNames';
-import { resolveDisplaySeason } from '../utils/seasons';
+import { resolveDisplaySeason, getDefaultSeason } from '../utils/seasons';
 import {
   sanitizePromptInput,
   getTodayKey,
@@ -15,7 +15,8 @@ import {
   type ConversationTurn,
 } from '../utils/prompt';
 import { buildProjectionsFromProps } from '../services/projections';
-import { resolveWeekComplete, computeFetchWindow } from './playersLogic';
+import { resolveWeekComplete, computeFetchWindow, shouldFallBackToPriorSeason } from './playersLogic';
+import { resolveWeekFromCalendar } from '../services/nflState';
 import { resolveMarketAsOfWeek } from '../services/marketRankingsQueries';
 import { buildPlayerCard, buildPlayerCards } from '../services/playerCard';
 import { extractMentionedPlayers, type MentionCandidate } from '../utils/playerMentions';
@@ -178,7 +179,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
   const leagueId = c.req.query('leagueId');
   const includeStats = c.req.query('includeStats') === 'true';
   const availableOnly = c.req.query('availableOnly') === 'true';
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
   const weekParam = c.req.query('week');
   const week = weekParam ? parseInt(weekParam) : undefined;
   const scoringFormatParam = c.req.query('scoringFormat') || 'ppr';
@@ -757,7 +758,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
 playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1');
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
   const scoringFormat = c.req.query('scoringFormat') || 'ppr';
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
 
@@ -840,7 +841,7 @@ playerRoutes.get('/projection-movements', optionalAuthMiddleware, async (c) => {
 playerRoutes.get('/prop-movements', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1');
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
 
   try {
@@ -984,7 +985,7 @@ playerRoutes.get('/recent-leaders', optionalAuthMiddleware, async (c) => {
     }
     requestedSeason = parsed;
   } else {
-    requestedSeason = new Date().getFullYear();
+    requestedSeason = getDefaultSeason();
   }
   const resolved = await resolveDisplaySeason(db, requestedSeason);
   const season = resolved.season;
@@ -1425,8 +1426,7 @@ playerRoutes.get('/stats/available-years', optionalAuthMiddleware, async (c) => 
         .groupBy(schema.playerWeeklyStats.seasonYear)
         .orderBy(desc(schema.playerWeeklyStats.seasonYear));
       const years = result.map((r) => r.seasonYear).filter((y): y is number => y != null);
-      const now = new Date();
-      const fallbackSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
+      const fallbackSeason = getDefaultSeason();
       return {
         years: years.length > 0 ? years : [fallbackSeason, fallbackSeason - 1],
         latest: years[0] ?? fallbackSeason,
@@ -1435,8 +1435,7 @@ playerRoutes.get('/stats/available-years', optionalAuthMiddleware, async (c) => 
     return c.json(data);
   } catch (error) {
     console.error('Get available years error:', error);
-    const now = new Date();
-    const fallbackSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
+    const fallbackSeason = getDefaultSeason();
     return c.json({ years: [fallbackSeason, fallbackSeason - 1], latest: fallbackSeason });
   }
 });
@@ -1519,8 +1518,8 @@ playerRoutes.get(
       // Resolve (season, week) the way the players list does: requested season
       // with offseason fallback to the latest season that has games, and the
       // current week derived from game completion.
-      const requestedSeason = parseInt(c.req.query('season') || String(new Date().getFullYear()));
-      const resolved = await resolveDisplaySeason(db, isNaN(requestedSeason) ? new Date().getFullYear() : requestedSeason);
+      const requestedSeason = parseInt(c.req.query('season') || String(getDefaultSeason()));
+      const resolved = await resolveDisplaySeason(db, isNaN(requestedSeason) ? getDefaultSeason() : requestedSeason);
       const season = resolved.season;
       const weekParam = parseInt(c.req.query('week') || '');
       const week = !isNaN(weekParam) && weekParam >= 1 && weekParam <= 18
@@ -1677,8 +1676,11 @@ interface PlayersAskBody {
   leagueId?: string;
 }
 
-/** Daily Ask AI cap for the player board: Pro 20/day, Elite unlimited. */
+/** Daily Ask AI cap for the player board: Pro 20/day, Elite 200/day (a high
+ * ceiling, not unlimited — unlimited let a single account's usage grow
+ * without bound). */
 const PLAYER_ASK_DAILY_LIMIT = 20;
+const PLAYER_ASK_DAILY_LIMIT_ELITE = 200;
 
 function buildPlayersAskSystemPrompt(
   week: number,
@@ -1735,8 +1737,8 @@ playerRoutes.post(
 
     // Daily cap via tradeAnalysisUsage keyed `playerask:<userId>`.
     const today = getTodayKey();
-    const askLimit = tier === 'elite' ? Infinity : PLAYER_ASK_DAILY_LIMIT;
-    if (askLimit !== Infinity) {
+    const askLimit = tier === 'elite' ? PLAYER_ASK_DAILY_LIMIT_ELITE : PLAYER_ASK_DAILY_LIMIT;
+    {
       const usage = await db
         .select()
         .from(schema.tradeAnalysisUsage)
@@ -1758,7 +1760,7 @@ playerRoutes.post(
       // Resolve (season, week) with the same offseason fallback as the list.
       const requestedSeason = typeof body.season === 'number' && !isNaN(body.season)
         ? body.season
-        : new Date().getFullYear();
+        : getDefaultSeason();
       const resolved = await resolveDisplaySeason(db, requestedSeason);
       const season = resolved.season;
       const week = typeof body.week === 'number' && body.week >= 1 && body.week <= 18
@@ -1906,17 +1908,15 @@ playerRoutes.post(
       // Record usage. tradeAnalysisUsage has no free-form column for
       // rounds/toolCalls, so log them for now instead of dropping the info.
       console.log('[players/ask] rounds:', rounds, 'toolCalls:', toolCalls.map((t) => t.name));
-      if (askLimit !== Infinity) {
-        try {
-          await db.insert(schema.tradeAnalysisUsage).values({
-            id: generateId(),
-            userId: `playerask:${user.id}`,
-            usedAt: new Date().toISOString(),
-            dateKey: today,
-          });
-        } catch (err) {
-          console.error('[players/ask] Failed to record usage:', err);
-        }
+      try {
+        await db.insert(schema.tradeAnalysisUsage).values({
+          id: generateId(),
+          userId: `playerask:${user.id}`,
+          usedAt: new Date().toISOString(),
+          dateKey: today,
+        });
+      } catch (err) {
+        console.error('[players/ask] Failed to record usage:', err);
       }
 
       return c.json({ answer, toolCalls });
@@ -1943,7 +1943,9 @@ playerRoutes.post(
 playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1', 10);
-  const season = parseInt(c.req.query('season') || '2025', 10);
+  // Default to the current NFL season (not a hardcoded year) so a client
+  // that omits `season` gets this week's lines instead of a stale season.
+  const season = parseInt(c.req.query('season') || String(resolveWeekFromCalendar(new Date()).season), 10);
   const position = c.req.query('position')?.toUpperCase();
 
   if (!week || week < 1 || week > 18) {
@@ -2038,7 +2040,7 @@ playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
 playerRoutes.get('/projection-accuracy', async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1');
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
   const scoringFormatParam = c.req.query('scoringFormat') || 'ppr';
 
@@ -2220,11 +2222,11 @@ playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
       const maxResult = await db
         .select({ maxYear: sql<number>`max(${schema.playerWeeklyStats.seasonYear})` })
         .from(schema.playerWeeklyStats);
-      const fallbackSeason = new Date().getMonth() <= 6 ? new Date().getFullYear() - 1 : new Date().getFullYear();
+      const fallbackSeason = getDefaultSeason();
       season = maxResult[0]?.maxYear ?? fallbackSeason;
     } else {
       const parsed = parseInt(seasonParam);
-      const fallbackSeason = new Date().getMonth() <= 6 ? new Date().getFullYear() - 1 : new Date().getFullYear();
+      const fallbackSeason = getDefaultSeason();
       season = isNaN(parsed) ? fallbackSeason : parsed;
     }
     // Resolve playerId - might be our UUID or Sleeper externalId
@@ -2383,7 +2385,7 @@ playerRoutes.get('/:id/projections', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   let playerId = c.req.param('id');
   const week = c.req.query('week');
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
   const scoringFormat = c.req.query('format') || 'ppr';
 
   try {
@@ -2482,7 +2484,9 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const idParam = c.req.param('id');
   const week = parseInt(c.req.query('week') || '1', 10);
-  const season = parseInt(c.req.query('season') || '2025', 10);
+  // Default to the current NFL season (not a hardcoded year) so a client
+  // that omits `season` gets this week's lines instead of a stale season.
+  const season = parseInt(c.req.query('season') || String(resolveWeekFromCalendar(new Date()).season), 10);
 
   if (!week || week < 1 || week > 18) {
     return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
@@ -2520,26 +2524,47 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
       return rows.filter(r => normalizePlayerName(r.playerName) === targetNormalized);
     };
 
-    // Try the requested season first. If no props exist (e.g. we're in the
-    // 2026 offseason and no 2026 lines have been posted yet), fall back to
-    // the most recent season that has props for this player. The UI shows a
-    // "last season" badge via isFallback so users know it's historical.
+    // Try the requested season/week first. If nothing is found there, we
+    // need to tell two very different situations apart:
+    //   - The season hasn't started yet (e.g. the 2026 offseason, no 2026
+    //     lines posted at all) -> fall back to the most recent season that
+    //     has props for this player. The UI shows a "last season" badge via
+    //     isFallback so users know it's historical.
+    //   - The season is underway but THIS week's lines simply haven't been
+    //     synced yet (e.g. week 2 lines post a few days before kickoff) ->
+    //     do NOT fall back to last season's settled results; report
+    //     linesPosted: false instead so the UI can say "check back later".
     let effectiveSeason = season;
     let isFallback = false;
+    let linesPosted = true;
     let props = await findProps(season);
 
     if (props.length === 0) {
-      // Walk back up to 3 prior seasons looking for props for this player.
-      // Each findProps call is already scoped to a single week+season so
-      // the loop stays cheap and bounded.
-      for (let s = season - 1; s >= season - 3; s--) {
-        const found = await findProps(s);
-        if (found.length > 0) {
-          effectiveSeason = s;
-          isFallback = true;
-          props = found;
-          break;
+      // Cheap existence check across the whole season (any week, any
+      // player) to distinguish "season hasn't started" from "this week
+      // isn't synced yet" — see shouldFallBackToPriorSeason.
+      const anySeasonProp = await db.query.playerProps.findFirst({
+        where: eq(schema.playerProps.season, season),
+        columns: { id: true },
+      });
+      const seasonHasAnyProps = !!anySeasonProp;
+
+      if (shouldFallBackToPriorSeason({ propsForRequestedWeek: false, seasonHasAnyProps })) {
+        // Walk back up to 3 prior seasons looking for props for this player.
+        // Each findProps call is already scoped to a single week+season so
+        // the loop stays cheap and bounded.
+        for (let s = season - 1; s >= season - 3; s--) {
+          const found = await findProps(s);
+          if (found.length > 0) {
+            effectiveSeason = s;
+            isFallback = true;
+            props = found;
+            break;
+          }
         }
+      } else {
+        // Season is underway but this week's lines aren't posted yet.
+        linesPosted = false;
       }
     }
 
@@ -2593,6 +2618,10 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
       season: effectiveSeason,
       requestedSeason: season,
       isFallback,
+      // false only when the season is underway but this week's lines
+      // haven't been synced yet; true otherwise (including the fallback
+      // and normal "found this week's lines" cases).
+      linesPosted,
     });
   } catch (error) {
     console.error('Get player props error:', error);
@@ -2679,12 +2708,12 @@ playerRoutes.get('/:id/matchup-grade', optionalAuthMiddleware, async (c) => {
     let requestedSeason: number;
     if (seasonParam) {
       const parsed = parseInt(seasonParam);
-      requestedSeason = isNaN(parsed) ? new Date().getFullYear() : parsed;
+      requestedSeason = isNaN(parsed) ? getDefaultSeason() : parsed;
     } else {
       const maxResult = await db
         .select({ maxYear: sql<number>`max(${schema.playerWeeklyStats.seasonYear})` })
         .from(schema.playerWeeklyStats);
-      requestedSeason = maxResult[0]?.maxYear ?? new Date().getFullYear();
+      requestedSeason = maxResult[0]?.maxYear ?? getDefaultSeason();
     }
     const resolved = await resolveDisplaySeason(db, requestedSeason);
     const season = resolved.season;
@@ -2977,7 +3006,7 @@ playerRoutes.get('/:id/matchup-grade', optionalAuthMiddleware, async (c) => {
 playerRoutes.get('/:id/projection-accuracy', async (c) => {
   const db = c.get('db');
   const playerId = c.req.param('id');
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
 
   try {
     // Get player info

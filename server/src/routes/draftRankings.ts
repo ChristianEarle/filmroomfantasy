@@ -35,6 +35,8 @@ draftRankingsRoutes.get('/', async (c) => {
   const rankingType = (c.req.query('type') || 'redraft') as 'redraft' | 'dynasty' | 'dynasty_rookie';
   const scoringFormat = (c.req.query('scoring') || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
   const superflex = c.req.query('superflex') === '1';
+  // Draft rankings target the upcoming draft class — the calendar year is
+  // the correct default here, not the NFL season resolver.
   const season = parseInt(c.req.query('season') || String(new Date().getFullYear()), 10);
 
   // Validate
@@ -263,6 +265,8 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
   const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty' | 'dynasty_rookie';
   const scoringFormat = (body.scoring || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
   const superflex = body.superflex === true;
+  // Draft rankings target the upcoming draft class — the calendar year is
+  // the correct default here, not the NFL season resolver.
   const season = body.season || new Date().getFullYear();
   if (!['redraft', 'dynasty', 'dynasty_rookie'].includes(rankingType)) {
     return c.json({ error: 'Invalid ranking type' }, 400);
@@ -273,10 +277,12 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
 
   const db = c.get('db');
 
-  // Light daily cap so questions can't run away.
+  // Daily cap so questions can't run away: Pro 20/day, Elite 200/day (a high
+  // ceiling, not unlimited — unlimited let a single account's usage grow
+  // without bound).
   const today = getTodayKey();
-  const askLimit = tier === 'elite' ? Infinity : 20;
-  if (askLimit !== Infinity) {
+  const askLimit = tier === 'elite' ? 200 : 20;
+  {
     const usage = await db
       .select()
       .from(schema.tradeAnalysisUsage)
@@ -382,17 +388,15 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
     // Record usage. tradeAnalysisUsage has no free-form column for
     // rounds/toolCalls, so log them for now instead of dropping the info.
     console.log('[draft-rankings/ask] rounds:', rounds, 'toolCalls:', toolCalls.map((t) => t.name));
-    if (askLimit !== Infinity) {
-      try {
-        await db.insert(schema.tradeAnalysisUsage).values({
-          id: generateId(),
-          userId: `draftask:${user.id}`,
-          usedAt: new Date().toISOString(),
-          dateKey: today,
-        });
-      } catch (err) {
-        console.error('[draft-rankings/ask] Failed to record usage:', err);
-      }
+    try {
+      await db.insert(schema.tradeAnalysisUsage).values({
+        id: generateId(),
+        userId: `draftask:${user.id}`,
+        usedAt: new Date().toISOString(),
+        dateKey: today,
+      });
+    } catch (err) {
+      console.error('[draft-rankings/ask] Failed to record usage:', err);
     }
 
     return c.json({ answer, toolCalls });
@@ -431,6 +435,9 @@ export const marketRankingsRoutes = new Hono<{ Bindings: Env; Variables: Variabl
 marketRankingsRoutes.get('/', async (c) => {
   const db = c.get('db');
   const scoringFormat = (c.req.query('scoring') || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
+  // Market rankings are keyed to the same draft-class season as the rest of
+  // this file — the calendar year is the correct default here, not the NFL
+  // season resolver.
   const season = parseInt(c.req.query('season') || String(new Date().getFullYear()), 10);
 
   if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {

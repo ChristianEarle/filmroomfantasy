@@ -172,7 +172,7 @@ export async function buildPlayerCards(
         where: and(
           inArray(schema.draftRankings.playerId, c),
           eq(schema.draftRankings.rankingType, 'redraft'),
-          eq(schema.draftRankings.scoringFormat, 'ppr'),
+          eq(schema.draftRankings.scoringFormat, scoringFormat),
           eq(schema.draftRankings.superflex, false),
           eq(schema.draftRankings.seasonYear, season),
         ),
@@ -375,8 +375,11 @@ export function assemblePlayerCard(input: AssemblePlayerCardInput): PlayerCard {
     };
   }
 
+  // Match players.ts's hasMarketProjection semantics: a market row with no
+  // seasonPoints isn't a usable projection (nothing for the client to show
+  // as the "market" figure), so only emit the market object when it is set.
   const marketRow = input.marketRow;
-  const market: PlayerCardMarket | null = marketRow
+  const market: PlayerCardMarket | null = marketRow && marketRow.seasonPoints != null
     ? {
         seasonPoints: marketRow.seasonPoints ?? null,
         rosPoints: marketRow.rosPoints ?? null,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveWeekComplete, computeFetchWindow } from './playersLogic';
+import { resolveWeekComplete, computeFetchWindow, shouldFallBackToPriorSeason } from './playersLogic';
 
 describe('resolveWeekComplete', () => {
   it('is complete when every game is isComplete=true, or lacks isComplete but has both final scores', () => {
@@ -121,5 +121,28 @@ describe('computeFetchWindow', () => {
     });
     expect(fetchLimit).toBe(250);
     expect(fetchOffset).toBe(200);
+  });
+});
+
+describe('shouldFallBackToPriorSeason', () => {
+  it('no props this week, season has none at all -> falls back (offseason case)', () => {
+    expect(shouldFallBackToPriorSeason({
+      propsForRequestedWeek: false,
+      seasonHasAnyProps: false,
+    })).toBe(true);
+  });
+
+  it('no props this week, but season has props for other weeks -> does not fall back (not synced yet)', () => {
+    expect(shouldFallBackToPriorSeason({
+      propsForRequestedWeek: false,
+      seasonHasAnyProps: true,
+    })).toBe(false);
+  });
+
+  it('props found for the requested week -> never falls back', () => {
+    expect(shouldFallBackToPriorSeason({
+      propsForRequestedWeek: true,
+      seasonHasAnyProps: true,
+    })).toBe(false);
   });
 });
