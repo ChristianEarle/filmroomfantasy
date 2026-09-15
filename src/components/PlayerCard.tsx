@@ -6,6 +6,7 @@ import api, { ApiError } from '../services/api';
 import { playerService } from '../services';
 import type { PlayerNews, MatchupGradeResponse, PlayerProjection } from '../services';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { useNflState } from '../hooks';
 import { useAuth } from '../context/AuthContext';
 import { buildPlayerProfilePath } from '../utils/slug';
 import { NewsSnippet } from './NewsSnippet';
@@ -110,7 +111,10 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [matchupLoading, setMatchupLoading] = useState(true);
   const [propsData, setPropsData] = useState<any>(null);
   const [propsLoading, setPropsLoading] = useState(true);
-  const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || 1);
+  // Fall back to the actual current NFL week rather than a hardcoded week 1,
+  // which could be the wrong season's week 1 if no week was passed in.
+  const { week: nflWeek } = useNflState();
+  const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || nflWeek || 1);
   const [projection, setProjection] = useState<PlayerProjection | null>(null);
   const [projectionLoading, setProjectionLoading] = useState(true);
 

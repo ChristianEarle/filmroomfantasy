@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Users, TrendingUp, Shield, Loader2, Search, ChevronUp, ChevronDown, BarChart3, Globe, Monitor, Smartphone, Tablet, Eye, MousePointer, FileText, Medal, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
+import { useNflState } from '../hooks';
 import { ArticleEditor } from './ArticleEditor';
 
 interface AdminViewProps {
@@ -767,6 +768,13 @@ function PlayerPropsSyncAdminCard({
   const [season, setSeason] = useState(new Date().getFullYear());
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const { week: nflWeek } = useNflState();
+  // Default the picker to the actual current NFL week once it resolves, but
+  // only if the admin hasn't already changed it themselves.
+  const [weekTouched, setWeekTouched] = useState(false);
+  useEffect(() => {
+    if (!weekTouched && nflWeek != null) setWeek(nflWeek);
+  }, [weekTouched, nflWeek]);
 
   const sync = async () => {
     setSyncing(true);
@@ -812,7 +820,7 @@ function PlayerPropsSyncAdminCard({
             min={1}
             max={18}
             value={week}
-            onChange={(e) => setWeek(Number(e.target.value))}
+            onChange={(e) => { setWeekTouched(true); setWeek(Number(e.target.value)); }}
             className={inputClass}
           />
         </div>

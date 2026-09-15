@@ -323,6 +323,16 @@ async function fetchEspnByWeek(
 }
 
 /**
+ * Ask ESPN what week it currently thinks we're in, without mapping any
+ * game data. Used as a fallback when we have no schedule rows in our own
+ * DB to reason about. Never throws — returns null on any failure.
+ */
+export async function fetchEspnCurrentWeek(season: number, seasonType: string): Promise<number | null> {
+  const result = await fetchEspnByWeek(undefined, season, seasonType);
+  return result?.resolvedWeek ?? null;
+}
+
+/**
  * Fetch ESPN scoreboard using the date-range endpoint.
  * This works for completed seasons where the week-based endpoint returns 500.
  * Uses the static schedule to determine the date range for a given week.

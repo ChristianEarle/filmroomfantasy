@@ -8,6 +8,7 @@ import { NewsSnippet } from './NewsSnippet';
 import { SEO, getPlayerProfileSEOProps } from './SEO';
 import { buildPlayerProfilePath } from '../utils/slug';
 import { useAuth } from '../context/AuthContext';
+import { useNflState } from '../hooks';
 
 interface PlayerProfileViewProps {
   playerId: string;
@@ -133,7 +134,10 @@ export function PlayerProfileView({
   const [aiTakeLoading, setAiTakeLoading] = useState(false);
   const [aiTakeError, setAiTakeError] = useState<string | null>(null);
 
-  const week = currentWeek ?? 1;
+  // Fall back to the actual current NFL week rather than a hardcoded week 1,
+  // which could be the wrong season's week 1 if no week was passed in.
+  const { week: nflWeek } = useNflState();
+  const week = currentWeek ?? nflWeek ?? 1;
   const season = seasonYear ?? new Date().getFullYear();
 
   const normalizedFormat = scoringFormat === 'half_ppr' ? 'half_ppr' : scoringFormat === 'standard' ? 'standard' : 'ppr';
