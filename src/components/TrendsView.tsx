@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { TrendingUp, TrendingDown, Activity, Loader2, RefreshCw, ArrowUpRight, ArrowDownRight, Users, BarChart3, Trophy, LineChart } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
+import { useNflState } from '../hooks';
 import api from '../services/api';
-import { getEffectiveSeason } from '../utils/playerUtils';
+import { getEffectiveSeason, clampWeek } from '../utils/playerUtils';
 
 interface TrendsViewProps {
   onPlayerClick: (player: Player) => void;
@@ -113,7 +114,16 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   const leadersFetchVersion = useRef(0);
   const fetchDataVersion = useRef(0);
 
-  const currentWeek = league?.currentWeek;
+  // Default week: the actual current NFL week so movers panels work even
+  // without a league, but a past-season league's own last-synced week when
+  // one is selected (see server/src/services/nflState.ts).
+  const { week: nflWeek, season: nflSeason } = useNflState();
+  const currentWeek = useMemo(() => {
+    if (league?.seasonYear != null && nflSeason != null && league.seasonYear !== nflSeason) {
+      return clampWeek(league.currentWeek);
+    }
+    return nflWeek;
+  }, [league?.seasonYear, league?.currentWeek, nflSeason, nflWeek]);
   const seasonYear = getEffectiveSeason(league?.seasonYear);
 
   const leagueParam = useMemo(() => league?.id ? `&leagueId=${league.id}` : '', [league?.id]);
@@ -125,9 +135,11 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
     setLoading(true);
     setError(null);
     try {
-      // Skip the projections call when there's no league/week — otherwise it fires with week=1 against the wrong season
-      // and silently returns an empty list, which the UI then misreports as "no projection changes."
-      const projPromise = (currentWeek != null && league?.id != null)
+      // Skip the projections call when the week isn't resolved yet — otherwise it fires with
+      // week=1 against the wrong season and silently returns an empty list, which the UI then
+      // misreports as "no projection changes." No league is required — currentWeek now
+      // defaults to the actual current NFL week (see useNflState) so this works logged out too.
+      const projPromise = currentWeek != null
         ? api.get<{ movements: ProjectionMover[] }>(
             `/players/projection-movements?week=${currentWeek}&season=${seasonYear}&scoringFormat=ppr&limit=20`
           ).catch((err) => {

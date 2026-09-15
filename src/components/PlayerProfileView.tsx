@@ -8,6 +8,8 @@ import { NewsSnippet } from './NewsSnippet';
 import { SEO, getPlayerProfileSEOProps } from './SEO';
 import { buildPlayerProfilePath } from '../utils/slug';
 import { useAuth } from '../context/AuthContext';
+import { useNflState } from '../hooks';
+import { getDefaultSeason } from '../utils/playerUtils';
 
 interface PlayerProfileViewProps {
   playerId: string;
@@ -133,8 +135,15 @@ export function PlayerProfileView({
   const [aiTakeLoading, setAiTakeLoading] = useState(false);
   const [aiTakeError, setAiTakeError] = useState<string | null>(null);
 
-  const week = currentWeek ?? 1;
-  const season = seasonYear ?? new Date().getFullYear();
+  // Fall back to the actual current NFL week rather than a hardcoded week 1,
+  // which could be the wrong season's week 1 if no week was passed in.
+  const { week: nflWeek, season: nflSeason } = useNflState();
+  const week = currentWeek ?? nflWeek ?? 1;
+  // new Date().getFullYear() is wrong in Jan-Jul, when the current NFL
+  // season is still last calendar year's — use the resolved NFL season
+  // (falling back to the same calendar-aware default the rest of the app
+  // uses) instead.
+  const season = seasonYear ?? nflSeason ?? getDefaultSeason();
 
   const normalizedFormat = scoringFormat === 'half_ppr' ? 'half_ppr' : scoringFormat === 'standard' ? 'standard' : 'ppr';
   const scoringLabel = normalizedFormat === 'half_ppr' ? 'Half PPR' : normalizedFormat === 'standard' ? 'Standard' : 'PPR';

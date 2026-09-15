@@ -52,12 +52,21 @@ database_id = "6acfacc9-ccdd-46bd-9cea-8693306ed524"
 # For local dev, these are set in server/.dev.vars (gitignored)
 
 [vars]
-ENVIRONMENT = "development"
+# CI/prod deploys run `wrangler deploy --env=""` (the top-level environment,
+# not `--env production`), so THIS is the block that actually governs prod:
+# it controls HSTS (src/index.ts), whether raw error messages leak on 500s,
+# logging verbosity, and the dev-only bypass gates in middleware/tier.ts and
+# middleware/auth.ts. Keep it "production" — override to "development" via
+# `server/.dev.vars` (gitignored) for local `wrangler dev`.
+ENVIRONMENT = "production"
 # Sports news RSS feeds (Nitter is often down; using official feeds)
 TWITTER_RSS_URLS = "https://www.espn.com/espn/rss/nfl/news|ESPN NFL,https://www.cbssports.com/rss/headlines/nfl|CBS Sports NFL,https://www.espn.com/espn/rss/nfl/headlines|ESPN NFL Headlines,https://sports.yahoo.com/nfl/rss.xml|Yahoo Sports NFL,https://www.rotowire.com/rss/news.php?sport=NFL|RotoWire NFL,https://www.pff.com/feed|Pro Football Focus"
 # JWT_SECRET is in .dev.vars for local dev. For production: wrangler secret put JWT_SECRET --env production
 
-# Production environment (deploy with: wrangler deploy --env production)
+# NOTE: CI deploys with `wrangler deploy --env=""`, which uses the top-level
+# [vars] above, NOT this [env.production] block. This block is kept in sync
+# for anyone who deploys manually with `--env production`, but it is not the
+# one CI actually uses today.
 [env.production]
 name = "filmroom-api"
 vars = { ENVIRONMENT = "production", TWITTER_RSS_URLS = "https://www.espn.com/espn/rss/nfl/news|ESPN NFL,https://www.cbssports.com/rss/headlines/nfl|CBS Sports NFL,https://www.espn.com/espn/rss/nfl/headlines|ESPN NFL Headlines,https://sports.yahoo.com/nfl/rss.xml|Yahoo Sports NFL,https://www.rotowire.com/rss/news.php?sport=NFL|RotoWire NFL,https://www.pff.com/feed|Pro Football Focus" }

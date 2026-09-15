@@ -35,6 +35,16 @@ Verified against the actual codebase by a 3-way scout pass (frontend, backend, i
 > Remaining gaps are owner-blocked credentials and the external-data-source
 > items above — see `TODO.md` for the live list.
 
+> **Update 2026-09-07 — Market layer + Ask AI v2.** A deterministic,
+> sportsbook-implied "Market" projection + VORP ranking layer shipped
+> (`player_market_projections`, #309, coverage fixes #311/#313), fed by a
+> manual season-long prop-line import (`player_season_props`, #305) since
+> there's no free API source for season-long O/U lines. AI draft rankings
+> now anchor on Market rank instead of ADP alone (#312), and Ask AI moved
+> to a real tool-calling loop with player cards and league awareness
+> (#310). Redraft ADP — deferred above — is done, via
+> FantasyFootballCalculator rather than Sleeper/Underdog (#306).
+
 ---
 
 ## Execution: three waves of parallel agents

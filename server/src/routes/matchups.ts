@@ -3,6 +3,9 @@ import { eq, and, or, inArray, sql, desc } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
+import { resolveUserTeamId } from './rosters';
+import { resolveWeekFromCalendar, resolveLeagueWeek } from '../services/nflState';
+import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
 
 // Rate limit for matchup routes: 60 req/min per IP
@@ -165,10 +168,13 @@ matchupRoutes.get('/:id', authMiddleware, async (c) => {
       return {
         id: team.id,
         name: team.name,
+        // team.owner is null for a synced roster with no matching app user
+        // (see leagueSync.ts decideTeamOwnerId) — fall back to the
+        // Sleeper/ESPN display name, then the team name itself.
         owner: {
-          id: team.owner.id,
-          username: team.owner.username,
-          avatarUrl: team.owner.avatarUrl,
+          id: team.owner?.id ?? null,
+          username: team.owner?.username || team.ownerDisplayName || team.name,
+          avatarUrl: team.owner?.avatarUrl ?? null,
         },
         record: `${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}`,
         score: score || calculatedScore,
@@ -250,7 +256,7 @@ matchupRoutes.get('/:id/live', authMiddleware, async (c) => {
       where: eq(schema.leagues.id, matchup.leagueId),
     });
     const scoringFormat = league?.scoringFormat || 'ppr';
-    const seasonYear = league?.seasonYear || new Date().getFullYear();
+    const seasonYear = league?.seasonYear || getDefaultSeason();
     const pointsCol = getPointsColumn(scoringFormat);
 
     // Get starters for both teams
@@ -364,14 +370,14 @@ matchupRoutes.get('/league/:leagueId/week/:week', authMiddleware, async (c) => {
         homeTeam: {
           id: m.homeTeam.id,
           name: m.homeTeam.name,
-          owner: m.homeTeam.ownerDisplayName || m.homeTeam.owner.username,
+          owner: m.homeTeam.ownerDisplayName || m.homeTeam.owner?.username || m.homeTeam.name,
           score: m.homeScore || 0,
           projectedScore: m.homeProjectedScore || 0,
         },
         awayTeam: {
           id: m.awayTeam.id,
           name: m.awayTeam.name,
-          owner: m.awayTeam.ownerDisplayName || m.awayTeam.owner.username,
+          owner: m.awayTeam.ownerDisplayName || m.awayTeam.owner?.username || m.awayTeam.name,
           score: m.awayScore || 0,
           projectedScore: m.awayProjectedScore || 0,
         },
@@ -383,11 +389,137 @@ matchupRoutes.get('/league/:leagueId/week/:week', authMiddleware, async (c) => {
   }
 });
 
-// Get user's current matchup
+export interface CurrentMatchupResult {
+  matchupId: string;
+  week: number;
+  myTeam: { id: string; name: string; score: number };
+  opponent: { id: string; name: string; owner: string; score: number };
+  isComplete: boolean;
+}
+
+/**
+ * Resolve `teamId`'s matchup in `leagueId` for a specific week — or, when
+ * `week` is omitted, the current week's matchup if one is synced, else the
+ * most recent week that has one (covers offseason / a currentWeek past the
+ * last synced week). Shared by the GET /my/current route and the Ask AI v2
+ * `get_matchup` tool (services/askTools.ts) so the resolution logic lives in
+ * exactly one place. Returns null if the league or a matchup for this team
+ * (at that week, when given) can't be found.
+ */
+export async function findCurrentMatchupForTeam(
+  db: ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>,
+  leagueId: string,
+  teamId: string,
+  week?: number,
+): Promise<CurrentMatchupResult | null> {
+  const league = await db.query.leagues.findFirst({
+    where: eq(schema.leagues.id, leagueId),
+  });
+  if (!league) return null;
+
+  // Default to the live NFL week (a current-season league's stored
+  // currentWeek is only as fresh as its last sync) — the full season's
+  // pairings are imported on every sync, so the live week's matchup exists
+  // even before the week itself has been re-synced.
+  const targetWeek = week ?? (await resolveLeagueWeek(db, league)).week;
+
+  let matchup = await db.query.matchups.findFirst({
+    where: and(
+      eq(schema.matchups.leagueId, leagueId),
+      eq(schema.matchups.week, targetWeek),
+      or(
+        eq(schema.matchups.homeTeamId, teamId),
+        eq(schema.matchups.awayTeamId, teamId)
+      )
+    ),
+    with: {
+      homeTeam: { with: { owner: true } },
+      awayTeam: { with: { owner: true } },
+    },
+  });
+
+  // A specific week was requested and nothing was found for it — don't fall
+  // back to a different week, that would silently show the wrong week.
+  if (!matchup && week !== undefined) return null;
+
+  // No specific week requested and nothing found for the current week (e.g.
+  // offseason, currentWeek past last synced week) — fall back to the most
+  // recent week that has a matchup for this team.
+  if (!matchup) {
+    matchup = await db.query.matchups.findFirst({
+      where: and(
+        eq(schema.matchups.leagueId, leagueId),
+        or(
+          eq(schema.matchups.homeTeamId, teamId),
+          eq(schema.matchups.awayTeamId, teamId)
+        )
+      ),
+      orderBy: desc(schema.matchups.week),
+      with: {
+        homeTeam: { with: { owner: true } },
+        awayTeam: { with: { owner: true } },
+      },
+    });
+  }
+
+  if (!matchup) return null;
+
+  const isHome = matchup.homeTeamId === teamId;
+  const myTeam = isHome ? matchup.homeTeam : matchup.awayTeam;
+  const opponent = isHome ? matchup.awayTeam : matchup.homeTeam;
+  const myScore = isHome ? matchup.homeScore : matchup.awayScore;
+  const opponentScore = isHome ? matchup.awayScore : matchup.homeScore;
+
+  return {
+    matchupId: matchup.id,
+    week: matchup.week,
+    myTeam: {
+      id: myTeam.id,
+      name: myTeam.name,
+      score: myScore || 0,
+    },
+    opponent: {
+      id: opponent.id,
+      name: opponent.name,
+      // opponent.owner can be null now that teams.ownerId is nullable (an
+      // unmatched synced roster has no app-user owner) — fall back through
+      // the Sleeper/ESPN display name to the team name itself.
+      owner: opponent.ownerDisplayName || opponent.owner?.username || opponent.name,
+      score: opponentScore || 0,
+    },
+    isComplete: matchup.isComplete,
+  };
+}
+
+/**
+ * Every week `teamId` has a synced matchup row in `leagueId`, ascending.
+ * Powers the Matchup page's week picker (which weeks are selectable).
+ */
+async function findAvailableWeeksForTeam(
+  db: ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>,
+  leagueId: string,
+  teamId: string,
+): Promise<number[]> {
+  const rows = await db.query.matchups.findMany({
+    where: and(
+      eq(schema.matchups.leagueId, leagueId),
+      or(
+        eq(schema.matchups.homeTeamId, teamId),
+        eq(schema.matchups.awayTeamId, teamId)
+      )
+    ),
+    columns: { week: true },
+    orderBy: (m, { asc }) => [asc(m.week)],
+  });
+  return rows.map((r) => r.week);
+}
+
+// Get user's matchup — current week by default, or a specific week via ?week=
 matchupRoutes.get('/my/current', authMiddleware, async (c) => {
   const user = c.get('user');
   const db = c.get('db');
   const leagueId = c.req.query('leagueId');
+  const weekParam = c.req.query('week');
 
   if (!user) {
     return c.json({ error: 'Not authenticated' }, 401);
@@ -397,89 +529,50 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
     return c.json({ error: 'League ID required' }, 400);
   }
 
+  let week: number | undefined;
+  if (weekParam !== undefined) {
+    week = Number(weekParam);
+    if (!Number.isInteger(week) || week < 1 || week > 22) {
+      return c.json({ error: 'Invalid week' }, 400);
+    }
+  }
+
   try {
-    // Get league and current week
     const league = await db.query.leagues.findFirst({
       where: eq(schema.leagues.id, leagueId),
+      columns: { currentWeek: true, seasonYear: true },
     });
-
     if (!league) {
       return c.json({ error: 'League not found' }, 404);
     }
+    // Same rule findCurrentMatchupForTeam uses for its default, so the week
+    // picker's "current" marker matches the matchup actually shown.
+    const { week: currentWeek } = await resolveLeagueWeek(db, league);
 
-    // Get user's team
-    const team = await db.query.teams.findFirst({
-      where: and(
-        eq(schema.teams.leagueId, leagueId),
-        eq(schema.teams.ownerId, user.id)
-      ),
-    });
-
-    if (!team) {
+    // Resolve via externalOwnerId (reliable for synced leagues, and
+    // unaffected by a team's ownerId being null/mis-set) before falling
+    // back to direct ownerId — see rosters.ts resolveUserTeamId.
+    const teamId = await resolveUserTeamId(db, leagueId, user.id);
+    if (!teamId) {
       return c.json({ error: 'Team not found' }, 404);
     }
 
-    // Find matchup where user's team is home or away for the current week
-    let matchup = await db.query.matchups.findFirst({
-      where: and(
-        eq(schema.matchups.leagueId, leagueId),
-        eq(schema.matchups.week, league.currentWeek),
-        or(
-          eq(schema.matchups.homeTeamId, team.id),
-          eq(schema.matchups.awayTeamId, team.id)
-        )
-      ),
-      with: {
-        homeTeam: { with: { owner: true } },
-        awayTeam: { with: { owner: true } },
-      },
-    });
+    const [result, availableWeeks] = await Promise.all([
+      findCurrentMatchupForTeam(db, leagueId, teamId, week),
+      findAvailableWeeksForTeam(db, leagueId, teamId),
+    ]);
 
-    // If no matchup found for current week (e.g. offseason, currentWeek past last synced week),
-    // fall back to the most recent week that has a matchup for this team
-    if (!matchup) {
-      matchup = await db.query.matchups.findFirst({
-        where: and(
-          eq(schema.matchups.leagueId, leagueId),
-          or(
-            eq(schema.matchups.homeTeamId, team.id),
-            eq(schema.matchups.awayTeamId, team.id)
-          )
-        ),
-        orderBy: desc(schema.matchups.week),
-        with: {
-          homeTeam: { with: { owner: true } },
-          awayTeam: { with: { owner: true } },
-        },
-      });
+    if (!result) {
+      return c.json({
+        error: week !== undefined
+          ? `No matchup synced for week ${week} yet`
+          : 'No matchup found for current week',
+        currentWeek,
+        availableWeeks,
+      }, 404);
     }
 
-    if (!matchup) {
-      return c.json({ error: 'No matchup found for current week' }, 404);
-    }
-
-    const isHome = matchup.homeTeamId === team.id;
-    const myTeam = isHome ? matchup.homeTeam : matchup.awayTeam;
-    const opponent = isHome ? matchup.awayTeam : matchup.homeTeam;
-    const myScore = isHome ? matchup.homeScore : matchup.awayScore;
-    const opponentScore = isHome ? matchup.awayScore : matchup.homeScore;
-
-    return c.json({
-      matchupId: matchup.id,
-      week: matchup.week,
-      myTeam: {
-        id: myTeam.id,
-        name: myTeam.name,
-        score: myScore || 0,
-      },
-      opponent: {
-        id: opponent.id,
-        name: opponent.name,
-        owner: opponent.ownerDisplayName || opponent.owner.username,
-        score: opponentScore || 0,
-      },
-      isComplete: matchup.isComplete,
-    });
+    return c.json({ ...result, currentWeek, availableWeeks });
   } catch (error) {
     console.error('Get current matchup error:', error);
     return c.json({ error: 'Failed to fetch current matchup' }, 500);
@@ -512,14 +605,18 @@ matchupRoutes.get('/league/:leagueId/all', authMiddleware, async (c) => {
     // Fetch league to determine effective current week for isComplete
     const league = await db.query.leagues.findFirst({
       where: eq(schema.leagues.id, leagueId),
-      columns: { currentWeek: true, externalId: true, platform: true },
+      columns: { currentWeek: true, externalId: true, platform: true, seasonYear: true },
     });
 
-    // Determine effective current week: use league's stored currentWeek,
-    // but if we're in the offseason (Feb-Aug), the season is fully complete
-    let effectiveCurrentWeek = league?.currentWeek || 1;
-    const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 7=Aug
-    const isOffseason = currentMonth >= 1 && currentMonth <= 7;
+    // Determine effective current week: the league-scoped week (live NFL
+    // week for a current-season league, the league's own week if it's
+    // parked on a past season), but if we're in the offseason/postseason
+    // the season is fully complete.
+    let effectiveCurrentWeek = (await resolveLeagueWeek(db, league ?? null)).week;
+    const isOffseason = ((): boolean => {
+      const { seasonType } = resolveWeekFromCalendar(new Date());
+      return seasonType === 'offseason' || seasonType === 'postseason';
+    })();
 
     // For Sleeper leagues, try to get accurate week from Sleeper API
     if (league?.platform === 'sleeper' && league.externalId) {
@@ -575,14 +672,14 @@ matchupRoutes.get('/league/:leagueId/all', authMiddleware, async (c) => {
           homeTeam: {
             id: m.homeTeam.id,
             name: m.homeTeam.name,
-            owner: m.homeTeam.ownerDisplayName || m.homeTeam.owner.username,
+            owner: m.homeTeam.ownerDisplayName || m.homeTeam.owner?.username || m.homeTeam.name,
             score: m.homeScore || 0,
             projectedScore: m.homeProjectedScore || 0,
           },
           awayTeam: {
             id: m.awayTeam.id,
             name: m.awayTeam.name,
-            owner: m.awayTeam.ownerDisplayName || m.awayTeam.owner.username,
+            owner: m.awayTeam.ownerDisplayName || m.awayTeam.owner?.username || m.awayTeam.name,
             score: m.awayScore || 0,
             projectedScore: m.awayProjectedScore || 0,
           },

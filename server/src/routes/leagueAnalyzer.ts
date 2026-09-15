@@ -6,6 +6,7 @@ import { requireTier } from '../middleware/tier';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
 import { buildCachedSystemBlocks, sanitizePromptInput } from '../utils/prompt';
+import { resolveLeagueWeek } from '../services/nflState';
 import type { Env, Variables } from '../index';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -339,7 +340,7 @@ async function loadLeagueForUser(db: Db, userId: string, leagueId: string) {
 async function computeLeagueAnalysis(db: Db, league: LeagueRow, membership: MembershipRow) {
   const format = normalizeFormat(league.scoringFormat);
   const seasonYear = league.seasonYear;
-  const currentWeek = league.currentWeek || 1;
+  const currentWeek = (await resolveLeagueWeek(db, league)).week;
 
   // ── Batch load everything up-front (no per-team queries) ────────────────
   const teams = await db.query.teams.findMany({
@@ -886,7 +887,7 @@ leagueAnalyzerRoutes.get(
     }
     const { league, membership } = loaded;
     const seasonYear = league.seasonYear;
-    const week = league.currentWeek || 1;
+    const week = (await resolveLeagueWeek(db, league)).week;
 
     try {
       // Cross-league IDOR guard: team_ai_narratives is keyed by (teamId,
@@ -1064,7 +1065,7 @@ leagueAnalyzerRoutes.get(
     }
     const { league, membership } = loaded;
     const seasonYear = league.seasonYear;
-    const week = league.currentWeek || 1;
+    const week = (await resolveLeagueWeek(db, league)).week;
 
     try {
       const cachedRow = await db.query.leagueAiPulses.findFirst({
@@ -1226,7 +1227,7 @@ leagueAnalyzerRoutes.post('/:leagueId/ai-cache/invalidate', authMiddleware, asyn
   }
   const { league } = loaded;
   const seasonYear = league.seasonYear;
-  const week = league.currentWeek || 1;
+  const week = (await resolveLeagueWeek(db, league)).week;
 
   try {
     const leagueTeams = await db.query.teams.findMany({

@@ -24,6 +24,7 @@ import {
   formatNflCalendarBlock,
   getNflCalendarContext,
 } from '../utils/nflCalendar';
+import { resolveWeekFromCalendar } from './nflState';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -191,16 +192,13 @@ export interface TradeContext {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function computeSeasonPhase(
-  currentWeek: number,
-  hasAnyCurrentStats: boolean
-): TradeContext['seasonPhase'] {
-  const month = new Date().getUTCMonth(); // 0=Jan
-  if (month >= 1 && month <= 6) return 'offseason'; // Feb–Jul
-  if (month === 7) return 'preseason'; // Aug
-  if (currentWeek >= 15) return 'playoffs';
-  if (hasAnyCurrentStats || currentWeek >= 1) return 'regular';
-  return 'preseason';
+function computeSeasonPhase(currentWeek: number): TradeContext['seasonPhase'] {
+  const calendarPhase = resolveWeekFromCalendar(new Date()).seasonType;
+  if (calendarPhase === 'offseason') return 'offseason';
+  if (calendarPhase === 'preseason') return 'preseason';
+  if (calendarPhase === 'postseason') return 'playoffs';
+  // Regular season per the calendar, but weeks 15+ are fantasy playoffs.
+  return currentWeek >= 15 ? 'playoffs' : 'regular';
 }
 
 /** Implied team total from spread + over/under */
@@ -455,7 +453,7 @@ export async function buildTradeContext({
 
   // Compute season phase up-front so player-tenure inference sees the
   // same value the TradeContext will ultimately report.
-  const seasonPhaseForCtx = computeSeasonPhase(currentWeek, weeklyStats.length > 0);
+  const seasonPhaseForCtx = computeSeasonPhase(currentWeek);
 
   // 7. Build PlayerFacts[]
   const playerFacts: PlayerFacts[] = players.map((p) => {

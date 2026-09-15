@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type CSSProperties } from 'react';
+import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Sparkles, Lock } from 'lucide-react';
 import { Player } from '../App';
@@ -6,8 +6,10 @@ import api, { ApiError } from '../services/api';
 import { playerService } from '../services';
 import type { PlayerNews, MatchupGradeResponse, PlayerProjection } from '../services';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { useNflState } from '../hooks';
 import { useAuth } from '../context/AuthContext';
 import { buildPlayerProfilePath } from '../utils/slug';
+import { getDefaultSeason } from '../utils/playerUtils';
 import { NewsSnippet } from './NewsSnippet';
 
 
@@ -110,7 +112,24 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [matchupLoading, setMatchupLoading] = useState(true);
   const [propsData, setPropsData] = useState<any>(null);
   const [propsLoading, setPropsLoading] = useState(true);
-  const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || 1);
+  // Fall back to the actual current NFL week rather than a hardcoded week 1,
+  // which could be the wrong season's week 1 if no week was passed in.
+  const { week: nflWeek, season: nflSeason } = useNflState();
+  const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || nflWeek || 1);
+  // Season used for props/projections/AI-analysis requests. A caller-provided
+  // seasonYear (e.g. a past league season) wins; otherwise use the resolved
+  // current NFL season rather than a hardcoded year, so a fresh week's lines
+  // aren't silently requested against a stale season.
+  const season = propsSeasonYear ?? nflSeason ?? getDefaultSeason();
+  // If the card opened before the NFL week resolved (no week prop, no
+  // cached state), adopt the real week once it arrives — unless the user
+  // has already picked one from the dropdown.
+  const weekTouchedRef = useRef(false);
+  useEffect(() => {
+    if (propsCurrentWeek == null && nflWeek != null && !weekTouchedRef.current) {
+      setSelectedWeek(nflWeek);
+    }
+  }, [propsCurrentWeek, nflWeek]);
   const [projection, setProjection] = useState<PlayerProjection | null>(null);
   const [projectionLoading, setProjectionLoading] = useState(true);
 
@@ -168,7 +187,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     setAiTakeLoading(true);
     setAiTakeError(null);
     setAiTake(null);
-    playerService.getPlayerAnalysis(player.id, { week: propsCurrentWeek, season: propsSeasonYear })
+    playerService.getPlayerAnalysis(player.id, { week: propsCurrentWeek, season })
       .then((res) => { if (!cancelled) setAiTake(res.analysis); })
       .catch((err) => {
         if (cancelled) return;
@@ -179,7 +198,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
       })
       .finally(() => { if (!cancelled) setAiTakeLoading(false); });
     return () => { cancelled = true; };
-  }, [player.id, canViewAiTake, propsCurrentWeek, propsSeasonYear]);
+  }, [player.id, canViewAiTake, propsCurrentWeek, season]);
 
   // Fetch the current-week stat-category projection when the card opens or the week changes.
   useEffect(() => {
@@ -188,23 +207,23 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     setProjectionLoading(true);
     // The server stores 'half-ppr' (hyphen), while props use 'half_ppr'.
     const format = (propsScoringFormat === 'half_ppr' ? 'half-ppr' : propsScoringFormat === 'standard' ? 'standard' : 'ppr');
-    playerService.getPlayerProjections(player.id, { week: selectedWeek, season: propsSeasonYear || 2025, format })
+    playerService.getPlayerProjections(player.id, { week: selectedWeek, season, format })
       .then((res) => { if (!cancelled) setProjection(res.projections?.[0] ?? null); })
       .catch(() => { if (!cancelled) setProjection(null); })
       .finally(() => { if (!cancelled) setProjectionLoading(false); });
     return () => { cancelled = true; };
-  }, [player.id, selectedWeek, propsSeasonYear, propsScoringFormat]);
+  }, [player.id, selectedWeek, season, propsScoringFormat]);
 
   // Fetch player props when card opens
   useEffect(() => {
     if (!player?.id) return;
     let cancelled = false;
     setPropsLoading(true);
-    api.get<any>(`/players/${player.id}/props?week=${selectedWeek}&season=${propsSeasonYear || 2025}`)
+    api.get<any>(`/players/${player.id}/props?week=${selectedWeek}&season=${season}`)
       .then((res) => { if (!cancelled) { setPropsData(res); setPropsLoading(false); } })
       .catch(() => { if (!cancelled) { setPropsData(null); setPropsLoading(false); } });
     return () => { cancelled = true; };
-  }, [player.id, selectedWeek, propsSeasonYear]);
+  }, [player.id, selectedWeek, season]);
 
   // Fetch years for which this player has data (dropdown only shows years with stats)
   useEffect(() => {
@@ -255,7 +274,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     let cancelled = false;
     setMatchupLoading(true);
     playerService.getMatchupGrade(player.id, {
-      season: propsSeasonYear,
+      season,
       week: selectedWeek,
     }).then((res) => {
       if (!cancelled) setMatchupData(res);
@@ -265,7 +284,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
       if (!cancelled) setMatchupLoading(false);
     });
     return () => { cancelled = true; };
-  }, [player.id, propsSeasonYear, selectedWeek]);
+  }, [player.id, season, selectedWeek]);
 
   // Fetch player details (for headshot) and stats when card opens or season changes
   useEffect(() => {
@@ -483,7 +502,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       <span>{player.team} • {player.position} •</span>
                       <select
                         value={selectedWeek}
-                        onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                        onChange={(e) => { weekTouchedRef.current = true; setSelectedWeek(Number(e.target.value)); }}
                         className={`text-sm font-medium rounded px-1.5 py-0.5 cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}
                       >
                         {Array.from({ length: 18 }, (_, i) => i + 1).map((w) => (
@@ -623,7 +642,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                           className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${isDarkMode ? 'bg-amber-900/40 text-amber-300 border border-amber-700/50' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}
                           title={`Showing ${effectiveSeason} data — no ${effectiveSeason + 1} lines are posted yet`}
                         >
-                          {effectiveSeason} season
+                          {effectiveSeason} season (last year's lines)
                         </span>
                       )}
                     </div>
@@ -635,7 +654,11 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                     </div>
                   ) : markets.length === 0 ? (
                     <div className={`rounded-lg border p-6 text-center ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No prop lines available for this week.</p>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {propsData?.linesPosted === false
+                          ? `Week ${selectedWeek} lines haven't been posted yet — check back closer to kickoff.`
+                          : 'No prop lines available for this week.'}
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2">

@@ -1,6 +1,12 @@
 # Copy this file to .dev.vars and fill in real values.
 # .dev.vars is gitignored — never commit real keys.
 #
+# ENVIRONMENT=development       # REQUIRED for local dev: wrangler.toml's top-level
+#                                 [vars] ENVIRONMENT is "production" (that's what CI's
+#                                 `wrangler deploy --env=""` actually ships); .dev.vars
+#                                 overrides it to "development" for `wrangler dev` so
+#                                 HSTS/error-hiding/logging and the DEV_TIER_OVERRIDE /
+#                                 DEV_AUTO_LOGIN_EMAIL bypasses below behave locally.
 # JWT_SECRET=your-jwt-secret-at-least-32-chars
 # SYNC_SECRET=your-admin-sync-key
 # ANTHROPIC_API_KEY=sk-ant-...   # AI trade analysis & news filtering
@@ -13,3 +19,5 @@
 # STRIPE_SECRET_KEY=sk_test_...  # required for paid plans (test key for dev)
 # STRIPE_WEBHOOK_SECRET=whsec_...# required so checkout webhook can settle subscriptions
 # ODDS_API_KEY=...               # optional: The Odds API key for fetching NFL odds (https://the-odds-api.com/)
+# DEV_TIER_OVERRIDE=pro          # local only: treat every logged-in user as pro (or elite) on localhost; ignored in production
+# DEV_AUTO_LOGIN_EMAIL=devtest@filmroom.local  # local only: skip the login form on localhost (user must exist; see scripts/seed-dev-league.mjs)

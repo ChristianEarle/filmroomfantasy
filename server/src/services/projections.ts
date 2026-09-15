@@ -42,6 +42,13 @@ export interface ProjectedStats {
   projReceptions: number | null;
   projRecYards: number | null;
   projRecTDs: number | null;
+  /**
+   * Optional: only populated for season-long projections built from season
+   * prop lines (see seasonProps.ts). Weekly prop markets (The Odds API) have
+   * no interceptions market, so weekly projections never set this and are
+   * unaffected by the -1/INT deduction below.
+   */
+  interceptions?: number | null;
 }
 
 export interface ProjectionResult {
@@ -225,6 +232,7 @@ export function calculateFantasyPoints(
   // Passing
   points += (stats.projPassYards || 0) * 0.04;   // 1 pt per 25 yds
   points += (stats.projPassTDs || 0) * 4;         // 4 pts per TD
+  points += (stats.interceptions || 0) * -1;      // -1 per INT (applies to all three formats)
 
   // Rushing
   points += (stats.projRushYards || 0) * 0.1;     // 1 pt per 10 yds

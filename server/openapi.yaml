@@ -333,6 +333,15 @@ paths:
           description: Injured players list
 
   # ─── GAMES ──────────────────────────────────────
+  /api/games/nfl-state:
+    get:
+      tags: [Games]
+      summary: Get the current NFL season/week/phase
+      description: Single source of truth for "what week is it" — resolved from real schedule data, falling back to ESPN and then a calendar heuristic. The frontend defaults every week-scoped view to this.
+      responses:
+        '200':
+          description: Current NFL state (season, week, seasonType, source)
+
   /api/games/slate:
     get:
       tags: [Games]

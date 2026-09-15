@@ -2,6 +2,37 @@
 
 All notable changes to FilmRoom Fantasy Football are documented here.
 
+## [Unreleased] - 2026-09-07
+
+### League matchups & sync
+- Leagues now re-sync automatically: new `POST /api/admin/sync-leagues` (Sleeper) runs on the cron every 4h in season and daily otherwise, and an Admin "Sync Leagues" card triggers it on demand (#320)
+- Fixed the league sync failing with `too many SQL variables` on any roster deeper than ~16 spots (roster-spot inserts chunked at 50 rows since May) — the reason 2026 leagues never received matchups (#321)
+- "My team" is now resolved by the member's Sleeper id (`externalOwnerId`) before falling back to `ownerId`, so opponent teams stored under the syncing user no longer surface as your matchup; the sync no longer assigns every opponent to the syncing user going forward (#320)
+- Matchup page gained a week picker (‹ Week N ›, select on mobile) with explicit "not synced yet" / bye states and a "Re-sync now" button; `GET /api/matchups/my/current` accepts `?week=` and returns `availableWeeks` + `currentWeek` (#320)
+
+### Bug sweep of the day's merges
+- Production worker was deployed with `ENVIRONMENT="development"` (CI uses the top-level wrangler config): HSTS was never sent, raw error messages leaked on 500s, and the local-only dev bypasses' "not production" guard was inert. Top-level `ENVIRONMENT` is now `production`; local dev sets `development` via `.dev.vars`. Dev bypasses additionally require the request URL hostname to be local (#319)
+- Market sync cron passed the in-progress week as `asOfWeek` (remaining games off by one, Tier B reading next week's props); rookie ADP total outage now skips submission like redraft; player cards use the requested scoring format for draft rank/ADP; Elite Ask AI capped at 200/day (#319)
+- Ask AI modal resets its conversation when the surrounding context changes (Redraft→Dynasty, Week→Full Season) instead of replaying stale history; Market rankings cached per scoring/season on the Draft Rankings toggle (#318)
+- Local dev: `DEV_TIER_OVERRIDE` (#315) and `DEV_AUTO_LOGIN_EMAIL` (#316) in `server/.dev.vars` unlock Pro features and skip the login form on localhost only
+- Sidebar bottom-nav key warning (#317)
+
+### Market projections & rankings
+- New deterministic "Market" projection layer (`player_market_projections`, `marketRankings.ts`): sportsbook-implied season totals ranked by VORP, built from season-long prop lines where available and blended with weekly-projection extrapolation otherwise; `GET /players` (season mode) and the Full Season board now prefer Market over the AI total when a Market row exists, with a ROS number and confidence badge (`season_props` / `blended` / `weekly_extrapolation`) (#309, #311, #313)
+- Manual season-long prop import pipeline: `player_season_props` table, CSV/JSON paste via a new Admin → Import Season Props card, `POST /api/admin/sync-season-props`, `GET /api/admin/season-props/summary` (#305, #307, #308)
+- AI draft rankings (redraft/dynasty) now anchor on Market VORP rank instead of ADP alone, with ADP as a fallback before the first market sync; `DraftRankingsView` gained a `FilmRoom AI | Market` source toggle and a "vs Mkt" delta pill on the AI view (#312)
+- Market sync now includes injury-designated players (previously dropped questionable/doubtful/probable players from the rankings) and rounds stored point values (#313)
+
+### Ask AI v2
+- `/players/ask` and `/draft-rankings/ask` moved from a single fire-and-forget Anthropic call to a bounded tool-calling loop (`lookup_player`, `search_players`, `get_matchup`, `get_my_lineup`) backed by a compact per-player card, so answers pull live data instead of a static top-50 snapshot and priors
+- Both endpoints take an optional `leagueId` (validated against league membership) for league-aware answers; player mentions in a question are pre-fetched into context
+- Frontend markdown-lite rendering (bold, lists) and a "Looked up: X" attribution line when the model made tool calls (#310)
+
+### Draft rankings pipeline fixes
+- FantasyFootballCalculator's public ADP API replaces the FantasyPros scrape, which had gone silently near-empty behind a login wall — every stored redraft row had `adp: null`
+- An ADP-coverage canary and explicit `failed` `ranking_batch_jobs` rows surface pipeline problems (sparse ADP, zero eligible players for a variant) that previously failed silently, including a `dynasty_rookie` regeneration outage
+- Rookie-pool eligibility now resolved via tenure inference instead of a bare `yearsExp === 0` check, and ended-batch draining is bounded by count and wall-clock budget instead of one batch per hourly tick (#306)
+
 ## [Unreleased] - 2026-09-06
 
 ### Rankings
