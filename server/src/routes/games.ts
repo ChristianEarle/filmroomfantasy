@@ -5,6 +5,7 @@ import { optionalAuthMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { fetchEspnScoreboard, getNflSeasonContext, getTeamDisplayName, getStaticNetwork } from '../services/espn';
 import { getNflState } from '../services/nflState';
+import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
 
 export const gameRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -446,7 +447,7 @@ gameRoutes.get('/espn/scoreboard', espnProxyRateLimit, optionalAuthMiddleware, a
 gameRoutes.get('/week/:week', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.param('week'));
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
 
   if (isNaN(week) || week < 1 || week > 22) {
     return c.json({ error: 'Invalid week number' }, 400);
@@ -490,7 +491,7 @@ gameRoutes.get('/week/:week', optionalAuthMiddleware, async (c) => {
 gameRoutes.get('/line-movements', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1');
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
 
   try {
     const games = await db.query.nflGames.findMany({
@@ -590,7 +591,7 @@ gameRoutes.get('/upcoming', optionalAuthMiddleware, async (c) => {
 gameRoutes.get('/odds', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1');
-  const season = parseInt(c.req.query('season') || '2025');
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
 
   try {
     // Get all games for the given week
@@ -1047,7 +1048,7 @@ gameRoutes.get('/live/scores', espnProxyRateLimit, optionalAuthMiddleware, async
 gameRoutes.get('/team/:team', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const team = c.req.param('team').toUpperCase();
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
 
   try {
     // Get all games where team is home or away

@@ -785,7 +785,8 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                       className="text-left hover:text-blue-500 transition-colors group"
                     >
                       <div className="flex items-center gap-2">
-                        <div className={`w-8 sm:w-9 aspect-[3/4] rounded flex items-center justify-center text-xs sm:text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                        {/* Explicit width/height classes (not an aspect-ratio class) because iOS Safari won't resolve the img's h-full percentage height inside a flex box whose height is derived only from aspect-ratio */}
+                        <div className={`w-8 h-11 sm:w-9 sm:h-12 rounded flex items-center justify-center text-xs sm:text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                           <PlayerAvatar name={comp.yourPlayer.name} headshotUrl={comp.yourPlayer.headshotUrl} isDarkMode={isDarkMode} fallbackClassName="text-xs sm:text-sm font-bold" />
                         </div>
                         <div className="min-w-0">
@@ -847,7 +848,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                             </div>
                             <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{comp.oppPlayer.team}</div>
                           </div>
-                          <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                          <div className={`w-9 h-12 rounded flex items-center justify-center text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                             <PlayerAvatar name={comp.oppPlayer.name} headshotUrl={comp.oppPlayer.headshotUrl} isDarkMode={isDarkMode} fallbackClassName="text-sm font-bold" />
                           </div>
                         </div>
@@ -883,7 +884,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.position}</span>
-                      <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                      <div className={`w-9 h-12 rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
                         <PlayerAvatar name={player.name} headshotUrl={player.headshotUrl} isDarkMode={isDarkMode} fallbackClassName="text-xs font-bold" />
                       </div>
                       <div>
@@ -931,7 +932,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className={`text-xs w-8 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{player.position}</span>
-                      <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                      <div className={`w-9 h-12 rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
                         <PlayerAvatar name={player.name} headshotUrl={player.headshotUrl} isDarkMode={isDarkMode} fallbackClassName="text-xs font-bold" />
                       </div>
                       <div>

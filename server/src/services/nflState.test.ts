@@ -3,9 +3,12 @@ import {
   isGameFinished,
   resolveWeekFromSchedule,
   resolveWeekFromCalendar,
+  resolveSeasonInFocus,
   getNflState,
   clearNflStateCache,
+  pickLeagueWeek,
   type ScheduleGame,
+  type NflState,
 } from './nflState';
 
 function game(overrides: Partial<ScheduleGame> & { week: number; gameTime: Date }): ScheduleGame {
@@ -170,6 +173,18 @@ describe('resolveWeekFromCalendar', () => {
   });
 });
 
+describe('resolveSeasonInFocus', () => {
+  it('is the season in progress during the regular season and playoffs', () => {
+    expect(resolveSeasonInFocus(new Date('2026-09-15T18:00:00Z'))).toBe(2026);
+    expect(resolveSeasonInFocus(new Date('2027-01-20T12:00:00Z'))).toBe(2026);
+  });
+  it('is the upcoming season during the preseason and the offseason', () => {
+    expect(resolveSeasonInFocus(new Date('2026-08-20T12:00:00Z'))).toBe(2026);
+    expect(resolveSeasonInFocus(new Date('2026-05-01T12:00:00Z'))).toBe(2026);
+    expect(resolveSeasonInFocus(new Date('2027-03-01T12:00:00Z'))).toBe(2027);
+  });
+});
+
 describe('getNflState phase comes from `now`, not the wall clock', () => {
   const neverQueried = {
     query: { nflGames: { findMany: async () => { throw new Error('should not query in this phase'); } } },
@@ -225,6 +240,37 @@ describe('getNflState partial schedule guard', () => {
       fetchSpy.mockRestore();
       clearNflStateCache();
     }
+  });
+});
+
+describe('pickLeagueWeek', () => {
+  const state: NflState = {
+    season: 2026,
+    week: 2,
+    seasonType: 'regular',
+    source: 'calendar',
+    resolvedAt: '2026-09-15T18:00:00.000Z',
+  };
+
+  it('current-season league -> uses the resolver state week/season', () => {
+    expect(pickLeagueWeek(state, { seasonYear: 2026, currentWeek: 7 })).toEqual({ week: 2, season: 2026 });
+  });
+
+  it('past-season (archived) league -> uses the league\'s own stored week/season', () => {
+    expect(pickLeagueWeek(state, { seasonYear: 2025, currentWeek: 14 })).toEqual({ week: 14, season: 2025 });
+  });
+
+  it('null league -> uses the resolver state week/season', () => {
+    expect(pickLeagueWeek(state, null)).toEqual({ week: 2, season: 2026 });
+  });
+
+  it('past-season league with a null currentWeek -> clamps to week 1', () => {
+    expect(pickLeagueWeek(state, { seasonYear: 2025, currentWeek: null })).toEqual({ week: 1, season: 2025 });
+  });
+
+  it('past-season league with an out-of-range currentWeek -> clamps to 1..18', () => {
+    expect(pickLeagueWeek(state, { seasonYear: 2025, currentWeek: 25 })).toEqual({ week: 18, season: 2025 });
+    expect(pickLeagueWeek(state, { seasonYear: 2025, currentWeek: 0 })).toEqual({ week: 1, season: 2025 });
   });
 });
 

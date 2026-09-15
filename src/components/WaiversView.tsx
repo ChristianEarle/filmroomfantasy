@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLeagueContext } from '../context/LeagueContext';
 import { useNflState } from '../hooks';
 import api from '../services/api';
-import { getEffectiveSeason, type APIPlayer } from '../utils/playerUtils';
+import { getEffectiveSeason, clampWeek, type APIPlayer } from '../utils/playerUtils';
 
 interface WaiversViewProps {
   onPlayerClick: (player: Player) => void;
@@ -37,9 +37,7 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
   const nflState = useNflState();
   const currentWeek = useMemo(() => {
     if (league?.seasonYear != null && nflState.season != null && league.seasonYear !== nflState.season) {
-      return league.currentWeek != null && league.currentWeek >= 1 && league.currentWeek <= 18
-        ? league.currentWeek
-        : null;
+      return clampWeek(league.currentWeek);
     }
     return nflState.week;
   }, [league?.seasonYear, league?.currentWeek, nflState.season, nflState.week]);

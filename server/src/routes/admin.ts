@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, or, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, sql, gte } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { getMappedPlayers, fetchSleeperPlayers, buildHeadshotUrl, sleep } from '../services/sleeper';
 import { fetchTwitterTweets } from '../services/twitter';
@@ -15,6 +15,8 @@ import {
 } from '../services/draftRankings';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
 import { syncSleeperLeague } from '../services/leagueSync';
+import { resolveWeekFromCalendar, getNflState } from '../services/nflState';
+import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -1001,10 +1003,7 @@ adminRoutes.post('/sync-stats', async (c) => {
     } catch {
       // No body or invalid JSON - use defaults
     }
-    // Dynamic default: NFL season spans Sep–Feb, so Jan–Jul = previous year
-    const now = new Date();
-    const defaultSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
-    const seasonYear = body.seasonYear ?? defaultSeason;
+    const seasonYear = body.seasonYear ?? getDefaultSeason();
     if (seasonYear < 2000 || seasonYear > 2100) {
       return c.json({ error: 'Invalid season year' }, 400);
     }
@@ -1016,8 +1015,8 @@ adminRoutes.post('/sync-stats', async (c) => {
     } else if (typeof body.week === 'number' && body.week >= 1 && body.week <= 22) {
       weeksToSync = [body.week];
     } else {
-      // Default to week 1 (not all 18)
-      weeksToSync = [1];
+      // Default to the resolver's current week (not all 18)
+      weeksToSync = [(await getNflState(db)).week];
     }
 
     if (weeksToSync.length === 0) {
@@ -1195,7 +1194,7 @@ adminRoutes.post('/sync-projections', async (c) => {
       // No body - use defaults
     }
 
-    const seasonYear = body.seasonYear ?? new Date().getFullYear();
+    const seasonYear = body.seasonYear ?? getDefaultSeason();
     const scoringFormats = body.scoringFormats ?? ['ppr', 'half_ppr', 'standard'];
     const source = body.source || 'auto'; // 'props' | 'sleeper' | 'auto'
 
@@ -1208,11 +1207,7 @@ adminRoutes.post('/sync-projections', async (c) => {
     } else if (body.week) {
       weeksToSync = [body.week];
     } else {
-      const anyLeague = await db.query.leagues.findFirst({
-        columns: { currentWeek: true },
-        orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
-      });
-      const currentWeek = anyLeague?.currentWeek || 1;
+      const currentWeek = (await getNflState(db)).week;
       weeksToSync = [currentWeek];
     }
 
@@ -1691,13 +1686,16 @@ adminRoutes.post('/sync-player-props', async (c) => {
     return c.json({ error: 'Odds API not configured' }, 500);
   }
 
-  const body = await c.req.json<{ week: number; date?: string; gameIndex?: number; eventId?: string; season?: number; snapshotTime?: string; skipProjections?: boolean }>();
-  const { week, date, gameIndex, eventId } = body;
+  const body = await c.req.json<{ week?: number; date?: string; gameIndex?: number; eventId?: string; season?: number; snapshotTime?: string; skipProjections?: boolean }>();
+  const { date, gameIndex, eventId } = body;
   const { getNflSeasonContext } = await import('../services/espn');
   const seasonYear = body.season || getNflSeasonContext().season;
   const providedSnapshotTime = body.snapshotTime;
+  // Missing week defaults to the resolver's current week rather than being
+  // rejected; an explicitly out-of-range week is still an error.
+  const week = body.week ?? (await getNflState(db)).week;
 
-  if (!week || week < 1 || week > 18) {
+  if (!Number.isInteger(week) || week < 1 || week > 18) {
     return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
   }
 
@@ -1927,7 +1925,7 @@ adminRoutes.post('/generate-projections', async (c) => {
 
   const body = await c.req.json().catch(() => ({}));
   const week = body.week;
-  const seasonYear = body.season || 2025;
+  const seasonYear = body.season || getDefaultSeason();
 
   if (!week) {
     return c.json({ error: 'week is required' }, 400);
@@ -2256,15 +2254,11 @@ adminRoutes.post('/sync-market-projections', async (c) => {
 
     let asOfWeek = body.asOfWeek;
     if (asOfWeek == null) {
-      const anyLeague = await db.query.leagues.findFirst({
-        columns: { currentWeek: true },
-        orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
-      });
-      const currentWeek = anyLeague?.currentWeek || 1;
+      const currentWeek = (await getNflState(db)).week;
       // asOfWeek means "last COMPLETED week" — computeRemainingGames treats
       // `week <= asOfWeek` as already played, so using the week *in progress*
-      // (league.currentWeek) here would count that week's games as played
-      // before they've happened. 0 before Week 1 (nothing completed yet).
+      // (the resolver's current week) here would count that week's games as
+      // played before they've happened. 0 before Week 1 (nothing completed yet).
       asOfWeek = Math.max(0, currentWeek - 1);
     }
 
@@ -2821,6 +2815,8 @@ adminRoutes.post('/generate-draft-rankings', async (c) => {
     const rankingType = (body.type || 'redraft') as 'redraft' | 'dynasty' | 'dynasty_rookie';
     const scoringFormat = (body.scoring || 'ppr') as 'ppr' | 'half-ppr' | 'standard';
     const superflex = body.superflex ?? false;
+    // Draft rankings target the upcoming draft class, which the calendar
+    // year — not the NFL season resolver — identifies correctly.
     const seasonYear = body.season || new Date().getFullYear();
 
     if (!['redraft', 'dynasty', 'dynasty_rookie'].includes(rankingType)) {
@@ -2944,10 +2940,17 @@ adminRoutes.get('/ranking-batch-jobs', async (c) => {
  * corrected from their own `league_members.externalUsername` regardless of
  * who (or what cron) triggers the sync.
  *
+ * Also drives season rollover: Sleeper mints a new `league_id` every
+ * season, so a `leagues` row can lag a full year behind on `externalId`/
+ * `seasonYear`. We select rows down to `season - 1` (not just `season`) so
+ * last season's leagues are still considered here — `syncSleeperLeague`
+ * itself detects the lag from the Sleeper league metadata and follows
+ * `previous_league_id` forward to the successor league before syncing.
+ *
  * Requires X-Admin-Key header matching SYNC_SECRET env var (or JWT admin).
  * Body: { leagueId?: string, platform?: 'sleeper', season?: number, limit?: number }
  * - leagueId: sync just this one league (season/limit are ignored)
- * - season: defaults to the current NFL season (Sep–Jan rolls into the new year)
+ * - season: defaults to the app's current NFL season
  * - limit: max leagues processed this call, default 25, ordered by
  *   `updatedAt` ascending so the least-recently-synced leagues go first and
  *   one slow/broken league can't starve the rest across repeated cron runs
@@ -2974,10 +2977,7 @@ adminRoutes.post('/sync-leagues', async (c) => {
       return c.json({ error: `Unsupported platform "${platform}" — only "sleeper" is implemented` }, 400);
     }
 
-    // Dynamic default: NFL season spans Sep–Feb, so Jan–Jul = previous year
-    const now = new Date();
-    const defaultSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
-    const season = body.season ?? defaultSeason;
+    const season = body.season ?? resolveWeekFromCalendar(new Date()).season;
     if (season < 2000 || season > 2100) {
       return c.json({ error: 'Invalid season year' }, 400);
     }
@@ -2990,14 +2990,20 @@ adminRoutes.post('/sync-leagues', async (c) => {
       leaguesToSync = one ? [one] : [];
     } else {
       leaguesToSync = await db.query.leagues.findMany({
-        where: and(eq(schema.leagues.platform, 'sleeper'), eq(schema.leagues.seasonYear, season)),
-        orderBy: (l, { asc }) => [asc(l.updatedAt)],
+        // >= season - 1 (not just === season) so leagues still stamped with
+        // last season's seasonYear get a chance to roll over to their
+        // Sleeper successor instead of never being selected again.
+        where: and(eq(schema.leagues.platform, 'sleeper'), gte(schema.leagues.seasonYear, season - 1)),
+        // Current-season leagues first so never-renewed prior-season rows
+        // can't crowd them out of the per-run limit.
+        orderBy: (l, { asc, desc }) => [desc(l.seasonYear), asc(l.updatedAt)],
         limit,
       });
     }
 
     let synced = 0;
     let skipped = 0;
+    let rolledOver = 0;
     const failed: { leagueId: string; error: string }[] = [];
 
     for (const league of leaguesToSync) {
@@ -3009,8 +3015,9 @@ adminRoutes.post('/sync-leagues', async (c) => {
         const teams = await db.query.teams.findMany({ where: eq(schema.teams.leagueId, league.id) });
         // No acting user — ownership is corrected per known league member
         // inside syncSleeperLeague, not tied to whoever triggers the sync.
-        await syncSleeperLeague(db, { ...league, teams });
+        const result = await syncSleeperLeague(db, { ...league, teams }, { targetSeason: season });
         synced++;
+        if (result.rolledOver) rolledOver++;
       } catch (err) {
         console.error(`[admin] sync-leagues failed for league ${league.id}:`, err);
         failed.push({ leagueId: league.id, error: err instanceof Error ? err.message : String(err) });
@@ -3024,6 +3031,7 @@ adminRoutes.post('/sync-leagues', async (c) => {
     return c.json({
       synced,
       skipped,
+      rolledOver,
       failed,
       totalConsidered: leaguesToSync.length,
     });

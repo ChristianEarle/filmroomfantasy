@@ -8,6 +8,8 @@ import { authService } from '../services';
 import api, { API_ORIGIN, ApiError } from '../services/api';
 import { UpgradeModal } from './UpgradeModal';
 import type { ScoringFormat } from '../services/auth';
+import { useNflState } from '../hooks';
+import { getSeasonInFocus } from '../utils/playerUtils';
 
 interface SettingsViewProps {
   isDarkMode?: boolean;
@@ -31,6 +33,9 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
   const notificationsEnabled = user?.notificationsEnabled ?? true;
   const emailNotificationsEnabled = user?.emailNotificationsEnabled ?? false;
   const emailVerified = !!user?.emailVerifiedAt;
+  // Connecting a league targets the season in focus: platforms open the
+  // upcoming season's leagues during the offseason.
+  const currentSeason = getSeasonInFocus();
 
   // Preference update error state
   const [prefError, setPrefError] = useState<string | null>(null);
@@ -69,7 +74,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
 
   // Manual league ID state
   const [manualLeagueId, setManualLeagueId] = useState('');
-  const [manualSeasonYear, setManualSeasonYear] = useState<number>(new Date().getFullYear());
+  const [manualSeasonYear, setManualSeasonYear] = useState<number>(currentSeason);
   const [fetchedLeague, setFetchedLeague] = useState<ExternalLeague | null>(null);
   const [fetchingLeague, setFetchingLeague] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -176,7 +181,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
     setSleeperLeagues([]);
     setSleeperError(null);
     setManualLeagueId('');
-    setManualSeasonYear(new Date().getFullYear());
+    setManualSeasonYear(currentSeason);
     setFetchedLeague(null);
     setFetchError(null);
     setConnectError(null);
@@ -1044,12 +1049,9 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
                         onChange={(e) => setManualSeasonYear(parseInt(e.target.value, 10))}
                         className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
                       >
-                        {(() => {
-                          const cy = new Date().getFullYear();
-                          return [cy, cy - 1, cy - 2].map((y) => (
-                            <option key={y} value={y}>{y}</option>
-                          ));
-                        })()}
+                        {[currentSeason, currentSeason - 1, currentSeason - 2].map((y) => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
                       </select>
                     </div>
                   )}
