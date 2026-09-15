@@ -328,8 +328,25 @@ async function fetchEspnByWeek(
  * DB to reason about. Never throws — returns null on any failure.
  */
 export async function fetchEspnCurrentWeek(season: number, seasonType: string): Promise<number | null> {
-  const result = await fetchEspnByWeek(undefined, season, seasonType);
-  return result?.resolvedWeek ?? null;
+  try {
+    const params = new URLSearchParams({ season: String(season), seasontype: seasonType });
+    const res = await fetch(`${ESPN_SCOREBOARD}?${params}`, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as any;
+    // Only trust an explicit week number. ESPN answers 200 with no `week`
+    // for out-of-window/completed seasons, and defaulting that to 1 would
+    // reintroduce the "stuck on week 1" symptom the caller exists to avoid.
+    const week = Number(data?.week?.number);
+    return Number.isInteger(week) && week >= 1 ? week : null;
+  } catch (err) {
+    console.warn(`[espn] current-week fetch threw for season=${season}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 /**

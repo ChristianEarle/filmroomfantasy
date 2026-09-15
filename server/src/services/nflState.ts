@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
-import { getNflSeasonContext, fetchEspnCurrentWeek } from './espn';
+import { fetchEspnCurrentWeek } from './espn';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -70,6 +70,13 @@ function laborDay(seasonYear: number): Date {
 }
 
 /**
+ * Fantasy weeks roll over on Tuesday morning US time. 09:00 UTC is 5am ET,
+ * comfortably after the latest Monday Night Football finish, so the
+ * calendar never advances a week while its final game is still on.
+ */
+const WEEK_ROLLOVER_HOUR_UTC = 9;
+
+/**
  * Deterministic, I/O-free last resort: derive the week purely from the
  * calendar. NFL week 1 kicks off the Thursday after Labor Day; each
  * fantasy week runs Tuesday -> Monday, so week 1 starts on the Tuesday
@@ -84,7 +91,8 @@ export function resolveWeekFromCalendar(now: Date): { season: number; week: numb
   // belongs to the season that started the previous calendar year.
   const season = month >= 7 ? year : year - 1;
 
-  const week1Start = new Date(laborDay(season).getTime() + 24 * 3600000); // Tue after Labor Day
+  // Tuesday after Labor Day, at the rollover hour
+  const week1Start = new Date(laborDay(season).getTime() + (24 + WEEK_ROLLOVER_HOUR_UTC) * 3600000);
   if (now.getTime() < week1Start.getTime()) {
     return { season, week: 1, seasonType: 'preseason' };
   }
@@ -121,35 +129,28 @@ export function clearNflStateCache(): void {
 
 /**
  * Resolve the current NFL state (season/week/phase) that the app should
- * default views to. Tries, in order: real schedule rows in the DB, ESPN's
- * own notion of the current week, then a deterministic calendar fallback.
- * Never throws — a resolver failure just falls through to the next one.
+ * default views to. The calendar (driven by `now`, never the wall clock)
+ * decides the phase; during the regular season the week comes from, in
+ * order: real schedule rows in the DB, ESPN's own notion of the current
+ * week, then the calendar. Never throws — a resolver failure just falls
+ * through to the next one.
  */
 export async function getNflState(db: DB, now: Date = new Date()): Promise<NflState> {
   if (cache && now.getTime() - cache.cachedAtMs < CACHE_TTL_MS) {
     return cache.state;
   }
 
-  const ctx = getNflSeasonContext();
-  const calendarFallback = resolveWeekFromCalendar(now);
+  const calendar = resolveWeekFromCalendar(now);
+  const resolvedAt = now.toISOString();
 
   let state: NflState;
 
-  if (ctx.seasontype === '1') {
-    // Calendar says preseason — regular season hasn't started, nothing to
-    // reason about from schedule/ESPN yet.
-    state = { season: ctx.season, week: 1, seasonType: 'preseason', source: 'calendar', resolvedAt: now.toISOString() };
-  } else if (ctx.seasontype !== '2') {
-    // Offseason or postseason (context reports '3' for postseason, or we
-    // fall through to the previous season's regular-season data otherwise):
-    // show the previous season's final week, matching existing behaviour.
-    state = {
-      season: calendarFallback.season,
-      week: 18,
-      seasonType: calendarFallback.seasonType === 'postseason' ? 'postseason' : 'offseason',
-      source: 'calendar',
-      resolvedAt: now.toISOString(),
-    };
+  if (calendar.seasonType !== 'regular') {
+    // Preseason: the regular season hasn't started, so there's nothing to
+    // reason about from the schedule yet — week 1 is the only sensible
+    // default. Postseason/offseason: show the finished season's final week,
+    // matching the app's existing behaviour.
+    state = { ...calendar, source: 'calendar', resolvedAt };
   } else {
     // Regular season: try real schedule rows first.
     let resolvedWeek: number | null = null;
@@ -157,7 +158,7 @@ export async function getNflState(db: DB, now: Date = new Date()): Promise<NflSt
 
     try {
       const rows = await db.query.nflGames.findMany({
-        where: and(eq(schema.nflGames.seasonYear, ctx.season), eq(schema.nflGames.seasonType, 'regular')),
+        where: and(eq(schema.nflGames.seasonYear, calendar.season), eq(schema.nflGames.seasonType, 'regular')),
         columns: { week: true, gameTime: true, isComplete: true, homeScore: true, awayScore: true },
       });
       const fromSchedule = resolveWeekFromSchedule(rows, now);
@@ -178,7 +179,7 @@ export async function getNflState(db: DB, now: Date = new Date()): Promise<NflSt
 
     if (resolvedWeek == null) {
       try {
-        const espnWeek = await fetchEspnCurrentWeek(ctx.season, ctx.seasontype);
+        const espnWeek = await fetchEspnCurrentWeek(calendar.season, '2');
         if (espnWeek != null) {
           resolvedWeek = espnWeek;
           source = 'espn';
@@ -189,12 +190,12 @@ export async function getNflState(db: DB, now: Date = new Date()): Promise<NflSt
     }
 
     if (resolvedWeek == null) {
-      resolvedWeek = calendarFallback.week;
+      resolvedWeek = calendar.week;
       source = 'calendar';
     }
 
     const clampedWeek = Math.min(18, Math.max(1, resolvedWeek));
-    state = { season: ctx.season, week: clampedWeek, seasonType: 'regular', source, resolvedAt: now.toISOString() };
+    state = { season: calendar.season, week: clampedWeek, seasonType: 'regular', source, resolvedAt };
   }
 
   cache = { state, cachedAtMs: now.getTime() };

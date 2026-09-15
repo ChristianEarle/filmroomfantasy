@@ -305,7 +305,16 @@ gameRoutes.get('/slate', optionalAuthMiddleware, async (c) => {
   const season = ctx.season;
   // No explicit week requested — resolve today's actual current week
   // instead of guessing from the calendar month (see services/nflState.ts).
-  const effectiveWeek = week ?? (await getNflState(db)).week;
+  // In the offseason show the finished season's final week; in the
+  // preseason and playoffs leave the week undefined so ESPN serves its
+  // live scoreboard for that phase (regular-season week numbers can't
+  // address those games).
+  const state = week == null ? await getNflState(db) : null;
+  const effectiveWeek = week ?? (
+    state?.seasonType === 'regular' ? state.week
+      : state?.seasonType === 'offseason' ? 18
+        : undefined
+  );
   const seasontype = effectiveWeek != null && effectiveWeek >= 1 && effectiveWeek <= 18 ? '2' : ctx.seasontype;
 
   try {

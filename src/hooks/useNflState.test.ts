@@ -29,11 +29,30 @@ describe('useNflState', () => {
     const { useNflState } = await import('./useNflState');
     const { result } = renderHook(() => useNflState());
 
-    // Seeded immediately, before the refresh fetch resolves.
+    // Seeded immediately, and a cache this fresh (< 5 min) is not refetched.
     expect(result.current.week).toBe(2);
     expect(result.current.season).toBe(2026);
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(h.getNflState).toHaveBeenCalledTimes(0);
+  });
+
+  it('seeds from an older cache entry but refreshes it from the API once', async () => {
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ state: { ...sampleState, week: 1 }, cachedAtMs: tenMinutesAgo }));
+    h.getNflState.mockResolvedValue(sampleState);
+
+    const { useNflState } = await import('./useNflState');
+    const first = renderHook(() => useNflState());
+    expect(first.result.current.week).toBe(1); // seeded synchronously
+
+    await waitFor(() => expect(first.result.current.week).toBe(2));
+    expect(h.getNflState).toHaveBeenCalledTimes(1);
+
+    // A second mount shortly after reuses the freshly fetched value.
+    const second = renderHook(() => useNflState());
+    expect(second.result.current.week).toBe(2);
+    await waitFor(() => expect(second.result.current.isLoading).toBe(false));
     expect(h.getNflState).toHaveBeenCalledTimes(1);
   });
 

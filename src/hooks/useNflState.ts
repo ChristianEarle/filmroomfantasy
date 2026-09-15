@@ -3,20 +3,23 @@ import { gameService, type NflState } from '../services/games';
 
 const STORAGE_KEY = 'filmroom_nfl_state';
 const CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+// Matches the server's own cache TTL — no point asking more often than it
+// can answer differently.
+const REFRESH_TTL_MS = 5 * 60 * 1000;
 
 interface CachedEntry {
   state: NflState;
   cachedAtMs: number;
 }
 
-function readCache(): NflState | null {
+function readCache(): CachedEntry | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedEntry> | null;
     if (!parsed || typeof parsed.cachedAtMs !== 'number' || !parsed.state) return null;
     if (Date.now() - parsed.cachedAtMs > CACHE_MAX_AGE_MS) return null;
-    return parsed.state;
+    return { state: parsed.state, cachedAtMs: parsed.cachedAtMs };
   } catch {
     // Private browsing, blocked storage, corrupt entry, etc. — just skip the seed.
     return null;
@@ -35,7 +38,11 @@ function writeCache(state: NflState): void {
 // Module-level singleton: every component calling useNflState() shares one
 // fetch per page load instead of each week-scoped view hitting the API on
 // its own, and a resolved value keeps every caller in sync via subscribers.
-let sharedState: NflState | null = readCache();
+const seed = readCache();
+let sharedState: NflState | null = seed?.state ?? null;
+// When the shared value was last confirmed by the API (or the cache it
+// came from); a fresh value is reused instead of refetched on every mount.
+let sharedFetchedAtMs: number = seed?.cachedAtMs ?? 0;
 let inFlight: Promise<NflState> | null = null;
 const subscribers = new Set<() => void>();
 
@@ -58,7 +65,8 @@ export function resolveWeekFromCalendar(now: Date = new Date()): NflState {
   const sept1 = new Date(Date.UTC(season, 8, 1));
   const daysUntilMonday = (8 - sept1.getUTCDay()) % 7;
   const laborDay = Date.UTC(season, 8, 1 + daysUntilMonday);
-  const week1Start = laborDay + 24 * 3600000;
+  // Tuesday after Labor Day at 09:00 UTC (5am ET), safely after Monday Night Football
+  const week1Start = laborDay + (24 + 9) * 3600000;
   const msPerWeek = 7 * 24 * 3600000;
   const postseasonStart = week1Start + 18 * msPerWeek;
   const resolvedAt = now.toISOString();
@@ -76,10 +84,14 @@ export function resolveWeekFromCalendar(now: Date = new Date()): NflState {
 
 function fetchNflState(): Promise<NflState> {
   if (inFlight) return inFlight;
+  if (sharedState != null && Date.now() - sharedFetchedAtMs < REFRESH_TTL_MS) {
+    return Promise.resolve(sharedState);
+  }
   inFlight = gameService
     .getNflState()
     .then((state) => {
       sharedState = state;
+      sharedFetchedAtMs = Date.now();
       writeCache(state);
       notifySubscribers();
       return state;

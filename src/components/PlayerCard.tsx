@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type CSSProperties } from 'react';
+import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Sparkles, Lock } from 'lucide-react';
 import { Player } from '../App';
@@ -115,6 +115,15 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   // which could be the wrong season's week 1 if no week was passed in.
   const { week: nflWeek } = useNflState();
   const [selectedWeek, setSelectedWeek] = useState<number>(propsCurrentWeek || nflWeek || 1);
+  // If the card opened before the NFL week resolved (no week prop, no
+  // cached state), adopt the real week once it arrives — unless the user
+  // has already picked one from the dropdown.
+  const weekTouchedRef = useRef(false);
+  useEffect(() => {
+    if (propsCurrentWeek == null && nflWeek != null && !weekTouchedRef.current) {
+      setSelectedWeek(nflWeek);
+    }
+  }, [propsCurrentWeek, nflWeek]);
   const [projection, setProjection] = useState<PlayerProjection | null>(null);
   const [projectionLoading, setProjectionLoading] = useState(true);
 
@@ -487,7 +496,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       <span>{player.team} • {player.position} •</span>
                       <select
                         value={selectedWeek}
-                        onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                        onChange={(e) => { weekTouchedRef.current = true; setSelectedWeek(Number(e.target.value)); }}
                         className={`text-sm font-medium rounded px-1.5 py-0.5 cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}
                       >
                         {Array.from({ length: 18 }, (_, i) => i + 1).map((w) => (

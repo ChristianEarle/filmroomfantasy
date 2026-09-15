@@ -138,6 +138,13 @@ describe('resolveWeekFromCalendar', () => {
     });
   });
 
+  it('does not roll the week over while Monday Night Football is still on', () => {
+    // 02:00 UTC Tuesday is 10pm ET Monday — mid-game. Still week 2.
+    expect(resolveWeekFromCalendar(new Date('2026-09-22T02:00:00Z')).week).toBe(2);
+    // By Tuesday morning US time the week has rolled.
+    expect(resolveWeekFromCalendar(new Date('2026-09-22T10:00:00Z')).week).toBe(3);
+  });
+
   it('2026-08-20 -> preseason, week 1', () => {
     expect(resolveWeekFromCalendar(new Date('2026-08-20T12:00:00Z'))).toEqual({
       season: 2026, week: 1, seasonType: 'preseason',
@@ -160,6 +167,33 @@ describe('resolveWeekFromCalendar', () => {
     expect(resolveWeekFromCalendar(new Date('2026-05-01T12:00:00Z'))).toEqual({
       season: 2025, week: 18, seasonType: 'offseason',
     });
+  });
+});
+
+describe('getNflState phase comes from `now`, not the wall clock', () => {
+  const neverQueried = {
+    query: { nflGames: { findMany: async () => { throw new Error('should not query in this phase'); } } },
+  } as any;
+
+  it('preseason -> week 1 of the upcoming season without touching the schedule', async () => {
+    clearNflStateCache();
+    const state = await getNflState(neverQueried, new Date('2026-08-20T12:00:00Z'));
+    expect(state).toMatchObject({ season: 2026, week: 1, seasonType: 'preseason', source: 'calendar' });
+    clearNflStateCache();
+  });
+
+  it('offseason -> final week of the finished season', async () => {
+    clearNflStateCache();
+    const state = await getNflState(neverQueried, new Date('2026-05-01T12:00:00Z'));
+    expect(state).toMatchObject({ season: 2025, week: 18, seasonType: 'offseason', source: 'calendar' });
+    clearNflStateCache();
+  });
+
+  it('postseason -> week 18 of the season that just ended', async () => {
+    clearNflStateCache();
+    const state = await getNflState(neverQueried, new Date('2027-01-20T12:00:00Z'));
+    expect(state).toMatchObject({ season: 2026, week: 18, seasonType: 'postseason', source: 'calendar' });
+    clearNflStateCache();
   });
 });
 
