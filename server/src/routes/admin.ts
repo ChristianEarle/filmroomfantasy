@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, or, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, sql, gte } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { getMappedPlayers, fetchSleeperPlayers, buildHeadshotUrl, sleep } from '../services/sleeper';
 import { fetchTwitterTweets } from '../services/twitter';
@@ -15,6 +15,7 @@ import {
 } from '../services/draftRankings';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
 import { syncSleeperLeague } from '../services/leagueSync';
+import { resolveWeekFromCalendar } from '../services/nflState';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -2944,10 +2945,17 @@ adminRoutes.get('/ranking-batch-jobs', async (c) => {
  * corrected from their own `league_members.externalUsername` regardless of
  * who (or what cron) triggers the sync.
  *
+ * Also drives season rollover: Sleeper mints a new `league_id` every
+ * season, so a `leagues` row can lag a full year behind on `externalId`/
+ * `seasonYear`. We select rows down to `season - 1` (not just `season`) so
+ * last season's leagues are still considered here — `syncSleeperLeague`
+ * itself detects the lag from the Sleeper league metadata and follows
+ * `previous_league_id` forward to the successor league before syncing.
+ *
  * Requires X-Admin-Key header matching SYNC_SECRET env var (or JWT admin).
  * Body: { leagueId?: string, platform?: 'sleeper', season?: number, limit?: number }
  * - leagueId: sync just this one league (season/limit are ignored)
- * - season: defaults to the current NFL season (Sep–Jan rolls into the new year)
+ * - season: defaults to the app's current NFL season
  * - limit: max leagues processed this call, default 25, ordered by
  *   `updatedAt` ascending so the least-recently-synced leagues go first and
  *   one slow/broken league can't starve the rest across repeated cron runs
@@ -2974,10 +2982,7 @@ adminRoutes.post('/sync-leagues', async (c) => {
       return c.json({ error: `Unsupported platform "${platform}" — only "sleeper" is implemented` }, 400);
     }
 
-    // Dynamic default: NFL season spans Sep–Feb, so Jan–Jul = previous year
-    const now = new Date();
-    const defaultSeason = now.getMonth() <= 6 ? now.getFullYear() - 1 : now.getFullYear();
-    const season = body.season ?? defaultSeason;
+    const season = body.season ?? resolveWeekFromCalendar(new Date()).season;
     if (season < 2000 || season > 2100) {
       return c.json({ error: 'Invalid season year' }, 400);
     }
@@ -2990,7 +2995,10 @@ adminRoutes.post('/sync-leagues', async (c) => {
       leaguesToSync = one ? [one] : [];
     } else {
       leaguesToSync = await db.query.leagues.findMany({
-        where: and(eq(schema.leagues.platform, 'sleeper'), eq(schema.leagues.seasonYear, season)),
+        // >= season - 1 (not just === season) so leagues still stamped with
+        // last season's seasonYear get a chance to roll over to their
+        // Sleeper successor instead of never being selected again.
+        where: and(eq(schema.leagues.platform, 'sleeper'), gte(schema.leagues.seasonYear, season - 1)),
         orderBy: (l, { asc }) => [asc(l.updatedAt)],
         limit,
       });
@@ -2998,6 +3006,7 @@ adminRoutes.post('/sync-leagues', async (c) => {
 
     let synced = 0;
     let skipped = 0;
+    let rolledOver = 0;
     const failed: { leagueId: string; error: string }[] = [];
 
     for (const league of leaguesToSync) {
@@ -3009,8 +3018,9 @@ adminRoutes.post('/sync-leagues', async (c) => {
         const teams = await db.query.teams.findMany({ where: eq(schema.teams.leagueId, league.id) });
         // No acting user — ownership is corrected per known league member
         // inside syncSleeperLeague, not tied to whoever triggers the sync.
-        await syncSleeperLeague(db, { ...league, teams });
+        const result = await syncSleeperLeague(db, { ...league, teams }, { targetSeason: season });
         synced++;
+        if (result.rolledOver) rolledOver++;
       } catch (err) {
         console.error(`[admin] sync-leagues failed for league ${league.id}:`, err);
         failed.push({ leagueId: league.id, error: err instanceof Error ? err.message : String(err) });
@@ -3024,6 +3034,7 @@ adminRoutes.post('/sync-leagues', async (c) => {
     return c.json({
       synced,
       skipped,
+      rolledOver,
       failed,
       totalConsidered: leaguesToSync.length,
     });

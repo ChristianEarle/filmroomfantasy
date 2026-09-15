@@ -114,3 +114,38 @@ export function computeFetchWindow({
   const fetchOffset = (sortByComputed && includeStats) || availableOnly ? 0 : offset;
   return { fetchLimit, fetchOffset };
 }
+
+export interface ShouldFallBackToPriorSeasonArgs {
+  /** Whether any props were found for the requested season+week. */
+  propsForRequestedWeek: boolean;
+  /**
+   * Whether the requested season has ANY props at all (any week), used to
+   * tell "this season hasn't started yet" (offseason, ok to fall back) apart
+   * from "this season is underway but this week's lines aren't synced yet"
+   * (not ok to fall back — that would silently show last year's settled
+   * lines for an upcoming game).
+   */
+  seasonHasAnyProps: boolean;
+}
+
+/**
+ * Decides whether GET /players/:id/props (and the /props list route) should
+ * walk back to a prior season's lines when the requested season/week has no
+ * props.
+ *
+ * - Props already found for the requested week -> never fall back.
+ * - No props this week, and the season has none at all (e.g. the 2026
+ *   season hasn't had any lines posted yet) -> fall back, this is the
+ *   offseason case the fallback exists for.
+ * - No props this week, but the season DOES have props for other weeks
+ *   (mid-season, this week just hasn't synced yet) -> do NOT fall back;
+ *   the caller should report `linesPosted: false` instead of showing last
+ *   season's settled results.
+ */
+export function shouldFallBackToPriorSeason({
+  propsForRequestedWeek,
+  seasonHasAnyProps,
+}: ShouldFallBackToPriorSeasonArgs): boolean {
+  if (propsForRequestedWeek) return false;
+  return !seasonHasAnyProps;
+}

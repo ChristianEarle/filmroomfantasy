@@ -329,6 +329,19 @@ function AppContent() {
       setCurrentWeek(defaultWeek);
     }
   }, [league?.id, defaultWeek]);
+
+  // Season year passed down to PlayerCard/PlayerProfileView. Mirrors the
+  // defaultWeek rule above: only pin the card to the league's season when
+  // that league is actually a PAST season. A current-season league must
+  // never pin the card to a stale seasonYear (e.g. one that hasn't rolled
+  // over yet), or the card falls back to hardcoded/stale defaults instead of
+  // picking up the live current NFL season itself.
+  const cardSeasonYear = useMemo(() => {
+    if (league?.seasonYear != null && nflSeason != null && league.seasonYear !== nflSeason) {
+      return league.seasonYear;
+    }
+    return undefined;
+  }, [league?.seasonYear, nflSeason]);
   // Initialize activeView from URL so direct navigation works
   const [activeView, setActiveView] = useState<'Landing' | 'Board' | 'Team' | 'Matchup' | 'Waivers' | 'Home' | 'GameSlate' | 'Trends' | 'Playoffs' | 'Settings' | 'Profile' | 'Login' | 'AllPlayers' | 'Pricing' | 'TradeAnalyzer' | 'DraftRankings' | 'LeagueAnalyzer' | 'Admin' | 'Articles' | 'ArticleDetail' | 'PlayerProfile' | 'Privacy' | 'Terms' | 'CookiePolicy' | 'DMCA' | 'Refunds' | 'DoNotSell' | 'Disclaimer' | 'Accessibility' | 'AcceptableUse' | 'NotFound'>(() => getViewFromURL() as any);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
@@ -896,7 +909,7 @@ function AppContent() {
                   <PlayerProfileView
                     playerId={playerProfile.id}
                     isDarkMode={isDarkMode}
-                    seasonYear={league?.seasonYear}
+                    seasonYear={cardSeasonYear}
                     currentWeek={currentWeek}
                     scoringFormat={league?.scoringFormat}
                     onBack={handleBackFromPlayerProfile}
@@ -998,7 +1011,7 @@ function AppContent() {
           player={selectedPlayer}
           onClose={() => setSelectedPlayer(null)}
           isDarkMode={isDarkMode}
-          seasonYear={league?.seasonYear}
+          seasonYear={cardSeasonYear}
           currentWeek={currentWeek ?? undefined}
           scoringFormat={league?.scoringFormat}
           onViewFullProfile={handleOpenPlayerProfile}

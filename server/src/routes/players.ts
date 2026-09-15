@@ -15,7 +15,8 @@ import {
   type ConversationTurn,
 } from '../utils/prompt';
 import { buildProjectionsFromProps } from '../services/projections';
-import { resolveWeekComplete, computeFetchWindow } from './playersLogic';
+import { resolveWeekComplete, computeFetchWindow, shouldFallBackToPriorSeason } from './playersLogic';
+import { resolveWeekFromCalendar } from '../services/nflState';
 import { resolveMarketAsOfWeek } from '../services/marketRankingsQueries';
 import { buildPlayerCard, buildPlayerCards } from '../services/playerCard';
 import { extractMentionedPlayers, type MentionCandidate } from '../utils/playerMentions';
@@ -1944,7 +1945,9 @@ playerRoutes.post(
 playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1', 10);
-  const season = parseInt(c.req.query('season') || '2025', 10);
+  // Default to the current NFL season (not a hardcoded year) so a client
+  // that omits `season` gets this week's lines instead of a stale season.
+  const season = parseInt(c.req.query('season') || String(resolveWeekFromCalendar(new Date()).season), 10);
   const position = c.req.query('position')?.toUpperCase();
 
   if (!week || week < 1 || week > 18) {
@@ -2483,7 +2486,9 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const idParam = c.req.param('id');
   const week = parseInt(c.req.query('week') || '1', 10);
-  const season = parseInt(c.req.query('season') || '2025', 10);
+  // Default to the current NFL season (not a hardcoded year) so a client
+  // that omits `season` gets this week's lines instead of a stale season.
+  const season = parseInt(c.req.query('season') || String(resolveWeekFromCalendar(new Date()).season), 10);
 
   if (!week || week < 1 || week > 18) {
     return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
@@ -2521,26 +2526,47 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
       return rows.filter(r => normalizePlayerName(r.playerName) === targetNormalized);
     };
 
-    // Try the requested season first. If no props exist (e.g. we're in the
-    // 2026 offseason and no 2026 lines have been posted yet), fall back to
-    // the most recent season that has props for this player. The UI shows a
-    // "last season" badge via isFallback so users know it's historical.
+    // Try the requested season/week first. If nothing is found there, we
+    // need to tell two very different situations apart:
+    //   - The season hasn't started yet (e.g. the 2026 offseason, no 2026
+    //     lines posted at all) -> fall back to the most recent season that
+    //     has props for this player. The UI shows a "last season" badge via
+    //     isFallback so users know it's historical.
+    //   - The season is underway but THIS week's lines simply haven't been
+    //     synced yet (e.g. week 2 lines post a few days before kickoff) ->
+    //     do NOT fall back to last season's settled results; report
+    //     linesPosted: false instead so the UI can say "check back later".
     let effectiveSeason = season;
     let isFallback = false;
+    let linesPosted = true;
     let props = await findProps(season);
 
     if (props.length === 0) {
-      // Walk back up to 3 prior seasons looking for props for this player.
-      // Each findProps call is already scoped to a single week+season so
-      // the loop stays cheap and bounded.
-      for (let s = season - 1; s >= season - 3; s--) {
-        const found = await findProps(s);
-        if (found.length > 0) {
-          effectiveSeason = s;
-          isFallback = true;
-          props = found;
-          break;
+      // Cheap existence check across the whole season (any week, any
+      // player) to distinguish "season hasn't started" from "this week
+      // isn't synced yet" — see shouldFallBackToPriorSeason.
+      const anySeasonProp = await db.query.playerProps.findFirst({
+        where: eq(schema.playerProps.season, season),
+        columns: { id: true },
+      });
+      const seasonHasAnyProps = !!anySeasonProp;
+
+      if (shouldFallBackToPriorSeason({ propsForRequestedWeek: false, seasonHasAnyProps })) {
+        // Walk back up to 3 prior seasons looking for props for this player.
+        // Each findProps call is already scoped to a single week+season so
+        // the loop stays cheap and bounded.
+        for (let s = season - 1; s >= season - 3; s--) {
+          const found = await findProps(s);
+          if (found.length > 0) {
+            effectiveSeason = s;
+            isFallback = true;
+            props = found;
+            break;
+          }
         }
+      } else {
+        // Season is underway but this week's lines aren't posted yet.
+        linesPosted = false;
       }
     }
 
@@ -2594,6 +2620,10 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
       season: effectiveSeason,
       requestedSeason: season,
       isFallback,
+      // false only when the season is underway but this week's lines
+      // haven't been synced yet; true otherwise (including the fallback
+      // and normal "found this week's lines" cases).
+      linesPosted,
     });
   } catch (error) {
     console.error('Get player props error:', error);

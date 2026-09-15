@@ -309,7 +309,8 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                         </td>
                         <td className="px-2 sm:px-4 py-2 sm:py-3">
                           <div className="flex items-center gap-2 sm:gap-3">
-                            <div className={`w-8 sm:w-9 aspect-[3/4] rounded flex items-center justify-center text-xs sm:text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                            {/* Explicit width/height classes (not an aspect-ratio class) because iOS Safari won't resolve the img's h-full percentage height inside a flex box whose height is derived only from aspect-ratio */}
+                          <div className={`w-8 h-11 sm:w-9 sm:h-12 rounded flex items-center justify-center text-xs sm:text-sm font-bold border overflow-hidden flex-shrink-0 group-hover:border-blue-500 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                               <span className={`text-xs sm:text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                             </div>
                             <div className="flex items-center gap-2 min-w-0">
@@ -384,7 +385,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`w-9 aspect-[3/4] rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        <div className={`w-9 h-12 rounded flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0 transition-colors ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
                           <span className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{player.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
                         </div>
                         <div>
