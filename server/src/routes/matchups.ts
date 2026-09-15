@@ -417,10 +417,16 @@ export async function findCurrentMatchupForTeam(
   });
   if (!league) return null;
 
+  // Default to the live NFL week (a current-season league's stored
+  // currentWeek is only as fresh as its last sync) — the full season's
+  // pairings are imported on every sync, so the live week's matchup exists
+  // even before the week itself has been re-synced.
+  const targetWeek = week ?? (await resolveLeagueWeek(db, league)).week;
+
   let matchup = await db.query.matchups.findFirst({
     where: and(
       eq(schema.matchups.leagueId, leagueId),
-      eq(schema.matchups.week, week ?? league.currentWeek),
+      eq(schema.matchups.week, targetWeek),
       or(
         eq(schema.matchups.homeTeamId, teamId),
         eq(schema.matchups.awayTeamId, teamId)
@@ -534,11 +540,14 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
   try {
     const league = await db.query.leagues.findFirst({
       where: eq(schema.leagues.id, leagueId),
-      columns: { currentWeek: true },
+      columns: { currentWeek: true, seasonYear: true },
     });
     if (!league) {
       return c.json({ error: 'League not found' }, 404);
     }
+    // Same rule findCurrentMatchupForTeam uses for its default, so the week
+    // picker's "current" marker matches the matchup actually shown.
+    const { week: currentWeek } = await resolveLeagueWeek(db, league);
 
     // Resolve via externalOwnerId (reliable for synced leagues, and
     // unaffected by a team's ownerId being null/mis-set) before falling
@@ -558,12 +567,12 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
         error: week !== undefined
           ? `No matchup synced for week ${week} yet`
           : 'No matchup found for current week',
-        currentWeek: league.currentWeek,
+        currentWeek,
         availableWeeks,
       }, 404);
     }
 
-    return c.json({ ...result, currentWeek: league.currentWeek, availableWeeks });
+    return c.json({ ...result, currentWeek, availableWeeks });
   } catch (error) {
     console.error('Get current matchup error:', error);
     return c.json({ error: 'Failed to fetch current matchup' }, 500);
