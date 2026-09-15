@@ -6,9 +6,9 @@ import * as schema from './db/schema';
 
 // Import utilities
 import { cleanupExpiredRateLimits } from './middleware/rateLimit';
-import { getDefaultSeason } from './utils/seasons';
 import { snapshotRankHistory } from './services/draftRankings';
 import { generateInjuryNewsNotifications } from './services/notifications';
+import { getNflState } from './services/nflState';
 
 // Import routes
 import { authRoutes } from './routes/auth';
@@ -337,12 +337,12 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // Every 4 hours: sync stats, projections, and odds for current week only (not all 18)
     // This keeps us within subrequest limits while keeping data fresh
     const db = drizzle(env.DB, { schema });
-    const anyLeague = await db.query.leagues.findFirst({
-      columns: { currentWeek: true, seasonYear: true },
-      orderBy: (leagues, { desc }) => [desc(leagues.updatedAt)],
-    });
-    const currentWeek = anyLeague?.currentWeek || 1;
-    const currentSeason = anyLeague?.seasonYear || getDefaultSeason();
+    // Use the shared NFL-state resolver rather than a league's own
+    // currentWeek — that field is only as fresh as the last league sync
+    // and can stall data syncing for everyone once it goes stale.
+    const state = await getNflState(db);
+    const currentWeek = state.week;
+    const currentSeason = state.season;
 
     // Sync stats for current week + previous week (for late-breaking plays)
     const previousWeek = Math.max(1, currentWeek - 1);
