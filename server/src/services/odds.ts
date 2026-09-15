@@ -1,3 +1,5 @@
+import { getNflSeasonContext } from './espn';
+
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 /** Strip API key from URLs before logging to prevent credential leakage */
@@ -168,10 +170,12 @@ export async function fetchHistoricalOdds(
 export function parseOddsResponse(
   games: OddsGame[],
   week?: number,
-  snapshotTime?: string
+  snapshotTime?: string,
+  season?: number
 ): ParsedOdds[] {
   const parsed: ParsedOdds[] = [];
   const timestamp = snapshotTime || new Date().toISOString();
+  const seasonYear = season ?? getNflSeasonContext().season;
 
   for (const game of games) {
     const homeTeamAbbr = teamNameToAbbr(game.home_team);
@@ -190,7 +194,7 @@ export function parseOddsResponse(
           bookmaker: bookmaker.key,
           market: market.key,
           snapshot_time: timestamp,
-          season: 2025,
+          season: seasonYear,
           week,
         };
 
@@ -303,7 +307,13 @@ export function parsePlayerProps(
   const homeTeamAbbr = teamNameToAbbr(game.home_team);
   const awayTeamAbbr = teamNameToAbbr(game.away_team);
 
-  // Filter to FanDuel bookmaker only (fallback: DraftKings, then BetMGM)
+  // Prefer FanDuel, then DraftKings, then BetMGM for consistency across
+  // snapshots — but player-prop markets often go up at different books at
+  // different times (a smaller book may post before the majors do), so fall
+  // back to whichever bookmaker actually has a player_ market rather than
+  // returning nothing just because none of the big three have it yet. The
+  // request already scoped `markets` to player_* props (see fetchPlayerProps),
+  // so any bookmaker present here has at least one of those markets priced.
   const bookmakersInOrder = ['fanduel', 'draftkings', 'betmgm'];
   let selectedBookmaker: OddsBookmaker | undefined;
 
@@ -315,7 +325,11 @@ export function parsePlayerProps(
   }
 
   if (!selectedBookmaker) {
-    // No supported bookmaker found
+    selectedBookmaker = game.bookmakers[0];
+  }
+
+  if (!selectedBookmaker) {
+    // No bookmaker has posted player-prop markets for this event yet
     return parsed;
   }
 

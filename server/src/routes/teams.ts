@@ -136,10 +136,12 @@ teamRoutes.get('/:id', authMiddleware, async (c) => {
       waiverPriority: team.waiverPriority,
       faabBudget: team.faabBudget,
       isOwner: team.ownerId === user.id,
+      // team.owner is null for a synced roster with no matching app user
+      // (see leagueSync.ts decideTeamOwnerId).
       owner: {
-        id: team.owner.id,
-        username: team.owner.username,
-        avatarUrl: team.owner.avatarUrl,
+        id: team.owner?.id ?? null,
+        username: team.owner?.username || team.ownerDisplayName || team.name,
+        avatarUrl: team.owner?.avatarUrl ?? null,
       },
       league: {
         id: team.league.id,

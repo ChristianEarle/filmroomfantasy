@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
-import { TrendingUp, TrendingDown, Zap, Shield, Target, Loader2, AlertTriangle, Activity, ArrowLeftRight } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { TrendingUp, TrendingDown, Zap, Shield, Target, Loader2, AlertTriangle, Activity, ArrowLeftRight, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import type { RosterPlayer } from '../context/LeagueContext';
 import { PlayerAvatar } from './PlayerAvatar';
+import api from '../services/api';
 
 import { sortByPosition } from '../utils/rosterPositions';
 import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
@@ -32,6 +33,75 @@ interface MatchupViewProps {
 /** Strip trailing digits from a roster slot for display (e.g. "RB1" → "RB", "WR2" → "WR", "FLEX" → "FLEX") */
 function displaySlot(slot: string): string {
   return (slot || '').replace(/\d+$/, '');
+}
+
+/** Highest week a fantasy season can reach (18-week regular season leagues + championship). */
+const MAX_MATCHUP_WEEK = 18;
+
+interface WeekPickerProps {
+  week: number;
+  availableWeeks: number[];
+  isDarkMode: boolean;
+  onChange: (week: number) => void;
+}
+
+/** Compact ‹ Week N › stepper, plus a native <select> shown on mobile. Weeks with no synced matchup are disabled (except the currently selected one, so its empty state can still render). */
+function WeekPicker({ week, availableWeeks, isDarkMode, onChange }: WeekPickerProps) {
+  const availableSet = useMemo(() => new Set(availableWeeks), [availableWeeks]);
+  const isDisabled = (w: number) => w !== week && availableSet.size > 0 && !availableSet.has(w);
+  const weeks = useMemo(() => Array.from({ length: MAX_MATCHUP_WEEK }, (_, i) => i + 1), []);
+
+  const btnClass = `flex items-center justify-center w-8 h-8 rounded-lg border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+    isDarkMode
+      ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 disabled:hover:bg-slate-800'
+      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 disabled:hover:bg-white'
+  }`;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        className={`${btnClass} hidden sm:flex`}
+        onClick={() => onChange(week - 1)}
+        disabled={week <= 1}
+        aria-label="Previous week"
+      >
+        <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+      </button>
+
+      {/* Desktop/tablet: static label between the steppers */}
+      <div
+        className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+        aria-label={`Viewing week ${week}`}
+      >
+        <span className="text-sm font-medium">Week {week}</span>
+      </div>
+
+      {/* Mobile: a select is easier to tap through than two small steppers */}
+      <select
+        className={`sm:hidden text-sm font-medium px-3 py-2 rounded-lg border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+        value={week}
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-label="Select week"
+      >
+        {weeks.map((w) => (
+          <option key={w} value={w} disabled={isDisabled(w)}>
+            Week {w}{isDisabled(w) ? ' (no data)' : ''}
+          </option>
+        ))}
+      </select>
+
+      <button
+        type="button"
+        className={`${btnClass} hidden sm:flex`}
+        onClick={() => onChange(week + 1)}
+        disabled={week >= MAX_MATCHUP_WEEK}
+        aria-label="Next week"
+      >
+        <ChevronRight className="w-4 h-4" aria-hidden="true" />
+      </button>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -269,12 +339,49 @@ function edgeSeverityStyles(severity: EdgeSeverity, isDarkMode: boolean): { cont
 }
 
 export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
-  const { league, userTeam, roster, matchup, matchupLoading, error } = useLeagueContext();
-  const currentWeek = league?.currentWeek || 1;
+  const {
+    userTeam,
+    roster,
+    matchup,
+    matchupLoading,
+    error,
+    selectedLeagueId,
+    selectedMatchupWeek,
+    setSelectedMatchupWeek,
+    matchupCurrentWeek,
+    matchupAvailableWeeks,
+    refreshMatchup,
+  } = useLeagueContext();
   const isComplete = matchup?.isComplete || false;
+
+  // The week picker defaults to the league's current week until the user
+  // picks something else (selectedMatchupWeek is reset to null on league
+  // switch — see LeagueContext).
+  const displayWeek = selectedMatchupWeek ?? matchupCurrentWeek;
 
   // Check if we have a real matchup
   const hasMatchup = !!matchup?.opponent?.id;
+
+  // The requested week has no synced matchup row for this team at all —
+  // distinct from a genuine bye week (which would still show up in
+  // matchupAvailableWeeks for the league, just without an opponent here).
+  const weekNotSynced = !hasMatchup && !matchupLoading && !matchupAvailableWeeks.includes(displayWeek);
+
+  const [isResyncing, setIsResyncing] = useState(false);
+  const [resyncError, setResyncError] = useState<string | null>(null);
+  const handleResync = async () => {
+    if (!selectedLeagueId || isResyncing) return;
+    setIsResyncing(true);
+    setResyncError(null);
+    try {
+      await api.post(`/leagues/${selectedLeagueId}/sync`);
+      await refreshMatchup();
+    } catch (err) {
+      setResyncError(err instanceof Error ? err.message : 'Sync failed — try again in a moment.');
+    } finally {
+      setIsResyncing(false);
+    }
+  };
 
   // Convert roster to MatchupPlayer format
   const yourTeamData = useMemo(() => {
@@ -444,13 +551,42 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
         </div>
       )}
 
-      {/* No opponent alert */}
-      {!hasMatchup && !matchupLoading && (
+      {/* No matchup synced for this week yet — offer a manual re-sync */}
+      {weekNotSynced && (
+        <div className={`rounded-lg border p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between ${isDarkMode ? 'bg-blue-500/10 border-blue-500/30' : 'bg-blue-50 border-blue-200'}`}>
+          <div className="flex items-start gap-3">
+            <Target className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <p className={`text-sm font-medium ${isDarkMode ? 'text-blue-400' : 'text-blue-700'}`}>
+                No matchup synced for Week {displayWeek} yet
+              </p>
+              <p className={`text-xs ${isDarkMode ? 'text-blue-500/70' : 'text-blue-600'}`}>
+                Leagues re-sync automatically every 4 hours during the season.
+              </p>
+              {resyncError && (
+                <p className="text-xs text-red-500 mt-1">{resyncError}</p>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleResync}
+            disabled={isResyncing}
+            className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-60 self-start sm:self-auto ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+          >
+            <RefreshCw className={`w-4 h-4 ${isResyncing ? 'animate-spin' : ''}`} aria-hidden="true" />
+            {isResyncing ? 'Syncing…' : 'Re-sync now'}
+          </button>
+        </div>
+      )}
+
+      {/* No opponent alert (genuine bye week — the week is synced, just no matchup for this team) */}
+      {!hasMatchup && !matchupLoading && !weekNotSynced && (
         <div className={`rounded-lg border p-4 flex items-center gap-3 ${isDarkMode ? 'bg-blue-500/10 border-blue-500/30' : 'bg-blue-50 border-blue-200'}`}>
           <Target className="w-5 h-5 text-blue-500" aria-hidden="true" />
           <div>
             <p className={`text-sm font-medium ${isDarkMode ? 'text-blue-400' : 'text-blue-700'}`}>
-              No opponent scheduled for Week {currentWeek}
+              No opponent scheduled for Week {displayWeek}
             </p>
             <p className={`text-xs ${isDarkMode ? 'text-blue-500/70' : 'text-blue-600'}`}>
               This could be a bye week or the matchup hasn't been set yet.
@@ -466,12 +602,12 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
             <h1 className={`text-xl sm:text-2xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fantasy Matchup</h1>
             <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{isComplete ? 'Final results' : 'Side-by-side projections and biggest edges'}</p>
           </div>
-          <div
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
-            aria-label={`Current week: ${currentWeek}`}
-          >
-            <span className="text-sm font-medium">Week {currentWeek}</span>
-          </div>
+          <WeekPicker
+            week={displayWeek}
+            availableWeeks={matchupAvailableWeeks}
+            isDarkMode={isDarkMode}
+            onChange={setSelectedMatchupWeek}
+          />
         </div>
 
         {/* Matchup Overview */}

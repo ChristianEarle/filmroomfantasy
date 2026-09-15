@@ -31,7 +31,7 @@ jobs:
         run: npm run build
 
   backend:
-    name: Backend (Type-check)
+    name: Backend (Type-check & Test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,11 +44,19 @@ jobs:
 
       - name: Install dependencies
         working-directory: server
-        run: npm ci || npm ci
+        # --legacy-peer-deps: @cloudflare/vitest-pool-workers pulls in a newer
+        # wrangler whose peerOptional @cloudflare/workers-types (v5) conflicts
+        # with drizzle-orm's v4 peer range. Both ranges are satisfied in
+        # practice; this just stops npm's strict resolver from erroring on it.
+        run: npm ci --legacy-peer-deps || npm ci --legacy-peer-deps
 
       - name: Type-check
         working-directory: server
         run: npx tsc --noEmit
+
+      - name: Test
+        working-directory: server
+        run: npm test
 
   deploy:
     name: Deploy to Cloudflare
@@ -82,7 +90,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: server
-        run: npm ci || npm ci
+        run: npm ci --legacy-peer-deps || npm ci --legacy-peer-deps
 
       - name: Apply migrations
         working-directory: server

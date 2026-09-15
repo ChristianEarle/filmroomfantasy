@@ -18,7 +18,7 @@ function cleanupMemory() {
  * Check rate limit using in-memory store (fallback).
  * Returns { allowed, count, resetAt }.
  */
-function checkMemory(key: string, maxRequests: number, windowMs: number): { allowed: boolean; count: number; resetAt: number } {
+export function checkMemory(key: string, maxRequests: number, windowMs: number): { allowed: boolean; count: number; resetAt: number } {
   const now = Date.now();
   if (now - lastCleanup > 60_000) {
     cleanupMemory();

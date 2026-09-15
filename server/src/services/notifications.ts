@@ -151,7 +151,7 @@ export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNot
     playerId: string;
     leagueId: string;
     externalOwnerId: string | null;
-    ownerId: string;
+    ownerId: string | null;
   }[] = [];
   for (const ids of chunk(playerIds, IN_CHUNK)) {
     const rows = await db

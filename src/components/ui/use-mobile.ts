@@ -8,6 +8,12 @@ export function useIsMobile() {
   );
 
   React.useEffect(() => {
+    // matchMedia is unimplemented in jsdom; degrade to "not mobile" so components
+    // using this hook can still be unit-tested.
+    if (typeof window.matchMedia !== "function") {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+      return;
+    }
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
     const onChange = () => {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);

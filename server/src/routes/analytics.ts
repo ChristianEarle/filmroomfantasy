@@ -160,7 +160,7 @@ analyticsRoutes.use('/admin/*', async (c, next) => {
     }
   }
 
-  await adminAuthMiddleware(c, next);
+  return adminAuthMiddleware(c, next);
 });
 
 analyticsRoutes.get('/admin/overview', async (c) => {

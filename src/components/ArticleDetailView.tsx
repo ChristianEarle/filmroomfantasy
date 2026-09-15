@@ -38,7 +38,6 @@ const PATH_TO_VIEW: Record<string, string> = {
   '/waivers': 'Waivers',
   '/game-slate': 'GameSlate',
   '/trends': 'Trends',
-  '/research': 'Research',
   '/playoff-predictor': 'Playoffs',
   '/draft-rankings': 'DraftRankings',
   '/league-analyzer': 'LeagueAnalyzer',

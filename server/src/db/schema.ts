@@ -257,6 +257,46 @@ export const playerProjections = sqliteTable('player_projections', {
   playerProjectionUnique: uniqueIndex('player_projection_unique').on(table.playerId, table.week, table.seasonYear, table.scoringFormat),
 }));
 
+// Deterministic "Market" (sportsbook-implied) season projection + VORP
+// ranking layer. Tier A rows are built from season-long prop lines
+// (services/seasonProps.ts's buildSeasonProjectionsFromSeasonProps); Tier B
+// rows extrapolate from the latest weekly prop-based projection when a
+// player has no season prop coverage. See services/marketRankings.ts for
+// the pure ranking/VORP math and routes/admin.ts's
+// POST /sync-market-projections for the sync job.
+export const playerMarketProjections = sqliteTable('player_market_projections', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  asOfWeek: integer('as_of_week').notNull(),
+  scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
+
+  seasonPoints: real('season_points'),
+  rosPoints: real('ros_points'),
+  perGameRate: real('per_game_rate'),
+  remainingGames: integer('remaining_games'),
+
+  marketRank: integer('market_rank'),
+  positionRank: integer('position_rank'),
+  tier: integer('tier'),
+  vorp: real('vorp'),
+
+  // 'season_props' (all core stats from season-long prop lines) |
+  // 'blended' (some core stats from season lines, the rest filled in from
+  // weekly-projection extrapolation) | 'weekly_extrapolation' (no core
+  // stats from season lines) | 'none' (not persisted, just counted)
+  confidence: text('confidence').notNull().default('none'),
+  source: text('source').notNull().default('market'),
+
+  computedAt: integer('computed_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  marketProjUnique: uniqueIndex('idx_market_proj_unique').on(table.playerId, table.seasonYear, table.asOfWeek, table.scoringFormat),
+  marketProjWeekIdx: index('idx_market_proj_week').on(table.seasonYear, table.asOfWeek, table.scoringFormat, table.marketRank),
+}));
+
+export type PlayerMarketProjection = typeof playerMarketProjections.$inferSelect;
+export type NewPlayerMarketProjection = typeof playerMarketProjections.$inferInsert;
+
 // Historical projection snapshots for trends (biggest movers, etc.)
 export const projectionLineSnapshots = sqliteTable('projection_line_snapshots', {
   id: text('id').primaryKey(),
@@ -551,6 +591,32 @@ export const playerProps = sqliteTable('player_props', {
   playerPropsExternalIdIdx: index('idx_player_props_external_id').on(table.playerExternalId),
 }));
 
+// Season-long sportsbook player prop lines (season O/U totals), imported
+// manually via /api/admin/sync-season-props — there's no API source for
+// these the way there is for weekly game props.
+export const playerSeasonProps = sqliteTable('player_season_props', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').references(() => nflPlayers.id, { onDelete: 'set null' }),
+  playerName: text('player_name').notNull(),
+  team: text('team'),
+  position: text('position'),
+  season: integer('season').notNull(),
+  stat: text('stat').notNull(), // pass_yds|pass_tds|rush_yds|rush_tds|rec_yds|receptions|rec_tds|interceptions
+  line: real('line').notNull(),
+  overPrice: integer('over_price'),
+  underPrice: integer('under_price'),
+  book: text('book').notNull(),
+  sourceUrl: text('source_url'),
+  capturedAt: text('captured_at').notNull(), // YYYY-MM-DD
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  seasonPropsUnique: uniqueIndex('idx_season_props_unique').on(table.season, table.playerName, table.stat, table.book, table.capturedAt),
+  seasonPropsPlayerIdx: index('idx_season_props_player').on(table.season, table.playerId),
+}));
+
+export type PlayerSeasonProp = typeof playerSeasonProps.$inferSelect;
+export type NewPlayerSeasonProp = typeof playerSeasonProps.$inferInsert;
+
 // ============================================
 // ARTICLES / BLOG
 // ============================================
@@ -740,6 +806,42 @@ export type NewTeamDraftPick = typeof teamDraftPicks.$inferInsert;
 export type PlayerAiAnalysis = typeof playerAiAnalyses.$inferSelect;
 export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
 
+/** Cached AI scouting narrative for one team, one per (team, season, week). */
+export const teamAiNarratives = sqliteTable('team_ai_narratives', {
+  id: text('id').primaryKey(),
+  teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  week: integer('week').notNull(),
+  narrative: text('narrative').notNull(),
+  model: text('model').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  teamAiNarrativesIdentity: uniqueIndex('idx_team_ai_narratives_identity')
+    .on(table.teamId, table.seasonYear, table.week),
+}));
+
+export type TeamAiNarrative = typeof teamAiNarratives.$inferSelect;
+export type NewTeamAiNarrative = typeof teamAiNarratives.$inferInsert;
+
+/** Cached league-wide AI "pulse" narrative, one per (league, season, week). */
+export const leagueAiPulses = sqliteTable('league_ai_pulses', {
+  id: text('id').primaryKey(),
+  leagueId: text('league_id').notNull().references(() => leagues.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  week: integer('week').notNull(),
+  narrative: text('narrative').notNull(),
+  /** JSON array of team ids, ordered most to least powerful. Null if the model's ranking failed validation. */
+  rankingJson: text('ranking_json'),
+  model: text('model').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  leagueAiPulsesIdentity: uniqueIndex('idx_league_ai_pulses_identity')
+    .on(table.leagueId, table.seasonYear, table.week),
+}));
+
+export type LeagueAiPulse = typeof leagueAiPulses.$inferSelect;
+export type NewLeagueAiPulse = typeof leagueAiPulses.$inferInsert;
+
 // ============================================
 // DRAFT RANKINGS
 // ============================================
@@ -752,7 +854,7 @@ export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
 export const draftRankings = sqliteTable('draft_rankings', {
   id: text('id').primaryKey(),
   playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
-  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty' | 'dynasty_rookie'
   scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
   superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
   overallRank: integer('overall_rank').notNull(),
@@ -761,6 +863,15 @@ export const draftRankings = sqliteTable('draft_rankings', {
   projectedPoints: real('projected_points'), // full-season projected total (null for rookies without data)
   adp: real('adp'), // average draft position from Sleeper
   adpDelta: real('adp_delta'), // rank - ADP (negative = value, positive = reach)
+  // Deterministic Market (sportsbook-implied) VORP rank as of write time —
+  // persisted for auditability alongside the AI's overallRank. GET
+  // /api/draft-rankings joins a *live* marketRank from player_market_projections
+  // for display (so it reflects the latest sync even between regenerations);
+  // this column is rebuilt when the batch result is written (same as the adp
+  // column above), NOT what the prompt/AI actually saw hours earlier when
+  // the batch was submitted — see the writeVariantRankings comment in
+  // services/draftRankings.ts.
+  marketRank: integer('market_rank'),
   rationale: text('rationale').notNull(), // AI-generated 1-2 sentence blurb
   analysis: text('analysis'), // AI-generated detailed player analysis (strengths, risks, outlook)
   ceilingRank: integer('ceiling_rank'), // AI best-case overall rank (lower number = better)
@@ -790,7 +901,7 @@ export type NewDraftRanking = typeof draftRankings.$inferInsert;
 export const rankHistory = sqliteTable('rank_history', {
   id: text('id').primaryKey(),
   playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
-  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty' | 'dynasty_rookie'
   scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
   superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
   overallRank: integer('overall_rank').notNull(),
