@@ -4,6 +4,8 @@ import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { resolveUserTeamId } from './rosters';
+import { resolveWeekFromCalendar, resolveLeagueWeek } from '../services/nflState';
+import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
 
 // Rate limit for matchup routes: 60 req/min per IP
@@ -254,7 +256,7 @@ matchupRoutes.get('/:id/live', authMiddleware, async (c) => {
       where: eq(schema.leagues.id, matchup.leagueId),
     });
     const scoringFormat = league?.scoringFormat || 'ppr';
-    const seasonYear = league?.seasonYear || new Date().getFullYear();
+    const seasonYear = league?.seasonYear || getDefaultSeason();
     const pointsCol = getPointsColumn(scoringFormat);
 
     // Get starters for both teams
@@ -594,14 +596,18 @@ matchupRoutes.get('/league/:leagueId/all', authMiddleware, async (c) => {
     // Fetch league to determine effective current week for isComplete
     const league = await db.query.leagues.findFirst({
       where: eq(schema.leagues.id, leagueId),
-      columns: { currentWeek: true, externalId: true, platform: true },
+      columns: { currentWeek: true, externalId: true, platform: true, seasonYear: true },
     });
 
-    // Determine effective current week: use league's stored currentWeek,
-    // but if we're in the offseason (Feb-Aug), the season is fully complete
-    let effectiveCurrentWeek = league?.currentWeek || 1;
-    const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 7=Aug
-    const isOffseason = currentMonth >= 1 && currentMonth <= 7;
+    // Determine effective current week: the league-scoped week (live NFL
+    // week for a current-season league, the league's own week if it's
+    // parked on a past season), but if we're in the offseason/postseason
+    // the season is fully complete.
+    let effectiveCurrentWeek = (await resolveLeagueWeek(db, league ?? null)).week;
+    const isOffseason = ((): boolean => {
+      const { seasonType } = resolveWeekFromCalendar(new Date());
+      return seasonType === 'offseason' || seasonType === 'postseason';
+    })();
 
     // For Sleeper leagues, try to get accurate week from Sleeper API
     if (league?.platform === 'sleeper' && league.externalId) {

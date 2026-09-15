@@ -82,6 +82,12 @@ export function resolveWeekFromCalendar(now: Date = new Date()): NflState {
   return { season, week: 18, seasonType: isPostseason ? 'postseason' : 'offseason', source: 'calendar', resolvedAt };
 }
 
+/** The season in progress, or the upcoming one during the Feb-Jul offseason (see the server's resolveSeasonInFocus). */
+export function resolveSeasonInFocus(now: Date = new Date()): number {
+  const { season, seasonType } = resolveWeekFromCalendar(now);
+  return seasonType === 'offseason' ? season + 1 : season;
+}
+
 function fetchNflState(): Promise<NflState> {
   if (inFlight) return inFlight;
   if (sharedState != null && Date.now() - sharedFetchedAtMs < REFRESH_TTL_MS) {

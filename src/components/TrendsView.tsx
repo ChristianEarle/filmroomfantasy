@@ -4,7 +4,7 @@ import { Player } from '../App';
 import { useLeagueContext } from '../context/LeagueContext';
 import { useNflState } from '../hooks';
 import api from '../services/api';
-import { getEffectiveSeason } from '../utils/playerUtils';
+import { getEffectiveSeason, clampWeek } from '../utils/playerUtils';
 
 interface TrendsViewProps {
   onPlayerClick: (player: Player) => void;
@@ -120,7 +120,7 @@ export function TrendsView({ onPlayerClick, isDarkMode }: TrendsViewProps) {
   const { week: nflWeek, season: nflSeason } = useNflState();
   const currentWeek = useMemo(() => {
     if (league?.seasonYear != null && nflSeason != null && league.seasonYear !== nflSeason) {
-      return league.currentWeek ?? null;
+      return clampWeek(league.currentWeek);
     }
     return nflWeek;
   }, [league?.seasonYear, league?.currentWeek, nflSeason, nflWeek]);
