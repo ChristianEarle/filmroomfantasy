@@ -264,14 +264,16 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     // Get season stats
     const seasonStats = await getPlayerStatsSummary(db, r.player.id, seasonYear, r.player.position);
 
-    // Get current projection
+    // Get the CURRENT week's projection. This used to take the highest
+    // week that had any projection, which showed a stale (or future) week's
+    // number under this week's label whenever the weeks didn't line up.
     const projection = await db.query.playerProjections.findFirst({
       where: and(
         eq(schema.playerProjections.playerId, r.player.id),
         eq(schema.playerProjections.seasonYear, seasonYear),
+        eq(schema.playerProjections.week, currentWeek),
         eq(schema.playerProjections.scoringFormat, scoringFormat)
       ),
-      orderBy: desc(schema.playerProjections.week),
     });
 
     // Get current week's actual stats

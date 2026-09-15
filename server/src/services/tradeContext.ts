@@ -326,8 +326,12 @@ export async function buildTradeContext({
     })
   );
 
-  // Keep the latest (highest week) projection per player
+  // Prefer the current week's projection per player; fall back to the
+  // latest one only when this week's hasn't been generated yet.
   const latestProjByPlayer = new Map<string, (typeof projections)[0]>();
+  for (const p of projections) {
+    if (p.week === currentWeek) latestProjByPlayer.set(p.playerId, p);
+  }
   for (const p of projections) {
     if (!latestProjByPlayer.has(p.playerId)) latestProjByPlayer.set(p.playerId, p);
   }
