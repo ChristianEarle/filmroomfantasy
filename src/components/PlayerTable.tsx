@@ -111,7 +111,14 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
 
       {/* PTS (actual points when available, else projection) */}
       <td className="px-2 sm:px-4 py-3 sm:py-4 text-right">
-        <span className={`font-bold text-base sm:text-lg tabular-nums ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+        {!seasonMode && pointsType === 'projected' && player.hasProjection === false ? (
+          <span
+            className={`font-bold text-base sm:text-lg tabular-nums ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+            title={`No Week ${currentWeek} projection yet — lines haven't been posted for this player`}
+          >—</span>
+        ) : (
+          <span className={`font-bold text-base sm:text-lg tabular-nums ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+        )}
         {seasonMode && (() => {
           // projectionSource (when the server sends it) truthfully names where the
           // season total came from; pointsType is the older, coarser fallback.
@@ -368,7 +375,7 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
                   : pointsType === 'actual' ? 'WEEK SUMMARY' : 'PROJECTION'}
               </div>
               <div className={`text-2xl font-extrabold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                {player.projectedPoints.toFixed(1)}
+                {!seasonMode && pointsType === 'projected' && player.hasProjection === false ? '—' : player.projectedPoints.toFixed(1)}
               </div>
               <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {seasonMode
@@ -377,7 +384,11 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
                     : player.projectionSource === 'ai'
                     ? `${player.position} · Full season (AI-projected total)`
                     : `${player.position} · Full season (actual so far — no season projection available)`)
-                  : pointsType === 'actual' ? `${player.position} · Week ${currentWeek}` : `${player.position} · Proj Wk ${currentWeek}`}
+                  : pointsType === 'actual'
+                  ? `${player.position} · Week ${currentWeek}`
+                  : player.hasProjection === false
+                  ? `${player.position} · No Week ${currentWeek} projection yet`
+                  : `${player.position} · Proj Wk ${currentWeek}`}
               </div>
               {seasonMode && player.rosProjectedPoints != null && Math.round(player.rosProjectedPoints * 10) / 10 !== player.projectedPoints && (
                 <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
