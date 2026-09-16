@@ -256,7 +256,16 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     },
   });
 
-  const { week: currentWeek, season: seasonYear } = await resolveLeagueWeek(db, team.league ?? null);
+  const resolved = await resolveLeagueWeek(db, team.league ?? null);
+  const seasonYear = resolved.season;
+  // Optional ?week= lets the Team page show another week's projections and
+  // actuals; otherwise default to the live week for this league.
+  const weekParam = c.req.query('week');
+  const requestedWeek = weekParam !== undefined ? Number(weekParam) : undefined;
+  if (requestedWeek !== undefined && (!Number.isInteger(requestedWeek) || requestedWeek < 1 || requestedWeek > 18)) {
+    return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
+  }
+  const currentWeek = requestedWeek ?? resolved.week;
   const scoringFormat = team.league?.scoringFormat || 'ppr';
 
   // Enrich roster with stats and projections
@@ -264,14 +273,16 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     // Get season stats
     const seasonStats = await getPlayerStatsSummary(db, r.player.id, seasonYear, r.player.position);
 
-    // Get current projection
+    // Get the CURRENT week's projection. This used to take the highest
+    // week that had any projection, which showed a stale (or future) week's
+    // number under this week's label whenever the weeks didn't line up.
     const projection = await db.query.playerProjections.findFirst({
       where: and(
         eq(schema.playerProjections.playerId, r.player.id),
         eq(schema.playerProjections.seasonYear, seasonYear),
+        eq(schema.playerProjections.week, currentWeek),
         eq(schema.playerProjections.scoringFormat, scoringFormat)
       ),
-      orderBy: desc(schema.playerProjections.week),
     });
 
     // Get current week's actual stats
@@ -355,6 +366,7 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     roster: {
       starters,
       bench,
+      week: currentWeek,
       projectedTotal: Math.round(projectedTotal * 10) / 10,
       scoringFormat,
     },

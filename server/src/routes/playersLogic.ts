@@ -5,7 +5,7 @@
  * sites in players.ts for how these are wired back in.
  */
 
-import { resolveWeekFromCalendar } from '../services/nflState';
+import { resolveWeekFromCalendar, isGameFinished, type ScheduleGame } from '../services/nflState';
 
 export interface GameForWeek {
   isComplete?: boolean | null;
@@ -114,6 +114,39 @@ export function computeFetchWindow({
         : limit + offset;
   const fetchOffset = (sortByComputed && includeStats) || availableOnly ? 0 : offset;
   return { fetchLimit, fetchOffset };
+}
+
+export interface ShouldReportActualsArgs {
+  /** The player's team game for the requested week/season, if we have a schedule row for it. */
+  teamGame: ScheduleGame | null | undefined;
+  now: Date;
+  week: number;
+  season: number;
+  /** The live NFL week/season from the resolver. */
+  currentWeek: number;
+  currentSeason: number;
+}
+
+/**
+ * Whether the props endpoint should attach actual results (OVER/UNDER,
+ * scored a TD YES/NO) to a week's lines. Stats syncs can write zero rows for
+ * an upcoming week before kickoff, so "a stats row exists" is not enough:
+ * only report actuals once the player's game has actually finished. When
+ * we have no schedule row for the team, fall back to "the week is behind
+ * the live week" (or the season is a past one).
+ */
+export function shouldReportActuals({
+  teamGame,
+  now,
+  week,
+  season,
+  currentWeek,
+  currentSeason,
+}: ShouldReportActualsArgs): boolean {
+  if (teamGame) return isGameFinished(teamGame, now);
+  if (season < currentSeason) return true;
+  if (season > currentSeason) return false;
+  return week < currentWeek;
 }
 
 export interface ShouldFallBackToPriorSeasonArgs {

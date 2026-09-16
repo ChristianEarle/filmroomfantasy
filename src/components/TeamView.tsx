@@ -45,7 +45,7 @@ const gradeRank = (grade: string): number => {
 };
 
 export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
-  const { league, userTeam, viewedTeamId, setViewedTeamId, roster, rosterLoading, standings, allMatchups } = useLeagueContext();
+  const { league, userTeam, viewedTeamId, setViewedTeamId, roster, rosterLoading, standings, allMatchups, setRosterWeek } = useLeagueContext();
   const { week: nflWeek, season: nflSeason } = useNflState();
   // Starts unresolved (not a placeholder 1) so the header/dropdown wait for
   // a real default instead of flashing "Week 1" for the wrong season.
@@ -76,6 +76,15 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
       setSelectedWeek(defaultWeek);
     }
   }, [league?.id, defaultWeek]);
+
+  // Drive the roster fetch from the picker: a week other than the live
+  // default refetches projections/actuals for that week; the default (or
+  // leaving the page) goes back to the live week so Home/Matchup aren't
+  // left looking at a week picked here.
+  useEffect(() => {
+    setRosterWeek(selectedWeek != null && selectedWeek !== defaultWeek ? selectedWeek : null);
+  }, [selectedWeek, defaultWeek, setRosterWeek]);
+  useEffect(() => () => setRosterWeek(null), [setRosterWeek]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
