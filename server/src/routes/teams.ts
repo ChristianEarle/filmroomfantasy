@@ -366,6 +366,7 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     roster: {
       starters,
       bench,
+      week: currentWeek,
       projectedTotal: Math.round(projectedTotal * 10) / 10,
       scoringFormat,
     },
