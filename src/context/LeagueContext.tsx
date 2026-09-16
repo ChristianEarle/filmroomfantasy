@@ -191,6 +191,9 @@ interface LeagueContextType {
   // Refresh functions
   refreshLeague: () => Promise<void>;
   refreshRoster: (teamId?: string) => Promise<void>;
+  /** Week the roster is fetched for; null = the live week for this league. Set by the Team page's week picker. */
+  rosterWeek: number | null;
+  setRosterWeek: (week: number | null) => void;
   refreshMatchup: () => Promise<void>;
   refreshStandings: () => Promise<void>;
   refreshAllMatchups: () => Promise<void>;
@@ -232,6 +235,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   const [viewedTeamId, setViewedTeamId] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterWeek, setRosterWeek] = useState<number | null>(null);
   const [matchup, setMatchup] = useState<Matchup | null>(null);
   const [matchupLoading, setMatchupLoading] = useState(false);
   const [selectedMatchupWeek, setSelectedMatchupWeek] = useState<number | null>(null);
@@ -351,7 +355,8 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
           seasonStats?: RosterPlayer['seasonStats'];
         };
       }
-      const response = await api.get<{ roster: { starters: RosterSpot[]; bench: RosterSpot[]; projectedTotal?: number; scoringFormat?: string } }>(`/teams/${targetTeamId}/roster`);
+      const weekQuery = rosterWeek != null ? `?week=${rosterWeek}` : '';
+      const response = await api.get<{ roster: { starters: RosterSpot[]; bench: RosterSpot[]; projectedTotal?: number; scoringFormat?: string } }>(`/teams/${targetTeamId}/roster${weekQuery}`);
 
       // Helper function to map player data
       const mapPlayer = (spot: RosterSpot, isStarter: boolean): RosterPlayer => ({
@@ -398,7 +403,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
     } finally {
       setRosterLoading(false);
     }
-  }, [selectedLeagueId, viewedTeamId, isAuthenticated]);
+  }, [selectedLeagueId, viewedTeamId, isAuthenticated, rosterWeek]);
 
   // Fetch current matchup
   const refreshMatchup = useCallback(async () => {
@@ -610,7 +615,8 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
     }
   }, [selectedLeagueId, isAuthenticated, refreshLeague]);
 
-  // Fetch roster when viewedTeamId changes
+  // Fetch roster when the viewed team or the requested week changes
+  // (refreshRoster's identity changes with rosterWeek).
   useEffect(() => {
     if (viewedTeamId && isAuthenticated) {
       refreshRoster();
@@ -657,6 +663,8 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
         error,
         refreshLeague,
         refreshRoster,
+        rosterWeek,
+        setRosterWeek,
         refreshMatchup,
         refreshStandings,
         refreshAllMatchups,

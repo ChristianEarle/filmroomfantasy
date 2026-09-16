@@ -2540,11 +2540,15 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
     let props = await findProps(season);
 
     if (props.length === 0) {
-      // Cheap existence check across the whole season (any week, any
-      // player) to distinguish "season hasn't started" from "this week
-      // isn't synced yet" — see shouldFallBackToPriorSeason.
+      // Existence check to distinguish "season hasn't started" from "this
+      // week isn't synced yet" — see shouldFallBackToPriorSeason. Props are
+      // synced from week 1 onward, so "any week-1 line for this season" is
+      // a faithful proxy for "the season has props at all", and it stays
+      // bounded by the existing week index (a season-only filter would scan
+      // the whole table; an index for it can't be added on D1's free tier
+      // without blowing the daily write budget).
       const anySeasonProp = await db.query.playerProps.findFirst({
-        where: eq(schema.playerProps.season, season),
+        where: and(eq(schema.playerProps.week, 1), eq(schema.playerProps.season, season)),
         columns: { id: true },
       });
       const seasonHasAnyProps = !!anySeasonProp;

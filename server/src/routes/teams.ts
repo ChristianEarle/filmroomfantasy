@@ -256,7 +256,16 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     },
   });
 
-  const { week: currentWeek, season: seasonYear } = await resolveLeagueWeek(db, team.league ?? null);
+  const resolved = await resolveLeagueWeek(db, team.league ?? null);
+  const seasonYear = resolved.season;
+  // Optional ?week= lets the Team page show another week's projections and
+  // actuals; otherwise default to the live week for this league.
+  const weekParam = c.req.query('week');
+  const requestedWeek = weekParam !== undefined ? Number(weekParam) : undefined;
+  if (requestedWeek !== undefined && (!Number.isInteger(requestedWeek) || requestedWeek < 1 || requestedWeek > 18)) {
+    return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
+  }
+  const currentWeek = requestedWeek ?? resolved.week;
   const scoringFormat = team.league?.scoringFormat || 'ppr';
 
   // Enrich roster with stats and projections
