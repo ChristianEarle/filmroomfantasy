@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveWeekComplete, computeFetchWindow, shouldFallBackToPriorSeason } from './playersLogic';
+import { resolveWeekComplete, computeFetchWindow, shouldFallBackToPriorSeason, shouldReportActuals } from './playersLogic';
 
 describe('resolveWeekComplete', () => {
   it('is complete when every game is isComplete=true, or lacks isComplete but has both final scores', () => {
@@ -144,5 +144,32 @@ describe('shouldFallBackToPriorSeason', () => {
       propsForRequestedWeek: true,
       seasonHasAnyProps: true,
     })).toBe(false);
+  });
+});
+
+
+describe('shouldReportActuals', () => {
+  const now = new Date('2026-09-16T12:00:00Z'); // Wednesday of week 2
+  const base = { now, week: 2, season: 2026, currentWeek: 2, currentSeason: 2026 };
+
+  it('reports actuals once the team game for that week is finished', () => {
+    const teamGame = { week: 2, gameTime: new Date('2026-09-13T17:00:00Z'), isComplete: true, homeScore: 24, awayScore: 17 };
+    expect(shouldReportActuals({ ...base, teamGame })).toBe(true);
+  });
+
+  it('does not report actuals for a game that has not kicked off, even if a stats row exists', () => {
+    const teamGame = { week: 2, gameTime: new Date('2026-09-20T17:00:00Z'), isComplete: false, homeScore: null, awayScore: null };
+    expect(shouldReportActuals({ ...base, teamGame })).toBe(false);
+  });
+
+  it('without a schedule row, only reports actuals for weeks behind the live week', () => {
+    expect(shouldReportActuals({ ...base, teamGame: null, week: 1 })).toBe(true);
+    expect(shouldReportActuals({ ...base, teamGame: null, week: 2 })).toBe(false);
+    expect(shouldReportActuals({ ...base, teamGame: null, week: 3 })).toBe(false);
+  });
+
+  it('without a schedule row, a past season is always settled and a future season never is', () => {
+    expect(shouldReportActuals({ ...base, teamGame: null, season: 2025, week: 17 })).toBe(true);
+    expect(shouldReportActuals({ ...base, teamGame: null, season: 2027, week: 1 })).toBe(false);
   });
 });

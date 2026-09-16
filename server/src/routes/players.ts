@@ -15,8 +15,8 @@ import {
   type ConversationTurn,
 } from '../utils/prompt';
 import { buildProjectionsFromProps } from '../services/projections';
-import { resolveWeekComplete, computeFetchWindow, shouldFallBackToPriorSeason } from './playersLogic';
-import { resolveWeekFromCalendar } from '../services/nflState';
+import { resolveWeekComplete, computeFetchWindow, shouldFallBackToPriorSeason, shouldReportActuals } from './playersLogic';
+import { resolveWeekFromCalendar, getNflState } from '../services/nflState';
 import { resolveMarketAsOfWeek } from '../services/marketRankingsQueries';
 import { buildPlayerCard, buildPlayerCards } from '../services/playerCard';
 import { extractMentionedPlayers, type MentionCandidate } from '../utils/playerMentions';
@@ -2598,9 +2598,42 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
       }
     }
 
+    // Only attach actual results once the player's game for this week has
+    // been played. The stats sync can write zero rows for an upcoming week,
+    // which would otherwise render as settled NO/UNDER results before kickoff.
+    let gamePlayed = false;
+    if (weeklyStats) {
+      const now = new Date();
+      const state = await getNflState(db, now);
+      const weekGames = await db.query.nflGames.findMany({
+        where: and(
+          eq(schema.nflGames.seasonYear, effectiveSeason),
+          eq(schema.nflGames.week, week),
+          eq(schema.nflGames.seasonType, 'regular')
+        ),
+        columns: { week: true, gameTime: true, isComplete: true, homeScore: true, awayScore: true, homeTeam: true, awayTeam: true },
+      });
+      // Team abbreviations differ slightly between sources (WAS/WSH, JAX/JAC, LAR/LA).
+      const TEAM_ALIASES: Record<string, string> = { WSH: 'WAS', JAC: 'JAX', LA: 'LAR', OAK: 'LV', SD: 'LAC', STL: 'LAR' };
+      const norm = (t: string | null | undefined) => {
+        const u = (t ?? '').toUpperCase();
+        return TEAM_ALIASES[u] ?? u;
+      };
+      const team = norm(player.team);
+      const teamGame = team ? weekGames.find((g) => norm(g.homeTeam) === team || norm(g.awayTeam) === team) ?? null : null;
+      gamePlayed = shouldReportActuals({
+        teamGame,
+        now,
+        week,
+        season: effectiveSeason,
+        currentWeek: state.week,
+        currentSeason: state.season,
+      });
+    }
+
     // Build response with actual values from stats
     const actual: Record<string, any> = {};
-    if (weeklyStats) {
+    if (weeklyStats && gamePlayed) {
       actual.passYds = weeklyStats.passYards;
       actual.passTds = weeklyStats.passTDs;
       actual.rushYds = weeklyStats.rushYards;
