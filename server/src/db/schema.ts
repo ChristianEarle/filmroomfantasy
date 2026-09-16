@@ -588,7 +588,6 @@ export const playerProps = sqliteTable('player_props', {
   playerPropsUnique: uniqueIndex('player_props_unique').on(table.eventId, table.playerName, table.market, table.bookmaker, table.snapshotTime),
   playerPropsNameIdx: index('idx_player_props_name').on(table.playerName),
   playerPropsWeekIdx: index('idx_player_props_week').on(table.week),
-  playerPropsSeasonWeekIdx: index('idx_player_props_season_week').on(table.season, table.week),
   playerPropsMarketIdx: index('idx_player_props_market').on(table.market),
   playerPropsExternalIdIdx: index('idx_player_props_external_id').on(table.playerExternalId),
 }));
