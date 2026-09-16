@@ -695,6 +695,10 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           seasonStats: { ...ss, averageSnapPct: avgSnapPct },
           avgPointsPPR: avgPts,
           projectedPoints: projPts,
+          // Lets the client tell "projected 0.0" from "no projection for this
+          // week yet" instead of substituting a season average (which after
+          // one game is just last week's score) under a "Proj Wk N" label.
+          hasProjection: projection != null,
           seasonActualPoints,
           seasonProjectedPoints,
           projectionSource,
