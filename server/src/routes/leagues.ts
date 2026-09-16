@@ -8,7 +8,7 @@ import {
   validateSleeperArray,
   fetchSleeperPlayersCached,
 } from '../services/sleeper';
-import { syncSleeperLeague } from '../services/leagueSync';
+import { findSleeperUserId, syncSleeperLeague } from '../services/leagueSync';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
@@ -198,16 +198,11 @@ leagueRoutes.get('/:id', authMiddleware, async (c) => {
       const usersRes = await fetch(`https://api.sleeper.app/v1/league/${league.externalId}/users`);
       if (usersRes.ok) {
         const sleeperUsers = (await usersRes.json()) as { user_id: string; username?: string; display_name?: string }[];
-        for (const su of sleeperUsers) {
-          sleeperUserMap.set(su.user_id, su);
-          if (
-            membership.externalUsername &&
-            (su.display_name?.toLowerCase() === membership.externalUsername.toLowerCase() ||
-            su.username?.toLowerCase() === membership.externalUsername.toLowerCase())
-          ) {
-            userSleeperUserId = su.user_id;
-          }
-        }
+        for (const su of sleeperUsers) sleeperUserMap.set(su.user_id, su);
+        // The connect flow stores the Sleeper user_id (not the username) when
+        // it has one, so match on that first — a name-only match left
+        // isCurrentUserTeam false for everyone connected that way.
+        userSleeperUserId = findSleeperUserId(sleeperUsers, membership.externalUsername);
       }
     } catch (e) {
       console.error('Failed to fetch Sleeper users for league:', e);
@@ -697,24 +692,7 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
       : ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'TE', 'FLEX', 'K', 'DEF'];
 
     // Match the app user to a Sleeper user via stored user_id (preferred) or username/display_name.
-    let userSleeperUserId: string | null = null;
-    if (membership.externalUsername) {
-      const stored = membership.externalUsername;
-      const direct = sleeperUsers.find(u => u.user_id === stored);
-      if (direct) {
-        userSleeperUserId = direct.user_id;
-      } else {
-        for (const su of sleeperUsers) {
-          if (
-            su.display_name?.toLowerCase() === stored.toLowerCase() ||
-            su.username?.toLowerCase() === stored.toLowerCase()
-          ) {
-            userSleeperUserId = su.user_id;
-            break;
-          }
-        }
-      }
-    }
+    const userSleeperUserId = findSleeperUserId(sleeperUsers, membership.externalUsername);
 
     const userMap = new Map<string, any>();
     for (const su of sleeperUsers) userMap.set(su.user_id, su);

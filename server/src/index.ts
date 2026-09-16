@@ -344,20 +344,24 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     const currentWeek = state.week;
     const currentSeason = state.season;
 
+    // In-season, keep league rosters/matchups/ownership fresh every 4h so
+    // waiver moves show up and "my matchup" doesn't 404 for leagues no one
+    // has manually re-synced. Runs the same sync logic as the user-triggered
+    // "Sync" button (see server/src/services/leagueSync.ts). This goes
+    // FIRST: it is the cheapest sync here and the one users notice most,
+    // and everything in this handler shares one invocation's CPU and
+    // subrequest budget — if the stats sync below blows through it, the
+    // roster sync must already be done rather than never reached.
+    // Off-season this instead runs once daily — see the 0 12 * * * block.
+    if (isInSeasonMonth()) {
+      await callSync('/api/admin/sync-leagues');
+    }
+
     // Sync stats for current week + previous week (for late-breaking plays)
     const previousWeek = Math.max(1, currentWeek - 1);
     const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
 
     await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
-
-    // In-season, keep league matchups/rosters/ownership fresh every 4h so
-    // "my matchup" doesn't 404 for leagues no one has manually re-synced
-    // since the season rolled over. Runs the same sync logic as the
-    // user-triggered "Sync" button (see server/src/services/leagueSync.ts).
-    // Off-season this instead runs once daily — see the 0 12 * * * block.
-    if (isInSeasonMonth()) {
-      await callSync('/api/admin/sync-leagues');
-    }
 
     // Sync player prop lines (per-player Vegas O/U) for the current week.
     // The endpoint itself loops over every game and skips any it already

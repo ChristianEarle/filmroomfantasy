@@ -228,6 +228,29 @@ export async function resolveMemberSleeperId(
   return resolved;
 }
 
+/**
+ * Resolve a league member's stored `league_members.externalUsername` to a
+ * Sleeper `user_id` against the league's live users list. The connect flow
+ * stores the Sleeper `user_id` when it has one and falls back to the typed
+ * username, so callers must accept either: an exact `user_id` match wins,
+ * otherwise a case-insensitive username/display_name match. Shared by the
+ * full sync, quick-sync and the league detail route so they all agree on
+ * which roster is "mine".
+ */
+export function findSleeperUserId(
+  sleeperUsers: ReadonlyArray<{ user_id: string; username?: string | null; display_name?: string | null }>,
+  stored: string | null | undefined
+): string | null {
+  if (!stored) return null;
+  const direct = sleeperUsers.find(u => u.user_id === stored);
+  if (direct) return direct.user_id;
+  const lowered = stored.toLowerCase();
+  const byName = sleeperUsers.find(
+    u => u.display_name?.toLowerCase() === lowered || u.username?.toLowerCase() === lowered
+  );
+  return byName?.user_id ?? null;
+}
+
 // Sleeper uses "Invalid"/"0" for empty IR/starter slots - skip these
 const INVALID_PLAYER_IDS = new Set(['invalid', '0', '']);
 
@@ -425,23 +448,8 @@ export async function syncSleeperLeague(
   const sleeperIdToAppUserId = new Map<string, string>();
   for (const member of members) {
     if (!member.externalUsername) continue;
-    const stored = member.externalUsername;
-    // First try direct user_id match (most reliable)
-    const directMatch = sleeperUsers.find(u => u.user_id === stored);
-    if (directMatch) {
-      sleeperIdToAppUserId.set(directMatch.user_id, member.userId);
-      continue;
-    }
-    // Fall back to username/display_name matching
-    for (const sleeperUser of sleeperUsers) {
-      if (
-        sleeperUser.display_name?.toLowerCase() === stored.toLowerCase() ||
-        sleeperUser.username?.toLowerCase() === stored.toLowerCase()
-      ) {
-        sleeperIdToAppUserId.set(sleeperUser.user_id, member.userId);
-        break;
-      }
-    }
+    const matchedId = findSleeperUserId(sleeperUsers, member.externalUsername);
+    if (matchedId) sleeperIdToAppUserId.set(matchedId, member.userId);
   }
 
   // The acting user's own Sleeper roster id (if resolvable) — used only for
