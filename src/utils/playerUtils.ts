@@ -12,6 +12,8 @@ export interface APIPlayer {
   headshotUrl?: string | null;
   avgPointsPPR: number;
   projectedPoints: number;
+  /** Server flag: a projection row exists for the requested week. */
+  hasProjection?: boolean;
   weeklyProjectedPoints?: number;
   isRostered: boolean;
   /** Season mode only: genuine full-season AI-projected total (redraft pool), or null if uncovered. */
@@ -81,7 +83,10 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
     team: player.team,
     position: validPosition,
     keyLine,
-    projectedPoints: projPts > 0 ? projPts : avgPts,
+    // Never substitute the season average for a missing projection: in an
+    // early week that is just last week's score wearing a "Proj" label.
+    projectedPoints: projPts,
+    hasProjection: player.hasProjection ?? projPts > 0,
     weekChange: 0,
     weeklyProjectedPoints: player.weeklyProjectedPoints,
     headshotUrl: player.headshotUrl ?? null,

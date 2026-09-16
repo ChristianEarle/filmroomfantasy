@@ -189,6 +189,8 @@ export interface Player {
   position: 'WR' | 'RB' | 'QB' | 'TE' | 'K' | 'DEF' | 'FLEX';
   keyLine: string;
   projectedPoints: number;
+  /** False when no projection exists for the requested week; the UI shows a dash instead of a number. */
+  hasProjection?: boolean;
   weekChange: number;
   weeklyProjectedPoints?: number;
   headshotUrl?: string | null;
