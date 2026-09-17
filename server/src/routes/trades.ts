@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import type { Env, Variables } from '../index';
@@ -23,6 +23,8 @@ import {
   formatPlayerDataBlock,
   type EnrichedPlayerData,
 } from '../services/tradePlayerEnrichment';
+import { getNflState, resolveLeagueWeek, resolveWeekFromCalendar, resolveSeasonInFocus } from '../services/nflState';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -291,25 +293,38 @@ tradesRoutes.post(
       }
     }
 
-    // Resolve season/week/league context for TradeContext
-    let seasonYear = new Date().getFullYear();
-    let currentWeek = 1;
+    // Resolve season/week context for TradeContext: the connected league's
+    // effective week/season when the request names one, otherwise the live
+    // NFL state. (Previously this guessed from whichever league in the
+    // whole DB updated most recently, which had nothing to do with this
+    // trade.)
+    let seasonYear: number;
+    let currentWeek: number;
     try {
-      const anyLeague = await db.query.leagues.findFirst({
-        orderBy: [desc(schema.leagues.updatedAt)],
-        columns: { seasonYear: true, currentWeek: true },
-      });
-      if (anyLeague) {
-        seasonYear = anyLeague.seasonYear;
-        currentWeek = anyLeague.currentWeek;
+      if (body.connectedLeagueId) {
+        const connectedLeague = await db.query.leagues.findFirst({
+          where: eq(schema.leagues.id, body.connectedLeagueId),
+          columns: { seasonYear: true, currentWeek: true },
+        });
+        const leagueWeek = await resolveLeagueWeek(db, connectedLeague ?? null);
+        seasonYear = leagueWeek.season;
+        currentWeek = leagueWeek.week;
+      } else {
+        const state = await getNflState(db);
+        // Tenure/phase reasoning in buildTradeContext expects the season in
+        // focus (upcoming during the offseason), not the season with data.
+        seasonYear = resolveSeasonInFocus();
+        currentWeek = state.week;
       }
     } catch (err) {
-      console.error('Failed to fetch default league meta for trade context:', err);
+      console.error('Failed to resolve season/week context for trade context:', err);
+      seasonYear = resolveSeasonInFocus();
+      currentWeek = resolveWeekFromCalendar(new Date()).week;
     }
 
     // Merge defaults into leagueSettings
     const mergedLeagueSettings: LeagueSettings = {
-      scoringFormat: body.leagueSettings?.scoringFormat ?? 'ppr',
+      scoringFormat: normalizeScoringFormat(body.leagueSettings?.scoringFormat),
       superflex: body.leagueSettings?.superflex ?? false,
       tePremium: body.leagueSettings?.tePremium ?? false,
       teamCount: body.leagueSettings?.teamCount ?? 12,
