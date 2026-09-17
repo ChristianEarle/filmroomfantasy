@@ -9,7 +9,7 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import { useNflState } from '../hooks';
 import { useAuth } from '../context/AuthContext';
 import { buildPlayerProfilePath } from '../utils/slug';
-import { getDefaultSeason } from '../utils/playerUtils';
+import { getDefaultSeason, normalizeLeagueScoringFormat, toApiScoringFormat } from '../utils/playerUtils';
 import { NewsSnippet } from './NewsSnippet';
 
 
@@ -91,7 +91,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [averagePoints, setAveragePoints] = useState<{ ppr: number | null; half: number | null; std: number | null }>({ ppr: null, half: null, std: null });
 
   // Resolve scoring format — normalize to 'ppr' | 'half_ppr' | 'standard'
-  const scoringFormat = propsScoringFormat === 'half_ppr' ? 'half_ppr' : propsScoringFormat === 'standard' ? 'standard' : 'ppr';
+  const scoringFormat = normalizeLeagueScoringFormat(propsScoringFormat);
   const scoringLabel = scoringFormat === 'half_ppr' ? 'Half PPR' : scoringFormat === 'standard' ? 'Standard' : 'PPR';
 
   /** Pick the correct fantasy points field from a weekly stat based on scoring format */
@@ -205,8 +205,8 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
     if (!player?.id) return;
     let cancelled = false;
     setProjectionLoading(true);
-    // The server stores 'half-ppr' (hyphen), while props use 'half_ppr'.
-    const format = (propsScoringFormat === 'half_ppr' ? 'half-ppr' : propsScoringFormat === 'standard' ? 'standard' : 'ppr');
+    // The server stores 'half-ppr' (hyphen); the league may say 'half_ppr' or 'half-ppr'.
+    const format = toApiScoringFormat(propsScoringFormat);
     playerService.getPlayerProjections(player.id, { week: selectedWeek, season, format })
       .then((res) => { if (!cancelled) setProjection(res.projections?.[0] ?? null); })
       .catch(() => { if (!cancelled) setProjection(null); })

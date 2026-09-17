@@ -24,6 +24,7 @@ import {
   type EnrichedPlayerData,
 } from '../services/tradePlayerEnrichment';
 import { getNflState, resolveLeagueWeek, resolveWeekFromCalendar, resolveSeasonInFocus } from '../services/nflState';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -323,7 +324,7 @@ tradesRoutes.post(
 
     // Merge defaults into leagueSettings
     const mergedLeagueSettings: LeagueSettings = {
-      scoringFormat: body.leagueSettings?.scoringFormat ?? 'ppr',
+      scoringFormat: normalizeScoringFormat(body.leagueSettings?.scoringFormat),
       superflex: body.leagueSettings?.superflex ?? false,
       tePremium: body.leagueSettings?.tePremium ?? false,
       teamCount: body.leagueSettings?.teamCount ?? 12,
