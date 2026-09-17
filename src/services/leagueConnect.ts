@@ -333,6 +333,20 @@ export const leagueConnectService = {
     return api.post(`/leagues/${leagueId}/sync`);
   },
 
+  // Sync-on-open: the server syncs only if the league's last sync is older
+  // than its staleness window (hours in season, a day off season), so this
+  // is safe to call on every league open. `synced: false` with reason
+  // 'fresh' or 'in_progress' is the normal case.
+  syncLeagueIfStale: async (leagueId: string): Promise<{
+    synced: boolean;
+    reason?: 'fresh' | 'in_progress' | 'unsupported' | 'failed';
+    lastSyncedAt?: string | null;
+    rolledOver?: { fromExternalId: string; toExternalId: string; season: number } | null;
+    warning?: string | null;
+  }> => {
+    return api.post(`/leagues/${leagueId}/sync/if-stale`);
+  },
+
   disconnectLeague: async (leagueId: string): Promise<{ success: boolean }> => {
     return api.delete<{ success: boolean }>(`/leagues/${leagueId}`);
   },

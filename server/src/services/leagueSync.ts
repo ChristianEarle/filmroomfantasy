@@ -1181,6 +1181,12 @@ export async function syncSleeperLeague(
         : 'We synced the league but don\'t know which roster is yours. Add your Sleeper username in league settings to see your team.')
     : null;
 
+  // Stamp the successful sync so sync-on-open (POST /leagues/:id/sync/if-stale)
+  // and the admin batch sync know how fresh this league is.
+  await db.update(schema.leagues)
+    .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+    .where(eq(schema.leagues.id, league.id));
+
   return {
     success: true,
     message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, ${statsImported} player stats, ${propsProjectionsCount} projections from book lines, ${projectionsImported} projections from Sleeper, and ${tradesIngested} trades updated.`,
