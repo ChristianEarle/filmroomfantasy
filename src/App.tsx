@@ -219,6 +219,8 @@ export interface Player {
    * Market badge's tooltip.
    */
   marketConfidence?: string | null;
+  /** Position depth-chart rank on the player's team (1 = starter), when synced. */
+  depthChartOrder?: number | null;
 }
 
 // URL path <-> view mapping for client-side routing (BUG-001/002 fix)
