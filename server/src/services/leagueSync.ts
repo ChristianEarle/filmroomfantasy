@@ -1062,25 +1062,14 @@ export async function syncSleeperLeague(
     const propsResult = await generateProjectionsFromProps(db, projectionWeek, league.seasonYear);
     propsProjectionsCount = propsResult.generated + propsResult.updated;
 
-    // Track which players already have props-based projections. Read the
-    // stored rows rather than trusting this run's write count: a run where
-    // no book line moved writes nothing, and those players must still be
-    // kept out of the Sleeper fallback below or the two sources would
-    // overwrite each other on alternate runs.
+    // Players whose stored row for this week came from book lines. Filled
+    // from the stored rows fetched below (by player, through the index), not
+    // from this run's write count: a run where no line moved writes nothing,
+    // and those players must still stay out of the Sleeper fallback or the
+    // two sources would overwrite each other on alternate runs. A query by
+    // week and season alone would scan the whole table, which D1 counts
+    // against the daily read budget.
     const playersCoveredByProps = new Set<string>();
-    {
-      const propsProjections = await db.query.playerProjections.findMany({
-        where: and(
-          eq(schema.playerProjections.week, projectionWeek),
-          eq(schema.playerProjections.seasonYear, league.seasonYear),
-          eq(schema.playerProjections.source, 'props')
-        ),
-        columns: { playerId: true },
-      });
-      for (const p of propsProjections) {
-        playersCoveredByProps.add(p.playerId);
-      }
-    }
 
     // Step 5b: Sleeper fallback for players without prop lines
     const projectionsResponse = await fetch(
@@ -1115,6 +1104,7 @@ export async function syncSleeperLeague(
         });
         for (const p of found) {
           existingProjMap.set(p.playerId, p);
+          if (p.source === 'props') playersCoveredByProps.add(p.playerId);
         }
       }
 

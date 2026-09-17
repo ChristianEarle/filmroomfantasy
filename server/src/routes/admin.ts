@@ -1283,7 +1283,9 @@ adminRoutes.post('/sync-projections', async (c) => {
       const projStatements: any[] = [];
 
       try {
-        // Step 1: Generate projections from book lines (player props) if available
+        // Step 1: Generate projections from book lines (player props) if available.
+        // playersCoveredByProps is filled from the stored rows in step 2 (a run
+        // where no line moved writes nothing, so the write count can't tell us).
         const playersCoveredByProps = new Set<string>();
 
         if (source !== 'sleeper') {
@@ -1291,25 +1293,6 @@ adminRoutes.post('/sync-projections', async (c) => {
           propsGenerated += propsResult.generated;
           propsUpdated += propsResult.updated;
           weekPropsProjections = propsResult.generated + propsResult.updated;
-
-          // Track which players already have props-based projections. Read
-          // the stored rows rather than trusting this run's write count: a
-          // run where no book line moved writes nothing, and those players
-          // must still be kept out of the Sleeper fallback or the two
-          // sources would overwrite each other on alternate runs.
-          {
-            const propsProjections = await db.query.playerProjections.findMany({
-              where: and(
-                eq(schema.playerProjections.week, weekNum),
-                eq(schema.playerProjections.seasonYear, seasonYear),
-                eq(schema.playerProjections.source, 'props')
-              ),
-              columns: { playerId: true },
-            });
-            for (const p of propsProjections) {
-              playersCoveredByProps.add(p.playerId);
-            }
-          }
         }
 
         // Step 2: Fill in remaining players from Sleeper (fallback)
@@ -1328,16 +1311,35 @@ adminRoutes.post('/sync-projections', async (c) => {
           } else {
             const projections = await projResponse.json() as Record<string, any>;
 
-            // One read for the week's stored rows instead of a lookup per
-            // (player, format); each incoming line is then compared and only
-            // written when it moved.
-            const storedProjections = await db.query.playerProjections.findMany({
-              where: and(
-                eq(schema.playerProjections.week, weekNum),
-                eq(schema.playerProjections.seasonYear, seasonYear)
-              ),
-            });
-            const storedByKey = new Map(storedProjections.map((p) => [`${p.playerId}::${p.scoringFormat}`, p]));
+            // Fetch the stored rows for the players in this response by
+            // player id through the unique index, in chunks of 50 (D1 caps
+            // bound parameters per statement). A query by week and season
+            // alone has no index on player_projections and scans the whole
+            // table, and D1 counts every scanned row against the daily read
+            // budget. The same rows say which players already carry a
+            // book-line projection (source 'props'); the loop below must
+            // leave those alone or the two sources would overwrite each
+            // other on alternate runs.
+            const sleeperPlayerIds = Array.from(new Set(
+              Object.entries(projections)
+                .filter(([, p]) => !!p)
+                .map(([extId]) => playerByExtId.get(extId))
+                .filter((id): id is string => !!id)
+            ));
+            const storedByKey = new Map<string, typeof schema.playerProjections.$inferSelect>();
+            for (let i = 0; i < sleeperPlayerIds.length; i += 50) {
+              const found = await db.query.playerProjections.findMany({
+                where: and(
+                  inArray(schema.playerProjections.playerId, sleeperPlayerIds.slice(i, i + 50)),
+                  eq(schema.playerProjections.week, weekNum),
+                  eq(schema.playerProjections.seasonYear, seasonYear)
+                ),
+              });
+              for (const p of found) {
+                storedByKey.set(`${p.playerId}::${p.scoringFormat}`, p);
+                if (p.source === 'props') playersCoveredByProps.add(p.playerId);
+              }
+            }
 
             for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
               if (!playerProj) continue;
