@@ -44,6 +44,7 @@ export type Env = {
   DEV_AUTO_LOGIN_EMAIL?: string;
   SYNC_SECRET?: string; // Optional: required for POST /api/admin/sync-players
   ODDS_API_KEY?: string; // Optional: The Odds API key for fetching NFL odds
+  ODDS_API_CREDIT_RESERVE?: string; // Optional: Odds API credits to keep untouched (default 1000, see services/propsBudget.ts)
   TWITTER_RSS_URLS?: string; // Comma-separated RSS URLs, e.g. https://nitter.net/AdamSchefter/rss
   OPENAI_API_KEY?: string; // Deprecated: was used for news filtering, now uses ANTHROPIC_API_KEY
   ANTHROPIC_API_KEY?: string; // For AI trade analysis and news relevance filtering (Claude API)
@@ -360,11 +361,11 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     }
 
     // Sync player prop lines (per-player Vegas O/U) for the current week.
-    // The endpoint itself loops over every game and skips any it already
-    // refreshed within the last 12h (see PROPS_REFRESH_HOURS in admin.ts),
-    // so a full week's props — and the projections generated from them —
-    // fill in automatically without re-billing the Odds API for games whose
-    // lines haven't had time to move.
+    // The endpoint decides per game whether a fetch is worth its credits
+    // (see services/propsBudget.ts): never after kickoff, once a day before
+    // the pre-kickoff window, once more inside it, and not at all below the
+    // credit reserve — so a full week's props and the projections generated
+    // from them fill in without re-billing the Odds API every tick.
     if (currentWeek <= 18) {
       await callSync('/api/admin/sync-player-props', { week: currentWeek });
     }

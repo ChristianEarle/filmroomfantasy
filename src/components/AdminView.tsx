@@ -796,15 +796,30 @@ function PlayerPropsSyncAdminCard({
     try {
       const data = await api.post<{
         games_processed: number;
+        games_due?: number;
+        games_skipped_kicked_off?: number;
+        games_skipped_fresh?: number;
+        stopped_at_reserve?: boolean;
+        credit_reserve?: number;
+        odds_api_credits_remaining?: number | null;
         props_found: number;
         props_inserted: number;
         projections_generated: number;
         projections_updated: number;
       }>('/admin/sync-player-props', { week, season });
-      setResult({
-        type: 'success',
-        message: `Synced ${data.games_processed} game${data.games_processed === 1 ? '' : 's'} — ${data.props_inserted} props inserted, ${data.projections_generated} projections generated, ${data.projections_updated} updated.`,
-      });
+      const parts = [
+        `Synced ${data.games_processed} game${data.games_processed === 1 ? '' : 's'} — ${data.props_inserted} props inserted, ${data.projections_generated} projections generated, ${data.projections_updated} updated.`,
+      ];
+      if ((data.games_skipped_fresh ?? 0) > 0 || (data.games_skipped_kicked_off ?? 0) > 0) {
+        parts.push(`Skipped ${data.games_skipped_fresh ?? 0} recently refreshed and ${data.games_skipped_kicked_off ?? 0} already kicked off.`);
+      }
+      if (data.odds_api_credits_remaining != null) {
+        parts.push(`Odds API credits remaining: ${data.odds_api_credits_remaining.toLocaleString()}.`);
+      }
+      if (data.stopped_at_reserve) {
+        parts.push(`Stopped early: credits are at or below the ${data.credit_reserve?.toLocaleString() ?? ''} reserve.`);
+      }
+      setResult({ type: data.stopped_at_reserve ? 'error' : 'success', message: parts.join(' ') });
     } catch (err) {
       setResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to sync player props' });
     } finally {
@@ -823,8 +838,9 @@ function PlayerPropsSyncAdminCard({
         Sync Player Props
       </h2>
       <p className={`text-sm mb-4 ${textSecondary}`}>
-        Pulls Vegas prop lines from the Odds API for every game in the given week (skipping games
-        already synced in the last 12h) and regenerates projections from them.
+        Pulls Vegas prop lines from the Odds API for games in the given week that are due for a refresh
+        (once a day, once more in the 8 hours before kickoff, never after kickoff) and regenerates
+        projections from them. Stops spending at the credit reserve.
       </p>
       <div className="flex flex-wrap items-end gap-3">
         <div>
