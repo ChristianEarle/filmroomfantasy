@@ -2,6 +2,44 @@ import { getNflSeasonContext } from './espn';
 
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
+/**
+ * The Odds API reports the account's credit balance on every response
+ * (`x-requests-remaining` / `x-requests-used`). Remember the latest reading
+ * per isolate so the props sync can stop spending at a reserve and the admin
+ * UI can show how much is left. Null until a response has been seen.
+ */
+export interface OddsApiQuota {
+  remaining: number | null;
+  used: number | null;
+  observedAt: string | null;
+}
+
+let lastQuota: OddsApiQuota = { remaining: null, used: null, observedAt: null };
+
+function readHeaderNumber(response: Response, name: string): number | null {
+  const raw = response.headers.get(name);
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Record the credit balance from an Odds API response. Safe on error responses. */
+export function recordOddsQuota(response: Response): void {
+  const remaining = readHeaderNumber(response, 'x-requests-remaining');
+  const used = readHeaderNumber(response, 'x-requests-used');
+  if (remaining == null && used == null) return;
+  lastQuota = { remaining, used, observedAt: new Date().toISOString() };
+}
+
+export function getOddsQuota(): OddsApiQuota {
+  return lastQuota;
+}
+
+/** Test hook: forget any recorded balance. */
+export function resetOddsQuota(): void {
+  lastQuota = { remaining: null, used: null, observedAt: null };
+}
+
 /** Strip API key from URLs before logging to prevent credential leakage */
 function sanitizeUrl(url: string): string {
   return url.replace(/apiKey=[^&]+/, 'apiKey=***');
@@ -122,6 +160,7 @@ export async function fetchCurrentOdds(apiKey: string): Promise<OddsGame[]> {
   url.searchParams.set('apiKey', apiKey);
 
   const response = await safeFetch(url.toString());
+  recordOddsQuota(response);
   if (!response.ok) {
     throw new Error(`Failed to fetch current odds: ${response.status} ${response.statusText}`);
   }
@@ -148,6 +187,7 @@ export async function fetchHistoricalOdds(
   url.searchParams.set('apiKey', apiKey);
 
   const response = await safeFetch(url.toString());
+  recordOddsQuota(response);
   if (!response.ok) {
     throw new Error(`Failed to fetch historical odds: ${response.status} ${response.statusText}`);
   }
@@ -287,6 +327,7 @@ export async function fetchPlayerProps(
   }
 
   const response = await safeFetch(url.toString());
+  recordOddsQuota(response);
   if (!response.ok) {
     console.error(`Failed to fetch player props for event ${eventId}: ${response.status} ${response.statusText}`);
     return null;

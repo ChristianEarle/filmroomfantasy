@@ -6,7 +6,8 @@ import { fetchTwitterTweets } from '../services/twitter';
 import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
-import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr } from '../services/odds';
+import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr, getOddsQuota } from '../services/odds';
+import { decidePropsFetch, isBelowReserve, parseCreditReserve, PROPS_REFRESH_HOURS } from '../services/propsBudget';
 import { generateProjectionsFromProps, calculateFantasyPoints, PROJECTION_COMPARE_KEYS_WITH_SOURCE } from '../services/projections';
 import { rowChanged } from '../utils/rowDiff';
 import type { SeasonStatKey, SeasonStatVector } from '../services/marketRankings';
@@ -1730,7 +1731,6 @@ adminRoutes.post('/sync-historical-odds', async (c) => {
 // How often the default (no explicit gameIndex/eventId) sync path will
 // re-fetch a game's props from the Odds API. Below this age a game is
 // considered fresh and skipped — see the default branch below.
-const PROPS_REFRESH_HOURS = 12;
 
 /**
  * POST /api/admin/sync-player-props
@@ -1764,6 +1764,10 @@ adminRoutes.post('/sync-player-props', async (c) => {
 
     let gamesToProcess: any[] = [];
     let snapshotTime = providedSnapshotTime || new Date().toISOString();
+    let gamesDueCount = 0;
+    let gamesSkippedKickedOff = 0;
+    let gamesSkippedFresh = 0;
+    let stoppedAtReserve = false;
 
     // If eventId is provided directly, fetch props for that event only
     if (eventId) {
@@ -1806,15 +1810,23 @@ adminRoutes.post('/sync-player-props', async (c) => {
           eq(schema.nflGames.seasonYear, seasonYear),
           eq(schema.nflGames.seasonType, 'regular')
         ),
-        columns: { homeTeam: true, awayTeam: true },
+        columns: { homeTeam: true, awayTeam: true, gameTime: true },
       });
       const weekTeamPairs = new Set(weekGames.map(g => `${g.awayTeam}_${g.homeTeam}`));
+      const kickoffByPair = new Map<string, Date | null>(
+        weekGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g.gameTime ? new Date(g.gameTime) : null])
+      );
       const validGames = games.filter((game) => {
         const pair = `${teamNameToAbbr(game.away_team)}_${teamNameToAbbr(game.home_team)}`;
         return weekTeamPairs.has(pair);
       });
 
       console.log(`Starting player props sync for week ${week}, found ${games.length} events, ${validGames.length} match this week's schedule`);
+
+      // Credit budget for this run. The events fetch above already recorded
+      // the account balance, so the reserve check below sees a real number
+      // before the first (7-credit) props request.
+      const creditReserve = parseCreditReserve(c.env.ODDS_API_CREDIT_RESERVE);
 
       // If gameIndex is specified, fetch only that game
       if (typeof gameIndex === 'number' && gameIndex >= 0 && gameIndex < validGames.length) {
@@ -1827,36 +1839,52 @@ adminRoutes.post('/sync-player-props', async (c) => {
       } else if (typeof gameIndex === 'number') {
         return c.json({ error: `Invalid gameIndex (must be 0-${validGames.length - 1})` }, 400);
       } else {
-        // Default (cron path): sync every game for the week that hasn't had
-        // its props refreshed in the last PROPS_REFRESH_HOURS. Prop lines
-        // don't move fast enough to justify re-fetching (and re-billing
-        // against the Odds API quota) a game every 4-hour tick — most games
-        // sit unchanged between runs, so skip those and only pay for the
-        // ones actually due for a refresh.
-        const recentCutoff = new Date(Date.now() - PROPS_REFRESH_HOURS * 60 * 60 * 1000);
+        // Default (cron path): decide per game whether a fetch is worth its
+        // credits (see services/propsBudget.ts) — never after kickoff, once
+        // a day before the pre-kickoff window, once more inside it — and
+        // stop spending altogether at the credit reserve.
         const existingProps = await db.query.playerProps.findMany({
           where: and(eq(schema.playerProps.week, week), eq(schema.playerProps.season, seasonYear)),
           columns: { homeTeam: true, awayTeam: true, createdAt: true },
         });
-        const recentlySyncedPairs = new Set(
-          existingProps
-            .filter((p) => p.homeTeam && p.awayTeam && p.createdAt && p.createdAt >= recentCutoff)
-            .map((p) => `${p.awayTeam}_${p.homeTeam}`)
+        const lastSnapshotByPair = new Map<string, Date>();
+        for (const p of existingProps) {
+          if (!p.homeTeam || !p.awayTeam || !p.createdAt) continue;
+          const pair = `${p.awayTeam}_${p.homeTeam}`;
+          const prev = lastSnapshotByPair.get(pair);
+          if (!prev || p.createdAt > prev) lastSnapshotByPair.set(pair, p.createdAt);
+        }
+
+        const now = new Date();
+        const gamesDue: typeof validGames = [];
+        for (const g of validGames) {
+          const pair = `${teamNameToAbbr(g.away_team)}_${teamNameToAbbr(g.home_team)}`;
+          const decision = decidePropsFetch({
+            now,
+            kickoff: kickoffByPair.get(pair) ?? null,
+            lastSnapshotAt: lastSnapshotByPair.get(pair) ?? null,
+          });
+          if (decision === 'fetch') gamesDue.push(g);
+          else if (decision === 'skip_kicked_off') gamesSkippedKickedOff++;
+          else gamesSkippedFresh++;
+        }
+
+        console.log(
+          `Week ${week} props: ${gamesDue.length} due, ${gamesSkippedFresh} fresh (refreshed within ${PROPS_REFRESH_HOURS}h or the pre-kickoff window), ${gamesSkippedKickedOff} already kicked off; credits remaining ${getOddsQuota().remaining ?? 'unknown'}, reserve ${creditReserve}`
         );
 
-        const gamesDue = validGames.filter((g) => {
-          const pair = `${teamNameToAbbr(g.away_team)}_${teamNameToAbbr(g.home_team)}`;
-          return !recentlySyncedPairs.has(pair);
-        });
-
-        console.log(`${validGames.length - gamesDue.length}/${validGames.length} games synced within the last ${PROPS_REFRESH_HOURS}h, refreshing ${gamesDue.length}`);
-
         for (const dueGame of gamesDue) {
+          if (isBelowReserve(getOddsQuota().remaining, creditReserve)) {
+            stoppedAtReserve = true;
+            console.warn(`Odds API credits (${getOddsQuota().remaining}) at or below reserve (${creditReserve}) — skipping the remaining ${gamesDue.length - gamesToProcess.length} due games`);
+            break;
+          }
           const propsGame = await fetchPlayerProps(apiKey, dueGame.id, date);
           if (propsGame) {
             gamesToProcess.push(propsGame);
           }
         }
+        gamesDueCount = gamesDue.length;
       }
     }
 
@@ -1953,6 +1981,13 @@ adminRoutes.post('/sync-player-props', async (c) => {
       week,
       date: date || new Date().toISOString(),
       games_processed: gamesToProcess.length,
+      games_due: gamesDueCount,
+      games_skipped_kicked_off: gamesSkippedKickedOff,
+      games_skipped_fresh: gamesSkippedFresh,
+      stopped_at_reserve: stoppedAtReserve,
+      credit_reserve: parseCreditReserve(c.env.ODDS_API_CREDIT_RESERVE),
+      odds_api_credits_remaining: getOddsQuota().remaining,
+      odds_api_credits_used: getOddsQuota().used,
       props_found: propsFound,
       props_inserted: inserted,
       projections_generated: projResult.generated,
