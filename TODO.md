@@ -35,6 +35,16 @@ Deploy notes: migrations `0037`–`0041` auto-apply on merge; superflex +
 ceiling/floor data appears after the next Monday ranking batch; rank
 history accrues from the first daily cron.
 
+## Shipped since the completion sprint
+
+- Draft Rankings three-way split: `dynasty_rookie` is now two distinct
+  ranking types — `dynasty` (whole-player-pool, long-term asset value,
+  age-curve-aware AI prompt) and `rookie` (unchanged rookie-only ranking,
+  renamed for clarity). New `Dynasty`/`Rookie` pills in the UI, 12
+  `DEFAULT_VARIANTS` (was 8), migration `0045` renames existing
+  `dynasty_rookie` rows to `rookie`. Dynasty data appears after the next
+  Monday ranking batch.
+
 ---
 
 ## Shipped since the completion sprint
@@ -97,9 +107,9 @@ history accrues from the first daily cron.
   the sprint (Watch/Share shipped). Compare could reuse the Draft
   Rankings compare-basket pattern.
 - [x] **Redraft / Dynasty / Rookie three-way split** — true veteran-inclusive
-  `dynasty` ranking type added alongside `redraft` and the existing
-  rookie-only `dynasty_rookie`; Draft Rankings now has Redraft/Dynasty/
-  Rookie pills (#301).
+  `dynasty` ranking type added alongside `redraft` and the rookie-only
+  `rookie` type (renamed from `dynasty_rookie`); Draft Rankings now has
+  Redraft/Dynasty/Rookie pills (#301).
 - [x] **Research page decision** — removed from nav for launch; dead
   `ComingSoonView`/`ResearchView` deleted, old `/research` links redirect
   home (#303).
