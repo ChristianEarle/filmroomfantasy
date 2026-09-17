@@ -33,6 +33,10 @@
 > (originally scoped as Sleeper/Underdog) is done via
 > FantasyFootballCalculator's public API, which also fixed a
 > previously-silent dynasty-rookie regeneration outage (#306).
+>
+> **Follow-up:** PlayerCard gained a Compare quick action (client-only
+> compare basket + side-by-side season-stat modal). See `TODO.md` →
+> "Shipped since the completion sprint".
 
 ---
 
