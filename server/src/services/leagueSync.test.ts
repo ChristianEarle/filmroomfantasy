@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideTeamOwnerId, findSuccessorLeague, needsSeasonRollover } from './leagueSync';
+import { decideTeamOwnerId, findSleeperUserId, findSuccessorLeague, needsSeasonRollover } from './leagueSync';
 
 /**
  * Regression coverage for the sync ownership rules (see the doc comment on
@@ -197,5 +197,45 @@ describe('findSuccessorLeague', () => {
       { league_id: 'valid-id', previous_league_id: 'old-league-id' },
     ];
     expect(findSuccessorLeague(candidates, 'old-league-id')?.league_id).toBe('valid-id');
+  });
+});
+
+/**
+ * The connect flow stores the Sleeper user_id in league_members.externalUsername
+ * when it has one and only falls back to the typed username, so every place
+ * that answers "which roster is mine" must accept either form. The league
+ * detail route used to match on names only, which left isCurrentUserTeam
+ * false for everyone connected with a user_id.
+ */
+describe('findSleeperUserId', () => {
+  const users = [
+    { user_id: '111', username: 'alpha', display_name: 'Alpha Team' },
+    { user_id: '222', username: 'bravo', display_name: 'Bravo' },
+  ];
+
+  it('matches a stored Sleeper user_id directly', () => {
+    expect(findSleeperUserId(users, '222')).toBe('222');
+  });
+
+  it('matches a stored username case-insensitively', () => {
+    expect(findSleeperUserId(users, 'ALPHA')).toBe('111');
+  });
+
+  it('matches a stored display_name case-insensitively', () => {
+    expect(findSleeperUserId(users, 'bravo')).toBe('222');
+    expect(findSleeperUserId(users, 'alpha team')).toBe('111');
+  });
+
+  it('prefers the user_id match when a name would also match another user', () => {
+    const ambiguous = [...users, { user_id: '333', username: '222', display_name: 'Impostor' }];
+    expect(findSleeperUserId(ambiguous, '222')).toBe('222');
+  });
+
+  it('returns null when nothing is stored or nothing matches', () => {
+    expect(findSleeperUserId(users, null)).toBeNull();
+    expect(findSleeperUserId(users, undefined)).toBeNull();
+    expect(findSleeperUserId(users, '')).toBeNull();
+    expect(findSleeperUserId(users, 'nobody')).toBeNull();
+    expect(findSleeperUserId([], '111')).toBeNull();
   });
 });
