@@ -87,8 +87,12 @@ history accrues from the first daily cron.
 
 ## P1 — Remaining feature gaps
 
-- [ ] **Push notifications** — in-app notifications shipped; web push /
-  email delivery (and waiver/trade/lineup-lock event types) remain.
+- [ ] **Push notifications** — in-app notifications shipped; email delivery
+  for injury alerts also shipped (opt-in `emailNotificationsEnabled`,
+  gated on a verified address, sent as a per-run digest via Resend from the
+  existing `generateInjuryNewsNotifications` cron path — reuses the
+  password-reset/feedback Resend pattern, no new dependency). Web push and
+  the waiver/trade/lineup-lock event types still remain.
 - [x] **Season projections** — `GET /players` in season mode now returns
   genuine full-season `seasonProjectedPoints` from `draft_rankings`
   (redraft, matching scoring format), with `seasonActualPoints` as a
