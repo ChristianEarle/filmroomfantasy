@@ -9,7 +9,7 @@ import { SEO, getPlayerProfileSEOProps } from './SEO';
 import { buildPlayerProfilePath } from '../utils/slug';
 import { useAuth } from '../context/AuthContext';
 import { useNflState } from '../hooks';
-import { getDefaultSeason } from '../utils/playerUtils';
+import { getDefaultSeason, normalizeLeagueScoringFormat } from '../utils/playerUtils';
 
 interface PlayerProfileViewProps {
   playerId: string;
@@ -145,7 +145,7 @@ export function PlayerProfileView({
   // uses) instead.
   const season = seasonYear ?? nflSeason ?? getDefaultSeason();
 
-  const normalizedFormat = scoringFormat === 'half_ppr' ? 'half_ppr' : scoringFormat === 'standard' ? 'standard' : 'ppr';
+  const normalizedFormat = normalizeLeagueScoringFormat(scoringFormat);
   const scoringLabel = normalizedFormat === 'half_ppr' ? 'Half PPR' : normalizedFormat === 'standard' ? 'Standard' : 'PPR';
 
   const getFantasyPoints = (s: APIWeeklyStat): number => {
