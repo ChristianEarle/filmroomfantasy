@@ -310,10 +310,12 @@ export async function syncSleeperLeague(
         }
       }
     }
-    // Any manager who moved to the successor league lists it, so a handful
-    // of lookups is enough; keep the fan-out small since this re-runs on
-    // every cron pass for a league that was never renewed.
-    const candidateIds = Array.from(managerIds).slice(0, 4);
+    // Any manager who moved to the successor league lists it. Ask every
+    // roster owner (a league has at most 14-16) rather than the first few:
+    // the ones who didn't renew are exactly the ones with nothing to show,
+    // and a cron pass on a never-renewed league costs a dozen cheap GETs.
+    const MAX_ROLLOVER_LOOKUPS = 16;
+    const candidateIds = Array.from(managerIds).slice(0, MAX_ROLLOVER_LOOKUPS);
 
     let successor: ReturnType<typeof findSuccessorLeague> = null;
     for (const managerId of candidateIds) {
