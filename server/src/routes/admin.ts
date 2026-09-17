@@ -2952,7 +2952,7 @@ adminRoutes.get('/ranking-batch-jobs', async (c) => {
  * - leagueId: sync just this one league (season/limit are ignored)
  * - season: defaults to the app's current NFL season
  * - limit: max leagues processed this call, default 25, ordered by
- *   `updatedAt` ascending so the least-recently-synced leagues go first and
+ *   `lastSyncedAt` ascending so the least-recently-synced leagues go first and
  *   one slow/broken league can't starve the rest across repeated cron runs
  * - platform: only 'sleeper' is implemented today; Yahoo/ESPN leagues are
  *   counted in `skipped` rather than erroring the whole batch
@@ -2995,8 +2995,9 @@ adminRoutes.post('/sync-leagues', async (c) => {
         // Sleeper successor instead of never being selected again.
         where: and(eq(schema.leagues.platform, 'sleeper'), gte(schema.leagues.seasonYear, season - 1)),
         // Current-season leagues first so never-renewed prior-season rows
-        // can't crowd them out of the per-run limit.
-        orderBy: (l, { asc, desc }) => [desc(l.seasonYear), asc(l.updatedAt)],
+        // can't crowd them out of the per-run limit; within a season the
+        // least-recently-synced first (NULL = never synced sorts first).
+        orderBy: (l, { asc, desc }) => [desc(l.seasonYear), asc(l.lastSyncedAt)],
         limit,
       });
     }
