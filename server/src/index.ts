@@ -32,6 +32,7 @@ import { watchlistRoutes } from './routes/watchlist';
 import { notificationRoutes } from './routes/notifications';
 import { leagueAnalyzerRoutes } from './routes/leagueAnalyzer';
 import { platformProxyRoutes } from './routes/platformProxy';
+import { isInSeasonMonth } from './services/leagueFreshness';
 
 // Types
 export type Env = {
@@ -246,13 +247,10 @@ app.onError((err, c) => {
   }, 500);
 });
 
-// NFL regular/postseason months, UTC. Used to decide how often the league
+// isInSeasonMonth (services/leagueFreshness.ts) decides how often the league
 // sync cron (POST /api/admin/sync-leagues) runs — every 4h in-season to keep
-// matchups/rosters fresh, once a day off-season since nothing changes.
-function isInSeasonMonth(date: Date = new Date()): boolean {
-  const month = date.getUTCMonth() + 1; // 1-12
-  return month >= 9 || month === 1;
-}
+// matchups/rosters fresh, once a day off-season since nothing changes — and
+// how stale a league may get before opening it in the app re-syncs it.
 
 // Scheduled handler for Cloudflare Cron Triggers
 // Uses app.fetch() to call existing admin endpoints internally

@@ -153,6 +153,7 @@ import {
   type LeagueSettings,
 } from '../services/tradeContext';
 import { resolveLeagueWeek } from '../services/nflState';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 const tradeHistoryRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -980,8 +981,7 @@ tradeHistoryRoutes.post('/grade/:tradeId', authMiddleware, requireTier('pro', 'R
   // Build TradeContext with current data (we can't rebuild historical
   // projections — tell the AI this in the system prompt).
   const leagueSettings: LeagueSettings = {
-    scoringFormat:
-      (league?.scoringFormat as LeagueSettings['scoringFormat']) || 'ppr',
+    scoringFormat: normalizeScoringFormat(league?.scoringFormat),
     superflex: false,
     tePremium: false,
     teamCount: league?.teamCount || 12,

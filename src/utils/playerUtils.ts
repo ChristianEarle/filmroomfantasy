@@ -138,3 +138,24 @@ export function scoringToFormat(scoring: 'PPR' | 'Half PPR' | 'Standard'): strin
 
 /** NFL regular season weeks */
 export const NFL_WEEKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] as const;
+
+/**
+ * A league's stored scoring format arrives in two spellings: 'half_ppr'
+ * from the connect flow and league settings, 'half-ppr' from the Sleeper
+ * sync. Normalize before branching so a synced half-PPR league isn't
+ * treated as full PPR.
+ */
+export type LeagueScoringFormat = 'ppr' | 'half_ppr' | 'standard';
+
+export function normalizeLeagueScoringFormat(raw: string | null | undefined): LeagueScoringFormat {
+  const f = (raw ?? '').toString().trim().toLowerCase();
+  if (f.includes('half')) return 'half_ppr';
+  if (f === 'standard' || f === 'std' || f === 'non-ppr' || f === 'non_ppr') return 'standard';
+  return 'ppr';
+}
+
+/** The spelling the projections and players API expect ('half-ppr'). */
+export function toApiScoringFormat(raw: string | null | undefined): 'ppr' | 'half-ppr' | 'standard' {
+  const f = normalizeLeagueScoringFormat(raw);
+  return f === 'half_ppr' ? 'half-ppr' : f;
+}
