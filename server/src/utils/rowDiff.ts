@@ -42,7 +42,7 @@ export function rowSetSignature(
   keys: readonly string[],
 ): string {
   return rows
-    .map((row) => keys.map((key) => String(normalizeCell(row[key]))).join(''))
+    .map((row) => keys.map((key) => String(normalizeCell(row[key]))).join('\u0001'))
     .sort()
-    .join('');
+    .join('\u0002');
 }
