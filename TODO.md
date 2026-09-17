@@ -109,7 +109,14 @@ history accrues from the first daily cron.
 - [ ] Practice reports / injury designations (nflverse or ESPN, free)
 - [ ] Usage data: snap %, target share, red-zone touches (nflverse, free)
 - [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
-- [ ] Weather for outdoor games (Open-Meteo/NWS, free)
+- [x] **Weather for outdoor games** — real forecasts (temp + conditions) from
+  Open-Meteo (free, no key) fill the game-slate `weather` field for future
+  outdoor games once ESPN's own forecast isn't attached yet (ESPN only sets
+  one within ~a week of kickoff). Batched single request per scoreboard
+  fetch, keyed off each home team's stadium coordinates; existing "Indoor"
+  synthesis and past/final-game handling untouched. No frontend or schema
+  changes — reuses the existing `weather` column and `{ displayValue,
+  temperature }` shape already rendered by GameSlateView/GameDetailModal.
 - [x] **Redraft ADP** — via FantasyFootballCalculator's public JSON API
   (not Sleeper/Underdog as originally scoped), feeding both the AI
   draft-rankings prompts and `adpDelta` (#306).
