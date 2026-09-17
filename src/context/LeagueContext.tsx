@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { useLeaguesContext } from './LeaguesContext';
 import api, { ApiError } from '../services/api';
+import { leagueConnectService } from '../services/leagueConnect';
 
 // Types
 export interface LeagueTeam {
@@ -233,6 +234,9 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   const [userTeam, setUserTeam] = useState<UserTeam | null>(null);
   const [userTeamLoading, setUserTeamLoading] = useState(false);
   const [viewedTeamId, setViewedTeamId] = useState<string | null>(null);
+  // Latest refreshAll, so the sync-on-open effect below can call it without
+  // re-running every time its identity changes.
+  const refreshAllRef = useRef<() => Promise<void>>(async () => {});
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [rosterWeek, setRosterWeek] = useState<number | null>(null);
@@ -607,6 +611,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
       refreshStandings(),
     ]);
   }, [refreshLeague, refreshRoster, refreshMatchup, refreshStandings]);
+  refreshAllRef.current = refreshAll;
 
   // Fetch league when selected league changes
   useEffect(() => {
@@ -614,6 +619,28 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
       refreshLeague();
     }
   }, [selectedLeagueId, isAuthenticated, refreshLeague]);
+
+  // Sync-on-open: once per league per page load, ask the server to re-sync
+  // the league if its last sync is stale. The pages render whatever is
+  // cached meanwhile and refresh when a sync actually ran, so nobody has to
+  // press Sync to see waiver moves, trades or the current week.
+  const staleSyncAttempted = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selectedLeagueId || !isAuthenticated) return;
+    if (staleSyncAttempted.current.has(selectedLeagueId)) return;
+    staleSyncAttempted.current.add(selectedLeagueId);
+    let cancelled = false;
+    leagueConnectService.syncLeagueIfStale(selectedLeagueId)
+      .then((res) => {
+        if (cancelled || !res.synced) return;
+        return refreshAllRef.current();
+      })
+      .catch(() => {
+        // Best-effort: a failed background sync must never break the page.
+        // The server released its claim, so the next open retries.
+      });
+    return () => { cancelled = true; };
+  }, [selectedLeagueId, isAuthenticated]);
 
   // Fetch roster when the viewed team or the requested week changes
   // (refreshRoster's identity changes with rosterWeek).

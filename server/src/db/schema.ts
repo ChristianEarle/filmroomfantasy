@@ -85,6 +85,10 @@ export const leagues = sqliteTable('leagues', {
   leagueType: text('league_type').notNull().default('redraft'), // 'redraft' | 'dynasty' | 'keeper'
   hasSuperflex: integer('has_superflex', { mode: 'boolean' }).notNull().default(false),
   hasTePremium: integer('has_te_premium', { mode: 'boolean' }).notNull().default(false),
+  // Last successful refresh from the platform (full or quick sync). NULL =
+  // never synced since the column existed. Drives sync-on-open — see
+  // services/leagueFreshness.ts and POST /api/leagues/:id/sync/if-stale.
+  lastSyncedAt: integer('last_synced_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
