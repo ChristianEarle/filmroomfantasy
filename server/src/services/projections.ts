@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import type { PlayerProps } from '../db/schema';
 import { generateId } from '../utils/id';
@@ -353,20 +353,28 @@ export async function generateProjectionsFromProps(
     }
   }
 
-  // Pre-fetch existing projections for this week/season in ONE query instead
-  // of a findFirst per (player, format) pair — that pattern previously blew
-  // the Worker's per-invocation subrequest cap on any event with full prop
-  // coverage (~15 players × 3 formats = 45+ round-trips on top of everything
-  // else in the request).
-  const existingProjections = await db.query.playerProjections.findMany({
-    where: and(
-      eq(schema.playerProjections.week, week),
-      eq(schema.playerProjections.seasonYear, seasonYear)
-    ),
-  });
-  const existingByKey = new Map<string, (typeof existingProjections)[number]>();
-  for (const p of existingProjections) {
-    existingByKey.set(`${p.playerId}::${p.scoringFormat}`, p);
+  // Resolve each prop projection to a player id up front so the stored rows
+  // can be fetched by player through the unique index, in chunks of 50 ids
+  // (D1 caps bound parameters per statement). A query by week and season
+  // alone has no index on player_projections and scans the whole table, and
+  // D1 counts every scanned row against the daily read budget.
+  const resolvePlayerId = (proj: (typeof projections)[number]): string | undefined =>
+    (proj.playerId ? playerByExtId.get(proj.playerId) : undefined) ?? playerByName.get(proj.playerName.toLowerCase());
+  const resolvedPlayerIds = Array.from(new Set(
+    projections.map(resolvePlayerId).filter((id): id is string => !!id)
+  ));
+  const existingByKey = new Map<string, typeof schema.playerProjections.$inferSelect>();
+  for (let i = 0; i < resolvedPlayerIds.length; i += 50) {
+    const found: (typeof schema.playerProjections.$inferSelect)[] = await db.query.playerProjections.findMany({
+      where: and(
+        inArray(schema.playerProjections.playerId, resolvedPlayerIds.slice(i, i + 50)),
+        eq(schema.playerProjections.week, week),
+        eq(schema.playerProjections.seasonYear, seasonYear)
+      ),
+    });
+    for (const p of found) {
+      existingByKey.set(`${p.playerId}::${p.scoringFormat}`, p);
+    }
   }
 
   let generated = 0;
