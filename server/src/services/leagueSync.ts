@@ -32,6 +32,8 @@ import {
 } from './sleeper';
 import { generateId } from '../utils/id';
 import { generateProjectionsFromProps } from './projections';
+import { resolveWeekFromCalendar } from './nflState';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 type LeagueRow = typeof schema.leagues.$inferSelect;
@@ -50,6 +52,8 @@ export interface SyncSleeperLeagueResult {
   draftPicksSynced: number;
   userTeamMatched: boolean;
   warning: string | null;
+  /** Set when this sync detected a Sleeper season rollover and followed it to the successor league. */
+  rolledOver?: { fromExternalId: string; toExternalId: string; season: number };
 }
 
 export interface SyncSleeperLeagueOptions {
@@ -63,6 +67,64 @@ export interface SyncSleeperLeagueOptions {
    * `league_members.externalUsername`.
    */
   actingUserId?: string | null;
+  /**
+   * The season this sync should end up on. Sleeper mints a brand-new
+   * `league_id` every season (the new league object's `previous_league_id`
+   * points back at last season's id), so a league row whose `externalId`
+   * still points at a prior-season league would otherwise silently re-sync
+   * frozen data forever. Defaults to the app's current NFL season.
+   */
+  targetSeason?: number;
+  /**
+   * Internal recursion guard: set when this call is itself the "re-run
+   * against the successor league" recursion, so rollover detection never
+   * runs a second time and can't loop.
+   */
+  _rolledOverFrom?: string;
+}
+
+/**
+ * Pure decision of whether a Sleeper league's own reported season lags the
+ * season we want it synced to — i.e. whether it needs to roll over to its
+ * successor league. Exported so it's unit-testable without a network call.
+ * Never throws: an unparseable/missing `sleeperSeason` just means "don't
+ * roll over" rather than "the league moved".
+ */
+export function needsSeasonRollover(sleeperSeason: unknown, targetSeason: number): boolean {
+  const parsed = typeof sleeperSeason === 'string' || typeof sleeperSeason === 'number'
+    ? Number(sleeperSeason)
+    : NaN;
+  if (!Number.isFinite(parsed)) return false;
+  return parsed < targetSeason;
+}
+
+/**
+ * Pure matching for Sleeper season rollover: given the list of leagues one
+ * of last season's managers belongs to for the target season, find the one
+ * whose `previous_league_id` chains back to this league. Exported so it's
+ * unit-testable without a network call — validates shapes defensively since
+ * `candidateLeagues` is untrusted API response data.
+ */
+export function findSuccessorLeague(
+  candidateLeagues: unknown,
+  previousExternalId: string
+): { league_id: string; name?: string; season?: string; settings?: any; status?: string } | null {
+  if (!Array.isArray(candidateLeagues)) return null;
+  for (const candidate of candidateLeagues) {
+    if (typeof candidate !== 'object' || candidate === null) continue;
+    const c = candidate as Record<string, unknown>;
+    if (typeof c.league_id !== 'string' || !c.league_id) continue;
+    if (c.previous_league_id === previousExternalId) {
+      return {
+        league_id: c.league_id,
+        name: typeof c.name === 'string' ? c.name : undefined,
+        season: typeof c.season === 'string' ? c.season : undefined,
+        settings: c.settings,
+        status: typeof c.status === 'string' ? c.status : undefined,
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -228,6 +290,104 @@ export async function syncSleeperLeague(
   const rosters = validateSleeperArray(rostersRaw, isValidSleeperRoster, 'rosters');
   if (rosters.length === 0) {
     throw new Error('No valid rosters returned from Sleeper');
+  }
+
+  // ── Season rollover: Sleeper mints a new league_id every season, and our
+  // `leagues` row keeps pointing at last season's until something follows
+  // the chain forward. Detect it from the league metadata we just fetched
+  // and, if found, hop to the successor league and recurse exactly once.
+  const targetSeason = opts.targetSeason ?? resolveWeekFromCalendar(new Date()).season;
+  if (!opts._rolledOverFrom && needsSeasonRollover(sleeperLeagueResult?.season, targetSeason)) {
+    // Candidate managers to ask "what leagues are you in for targetSeason?" —
+    // every roster owner plus any co-owners, deduped and capped so a huge
+    // league can't turn this into a large fan-out.
+    const managerIds = new Set<string>();
+    for (const roster of rosters) {
+      if (roster.owner_id) managerIds.add(String(roster.owner_id));
+      const coOwners = (roster as unknown as { co_owners?: unknown }).co_owners;
+      if (Array.isArray(coOwners)) {
+        for (const co of coOwners) {
+          if (typeof co === 'string') managerIds.add(co);
+        }
+      }
+    }
+    // Any manager who moved to the successor league lists it, so a handful
+    // of lookups is enough; keep the fan-out small since this re-runs on
+    // every cron pass for a league that was never renewed.
+    const candidateIds = Array.from(managerIds).slice(0, 4);
+
+    let successor: ReturnType<typeof findSuccessorLeague> = null;
+    for (const managerId of candidateIds) {
+      try {
+        const res = await fetch(`https://api.sleeper.app/v1/user/${managerId}/leagues/nfl/${targetSeason}`);
+        if (!res.ok) continue;
+        const leaguesForUser = await res.json();
+        successor = findSuccessorLeague(leaguesForUser, league.externalId!);
+        if (successor) break;
+      } catch (e) {
+        console.warn(
+          `[sleeper sync] Successor league lookup failed for manager ${managerId} (league ${league.id}):`,
+          e instanceof Error ? e.message : e
+        );
+      }
+    }
+
+    if (successor) {
+      const fromExternalId = league.externalId!;
+      console.log(
+        `[sleeper sync] League ${league.id} rolled over from Sleeper league ${fromExternalId} (season ${sleeperLeagueResult?.season}) to ${successor.league_id} (season ${targetSeason})`
+      );
+
+      await db.update(schema.leagues)
+        .set({
+          externalId: successor.league_id,
+          seasonYear: targetSeason,
+          ...(successor.name ? { name: successor.name } : {}),
+          currentWeek: successor.settings?.leg || 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.leagues.id, league.id));
+
+      // The old season's pairings don't belong to the new league and
+      // `matchups` has no season column to scope a partial delete — the
+      // recursive sync below re-imports the successor league's matchups.
+      await db.delete(schema.matchups).where(eq(schema.matchups.leagueId, league.id));
+
+      const rolledOverLeague: LeagueWithTeams = {
+        ...league,
+        externalId: successor.league_id,
+        seasonYear: targetSeason,
+        name: successor.name ?? league.name,
+        currentWeek: successor.settings?.leg || 1,
+      };
+
+      let result: SyncSleeperLeagueResult;
+      try {
+        result = await syncSleeperLeague(db, rolledOverLeague, {
+          ...opts,
+          targetSeason,
+          _rolledOverFrom: fromExternalId,
+        });
+      } catch (err) {
+        // Don't leave the row pointing at a league we never managed to sync:
+        // restore the old identity so the next sync retries the rollover
+        // from a consistent state (the old matchups are re-imported then).
+        await db.update(schema.leagues)
+          .set({
+            externalId: fromExternalId,
+            seasonYear: league.seasonYear,
+            name: league.name,
+            currentWeek: league.currentWeek,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.leagues.id, league.id));
+        throw err;
+      }
+      return { ...result, rolledOver: { fromExternalId, toExternalId: successor.league_id, season: targetSeason } };
+    }
+    // No successor found — the league genuinely ended, or the lookup
+    // failed for every candidate manager. Fall through and sync the old
+    // league exactly as before rather than blocking on rollover.
   }
 
   if (!usersResponse.ok) {
@@ -888,8 +1048,10 @@ export async function syncSleeperLeague(
       });
       const weekComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
 
-      // Pre-fetch existing projections for this week in bulk
-      const scoringFormat = league.scoringFormat || 'ppr';
+      // Pre-fetch existing projections for this week in bulk. Normalize the
+      // league's stored spelling so the rows we write use the same key every
+      // other reader queries ('half-ppr', never 'half_ppr').
+      const scoringFormat = normalizeScoringFormat(league.scoringFormat);
       const existingProjMap = new Map<string, any>();
       const allPlayerIds = Array.from(existingPlayersByExtId.values()).map(p => p.id);
       for (let pi = 0; pi < allPlayerIds.length; pi += 50) {
@@ -927,7 +1089,7 @@ export async function syncSleeperLeague(
           scoringFormat,
           projectedPoints: scoringFormat === 'ppr'
             ? (playerProj.pts_ppr || 0)
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? (playerProj.pts_half_ppr || 0)
               : (playerProj.pts_std || 0),
           projPassYards: playerProj.pass_yd || null,
@@ -1018,6 +1180,12 @@ export async function syncSleeperLeague(
         ? `We synced the league but couldn't find a Sleeper roster matching "${actingMembership.externalUsername}". Re-enter your Sleeper username in league settings.`
         : 'We synced the league but don\'t know which roster is yours. Add your Sleeper username in league settings to see your team.')
     : null;
+
+  // Stamp the successful sync so sync-on-open (POST /leagues/:id/sync/if-stale)
+  // and the admin batch sync know how fresh this league is.
+  await db.update(schema.leagues)
+    .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+    .where(eq(schema.leagues.id, league.id));
 
   return {
     success: true,
