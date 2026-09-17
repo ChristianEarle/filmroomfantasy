@@ -1027,6 +1027,7 @@ adminRoutes.post('/sync-stats', async (c) => {
     let statsImported = 0;
     let statsUpdated = 0;
     let statsUnchanged = 0;
+    let statsRemoved = 0;
 
     // Fetch all players once (1 subrequest)
     const allPlayers = await db.query.nflPlayers.findMany({
@@ -1054,6 +1055,7 @@ adminRoutes.post('/sync-stats', async (c) => {
           ),
         });
         const storedByPlayer = new Map(storedRows.map((r) => [r.playerId, r]));
+        const seenPlayerIds = new Set<string>();
 
         const statsResponse = await fetch(
           `https://api.sleeper.com/stats/nfl/${seasonYear}/${week}?season_type=regular`
@@ -1087,6 +1089,7 @@ adminRoutes.post('/sync-stats', async (c) => {
         for (const { sleeperPlayerId, playerStats } of weekEntries) {
           const playerId = playerMap.get(sleeperPlayerId);
           if (!playerId) continue;
+          seenPlayerIds.add(playerId);
 
           const statsData = {
             playerId,
@@ -1159,6 +1162,24 @@ adminRoutes.post('/sync-stats', async (c) => {
             statsStatements.length = 0;
           }
         }
+
+        // A stored line Sleeper no longer reports for this week (a withdrawn
+        // stat correction) is removed, as the old delete-and-reinsert did.
+        // Skipped when the response was empty so a bad fetch cannot wipe a
+        // week.
+        if (weekEntries.length > 0) {
+          for (const [playerId, stored] of storedByPlayer) {
+            if (seenPlayerIds.has(playerId)) continue;
+            statsStatements.push(
+              db.delete(schema.playerWeeklyStats).where(eq(schema.playerWeeklyStats.id, stored.id))
+            );
+            statsRemoved++;
+            if (statsStatements.length >= BATCH_SIZE) {
+              await db.batch(statsStatements as any);
+              statsStatements.length = 0;
+            }
+          }
+        }
       } catch (e) {
         console.error(`Failed to fetch stats for week ${week}:`, e);
       }
@@ -1181,6 +1202,7 @@ adminRoutes.post('/sync-stats', async (c) => {
       inserted: statsImported,
       updated: statsUpdated,
       unchanged: statsUnchanged,
+      removed: statsRemoved,
       total: statsImported + statsUpdated,
     });
   } catch (err) {
@@ -1270,12 +1292,17 @@ adminRoutes.post('/sync-projections', async (c) => {
           propsUpdated += propsResult.updated;
           weekPropsProjections = propsResult.generated + propsResult.updated;
 
-          // Track which players already have props-based projections
-          if (weekPropsProjections > 0) {
+          // Track which players already have props-based projections. Read
+          // the stored rows rather than trusting this run's write count: a
+          // run where no book line moved writes nothing, and those players
+          // must still be kept out of the Sleeper fallback or the two
+          // sources would overwrite each other on alternate runs.
+          {
             const propsProjections = await db.query.playerProjections.findMany({
               where: and(
                 eq(schema.playerProjections.week, weekNum),
-                eq(schema.playerProjections.seasonYear, seasonYear)
+                eq(schema.playerProjections.seasonYear, seasonYear),
+                eq(schema.playerProjections.source, 'props')
               ),
               columns: { playerId: true },
             });
@@ -1411,7 +1438,8 @@ adminRoutes.post('/sync-projections', async (c) => {
         }
       } catch (weekErr) {
         console.error(`[sync-projections] Error syncing week ${weekNum}:`, weekErr);
-        weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated, propsProjections: weekPropsProjections, error: weekErr instanceof Error ? weekErr.message : 'Unknown error' });
+        unchanged += weekUnchanged;
+        weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated, unchanged: weekUnchanged, propsProjections: weekPropsProjections, error: weekErr instanceof Error ? weekErr.message : 'Unknown error' });
         continue;
       }
 

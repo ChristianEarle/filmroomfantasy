@@ -45,6 +45,11 @@ function clearAuthCookie(c: any) {
 // "Login failed" that sends people chasing their password.
 const SESSION_UNAVAILABLE_MESSAGE =
   'Sign-in is temporarily unavailable because the database is not accepting new sessions right now. Please try again in a little while.';
+// Registration commits the user row before the session row, so a failure
+// here has still created the account: point at sign-in, not at registering
+// again (which would now be refused as a duplicate email).
+const REGISTER_SESSION_UNAVAILABLE_MESSAGE =
+  'Your account was created, but sign-in is temporarily unavailable because the database is not accepting new sessions right now. Please sign in from the login page in a little while.';
 
 async function createSession(db: Variables['db'], userId: string, token: string): Promise<boolean> {
   try {
@@ -275,7 +280,7 @@ authRoutes.post('/register', authRateLimit, async (c) => {
 
     // Create session for token revocation support
     if (!(await createSession(db, userId, token))) {
-      return c.json({ error: SESSION_UNAVAILABLE_MESSAGE }, 503);
+      return c.json({ error: REGISTER_SESSION_UNAVAILABLE_MESSAGE }, 503);
     }
 
     // Set httpOnly cookie (primary auth) + return token in body (fallback for

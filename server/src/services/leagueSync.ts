@@ -1062,13 +1062,18 @@ export async function syncSleeperLeague(
     const propsResult = await generateProjectionsFromProps(db, projectionWeek, league.seasonYear);
     propsProjectionsCount = propsResult.generated + propsResult.updated;
 
-    // Track which players already have props-based projections
+    // Track which players already have props-based projections. Read the
+    // stored rows rather than trusting this run's write count: a run where
+    // no book line moved writes nothing, and those players must still be
+    // kept out of the Sleeper fallback below or the two sources would
+    // overwrite each other on alternate runs.
     const playersCoveredByProps = new Set<string>();
-    if (propsProjectionsCount > 0) {
+    {
       const propsProjections = await db.query.playerProjections.findMany({
         where: and(
           eq(schema.playerProjections.week, projectionWeek),
-          eq(schema.playerProjections.seasonYear, league.seasonYear)
+          eq(schema.playerProjections.seasonYear, league.seasonYear),
+          eq(schema.playerProjections.source, 'props')
         ),
         columns: { playerId: true },
       });
