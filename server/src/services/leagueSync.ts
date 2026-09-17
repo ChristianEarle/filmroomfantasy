@@ -33,6 +33,7 @@ import {
 import { generateId } from '../utils/id';
 import { generateProjectionsFromProps } from './projections';
 import { resolveWeekFromCalendar } from './nflState';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 type LeagueRow = typeof schema.leagues.$inferSelect;
@@ -1047,8 +1048,10 @@ export async function syncSleeperLeague(
       });
       const weekComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
 
-      // Pre-fetch existing projections for this week in bulk
-      const scoringFormat = league.scoringFormat || 'ppr';
+      // Pre-fetch existing projections for this week in bulk. Normalize the
+      // league's stored spelling so the rows we write use the same key every
+      // other reader queries ('half-ppr', never 'half_ppr').
+      const scoringFormat = normalizeScoringFormat(league.scoringFormat);
       const existingProjMap = new Map<string, any>();
       const allPlayerIds = Array.from(existingPlayersByExtId.values()).map(p => p.id);
       for (let pi = 0; pi < allPlayerIds.length; pi += 50) {
@@ -1086,7 +1089,7 @@ export async function syncSleeperLeague(
           scoringFormat,
           projectedPoints: scoringFormat === 'ppr'
             ? (playerProj.pts_ppr || 0)
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? (playerProj.pts_half_ppr || 0)
               : (playerProj.pts_std || 0),
           projPassYards: playerProj.pass_yd || null,

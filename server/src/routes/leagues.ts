@@ -295,7 +295,7 @@ leagueRoutes.put('/:id', authMiddleware, async (c) => {
       updates.name = body.name.trim();
     }
     if (body.scoringFormat !== undefined) {
-      if (!['ppr', 'half_ppr', 'standard'].includes(body.scoringFormat)) {
+      if (!['ppr', 'half_ppr', 'half-ppr', 'standard'].includes(body.scoringFormat)) {
         return c.json({ error: 'Invalid scoring format' }, 400);
       }
       updates.scoringFormat = body.scoringFormat;

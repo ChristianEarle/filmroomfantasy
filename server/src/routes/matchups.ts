@@ -7,6 +7,7 @@ import { resolveUserTeamId } from './rosters';
 import { resolveWeekFromCalendar, resolveLeagueWeek } from '../services/nflState';
 import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 // Rate limit for matchup routes: 60 req/min per IP
 const matchupRateLimit = rateLimit(60, 60 * 1000);
@@ -123,7 +124,7 @@ matchupRoutes.get('/:id', authMiddleware, async (c) => {
     const projMap = new Map<string, number>();
     if (allPlayerIds.length > 0) {
       // Normalize scoring format for projections table
-      const projScoringFormat = scoringFormat === 'half_ppr' ? 'half-ppr' : scoringFormat;
+      const projScoringFormat = normalizeScoringFormat(scoringFormat);
       const projections = await db
         .select({
           playerId: schema.playerProjections.playerId,
