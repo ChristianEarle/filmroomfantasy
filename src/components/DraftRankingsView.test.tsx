@@ -640,3 +640,47 @@ describe('DraftRankingsView — Market source toggle', () => {
     expect(marketCallCount()).toBe(1);
   });
 });
+
+describe('DraftRankingsView — Market ROS ranking type', () => {
+  beforeEach(() => {
+    hoisted.mockGet.mockImplementation((url: string) => {
+      if (url.includes('/market-rankings')) {
+        return Promise.resolve(marketResponse([
+          // Season order: Season Leader (rank 1) ahead of ROS Leader (rank 2),
+          // but ROS Leader has the higher rest-of-season number.
+          makeMarketRanking({ playerId: 'm1', marketRank: 1, positionRank: 1, position: 'RB', name: 'Season Leader', team: 'DET', seasonPoints: 300, rosPoints: 50 }),
+          makeMarketRanking({ playerId: 'm2', marketRank: 2, positionRank: 1, position: 'WR', name: 'ROS Leader', team: 'MIA', seasonPoints: 280, rosPoints: 120 }),
+        ]));
+      }
+      return Promise.resolve(response(ALL));
+    });
+  });
+
+  it('defaults to the Season sort, keeping the API-provided VORP order', async () => {
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Season Leader');
+
+    const text = screen.getByTestId('rankings-table').textContent ?? '';
+    expect(text.indexOf('Season Leader')).toBeLessThan(text.indexOf('ROS Leader'));
+  });
+
+  it('re-ranks rows by rest-of-season value when the ROS pill is clicked', async () => {
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Season Leader');
+
+    fireEvent.click(screen.getByRole('button', { name: 'ROS' }));
+
+    const text = screen.getByTestId('rankings-table').textContent ?? '';
+    expect(text.indexOf('ROS Leader')).toBeLessThan(text.indexOf('Season Leader'));
+  });
+
+  it('hides the Season/ROS pill while on the FilmRoom AI source', async () => {
+    renderView();
+    await loaded();
+    expect(screen.queryByRole('button', { name: 'ROS' })).toBeNull();
+  });
+});
