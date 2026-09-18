@@ -7,6 +7,7 @@ import {
   isValidSleeperUser,
   validateSleeperArray,
   fetchSleeperPlayersCached,
+  sleeperRosterPoints,
 } from '../services/sleeper';
 import { syncSleeperLeague } from '../services/leagueSync';
 import { authMiddleware } from '../middleware/auth';
@@ -770,8 +771,8 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
           wins: roster.settings?.wins || 0,
           losses: roster.settings?.losses || 0,
           ties: roster.settings?.ties || 0,
-          pointsFor: roster.settings?.fpts || 0,
-          pointsAgainst: roster.settings?.fpts_against || 0,
+          pointsFor: sleeperRosterPoints(roster.settings, 'fpts'),
+          pointsAgainst: sleeperRosterPoints(roster.settings, 'fpts_against'),
           updatedAt: new Date(),
         }).where(eq(schema.teams.id, userTeam.id));
       } else {
@@ -784,8 +785,8 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
             wins: roster.settings?.wins || 0,
             losses: roster.settings?.losses || 0,
             ties: roster.settings?.ties || 0,
-            pointsFor: roster.settings?.fpts || 0,
-            pointsAgainst: roster.settings?.fpts_against || 0,
+            pointsFor: sleeperRosterPoints(roster.settings, 'fpts'),
+            pointsAgainst: sleeperRosterPoints(roster.settings, 'fpts_against'),
             updatedAt: new Date(),
           }).where(eq(schema.teams.id, existing.id));
         } else {
@@ -800,8 +801,8 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
             wins: roster.settings?.wins || 0,
             losses: roster.settings?.losses || 0,
             ties: roster.settings?.ties || 0,
-            pointsFor: roster.settings?.fpts || 0,
-            pointsAgainst: roster.settings?.fpts_against || 0,
+            pointsFor: sleeperRosterPoints(roster.settings, 'fpts'),
+            pointsAgainst: sleeperRosterPoints(roster.settings, 'fpts_against'),
             faabBudget: 100,
           });
         }

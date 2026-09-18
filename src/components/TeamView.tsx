@@ -167,6 +167,8 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
     keyLine: `Proj: ${(rosterPlayer.projectedPoints ?? 0).toFixed(1)} pts`,
     projectedPoints: rosterPlayer.projectedPoints || 0,
     weekChange: 0,
+    status: rosterPlayer.status,
+    headshotUrl: rosterPlayer.imageUrl ?? null,
   });
 
   // Calculate max point for chart scaling

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapSleeperPlayerToDb, mapStatus, type SleeperPlayer } from './sleeper';
+import { mapSleeperPlayerToDb, mapStatus, sleeperRosterPoints, type SleeperPlayer } from './sleeper';
 
 describe('mapSleeperPlayerToDb', () => {
   it('maps a fantasy-relevant player to the expected DB shape (id is random, everything else asserted)', () => {
@@ -67,5 +67,18 @@ describe('mapStatus', () => {
   it('maps injury_status over the base status when present', () => {
     expect(mapStatus('Active', 'Questionable')).toBe('questionable');
     expect(mapStatus('Active', 'Out')).toBe('out');
+  });
+});
+
+describe('sleeperRosterPoints', () => {
+  it('joins the whole and hundredths parts Sleeper reports separately', () => {
+    expect(sleeperRosterPoints({ fpts: 1234, fpts_decimal: 56 }, 'fpts')).toBe(1234.56);
+    expect(sleeperRosterPoints({ fpts_against: 987, fpts_against_decimal: 5 }, 'fpts_against')).toBe(987.05);
+  });
+
+  it('tolerates missing settings and missing parts', () => {
+    expect(sleeperRosterPoints(undefined, 'fpts')).toBe(0);
+    expect(sleeperRosterPoints({ fpts: 100 }, 'fpts')).toBe(100);
+    expect(sleeperRosterPoints({ fpts_decimal: 25 }, 'fpts')).toBe(0.25);
   });
 });

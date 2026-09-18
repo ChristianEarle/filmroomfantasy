@@ -619,6 +619,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
             games: acc.games + 1,
             gamesPlayed: acc.gamesPlayed + (played ? 1 : 0),
             snapPctSum: acc.snapPctSum + (snapPct != null ? snapPct : 0),
+            snapPctGames: acc.snapPctGames + (snapPct != null ? 1 : 0),
             fantasyPointsPPR: acc.fantasyPointsPPR + (week.fantasyPointsPPR || 0),
             fantasyPointsHalf: acc.fantasyPointsHalf + (week.fantasyPointsHalf || 0),
             fantasyPointsStd: acc.fantasyPointsStd + (week.fantasyPointsStd || 0),
@@ -634,6 +635,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
           games: 0,
           gamesPlayed: 0,
           snapPctSum: 0,
+          snapPctGames: 0,
           fantasyPointsPPR: 0,
           fantasyPointsHalf: 0,
           fantasyPointsStd: 0,
@@ -648,8 +650,13 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
 
         const projection = projectionByPlayer.get(player.id);
         const gp = seasonStats.gamesPlayed ?? seasonStats.games;
-        const avgSnapPct = (seasonStats as any).snapPctSum > 0 && gp > 0
-          ? Math.round(((seasonStats as any).snapPctSum / gp) * 10) / 10
+        // Average over the weeks that actually have snap data. Sleeper's
+        // snap counts arrive a day or two after the box score, so dividing
+        // by games played dragged every player's snap share down each week
+        // until the counts landed.
+        const snapWeeks = (seasonStats as any).snapPctGames as number;
+        const avgSnapPct = snapWeeks > 0
+          ? Math.round(((seasonStats as any).snapPctSum / snapWeeks) * 10) / 10
           : null;
         const avgPts = gp > 0
           ? Math.round((seasonStats.fantasyPointsPPR / gp) * 10) / 10
@@ -666,7 +673,7 @@ playerRoutes.get('/', optionalAuthMiddleware, async (c) => {
         } else {
           projPts = projection?.projectedPoints || 0;
         }
-        const { snapPctSum, ...ss } = seasonStats as any;
+        const { snapPctSum, snapPctGames, ...ss } = seasonStats as any;
 
         // Season mode only: the genuine full-season AI-projected total (from
         // the redraft draft-rankings pool) alongside the already-computed sum
@@ -2303,6 +2310,7 @@ playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
           games: acc.games + 1,
           gamesPlayed: acc.gamesPlayed + (played ? 1 : 0),
           snapPctSum: acc.snapPctSum + (snapPct != null ? snapPct : 0),
+          snapPctGames: acc.snapPctGames + (snapPct != null ? 1 : 0),
           passYards: acc.passYards + (week.passYards || 0),
         passTDs: acc.passTDs + (week.passTDs || 0),
         passInterceptions: acc.passInterceptions + (week.passInterceptions || 0),
@@ -2321,6 +2329,7 @@ playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
         games: 0,
         gamesPlayed: 0,
         snapPctSum: 0,
+        snapPctGames: 0,
         passYards: 0,
         passTDs: 0,
         passInterceptions: 0,
@@ -2360,9 +2369,10 @@ playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
     };
     const normalizedStats = stats.map(normalize);
 
-    const { snapPctSum, ...totalsOut } = seasonTotals as any;
-    const averageSnapPct = snapPctSum > 0 && (seasonTotals.gamesPlayed ?? seasonTotals.games) > 0
-      ? Math.round((snapPctSum / (seasonTotals.gamesPlayed ?? seasonTotals.games)) * 10) / 10
+    const { snapPctSum, snapPctGames, ...totalsOut } = seasonTotals as any;
+    // Average over weeks with snap data only (see the same fix in GET /players).
+    const averageSnapPct = snapPctGames > 0
+      ? Math.round((snapPctSum / snapPctGames) * 10) / 10
       : null;
     return c.json({
       weeklyStats: normalizedStats,

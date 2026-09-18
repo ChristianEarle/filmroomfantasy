@@ -8,8 +8,12 @@ export interface APIPlayer {
   team: string;
   position: string;
   status: string;
+  /** Sleeper player id; the canonical id for public profile URLs. */
+  externalId?: string | null;
   byeWeek: number | null;
   headshotUrl?: string | null;
+  /** Fantasy points (league scoring) for the last four played weeks, oldest first. */
+  recentWeeklyScores?: number[];
   avgPointsPPR: number;
   projectedPoints: number;
   /** Server flag: a projection row exists for the requested week. */
@@ -87,10 +91,24 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
     // early week that is just last week's score wearing a "Proj" label.
     projectedPoints: projPts,
     hasProjection: player.hasProjection ?? projPts > 0,
-    weekChange: 0,
+    weekChange: computeWeekChange(player.recentWeeklyScores),
     weeklyProjectedPoints: player.weeklyProjectedPoints,
     headshotUrl: player.headshotUrl ?? null,
+    status: player.status,
+    externalId: player.externalId ?? null,
   };
+}
+
+/**
+ * Week-over-week trend: the last played week's points minus the week
+ * before it. Zero until two weeks have been played, so the trend chip
+ * reads as flat instead of a fabricated "+0.0" up-arrow for everyone.
+ */
+export function computeWeekChange(recentWeeklyScores: number[] | undefined): number {
+  if (!recentWeeklyScores || recentWeeklyScores.length < 2) return 0;
+  const last = recentWeeklyScores[recentWeeklyScores.length - 1] ?? 0;
+  const prior = recentWeeklyScores[recentWeeklyScores.length - 2] ?? 0;
+  return Math.round((last - prior) * 10) / 10;
 }
 
 /**

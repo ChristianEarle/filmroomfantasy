@@ -29,6 +29,7 @@ import {
   validateSleeperArray,
   syncDraftPicks,
   fetchSleeperPlayersCached,
+  sleeperRosterPoints,
 } from './sleeper';
 import { generateId } from '../utils/id';
 import { generateProjectionsFromProps, PROJECTION_COMPARE_KEYS } from './projections';
@@ -532,8 +533,8 @@ export async function syncSleeperLeague(
         wins: roster.settings?.wins || 0,
         losses: roster.settings?.losses || 0,
         ties: roster.settings?.ties || 0,
-        pointsFor: roster.settings?.fpts || 0,
-        pointsAgainst: roster.settings?.fpts_against || 0,
+        pointsFor: sleeperRosterPoints(roster.settings, 'fpts'),
+        pointsAgainst: sleeperRosterPoints(roster.settings, 'fpts_against'),
         waiverPriority: roster.settings?.waiver_position || 1,
         faabBudget: roster.settings?.waiver_budget_used != null
           ? Math.max(0, (league.waiverBudget || 100) - roster.settings.waiver_budget_used)
@@ -567,8 +568,8 @@ export async function syncSleeperLeague(
           wins: roster.settings?.wins || 0,
           losses: roster.settings?.losses || 0,
           ties: roster.settings?.ties || 0,
-          pointsFor: roster.settings?.fpts || 0,
-          pointsAgainst: roster.settings?.fpts_against || 0,
+          pointsFor: sleeperRosterPoints(roster.settings, 'fpts'),
+          pointsAgainst: sleeperRosterPoints(roster.settings, 'fpts_against'),
           waiverPriority: roster.settings?.waiver_position || 1,
         };
         if (rowChanged(existingTeam as Record<string, unknown>, teamPatch, Object.keys(teamPatch))) {
@@ -592,8 +593,8 @@ export async function syncSleeperLeague(
           wins: roster.settings?.wins || 0,
           losses: roster.settings?.losses || 0,
           ties: roster.settings?.ties || 0,
-          pointsFor: roster.settings?.fpts || 0,
-          pointsAgainst: roster.settings?.fpts_against || 0,
+          pointsFor: sleeperRosterPoints(roster.settings, 'fpts'),
+          pointsAgainst: sleeperRosterPoints(roster.settings, 'fpts_against'),
           waiverPriority: roster.settings?.waiver_position || 1,
           faabBudget: roster.settings?.waiver_budget_used != null
             ? Math.max(0, (league.waiverBudget || 100) - roster.settings.waiver_budget_used)
