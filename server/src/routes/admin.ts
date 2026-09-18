@@ -9,6 +9,19 @@ import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr } from '../services/odds';
 import { generateProjectionsFromProps, calculateFantasyPoints, PROJECTION_COMPARE_KEYS_WITH_SOURCE } from '../services/projections';
 import { rowChanged } from '../utils/rowDiff';
+import {
+  nflverseAssets,
+  fetchNflverseCsv,
+  readCrosswalkRows,
+  readUsageRows,
+  readPracticeRows,
+  readGameRows,
+  applyGsisCrosswalk,
+  loadPlayerIdsByGsis,
+  upsertUsageRows,
+  upsertPracticeRows,
+  enrichGames,
+} from '../services/nflverse';
 import type { SeasonStatKey, SeasonStatVector } from '../services/marketRankings';
 import {
   submitDraftRankingsBatch,
@@ -3130,5 +3143,113 @@ adminRoutes.post('/sync-leagues', async (c) => {
       error: 'Failed to sync leagues',
       message: err instanceof Error ? err.message : 'Unknown error',
     }, 500);
+  }
+});
+
+/**
+ * POST /api/admin/sync-nflverse
+ * Pulls the free nflverse release CSVs (see services/nflverse.ts) into
+ * nfl_players.gsis_id, player_usage_weekly, player_practice_reports and the
+ * nfl_games environment/moneyline columns.
+ * Body: { season?: number, weeks?: number[], parts?: Part[] }
+ *   - season defaults to the current NFL season
+ *   - weeks defaults to the current and previous week (usage + practice only;
+ *     the crosswalk and games parts always cover the whole season)
+ *   - parts defaults to all four: 'crosswalk' | 'usage' | 'practice' | 'games'
+ * Each part is independent: a failed download is reported under errors and
+ * the rest still run. The crosswalk runs first because usage and practice
+ * rows are keyed on the gsis id it fills in.
+ */
+const NFLVERSE_PARTS = ['crosswalk', 'usage', 'practice', 'games'] as const;
+type NflversePart = (typeof NFLVERSE_PARTS)[number];
+
+adminRoutes.post('/sync-nflverse', async (c) => {
+  const db = c.get('db');
+  try {
+    let body: { season?: number; weeks?: number[]; parts?: string[] } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body - use defaults
+    }
+
+    const state = await getNflState(db);
+    const season = body.season ?? state.season;
+    if (typeof season !== 'number' || season < 2000 || season > 2100) {
+      return c.json({ error: 'Invalid season' }, 400);
+    }
+    const currentWeek = state.week;
+    const defaultWeeks = currentWeek > 1 ? [currentWeek - 1, currentWeek] : [currentWeek];
+    const weeks = body.weeks ?? defaultWeeks;
+    if (!Array.isArray(weeks) || weeks.length === 0 || weeks.length > 18 ||
+        weeks.some((w) => typeof w !== 'number' || w < 1 || w > 18)) {
+      return c.json({ error: 'Invalid weeks array' }, 400);
+    }
+    const parts: NflversePart[] = body.parts
+      ? (body.parts.filter((p): p is NflversePart => (NFLVERSE_PARTS as readonly string[]).includes(p)))
+      : [...NFLVERSE_PARTS];
+    if (parts.length === 0) {
+      return c.json({ error: `parts must include one of ${NFLVERSE_PARTS.join(', ')}` }, 400);
+    }
+
+    const results: Record<string, unknown> = {};
+    const errors: Record<string, string> = {};
+    const run = async (part: NflversePart, fn: () => Promise<unknown>) => {
+      if (!parts.includes(part)) return;
+      try {
+        results[part] = await fn();
+      } catch (err) {
+        errors[part] = err instanceof Error ? err.message : String(err);
+        console.error(`[nflverse] ${part} failed:`, err);
+      }
+    };
+
+    await run('crosswalk', async () => {
+      const csv = await fetchNflverseCsv(nflverseAssets.weeklyRosters(season));
+      const pairs = readCrosswalkRows(csv, season);
+      return { rows: pairs.length, ...(await applyGsisCrosswalk(db, pairs)) };
+    });
+
+    const needsIds = parts.includes('usage') || parts.includes('practice');
+    const playerIdByGsis = needsIds ? await loadPlayerIdsByGsis(db) : new Map<string, string>();
+
+    await run('usage', async () => {
+      const csv = await fetchNflverseCsv(nflverseAssets.playerWeekStats(season));
+      const rows = readUsageRows(csv, { seasonYear: season, weeks });
+      return { rows: rows.length, ...(await upsertUsageRows(db, rows, playerIdByGsis, season)) };
+    });
+
+    await run('practice', async () => {
+      const csv = await fetchNflverseCsv(nflverseAssets.injuries(season));
+      const rows = readPracticeRows(csv, { seasonYear: season, weeks });
+      return { rows: rows.length, ...(await upsertPracticeRows(db, rows, playerIdByGsis, season)) };
+    });
+
+    await run('games', async () => {
+      const csv = await fetchNflverseCsv(nflverseAssets.games());
+      const rows = readGameRows(csv, season);
+      return { rows: rows.length, ...(await enrichGames(db, rows, season)) };
+    });
+
+    const failed = Object.keys(errors);
+    const status = failed.length === parts.length ? 502 : 200;
+    return c.json({
+      success: failed.length === 0,
+      message: failed.length === 0
+        ? `nflverse sync completed (${parts.join(', ')})`
+        : `nflverse sync finished with errors in ${failed.join(', ')}`,
+      season,
+      weeks,
+      playersWithGsisId: needsIds ? playerIdByGsis.size : undefined,
+      results,
+      errors: failed.length > 0 ? errors : undefined,
+    }, status);
+  } catch (err) {
+    console.error('Sync nflverse error:', err);
+    return c.json(
+      { error: 'Sync failed', message: err instanceof Error ? err.message : 'Unknown error' },
+      500,
+    );
   }
 });
