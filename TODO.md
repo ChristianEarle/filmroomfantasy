@@ -113,7 +113,14 @@ history accrues from the first daily cron.
 - [x] **Redraft ADP** — via FantasyFootballCalculator's public JSON API
   (not Sleeper/Underdog as originally scoped), feeding both the AI
   draft-rankings prompts and `adpDelta` (#306).
-- [ ] Feed projection-accuracy history back into AI prompts
+- [x] **Feed projection-accuracy history back into AI prompts** — the
+  per-player AI analysis endpoint (`GET /players/:id/analysis`) now
+  computes each completed week's actual-vs-projected PPR diff for the
+  season and includes a summary line (hit rate within 3 pts, average
+  diff, over/underperform tendency) in the data block sent to Anthropic,
+  so the AI take can weigh how reliable this week's projection is likely
+  to be. Other AI prompts (draft rankings rationale, trade analyzer) are
+  not yet covered.
 - [ ] **Season-prop capture automation** — no API source for sportsbook
   season-long O/U lines; current path is a manual CSV/JSON paste via
   Admin → Import Season Props (`POST /api/admin/sync-season-props`, #305).
