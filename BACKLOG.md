@@ -312,7 +312,7 @@
   elsewhere in the app (Escape to close, Tab focus trap, focus restored on
   close) and added `aria-current`/`aria-expanded`/`aria-controls`/nav
   `aria-label` for screen readers.
-- [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
+- [x] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell. Fixed 2 issues: `usePlayerSearch` had no request sequencing, so a slow response for an earlier keystroke could overwrite newer results (matches the `fetchSeqRef` pattern already used by `useEspnScoreboard`); the Header league-switcher dropdown was missing the `aria-haspopup`/`aria-expanded`/`role="menu"`/`role="menuitem"` semantics and Escape-to-close + focus-return behavior that the notifications dropdown right next to it already had. Also gave the search-results listbox proper `role="option"` children and Escape-to-close. LeagueManager.tsx (sidebar league switcher) was reviewed and already has correct portal positioning, outside-click/Escape handling, and ARIA roles — no changes needed there.
 - [ ] **Audit PlayerAvatar** - Image loading, fallback initials
 - [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget
 - [ ] **Audit ErrorBoundary** - Error catch/display, recovery
