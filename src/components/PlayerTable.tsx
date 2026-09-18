@@ -402,10 +402,10 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
               )}
             </div>
 
-            {/* Panel 4 — FilmRoom take + actions */}
+            {/* Panel 4 — key line + prop line + actions (the AI take lives on the player card) */}
             <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}>
               <div className={`fr-text-10 font-bold uppercase fr-tracking-wider mb-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                ★ FILMROOM AI
+                ★ SNAPSHOT
               </div>
               <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                 {player.keyLine || 'Tap "Full game log" for the full weekly breakdown and trends.'}

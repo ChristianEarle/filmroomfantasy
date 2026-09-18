@@ -890,7 +890,13 @@ export const playerAiAnalyses = sqliteTable('player_ai_analyses', {
   week: integer('week').notNull(),
   analysis: text('analysis').notNull(),
   model: text('model').notNull(),
+  /** SHA-256 of the canonical inputs the take was generated from (services/aiTake.ts). */
+  inputsHash: text('inputs_hash'),
+  /** Human-readable "based on ..." summary of those inputs, shown under the take. */
+  basis: text('basis'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  /** When the current analysis text was (re)generated; null on rows from before regeneration existed. */
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
 }, (table) => ({
   playerAiAnalysesIdentity: uniqueIndex('idx_player_ai_analyses_identity')
     .on(table.playerId, table.seasonYear, table.week),
