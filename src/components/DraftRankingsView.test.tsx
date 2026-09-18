@@ -639,4 +639,36 @@ describe('DraftRankingsView — Market source toggle', () => {
 
     expect(marketCallCount()).toBe(1);
   });
+
+  it('the ROS pill re-sorts the Market board by remaining-season points instead of full-season rank', async () => {
+    hoisted.mockGet.mockImplementation((url: string) => {
+      if (url.includes('/market-rankings')) {
+        return Promise.resolve(marketResponse([
+          makeMarketRanking({ playerId: 's1', marketRank: 1, position: 'RB', name: 'Season Leader', team: 'DET', seasonPoints: 300, rosPoints: 100 }),
+          makeMarketRanking({ playerId: 's2', marketRank: 2, position: 'WR', name: 'ROS Leader', team: 'MIA', seasonPoints: 280, rosPoints: 300 }),
+          makeMarketRanking({ playerId: 's3', marketRank: 3, position: 'TE', name: 'Middle Player', team: 'SF', seasonPoints: 260, rosPoints: 200 }),
+        ]));
+      }
+      return Promise.resolve(response(ALL));
+    });
+
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Season Leader');
+
+    // Default (Season) order matches full-season marketRank: 1, 2, 3.
+    const seasonOrderText = screen.getByTestId('rankings-table').textContent || '';
+    expect(seasonOrderText.indexOf('Season Leader')).toBeLessThan(seasonOrderText.indexOf('ROS Leader'));
+    expect(seasonOrderText.indexOf('ROS Leader')).toBeLessThan(seasonOrderText.indexOf('Middle Player'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'ROS' }));
+
+    // ROS order re-sorts by rosPoints descending: ROS Leader (300), Middle Player (200), Season Leader (100).
+    await waitFor(() => {
+      const rosOrderText = screen.getByTestId('rankings-table').textContent || '';
+      expect(rosOrderText.indexOf('ROS Leader')).toBeLessThan(rosOrderText.indexOf('Middle Player'));
+      expect(rosOrderText.indexOf('Middle Player')).toBeLessThan(rosOrderText.indexOf('Season Leader'));
+    });
+  });
 });
