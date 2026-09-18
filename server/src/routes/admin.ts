@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, or, inArray, sql, gte } from 'drizzle-orm';
+import { eq, and, or, inArray, sql, gte, ne, isNull } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { getMappedPlayers, fetchSleeperPlayers, buildHeadshotUrl, sleep } from '../services/sleeper';
 import { fetchTwitterTweets } from '../services/twitter';
@@ -9,6 +9,7 @@ import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr } from '../services/odds';
 import { generateProjectionsFromProps, calculateFantasyPoints, PROJECTION_COMPARE_KEYS_WITH_SOURCE } from '../services/projections';
 import { rowChanged } from '../utils/rowDiff';
+import { computeByeWeeks } from '../utils/byeWeeks';
 import type { SeasonStatKey, SeasonStatVector } from '../services/marketRankings';
 import {
   submitDraftRankingsBatch,
@@ -74,11 +75,14 @@ adminRoutes.post('/sync-players', async (c) => {
 
     const now = new Date();
 
-    // Fetch all existing players from DB once (1 subrequest)
-    const existing = await db.query.nflPlayers.findMany({
-      columns: { id: true, externalId: true },
-    });
-    const existingMap = new Map(existing.map(p => [p.externalId, p.id]));
+    // Fetch all existing players from DB once (1 subrequest). Full rows,
+    // so each incoming player can be compared and only the ones Sleeper
+    // actually changed are written: rewriting ~10k identical rows (plus
+    // their index entries) every morning was a large share of the D1
+    // daily write budget.
+    const existing = await db.query.nflPlayers.findMany();
+    const existingMap = new Map(existing.map(p => [p.externalId, p]));
+    let unchanged = 0;
 
     // Split into batches of 50 to stay under subrequest limits
     const BATCH_SIZE = 50;
@@ -87,32 +91,35 @@ adminRoutes.post('/sync-players', async (c) => {
       const statements: any[] = [];
 
       for (const player of batch) {
-        const existingId = existingMap.get(player.externalId);
-        if (existingId) {
-          // Build UPDATE statement
+        const existingRow = existingMap.get(player.externalId);
+        if (existingRow) {
+          const patch = {
+            name: player.name,
+            firstName: player.firstName,
+            lastName: player.lastName,
+            team: player.team,
+            position: player.position,
+            status: player.status,
+            injuryNote: player.injuryNote,
+            injuryBodyPart: player.injuryBodyPart,
+            headshotUrl: player.headshotUrl,
+            age: player.age,
+            height: player.height,
+            weight: player.weight,
+            college: player.college,
+            yearsExp: player.yearsExp,
+            jerseyNumber: player.jerseyNumber,
+            depthChartOrder: player.depthChartOrder,
+          };
+          if (!rowChanged(existingRow as Record<string, unknown>, patch, Object.keys(patch))) {
+            unchanged++;
+            continue;
+          }
           statements.push(
             db
               .update(schema.nflPlayers)
-              .set({
-                name: player.name,
-                firstName: player.firstName,
-                lastName: player.lastName,
-                team: player.team,
-                position: player.position,
-                status: player.status,
-                injuryNote: player.injuryNote,
-                injuryBodyPart: player.injuryBodyPart,
-                headshotUrl: player.headshotUrl,
-                age: player.age,
-                height: player.height,
-                weight: player.weight,
-                college: player.college,
-                yearsExp: player.yearsExp,
-                jerseyNumber: player.jerseyNumber,
-                depthChartOrder: player.depthChartOrder,
-                updatedAt: now,
-              })
-              .where(eq(schema.nflPlayers.id, existingId))
+              .set({ ...patch, updatedAt: now })
+              .where(eq(schema.nflPlayers.id, existingRow.id))
           );
           updated++;
         } else {
@@ -189,6 +196,7 @@ adminRoutes.post('/sync-players', async (c) => {
       message: 'Player sync completed',
       inserted,
       updated,
+      unchanged,
       cleaned,
       total: mapped.length,
     });
@@ -912,15 +920,22 @@ adminRoutes.post('/sync-games', async (c) => {
 
     let inserted = 0;
     let updated = 0;
+    let unchanged = 0;
+    let lineSnapshots = 0;
+
+    // One read for the whole season instead of a findFirst per game, and
+    // the same rows feed the bye-week derivation below.
+    const storedGames = await db.query.nflGames.findMany({
+      where: eq(schema.nflGames.seasonYear, seasonYear),
+    });
+    const storedById = new Map(storedGames.map((g) => [g.id, g]));
 
     for (const week of weeks) {
       try {
         const { dbRows } = await fetchEspnScoreboard(week, seasonYear, seasontype);
 
         for (const row of dbRows) {
-          const existing = await db.query.nflGames.findFirst({
-            where: eq(schema.nflGames.id, row.id),
-          });
+          const existing = storedById.get(row.id);
           const hasScores = row.homeScore != null && row.awayScore != null;
           const values = {
             id: row.id,
@@ -941,7 +956,15 @@ adminRoutes.post('/sync-games', async (c) => {
             isComplete: hasScores,
           };
           if (existing) {
-            if (!existing.isComplete && (existing.spread != null || existing.overUnder != null)) {
+            if (!rowChanged(existing as Record<string, unknown>, values, Object.keys(values))) {
+              unchanged++;
+              continue;
+            }
+            // Keep the line-movement history only when the line actually
+            // moved. Snapshotting on every daily run recorded the same
+            // spread 20+ times per game and spent writes on it.
+            const lineMoved = existing.spread !== values.spread || existing.overUnder !== values.overUnder;
+            if (lineMoved && !existing.isComplete && (existing.spread != null || existing.overUnder != null)) {
               await db.insert(schema.gameLineSnapshots).values({
                 id: crypto.randomUUID(),
                 gameId: row.id,
@@ -949,17 +972,40 @@ adminRoutes.post('/sync-games', async (c) => {
                 spread: existing.spread ?? null,
                 overUnder: existing.overUnder ?? null,
               });
+              lineSnapshots++;
             }
             await db.update(schema.nflGames).set(values).where(eq(schema.nflGames.id, row.id));
+            storedById.set(row.id, { ...existing, ...values });
             updated++;
           } else {
             await db.insert(schema.nflGames).values(values);
+            storedById.set(row.id, { ...values, homeMoneyline: null, awayMoneyline: null, quarter: null, timeRemaining: null });
             inserted++;
           }
         }
       } catch (e) {
         console.error(`Failed to sync week ${week}:`, e);
       }
+    }
+
+    // Derive bye weeks from the schedule and stamp them on nfl_players.
+    // Sleeper's player feed carries no bye week, so this is the only
+    // writer of that column. One UPDATE per team, and only for rows whose
+    // stored bye differs, so a steady-state run writes nothing.
+    let byeWeeksUpdated = 0;
+    const byes = computeByeWeeks(
+      Array.from(storedById.values()).filter((g) => g.seasonType === 'regular'),
+    );
+    for (const [team, byeWeek] of byes) {
+      const result = await db
+        .update(schema.nflPlayers)
+        .set({ byeWeek })
+        .where(and(
+          eq(schema.nflPlayers.team, team),
+          or(isNull(schema.nflPlayers.byeWeek), ne(schema.nflPlayers.byeWeek, byeWeek)),
+        ))
+        .returning({ id: schema.nflPlayers.id });
+      byeWeeksUpdated += result.length;
     }
 
     return c.json({
@@ -969,6 +1015,10 @@ adminRoutes.post('/sync-games', async (c) => {
       weeks: weeks.length,
       inserted,
       updated,
+      unchanged,
+      lineSnapshots,
+      byeTeams: byes.size,
+      byeWeeksUpdated,
     });
   } catch (err) {
     console.error('Sync games error:', err);

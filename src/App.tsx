@@ -194,6 +194,10 @@ export interface Player {
   weekChange: number;
   weeklyProjectedPoints?: number;
   headshotUrl?: string | null;
+  /** Roster status from the player sync ('active' | 'injured_reserve' | 'out' | 'questionable' | 'doubtful'). */
+  status?: string;
+  /** Sleeper player id, used for canonical profile URLs. */
+  externalId?: string | null;
   /**
    * Truthfully labels what `projectedPoints` represents when a caller
    * overrides it outside week mode (e.g. PlayerTable's Full Season view):

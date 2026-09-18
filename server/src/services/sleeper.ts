@@ -168,6 +168,20 @@ export function mapSleeperPlayerToDb(
   };
 }
 
+/**
+ * Sleeper splits a roster's season points into an integer part (`fpts`)
+ * and a hundredths part (`fpts_decimal`); reading only `fpts` truncates
+ * every team's points-for to a whole number. Same for `fpts_against`.
+ */
+export function sleeperRosterPoints(
+  settings: Record<string, unknown> | null | undefined,
+  key: 'fpts' | 'fpts_against' | 'ppts',
+): number {
+  const whole = Number(settings?.[key] ?? 0) || 0;
+  const decimal = Number(settings?.[`${key}_decimal`] ?? 0) || 0;
+  return Math.round((whole + decimal / 100) * 100) / 100;
+}
+
 // ========================================
 // Rate-limited fetch utilities
 // ========================================

@@ -15,12 +15,16 @@ export interface PlayerPropsData {
   props: Record<string, PlayerPropLine>;
 }
 
-/** Market key → human-readable label */
+/**
+ * Market key → human-readable label. Keys are the server's
+ * `player_<market>` names with the prefix and underscores stripped
+ * (`player_reception_yds` → `receptionyds`), see GET /players/props.
+ */
 const MARKET_LABELS: Record<string, string> = {
   passyds: 'pass yds',
   passtds: 'pass TDs',
   rushyds: 'rush yds',
-  recyds: 'rec yds',
+  receptionyds: 'rec yds',
   receptions: 'receptions',
   rushtds: 'rush TDs',
   rectds: 'rec TDs',
@@ -35,7 +39,7 @@ function getPrimaryMarket(position: string): string {
     case 'QB': return 'passyds';
     case 'RB': return 'rushyds';
     case 'WR':
-    case 'TE': return 'recyds';
+    case 'TE': return 'receptionyds';
     default: return 'passyds';
   }
 }
