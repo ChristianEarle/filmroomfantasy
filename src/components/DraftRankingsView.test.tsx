@@ -593,6 +593,41 @@ describe('DraftRankingsView — Market source toggle', () => {
     expect(table().getByText('EST')).toBeInTheDocument(); // weekly_extrapolation confidence
   });
 
+  it('re-ranks the Market board by ROS when the ROS pill is clicked', async () => {
+    hoisted.mockGet.mockImplementation((url: string) => {
+      if (url.includes('/market-rankings')) {
+        return Promise.resolve(marketResponse([
+          makeMarketRanking({ playerId: 'm1', marketRank: 1, positionRank: 1, tier: 1, position: 'RB', name: 'Season Leader', team: 'DET', seasonPoints: 312.4, rosPoints: 90.0 }),
+          makeMarketRanking({ playerId: 'm2', marketRank: 2, positionRank: 1, tier: 1, position: 'WR', name: 'ROS Leader', team: 'MIA', seasonPoints: 298.7, rosPoints: 240.5 }),
+        ]));
+      }
+      return Promise.resolve(response(ALL));
+    });
+
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Season Leader');
+
+    // Default sort is Season: Season Leader (marketRank 1) ranked #1, ahead of ROS Leader.
+    const namesBefore = table().getAllByText(/Leader/).map(el => el.textContent);
+    expect(namesBefore).toEqual(['Season Leader', 'ROS Leader']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'ROS' }));
+
+    await waitFor(() => {
+      const namesAfter = table().getAllByText(/Leader/).map(el => el.textContent);
+      expect(namesAfter).toEqual(['ROS Leader', 'Season Leader']);
+    });
+
+    // Rank numbers are recomputed for the new sort order (ROS Leader now #1).
+    const firstRow = table().getByText('ROS Leader').closest('div[class*="flex items-center gap-2"]') as HTMLElement;
+    const rankCell = firstRow.querySelector('span.w-6, span[class*="w-6 sm:w-8"]');
+    expect(rankCell).toHaveTextContent('1');
+
+    expect(screen.getByText(/sorted by ROS/i)).toBeInTheDocument();
+  });
+
   it('disables rationale expand for Market rows (no chevron, no expand panel on click)', async () => {
     renderView();
     await loaded();
