@@ -305,6 +305,11 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-news');
     await callSync('/api/admin/sync-games');
 
+    // nflverse: refresh the Sleeper-id -> gsis-id crosswalk (new signings,
+    // practice-squad call-ups) and the game environment / moneylines from
+    // the schedule file. Usage + practice reports run in the 4h block.
+    await callSync('/api/admin/sync-nflverse', { parts: ['crosswalk', 'games'] });
+
     // Fan fresh injury news out to in-app notifications for rostered/watched
     // players. Idempotent (dedupe keys), and failures never break the sync.
     try {
@@ -347,6 +352,11 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
 
     await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
+
+    // nflverse usage (target share, air yards, EPA, ...) and the official
+    // practice report for the same weeks. The gsis-id crosswalk and the
+    // game environment columns refresh in the daily block below.
+    await callSync('/api/admin/sync-nflverse', { weeks: weeksToSync, parts: ['usage', 'practice'] });
 
     // In-season, keep league matchups/rosters/ownership fresh every 4h so
     // "my matchup" doesn't 404 for leagues no one has manually re-synced

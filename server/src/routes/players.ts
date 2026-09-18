@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, like, and, desc, asc, sql, inArray, type SQL } from 'drizzle-orm';
+import { eq, like, and, or, desc, asc, sql, inArray, type SQL } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { requireTier } from '../middleware/tier';
@@ -2214,6 +2214,77 @@ playerRoutes.get('/:id/stats/available-years', optionalAuthMiddleware, async (c)
 });
 
 // Get player stats
+/**
+ * GET /api/players/:id/usage?season=YYYY
+ * nflverse usage and efficiency per week (target share, air-yards share,
+ * WOPR, RACR, EPA, first downs, YAC) plus the official practice report /
+ * game-status designation per week. Populated by /api/admin/sync-nflverse;
+ * empty arrays for players without a gsis id yet.
+ */
+playerRoutes.get('/:id/usage', optionalAuthMiddleware, playerReadRateLimit, async (c) => {
+  const db = c.get('db');
+  const idParam = c.req.param('id');
+  const seasonParam = parseInt(c.req.query('season') || '', 10);
+  const season = Number.isFinite(seasonParam) && seasonParam >= 2000 && seasonParam <= 2100
+    ? seasonParam
+    : getDefaultSeason();
+
+  try {
+    const player = await db.query.nflPlayers.findFirst({
+      where: /^\d+$/.test(idParam)
+        ? or(eq(schema.nflPlayers.id, idParam), eq(schema.nflPlayers.externalId, idParam))
+        : eq(schema.nflPlayers.id, idParam),
+      columns: { id: true, name: true, position: true, team: true, gsisId: true },
+    });
+    if (!player) {
+      return c.json({ error: 'Player not found' }, 404);
+    }
+
+    const [usage, practice] = await Promise.all([
+      db.query.playerUsageWeekly.findMany({
+        where: and(eq(schema.playerUsageWeekly.playerId, player.id), eq(schema.playerUsageWeekly.seasonYear, season)),
+        orderBy: asc(schema.playerUsageWeekly.week),
+      }),
+      db.query.playerPracticeReports.findMany({
+        where: and(eq(schema.playerPracticeReports.playerId, player.id), eq(schema.playerPracticeReports.seasonYear, season)),
+        orderBy: asc(schema.playerPracticeReports.week),
+      }),
+    ]);
+
+    // Season rates over the weeks the player was on the field for a target
+    // or a carry; a bye or inactive week has no share to average.
+    const avg = (key: 'targetShare' | 'airYardsShare' | 'wopr' | 'racr' | 'recEpa' | 'rushEpa' | 'passEpa') => {
+      const values = usage.map((u) => u[key]).filter((v): v is number => v != null);
+      return values.length > 0 ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 1000) / 1000 : null;
+    };
+    const seasonTotals = {
+      games: usage.length,
+      targets: usage.reduce((a, u) => a + (u.targets ?? 0), 0),
+      carries: usage.reduce((a, u) => a + (u.carries ?? 0), 0),
+      recAirYards: usage.reduce((a, u) => a + (u.recAirYards ?? 0), 0),
+      averageTargetShare: avg('targetShare'),
+      averageAirYardsShare: avg('airYardsShare'),
+      averageWopr: avg('wopr'),
+      averageRacr: avg('racr'),
+      averageRecEpa: avg('recEpa'),
+      averageRushEpa: avg('rushEpa'),
+      averagePassEpa: avg('passEpa'),
+    };
+
+    return c.json({
+      player: { id: player.id, name: player.name, position: player.position, team: player.team, gsisId: player.gsisId },
+      season,
+      usage,
+      practice,
+      seasonTotals,
+      latestPractice: practice.length > 0 ? practice[practice.length - 1] : null,
+    });
+  } catch (err) {
+    console.error('Get player usage error:', err);
+    return c.json({ error: 'Failed to fetch player usage' }, 500);
+  }
+});
+
 playerRoutes.get('/:id/stats', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   let playerId = c.req.param('id');
