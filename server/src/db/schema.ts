@@ -163,9 +163,13 @@ export const nflPlayers = sqliteTable('nfl_players', {
   weight: integer('weight'),
   college: text('college'),
   yearsExp: integer('years_exp'),
+  /** NFL GSIS id (e.g. 00-0034796); the key nflverse data is joined on. Filled by /sync-nflverse. */
+  gsisId: text('gsis_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  nflPlayersGsisIdx: index('idx_nfl_players_gsis_id').on(table.gsisId),
+}));
 
 export const playerWeeklyStats = sqliteTable('player_weekly_stats', {
   id: text('id').primaryKey(),
@@ -476,8 +480,97 @@ export const nflGames = sqliteTable('nfl_games', {
   isComplete: integer('is_complete', { mode: 'boolean' }).notNull().default(false),
   quarter: text('quarter'), // '1' | '2' | '3' | '4' | 'OT' | 'Final'
   timeRemaining: text('time_remaining'),
+  // Game environment from the nflverse schedule file (see /sync-nflverse):
+  // roof 'outdoors' | 'dome' | 'closed' | 'open'; surface 'grass' | 'fieldturf' | ...;
+  // temp in F and wind in mph, null for domes and until the forecast is in.
+  roof: text('roof'),
+  surface: text('surface'),
+  temp: integer('temp'),
+  wind: integer('wind'),
 }, (table) => ({
   nflGameUnique: uniqueIndex('nfl_game_unique').on(table.week, table.seasonYear, table.homeTeam, table.awayTeam),
+}));
+
+// ============================================
+// NFLVERSE USAGE + PRACTICE REPORTS
+// ============================================
+
+/**
+ * Per-player-week usage and efficiency from nflverse's stats_player_week
+ * release: what the Sleeper box score lacks (target share, air-yards share,
+ * WOPR, RACR, EPA, first downs, YAC, CPOE). Regular season only.
+ */
+export const playerUsageWeekly = sqliteTable('player_usage_weekly', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  gsisId: text('gsis_id').notNull(),
+  seasonYear: integer('season_year').notNull(),
+  week: integer('week').notNull(),
+  team: text('team'),
+  opponent: text('opponent'),
+
+  completions: integer('completions'),
+  passAttempts: integer('pass_attempts'),
+  passYards: real('pass_yards'),
+  passTDs: integer('pass_tds'),
+  passInterceptions: integer('pass_interceptions'),
+  sacksSuffered: integer('sacks_suffered'),
+  passAirYards: real('pass_air_yards'),
+  passYardsAfterCatch: real('pass_yards_after_catch'),
+  passFirstDowns: integer('pass_first_downs'),
+  passEpa: real('pass_epa'),
+  passCpoe: real('pass_cpoe'),
+  pacr: real('pacr'),
+
+  carries: integer('carries'),
+  rushYards: real('rush_yards'),
+  rushTDs: integer('rush_tds'),
+  rushFirstDowns: integer('rush_first_downs'),
+  rushEpa: real('rush_epa'),
+
+  targets: integer('targets'),
+  receptions: integer('receptions'),
+  recYards: real('rec_yards'),
+  recTDs: integer('rec_tds'),
+  recAirYards: real('rec_air_yards'),
+  recYardsAfterCatch: real('rec_yards_after_catch'),
+  recFirstDowns: integer('rec_first_downs'),
+  recEpa: real('rec_epa'),
+  racr: real('racr'),
+  targetShare: real('target_share'),
+  airYardsShare: real('air_yards_share'),
+  wopr: real('wopr'),
+
+  fantasyPoints: real('fantasy_points'),
+  fantasyPointsPPR: real('fantasy_points_ppr'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  playerUsageWeekUnique: uniqueIndex('player_usage_week_unique').on(table.playerId, table.seasonYear, table.week),
+  playerUsageWeekIdx: index('idx_player_usage_week').on(table.seasonYear, table.week),
+}));
+
+/**
+ * The official weekly injury report from nflverse's injuries release:
+ * the game-status designation (Out / Doubtful / Questionable) and the
+ * Wed-Fri practice participation, one row per player-week.
+ */
+export const playerPracticeReports = sqliteTable('player_practice_reports', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  gsisId: text('gsis_id').notNull(),
+  seasonYear: integer('season_year').notNull(),
+  week: integer('week').notNull(),
+  team: text('team'),
+  reportStatus: text('report_status'), // 'Out' | 'Doubtful' | 'Questionable' | null (no designation)
+  reportPrimaryInjury: text('report_primary_injury'),
+  reportSecondaryInjury: text('report_secondary_injury'),
+  practiceStatus: text('practice_status'), // 'Full Participation in Practice' | 'Limited Participation in Practice' | 'Did Not Participate In Practice'
+  practicePrimaryInjury: text('practice_primary_injury'),
+  practiceSecondaryInjury: text('practice_secondary_injury'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  playerPracticeWeekUnique: uniqueIndex('player_practice_week_unique').on(table.playerId, table.seasonYear, table.week),
+  playerPracticeWeekIdx: index('idx_player_practice_week').on(table.seasonYear, table.week),
 }));
 
 // ============================================
@@ -797,7 +890,13 @@ export const playerAiAnalyses = sqliteTable('player_ai_analyses', {
   week: integer('week').notNull(),
   analysis: text('analysis').notNull(),
   model: text('model').notNull(),
+  /** SHA-256 of the canonical inputs the take was generated from (services/aiTake.ts). */
+  inputsHash: text('inputs_hash'),
+  /** Human-readable "based on ..." summary of those inputs, shown under the take. */
+  basis: text('basis'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  /** When the current analysis text was (re)generated; null on rows from before regeneration existed. */
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
 }, (table) => ({
   playerAiAnalysesIdentity: uniqueIndex('idx_player_ai_analyses_identity')
     .on(table.playerId, table.seasonYear, table.week),

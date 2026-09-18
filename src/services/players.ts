@@ -180,6 +180,10 @@ export interface PlayerAnalysisResponse {
   generatedAt: string;
   season: number;
   week: number;
+  /** What the take was built from: "Week 3 projection 19.4 (from prop lines) · stats through Week 2 · ..." */
+  basis?: string;
+  /** Newer inputs exist but the take is under the server's regeneration floor; Regenerate forces it. */
+  stale?: boolean;
 }
 
 export interface MatchupGradeResponse {
@@ -309,15 +313,17 @@ export const playerService = {
   // Get the cached/generated per-player AI take (Pro/Elite only — server enforces via requireTier)
   getPlayerAnalysis: async (
     playerId: string,
-    params?: { week?: number; season?: number }
+    params?: { week?: number; season?: number; refresh?: boolean }
   ): Promise<PlayerAnalysisResponse> => {
     const searchParams = new URLSearchParams();
     if (params) {
-      Object.entries(params).forEach(([key, value]) => {
+      const { refresh, ...rest } = params;
+      Object.entries(rest).forEach(([key, value]) => {
         if (value !== undefined) {
           searchParams.append(key, String(value));
         }
       });
+      if (refresh) searchParams.append('refresh', '1');
     }
     const query = searchParams.toString();
     return api.get<PlayerAnalysisResponse>(

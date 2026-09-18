@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowLeft, TrendingUp, TrendingDown, Zap, Target, Calendar, Star, Clock, Heart, Share2, Check, Sparkles, Lock } from 'lucide-react';
+import { X, ArrowLeft, TrendingUp, TrendingDown, Clock, Heart, Share2, Check, Sparkles, Lock } from 'lucide-react';
 import { Player } from '../App';
 import api, { ApiError } from '../services/api';
 import { playerService } from '../services';
@@ -109,7 +109,6 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [news, setNews] = useState<PlayerNews[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
   const [matchupData, setMatchupData] = useState<MatchupGradeResponse | null>(null);
-  const [matchupLoading, setMatchupLoading] = useState(true);
   const [propsData, setPropsData] = useState<any>(null);
   const [propsLoading, setPropsLoading] = useState(true);
   // Fall back to the actual current NFL week rather than a hardcoded week 1,
@@ -180,15 +179,30 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   const [aiTake, setAiTake] = useState<string | null>(null);
   const [aiTakeLoading, setAiTakeLoading] = useState(false);
   const [aiTakeError, setAiTakeError] = useState<string | null>(null);
+  const [aiTakeMeta, setAiTakeMeta] = useState<{ basis: string | null; generatedAt: string | null; stale: boolean }>({ basis: null, generatedAt: null, stale: false });
+  // Bumped by the Regenerate button; the effect below re-fetches with
+  // refresh=1 exactly once per press (a later week change fetches normally).
+  const [aiTakeRefreshNonce, setAiTakeRefreshNonce] = useState(0);
+  const aiTakeRefreshRef = useRef(false);
 
+  // The take follows the week picker (not the week the card opened on) and
+  // is re-fetched on Regenerate. The server regenerates when the inputs
+  // behind the take changed (projection, prop lines, practice report,
+  // stats, news) and otherwise returns the cached one.
   useEffect(() => {
     if (!player?.id || !canViewAiTake) return;
     let cancelled = false;
     setAiTakeLoading(true);
     setAiTakeError(null);
-    setAiTake(null);
-    playerService.getPlayerAnalysis(player.id, { week: propsCurrentWeek, season })
-      .then((res) => { if (!cancelled) setAiTake(res.analysis); })
+    const refresh = aiTakeRefreshRef.current;
+    aiTakeRefreshRef.current = false;
+    if (!refresh) setAiTake(null);
+    playerService.getPlayerAnalysis(player.id, { week: selectedWeek, season, refresh })
+      .then((res) => {
+        if (cancelled) return;
+        setAiTake(res.analysis);
+        setAiTakeMeta({ basis: res.basis ?? null, generatedAt: res.generatedAt ?? null, stale: Boolean(res.stale) });
+      })
       .catch((err) => {
         if (cancelled) return;
         const message = err instanceof ApiError
@@ -198,7 +212,19 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
       })
       .finally(() => { if (!cancelled) setAiTakeLoading(false); });
     return () => { cancelled = true; };
-  }, [player.id, canViewAiTake, propsCurrentWeek, season]);
+  }, [player.id, canViewAiTake, selectedWeek, season, aiTakeRefreshNonce]);
+
+  const formatTakeAge = (iso: string | null): string | null => {
+    if (!iso) return null;
+    const ms = Date.now() - new Date(iso).getTime();
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    const minutes = Math.round(ms / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 48) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+  };
 
   // Fetch the current-week stat-category projection when the card opens or the week changes.
   useEffect(() => {
@@ -272,7 +298,6 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   useEffect(() => {
     if (!player?.id) return;
     let cancelled = false;
-    setMatchupLoading(true);
     playerService.getMatchupGrade(player.id, {
       season,
       week: selectedWeek,
@@ -280,8 +305,6 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
       if (!cancelled) setMatchupData(res);
     }).catch(() => {
       if (!cancelled) setMatchupData(null);
-    }).finally(() => {
-      if (!cancelled) setMatchupLoading(false);
     });
     return () => { cancelled = true; };
   }, [player.id, season, selectedWeek]);
@@ -1408,94 +1431,36 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
               ) : aiTakeError ? (
                 <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{aiTakeError}</p>
               ) : aiTake ? (
-                <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{aiTake}</p>
+                <>
+                  <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{aiTake}</p>
+                  <div className={`mt-3 pt-3 border-t flex items-start justify-between gap-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                    <div className={`min-w-0 text-xs leading-relaxed ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      {aiTakeMeta.basis && <div>Based on {aiTakeMeta.basis}</div>}
+                      {formatTakeAge(aiTakeMeta.generatedAt) && (
+                        <div>
+                          Written {formatTakeAge(aiTakeMeta.generatedAt)}
+                          {aiTakeMeta.stale && <span className={isDarkMode ? 'text-amber-400' : 'text-amber-600'}> · newer data available</span>}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { aiTakeRefreshRef.current = true; setAiTakeRefreshNonce((n) => n + 1); }}
+                      disabled={aiTakeLoading}
+                      title="Rebuild the take from the latest projection, prop lines, practice report and news"
+                      className={`flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-md border transition-colors disabled:opacity-50 ${
+                        isDarkMode
+                          ? 'bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+                      }`}
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                </>
               ) : (
                 <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No AI take available yet.</p>
               )}
-            </div>
-
-            {/* FilmRoom Insights */}
-            <div className={`rounded-lg border p-4 sm:p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-              <div className="flex items-center gap-2 mb-4 flex-wrap">
-                <Zap className="w-4 h-4 text-yellow-500" />
-                <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>FilmRoom Insights</h3>
-                {(matchupData as any)?.isFallback && (matchupData as any)?.season && (
-                  <span
-                    className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${isDarkMode ? 'bg-amber-900/40 text-amber-300 border border-amber-700/50' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}
-                    title={`Showing ${(matchupData as any).season} data — the ${(matchupData as any).season + 1} schedule hasn't been posted yet`}
-                  >
-                    {(matchupData as any).season} season
-                  </span>
-                )}
-              </div>
-              <div className="space-y-3 mb-6">
-                {matchupData?.grade ? (
-                  <>
-                    <div className="flex items-start gap-2">
-                      <Target className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: getGradeStyle(matchupGrade).color }} />
-                      <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                        {matchupData.opponent ? (
-                          <>
-                            <strong style={{ color: getGradeStyle(matchupGrade).color }}>{getMatchupGradeLabel(matchupGrade)} matchup vs {matchupData.opponent}</strong>
-                            {' — '}allows {matchupData.avgPointsAllowed} {(matchupData.format || 'ppr').toUpperCase()} pts/game to {matchupData.position}s
-                            {matchupData.leagueAvg ? ` (league avg: ${matchupData.leagueAvg})` : ''}.
-                          </>
-                        ) : (
-                          <>
-                            {player.name} has a <strong style={{ color: getGradeStyle(matchupGrade).color }}>{getMatchupGradeLabel(matchupGrade).toLowerCase()} matchup</strong>.
-                          </>
-                        )}
-                      </p>
-                    </div>
-                    {matchupData.gameBreakdown && matchupData.gameBreakdown.length > 0 && (
-                      <div className="flex items-start gap-2">
-                        <Calendar className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
-                        <div className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                          <span className="font-medium">Last {matchupData.gamesAnalyzed} games vs {matchupData.position}s:</span>
-                          <div className="flex gap-2 mt-1.5 flex-wrap">
-                            {matchupData.gameBreakdown.map((g) => (
-                              <span
-                                key={g.week}
-                                className={`text-xs px-2 py-1 rounded font-medium ${
-                                  matchupData.leagueAvg && g.pointsAllowed > matchupData.leagueAvg
-                                    ? isDarkMode ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'
-                                    : isDarkMode ? 'bg-red-500/20 text-red-400' : 'bg-red-100 text-red-700'
-                                }`}
-                                title={`Week ${g.week}: ${g.pointsAllowed} pts allowed to ${matchupData.position}s`}
-                              >
-                                Wk{g.week}: {g.pointsAllowed}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {matchupData.ratio !== undefined && (
-                      <div className="flex items-start gap-2">
-                        <Star className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                          {matchupData.ratio >= 1.10
-                            ? <>This defense gives up <strong className="text-green-500">{Math.round((matchupData.ratio - 1) * 100)}% more</strong> than league average to {matchupData.position}s.</>
-                            : matchupData.ratio <= 0.90
-                              ? <>This defense holds {matchupData.position}s to <strong className="text-red-500">{Math.round((1 - matchupData.ratio) * 100)}% less</strong> than league average.</>
-                              : <>This defense is <strong className={isDarkMode ? 'text-white' : 'text-slate-900'}>near league average</strong> against {matchupData.position}s.</>
-                          }
-                        </p>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex items-start gap-2">
-                    <Target className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
-                    <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      {matchupLoading
-                        ? 'Loading matchup analysis...'
-                        : matchupData?.message || 'No matchup data available.'}
-                    </p>
-                  </div>
-                )}
-              </div>
-
             </div>
 
             {/* Key Line Spotlight — only show when real data exists */}
