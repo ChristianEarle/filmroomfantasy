@@ -5,6 +5,8 @@
  * sites in players.ts for how these are wired back in.
  */
 
+import { resolveWeekFromCalendar, isGameFinished, type ScheduleGame } from '../services/nflState';
+
 export interface GameForWeek {
   isComplete?: boolean | null;
   homeScore?: number | null;
@@ -36,12 +38,11 @@ export interface ResolveWeekCompleteArgs {
  *  2. Otherwise, complete if `includeStats` and we already know a stat row
  *     exists for the week (Sleeper only has stats for completed weeks).
  *  3. Otherwise, complete if there are NO game records at all for the
- *     week/season AND the current calendar month falls in the Feb-Jul
- *     offseason window (getMonth() 1..6). August (7) is deliberately
- *     excluded — that's the *preseason* window for the upcoming season in
- *     getNflSeasonContext() (see services/espn.ts), not offseason, so
- *     treating it as offseason here would misreport Week 1 as "complete"
- *     before games are synced.
+ *     week/season AND the calendar resolver (services/nflState.ts) says
+ *     we're in the offseason or postseason. Preseason is deliberately
+ *     excluded — that's the window for the upcoming season's games not
+ *     being synced yet, so treating it as "complete" here would
+ *     misreport Week 1 as done before games are synced.
  */
 export function resolveWeekComplete({
   gamesForWeek,
@@ -58,8 +59,8 @@ export function resolveWeekComplete({
   }
 
   if (!weekComplete && gamesForWeek.length === 0) {
-    const currentMonth = now.getMonth(); // 0=Jan, 1=Feb, ... 6=Jul
-    if (currentMonth >= 1 && currentMonth <= 6) weekComplete = true;
+    const { seasonType } = resolveWeekFromCalendar(now);
+    if (seasonType === 'offseason' || seasonType === 'postseason') weekComplete = true;
   }
 
   return weekComplete;
@@ -113,4 +114,72 @@ export function computeFetchWindow({
         : limit + offset;
   const fetchOffset = (sortByComputed && includeStats) || availableOnly ? 0 : offset;
   return { fetchLimit, fetchOffset };
+}
+
+export interface ShouldReportActualsArgs {
+  /** The player's team game for the requested week/season, if we have a schedule row for it. */
+  teamGame: ScheduleGame | null | undefined;
+  now: Date;
+  week: number;
+  season: number;
+  /** The live NFL week/season from the resolver. */
+  currentWeek: number;
+  currentSeason: number;
+}
+
+/**
+ * Whether the props endpoint should attach actual results (OVER/UNDER,
+ * scored a TD YES/NO) to a week's lines. Stats syncs can write zero rows for
+ * an upcoming week before kickoff, so "a stats row exists" is not enough:
+ * only report actuals once the player's game has actually finished. When
+ * we have no schedule row for the team, fall back to "the week is behind
+ * the live week" (or the season is a past one).
+ */
+export function shouldReportActuals({
+  teamGame,
+  now,
+  week,
+  season,
+  currentWeek,
+  currentSeason,
+}: ShouldReportActualsArgs): boolean {
+  if (teamGame) return isGameFinished(teamGame, now);
+  if (season < currentSeason) return true;
+  if (season > currentSeason) return false;
+  return week < currentWeek;
+}
+
+export interface ShouldFallBackToPriorSeasonArgs {
+  /** Whether any props were found for the requested season+week. */
+  propsForRequestedWeek: boolean;
+  /**
+   * Whether the requested season has ANY props at all (any week), used to
+   * tell "this season hasn't started yet" (offseason, ok to fall back) apart
+   * from "this season is underway but this week's lines aren't synced yet"
+   * (not ok to fall back — that would silently show last year's settled
+   * lines for an upcoming game).
+   */
+  seasonHasAnyProps: boolean;
+}
+
+/**
+ * Decides whether GET /players/:id/props (and the /props list route) should
+ * walk back to a prior season's lines when the requested season/week has no
+ * props.
+ *
+ * - Props already found for the requested week -> never fall back.
+ * - No props this week, and the season has none at all (e.g. the 2026
+ *   season hasn't had any lines posted yet) -> fall back, this is the
+ *   offseason case the fallback exists for.
+ * - No props this week, but the season DOES have props for other weeks
+ *   (mid-season, this week just hasn't synced yet) -> do NOT fall back;
+ *   the caller should report `linesPosted: false` instead of showing last
+ *   season's settled results.
+ */
+export function shouldFallBackToPriorSeason({
+  propsForRequestedWeek,
+  seasonHasAnyProps,
+}: ShouldFallBackToPriorSeasonArgs): boolean {
+  if (propsForRequestedWeek) return false;
+  return !seasonHasAnyProps;
 }

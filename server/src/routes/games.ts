@@ -4,6 +4,8 @@ import * as schema from '../db/schema';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { fetchEspnScoreboard, getNflSeasonContext, getTeamDisplayName, getStaticNetwork } from '../services/espn';
+import { getNflState } from '../services/nflState';
+import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
 
 export const gameRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -286,6 +288,15 @@ async function enrichGamesWithTopPerformers(
   });
 }
 
+// GET /games/nfl-state - single source of truth for "what week is it" that
+// the frontend defaults every week-scoped view to (see server/src/services/nflState.ts)
+gameRoutes.get('/nfl-state', optionalAuthMiddleware, async (c) => {
+  const db = c.get('db');
+  const state = await getNflState(db);
+  c.header('Cache-Control', 'public, max-age=300');
+  return c.json(state);
+});
+
 // GET /games/slate - returns games for Game Slate view
 // Smart caching: uses DB when all games are complete, hits ESPN only when scores may be missing
 gameRoutes.get('/slate', optionalAuthMiddleware, async (c) => {
@@ -293,10 +304,18 @@ gameRoutes.get('/slate', optionalAuthMiddleware, async (c) => {
   const week = c.req.query('week') ? parseInt(c.req.query('week')!) : undefined;
   const ctx = getNflSeasonContext();
   const season = ctx.season;
-  // During offseason (Feb–Aug), default to last regular season week
-  const month = new Date().getMonth();
-  const isOffseason = month >= 1 && month <= 7;
-  const effectiveWeek = week ?? (isOffseason ? 18 : undefined);
+  // No explicit week requested — resolve today's actual current week
+  // instead of guessing from the calendar month (see services/nflState.ts).
+  // In the offseason show the finished season's final week; in the
+  // preseason and playoffs leave the week undefined so ESPN serves its
+  // live scoreboard for that phase (regular-season week numbers can't
+  // address those games).
+  const state = week == null ? await getNflState(db) : null;
+  const effectiveWeek = week ?? (
+    state?.seasonType === 'regular' ? state.week
+      : state?.seasonType === 'offseason' ? 18
+        : undefined
+  );
   const seasontype = effectiveWeek != null && effectiveWeek >= 1 && effectiveWeek <= 18 ? '2' : ctx.seasontype;
 
   try {
@@ -428,7 +447,7 @@ gameRoutes.get('/espn/scoreboard', espnProxyRateLimit, optionalAuthMiddleware, a
 gameRoutes.get('/week/:week', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.param('week'));
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
 
   if (isNaN(week) || week < 1 || week > 22) {
     return c.json({ error: 'Invalid week number' }, 400);
@@ -472,7 +491,7 @@ gameRoutes.get('/week/:week', optionalAuthMiddleware, async (c) => {
 gameRoutes.get('/line-movements', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1');
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
 
   try {
     const games = await db.query.nflGames.findMany({
@@ -572,7 +591,7 @@ gameRoutes.get('/upcoming', optionalAuthMiddleware, async (c) => {
 gameRoutes.get('/odds', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const week = parseInt(c.req.query('week') || '1');
-  const season = parseInt(c.req.query('season') || '2025');
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
 
   try {
     // Get all games for the given week
@@ -1029,7 +1048,7 @@ gameRoutes.get('/live/scores', espnProxyRateLimit, optionalAuthMiddleware, async
 gameRoutes.get('/team/:team', optionalAuthMiddleware, async (c) => {
   const db = c.get('db');
   const team = c.req.param('team').toUpperCase();
-  const season = parseInt(c.req.query('season') || String(new Date().getFullYear()));
+  const season = parseInt(c.req.query('season') || String(getDefaultSeason()));
 
   try {
     // Get all games where team is home or away

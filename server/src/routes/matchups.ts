@@ -4,7 +4,10 @@ import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { resolveUserTeamId } from './rosters';
+import { resolveWeekFromCalendar, resolveLeagueWeek } from '../services/nflState';
+import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 // Rate limit for matchup routes: 60 req/min per IP
 const matchupRateLimit = rateLimit(60, 60 * 1000);
@@ -121,7 +124,7 @@ matchupRoutes.get('/:id', authMiddleware, async (c) => {
     const projMap = new Map<string, number>();
     if (allPlayerIds.length > 0) {
       // Normalize scoring format for projections table
-      const projScoringFormat = scoringFormat === 'half_ppr' ? 'half-ppr' : scoringFormat;
+      const projScoringFormat = normalizeScoringFormat(scoringFormat);
       const projections = await db
         .select({
           playerId: schema.playerProjections.playerId,
@@ -254,7 +257,7 @@ matchupRoutes.get('/:id/live', authMiddleware, async (c) => {
       where: eq(schema.leagues.id, matchup.leagueId),
     });
     const scoringFormat = league?.scoringFormat || 'ppr';
-    const seasonYear = league?.seasonYear || new Date().getFullYear();
+    const seasonYear = league?.seasonYear || getDefaultSeason();
     const pointsCol = getPointsColumn(scoringFormat);
 
     // Get starters for both teams
@@ -415,10 +418,16 @@ export async function findCurrentMatchupForTeam(
   });
   if (!league) return null;
 
+  // Default to the live NFL week (a current-season league's stored
+  // currentWeek is only as fresh as its last sync) — the full season's
+  // pairings are imported on every sync, so the live week's matchup exists
+  // even before the week itself has been re-synced.
+  const targetWeek = week ?? (await resolveLeagueWeek(db, league)).week;
+
   let matchup = await db.query.matchups.findFirst({
     where: and(
       eq(schema.matchups.leagueId, leagueId),
-      eq(schema.matchups.week, week ?? league.currentWeek),
+      eq(schema.matchups.week, targetWeek),
       or(
         eq(schema.matchups.homeTeamId, teamId),
         eq(schema.matchups.awayTeamId, teamId)
@@ -532,11 +541,14 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
   try {
     const league = await db.query.leagues.findFirst({
       where: eq(schema.leagues.id, leagueId),
-      columns: { currentWeek: true },
+      columns: { currentWeek: true, seasonYear: true },
     });
     if (!league) {
       return c.json({ error: 'League not found' }, 404);
     }
+    // Same rule findCurrentMatchupForTeam uses for its default, so the week
+    // picker's "current" marker matches the matchup actually shown.
+    const { week: currentWeek } = await resolveLeagueWeek(db, league);
 
     // Resolve via externalOwnerId (reliable for synced leagues, and
     // unaffected by a team's ownerId being null/mis-set) before falling
@@ -556,12 +568,12 @@ matchupRoutes.get('/my/current', authMiddleware, async (c) => {
         error: week !== undefined
           ? `No matchup synced for week ${week} yet`
           : 'No matchup found for current week',
-        currentWeek: league.currentWeek,
+        currentWeek,
         availableWeeks,
       }, 404);
     }
 
-    return c.json({ ...result, currentWeek: league.currentWeek, availableWeeks });
+    return c.json({ ...result, currentWeek, availableWeeks });
   } catch (error) {
     console.error('Get current matchup error:', error);
     return c.json({ error: 'Failed to fetch current matchup' }, 500);
@@ -594,14 +606,18 @@ matchupRoutes.get('/league/:leagueId/all', authMiddleware, async (c) => {
     // Fetch league to determine effective current week for isComplete
     const league = await db.query.leagues.findFirst({
       where: eq(schema.leagues.id, leagueId),
-      columns: { currentWeek: true, externalId: true, platform: true },
+      columns: { currentWeek: true, externalId: true, platform: true, seasonYear: true },
     });
 
-    // Determine effective current week: use league's stored currentWeek,
-    // but if we're in the offseason (Feb-Aug), the season is fully complete
-    let effectiveCurrentWeek = league?.currentWeek || 1;
-    const currentMonth = new Date().getMonth(); // 0=Jan, 1=Feb, ... 7=Aug
-    const isOffseason = currentMonth >= 1 && currentMonth <= 7;
+    // Determine effective current week: the league-scoped week (live NFL
+    // week for a current-season league, the league's own week if it's
+    // parked on a past season), but if we're in the offseason/postseason
+    // the season is fully complete.
+    let effectiveCurrentWeek = (await resolveLeagueWeek(db, league ?? null)).week;
+    const isOffseason = ((): boolean => {
+      const { seasonType } = resolveWeekFromCalendar(new Date());
+      return seasonType === 'offseason' || seasonType === 'postseason';
+    })();
 
     // For Sleeper leagues, try to get accurate week from Sleeper API
     if (league?.platform === 'sleeper' && league.externalId) {
