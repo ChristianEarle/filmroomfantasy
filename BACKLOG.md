@@ -315,7 +315,19 @@
 - [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
 - [ ] **Audit PlayerAvatar** - Image loading, fallback initials
 - [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget
-- [ ] **Audit ErrorBoundary** - Error catch/display, recovery
+- [x] **Audit ErrorBoundary** - Component itself (catch/display/retry/reset-on-nav)
+  was already solid. Real bug was in how `App.tsx` wired it up: only 3 of
+  ~20 routed views (Trends, Playoffs, LeagueAnalyzer) were individually
+  wrapped, so a crash in any other view (Board, Team, Matchup, Settings,
+  AllPlayers, Waivers, DraftRankings, TradeAnalyzer, Admin, ...) fell
+  through to the single root boundary with no `resetKeys`, blanking the
+  entire app shell (sidebar/header/bottom nav included) instead of just
+  the failed view, with no automatic recovery on navigation. Moved to one
+  `ErrorBoundary` wrapping the whole view switch with `resetKeys={[activeView]}`
+  so every view gets the same per-view isolation and recovers on
+  navigation; removed the 3 now-redundant per-view wrappers. Added
+  `ErrorBoundary.test.tsx` (catch/fallback/retry/resetKeys) — the
+  component had no test coverage before.
 - [ ] **Audit App.tsx** - Routing, state management, context wiring, page transitions
 
 ---
