@@ -639,4 +639,55 @@ describe('DraftRankingsView — Market source toggle', () => {
 
     expect(marketCallCount()).toBe(1);
   });
+
+  it('shows a Season/ROS sort toggle only for the Market source, defaulting to Season', async () => {
+    renderView();
+    await loaded();
+    expect(screen.queryByRole('button', { name: 'Season' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'ROS' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Market Bell Cow');
+
+    expect(screen.getByRole('button', { name: 'Season' })).toHaveClass('bg-blue-600');
+    expect(screen.getByRole('button', { name: 'ROS' })).not.toHaveClass('bg-blue-600');
+
+    const urls = () => hoisted.mockGet.mock.calls.map(c => c[0] as string);
+    expect(urls().some(u => u.includes('/market-rankings') && u.includes('sort=season'))).toBe(true);
+  });
+
+  it('re-fetches with sort=ros and renders rows in the server-provided ROS order when the ROS pill is clicked', async () => {
+    hoisted.mockGet.mockImplementation((url: string) => {
+      if (url.includes('/market-rankings')) {
+        // The real endpoint re-ranks server-side; the fixture just returns
+        // rows already in ROS order for sort=ros to keep the mock simple.
+        const rows = url.includes('sort=ros')
+          ? [
+              makeMarketRanking({ playerId: 'm2', marketRank: 1, position: 'WR', name: 'Market Alpha', team: 'MIA', seasonPoints: 298.7, rosPoints: 240.5 }),
+              makeMarketRanking({ playerId: 'm1', marketRank: 2, position: 'RB', name: 'Market Bell Cow', team: 'DET', seasonPoints: 312.4, rosPoints: 200.1 }),
+            ]
+          : [
+              makeMarketRanking({ playerId: 'm1', marketRank: 1, position: 'RB', name: 'Market Bell Cow', team: 'DET', seasonPoints: 312.4, rosPoints: 200.1 }),
+              makeMarketRanking({ playerId: 'm2', marketRank: 2, position: 'WR', name: 'Market Alpha', team: 'MIA', seasonPoints: 298.7, rosPoints: 240.5 }),
+            ];
+        return Promise.resolve(marketResponse(rows));
+      }
+      return Promise.resolve(response(ALL));
+    });
+
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Market Bell Cow');
+
+    fireEvent.click(screen.getByRole('button', { name: 'ROS' }));
+
+    await waitFor(() => {
+      const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
+      expect(urls.some(u => u.includes('/market-rankings') && u.includes('sort=ros'))).toBe(true);
+    });
+
+    const rows = await screen.findAllByText(/^Market (Alpha|Bell Cow)$/);
+    expect(rows.map(r => r.textContent)).toEqual(['Market Alpha', 'Market Bell Cow']);
+  });
 });

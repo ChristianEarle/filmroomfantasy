@@ -421,7 +421,7 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
 export const marketRankingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
- * GET /api/market-rankings?scoring=ppr&season=2026&limit=300&offset=0
+ * GET /api/market-rankings?scoring=ppr&season=2026&limit=300&offset=0&sort=season
  *
  * Deterministic "Market" (sportsbook-implied) season projection + VORP
  * ranking, populated by POST /api/admin/sync-market-projections. Public,
@@ -431,6 +431,11 @@ export const marketRankingsRoutes = new Hono<{ Bindings: Env; Variables: Variabl
  *
  * limit (default 300, max 500) and offset (default 0) page through the
  * full ranked list; `pagination.total` is the full count before paging.
+ *
+ * sort: 'season' (default) keeps the persisted full-season VORP order
+ * (`marketRank`); 'ros' re-ranks by remaining-season points (`rosPoints`,
+ * nulls last) instead — no new data, just a different sort over the same
+ * rows.
  */
 marketRankingsRoutes.get('/', async (c) => {
   const db = c.get('db');
@@ -439,9 +444,13 @@ marketRankingsRoutes.get('/', async (c) => {
   // this file — the calendar year is the correct default here, not the NFL
   // season resolver.
   const season = parseInt(c.req.query('season') || String(new Date().getFullYear()), 10);
+  const sort = (c.req.query('sort') || 'season') as 'season' | 'ros';
 
   if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
     return c.json({ error: 'Invalid scoring format' }, 400);
+  }
+  if (!['season', 'ros'].includes(sort)) {
+    return c.json({ error: 'Invalid sort' }, 400);
   }
 
   const rawLimit = parseInt(c.req.query('limit') || '300', 10);
@@ -499,10 +508,17 @@ marketRankingsRoutes.get('/', async (c) => {
 
   // The cached fetch above always holds the full ranked list for this
   // season/scoring format (one D1 round trip, reused across every page) —
-  // limit/offset are applied here so paging doesn't require re-querying or
-  // a separate cache entry per page. `total` is that full list's length.
-  const total = result.rankings.length;
-  const page = result.rankings.slice(offset, offset + limit);
+  // sorting and limit/offset are applied here so neither busts the cache or
+  // needs a separate entry per sort/page. `total` is that full list's length.
+  const sortedRankings =
+    sort === 'ros'
+      ? [...result.rankings]
+          .sort((a, b) => (b.rosPoints ?? -Infinity) - (a.rosPoints ?? -Infinity))
+          .map((r, i) => ({ ...r, marketRank: r.rosPoints != null ? i + 1 : null }))
+      : result.rankings;
+
+  const total = sortedRankings.length;
+  const page = sortedRankings.slice(offset, offset + limit);
 
   return c.json({
     rankings: page,
@@ -510,6 +526,7 @@ marketRankingsRoutes.get('/', async (c) => {
     meta: {
       scoringFormat,
       season,
+      sort,
       asOfWeek: result.asOfWeek,
       count: page.length,
     },

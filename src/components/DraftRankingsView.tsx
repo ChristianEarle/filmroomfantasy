@@ -230,6 +230,9 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketAsOfWeek, setMarketAsOfWeek] = useState<number | null>(null);
+  // Season (full-year VORP) vs ROS (remaining-season points) sort — Market
+  // source only, same rows re-ranked by the server.
+  const [marketSort, setMarketSort] = useState<'season' | 'ros'>('season');
 
   const { user, isAuthenticated } = useAuth();
   const watchlist = useWatchlist();
@@ -310,11 +313,11 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     try {
       const season = new Date().getFullYear();
       const data = await api.get<MarketRankingsResponse>(
-        `/market-rankings?scoring=${scoringFormat}&season=${season}&limit=300`,
+        `/market-rankings?scoring=${scoringFormat}&season=${season}&limit=300&sort=${marketSort}`,
       );
       setMarketRankings(data.rankings);
       setMarketAsOfWeek(data.meta.asOfWeek);
-      marketLoadedKeyRef.current = `${scoringFormat}:${season}`;
+      marketLoadedKeyRef.current = `${scoringFormat}:${season}:${marketSort}`;
     } catch (err) {
       console.error('Failed to fetch market rankings:', err);
       setMarketError('Failed to load market rankings');
@@ -322,17 +325,17 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     } finally {
       setMarketLoading(false);
     }
-  }, [scoringFormat]);
+  }, [scoringFormat, marketSort]);
 
   // Only fetch the Market board once it's actually selected — no need to hit
   // the endpoint while the user stays on the AI view — and skip the fetch
-  // entirely when the cached board already matches the current scoring/season.
+  // entirely when the cached board already matches the current scoring/season/sort.
   useEffect(() => {
     if (source !== 'market') return;
     const season = new Date().getFullYear();
-    if (marketLoadedKeyRef.current === `${scoringFormat}:${season}`) return;
+    if (marketLoadedKeyRef.current === `${scoringFormat}:${season}:${marketSort}`) return;
     fetchMarketRankings();
-  }, [source, scoringFormat, fetchMarketRankings]);
+  }, [source, scoringFormat, marketSort, fetchMarketRankings]);
 
   // A comparison only makes sense within one variant, so reset the basket when
   // the ranking type, scoring format, or superflex setting changes.
@@ -542,6 +545,18 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
               {pill(rankingView === 'redraft', () => setRankingView('redraft'), 'Redraft')}
               {pill(rankingView === 'dynasty', () => setRankingView('dynasty'), 'Dynasty')}
               {pill(rankingView === 'rookie', () => setRankingView('rookie'), 'Rookie')}
+            </div>
+
+            <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+          </>
+        )}
+
+        {isMarket && (
+          <>
+            {/* Season (full-year VORP) vs ROS (remaining-season points) sort */}
+            <div className="flex gap-1">
+              {pill(marketSort === 'season', () => setMarketSort('season'), 'Season')}
+              {pill(marketSort === 'ros', () => setMarketSort('ros'), 'ROS')}
             </div>
 
             <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
