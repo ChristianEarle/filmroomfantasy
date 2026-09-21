@@ -194,6 +194,8 @@ export interface Player {
   weekChange: number;
   weeklyProjectedPoints?: number;
   headshotUrl?: string | null;
+  /** Depth chart rank within the player's own position on their team (1 = starter). Sourced from Sleeper; null/undefined when unknown. */
+  depthChartOrder?: number | null;
   /**
    * Truthfully labels what `projectedPoints` represents when a caller
    * overrides it outside week mode (e.g. PlayerTable's Full Season view):
