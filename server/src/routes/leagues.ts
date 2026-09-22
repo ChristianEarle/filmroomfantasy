@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, or, isNull, lt } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import {
   sleep,
@@ -12,6 +12,7 @@ import { syncSleeperLeague } from '../services/leagueSync';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
+import { getDefaultSeason, getSeasonInFocus } from '../utils/seasons';
 import {
   fetchLeague as fetchMflLeague,
   fetchRosters as fetchMflRosters,
@@ -23,6 +24,7 @@ import {
   ensureArray,
 } from '../services/mfl';
 import type { Env, Variables } from '../index';
+import { isLeagueSyncStale, leagueSyncStaleCutoff, leagueSyncStaleHours } from '../services/leagueFreshness';
 
 // Rate limit for league routes: 60 req/min per IP (all auth-gated)
 const leagueRateLimit = rateLimit(60, 60 * 1000);
@@ -76,7 +78,7 @@ leagueRoutes.post('/', authMiddleware, async (c) => {
       name,
       scoringFormat = 'ppr',
       teamCount = 12,
-      seasonYear = new Date().getFullYear(),
+      seasonYear = getSeasonInFocus(),
       playoffWeeks = 3,
       playoffTeams = 6,
       waiverType = 'faab',
@@ -293,7 +295,7 @@ leagueRoutes.put('/:id', authMiddleware, async (c) => {
       updates.name = body.name.trim();
     }
     if (body.scoringFormat !== undefined) {
-      if (!['ppr', 'half_ppr', 'standard'].includes(body.scoringFormat)) {
+      if (!['ppr', 'half_ppr', 'half-ppr', 'standard'].includes(body.scoringFormat)) {
         return c.json({ error: 'Invalid scoring format' }, 400);
       }
       updates.scoringFormat = body.scoringFormat;
@@ -438,7 +440,7 @@ leagueRoutes.post('/connect', connectRateLimit, authMiddleware, async (c) => {
       name,
       scoringFormat = 'ppr',
       teamCount = 12,
-      seasonYear = new Date().getFullYear(),
+      seasonYear = getSeasonInFocus(),
       sleeperUsername, // User's Sleeper username to identify their team
       sleeperUserId,   // User's Sleeper user_id for reliable matching
     } = body;
@@ -855,6 +857,10 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
       ? `League synced. To highlight your team, set your Sleeper username in league settings.`
       : null;
 
+    await db.update(schema.leagues)
+      .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+      .where(eq(schema.leagues.id, league.id));
+
     return c.json({
       success: true,
       message: `Quick sync complete: ${teamsImported} teams imported.`,
@@ -865,6 +871,80 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
     const err = error instanceof Error ? error : new Error(String(error));
     console.error('Quick sync error:', err);
     return c.json({ error: err.message || 'Quick sync failed' }, 500);
+  }
+});
+
+// ----------------------------------------------------------------
+// Sync-on-open. The client calls this whenever a league is opened; the
+// server syncs only if the league's last sync is older than the staleness
+// window (services/leagueFreshness.ts) — a few hours in season, a day off
+// season — so nobody has to press Sync and the cron is just a backstop.
+//
+// Concurrency: two tabs or two members opening the league at once must not
+// both sync. The claim is a conditional UPDATE of last_synced_at that only
+// succeeds while the row is still stale; a second caller sees zero rows
+// affected and reports "in progress". A failed sync restores the previous
+// timestamp so the next open retries instead of waiting out the window.
+// ----------------------------------------------------------------
+const ifStaleRateLimit = rateLimit(30, 15 * 60 * 1000);
+leagueRoutes.post('/:id/sync/if-stale', ifStaleRateLimit, authMiddleware, async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+  const leagueId = c.req.param('id');
+  if (!user) return c.json({ error: 'Not authenticated' }, 401);
+
+  const membership = await db.query.leagueMembers.findFirst({
+    where: and(eq(schema.leagueMembers.userId, user.id), eq(schema.leagueMembers.leagueId, leagueId)),
+  });
+  if (!membership) return c.json({ error: 'Not a member of this league' }, 403);
+
+  const league = await db.query.leagues.findFirst({
+    where: eq(schema.leagues.id, leagueId),
+    with: { teams: true },
+  });
+  if (!league) return c.json({ error: 'League not found' }, 404);
+
+  if (league.platform !== 'sleeper' || !league.externalId) {
+    return c.json({ synced: false, reason: 'unsupported', lastSyncedAt: league.lastSyncedAt ?? null });
+  }
+
+  const now = new Date();
+  if (!isLeagueSyncStale(league.lastSyncedAt, now)) {
+    return c.json({ synced: false, reason: 'fresh', lastSyncedAt: league.lastSyncedAt, staleAfterHours: leagueSyncStaleHours(now) });
+  }
+
+  // Claim the sync. Only one caller wins while the row is stale.
+  const cutoff = leagueSyncStaleCutoff(now);
+  const claimed = await db.update(schema.leagues)
+    .set({ lastSyncedAt: now })
+    .where(and(
+      eq(schema.leagues.id, leagueId),
+      or(isNull(schema.leagues.lastSyncedAt), lt(schema.leagues.lastSyncedAt, cutoff))
+    ))
+    .returning({ id: schema.leagues.id });
+  if (claimed.length === 0) {
+    return c.json({ synced: false, reason: 'in_progress', lastSyncedAt: league.lastSyncedAt });
+  }
+
+  try {
+    const result = await syncSleeperLeague(db, league, { actingUserId: user.id });
+    return c.json({
+      synced: true,
+      lastSyncedAt: new Date(),
+      rolledOver: result.rolledOver ?? null,
+      userTeamMatched: result.userTeamMatched,
+      warning: result.warning,
+      message: result.message,
+    });
+  } catch (error) {
+    // Give the claim back so the next open retries rather than believing
+    // the league is fresh for a whole window.
+    await db.update(schema.leagues)
+      .set({ lastSyncedAt: league.lastSyncedAt ?? null })
+      .where(eq(schema.leagues.id, leagueId));
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error('Sync-on-open error:', err);
+    return c.json({ synced: false, reason: 'failed', error: err.message || 'Sync failed' }, 500);
   }
 });
 
@@ -1191,7 +1271,7 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
   // Handle MFL sync
   if (league.platform === 'mfl' && league.externalId) {
     try {
-      const year = league.seasonYear || new Date().getFullYear();
+      const year = league.seasonYear || getDefaultSeason();
 
       // 1. Fetch league settings from MFL
       const mflLeagueData = await fetchMflLeague(league.externalId, year);
@@ -1531,7 +1611,7 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
   // ESPN_S2 cookies, which we don't store yet. See TODO at the end of this file.)
   if (league.platform === 'espn' && league.externalId) {
     try {
-      const year = league.seasonYear || new Date().getFullYear();
+      const year = league.seasonYear || getDefaultSeason();
       const espnUrl = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${year}/segments/0/leagues/${encodeURIComponent(league.externalId)}?view=mTeam&view=mRoster&view=mMatchup&view=mSettings`;
 
       const controller = new AbortController();

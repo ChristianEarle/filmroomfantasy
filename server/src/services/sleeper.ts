@@ -8,6 +8,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
+import { getDefaultSeason } from '../utils/seasons';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -422,7 +423,7 @@ export async function syncDraftPicks(
   const rawRounds = Number(settings.draft_rounds);
   const draftRounds =
     Number.isInteger(rawRounds) && rawRounds > 0 ? Math.min(rawRounds, 10) : DEFAULT_DRAFT_ROUNDS;
-  const baseYear = Number(sleeperLeague?.season) || new Date().getFullYear();
+  const baseYear = Number(sleeperLeague?.season) || getDefaultSeason();
   const maxYear = baseYear + PICK_YEARS_TRACKED - 1;
 
   // 2. Map Sleeper roster_id -> our team.id (roster.owner_id == teams.externalOwnerId)

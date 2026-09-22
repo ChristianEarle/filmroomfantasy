@@ -11,7 +11,11 @@ describe('getNflSeasonContext', () => {
   });
 
   it('Jan 1 - Feb 15 -> previous year postseason', () => {
-    vi.setSystemTime(new Date(2026, 0, 15)); // Jan 15, 2026
+    // Jan 20 (rather than Jan 1) — safely past the calendar resolver's
+    // postseason start (roughly early January), so the boundary is
+    // unambiguous regardless of exactly which day season 2025's Labor Day
+    // fell on.
+    vi.setSystemTime(new Date(2026, 0, 20)); // Jan 20, 2026
     expect(getNflSeasonContext()).toEqual({ season: 2025, seasontype: '3' });
   });
 
@@ -30,8 +34,11 @@ describe('getNflSeasonContext', () => {
     expect(getNflSeasonContext()).toEqual({ season: 2026, seasontype: '1' });
   });
 
-  it('Sep 5 - Dec 31 -> current year regular season', () => {
-    vi.setSystemTime(new Date(2026, 8, 5)); // Sep 5, 2026
+  it('mid-September - Dec 31 -> current year regular season', () => {
+    // Sep 20 (rather than Sep 5) — the calendar resolver starts week 1 on
+    // the Tuesday after Labor Day, which in 2026 is Sep 8, so Sep 5 would
+    // still be preseason. Sep 20 is unambiguously inside the season.
+    vi.setSystemTime(new Date(2026, 8, 20)); // Sep 20, 2026
     expect(getNflSeasonContext()).toEqual({ season: 2026, seasontype: '2' });
 
     vi.setSystemTime(new Date(2026, 11, 31)); // Dec 31, 2026

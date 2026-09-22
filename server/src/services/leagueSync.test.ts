@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideTeamOwnerId } from './leagueSync';
+import { decideTeamOwnerId, findSuccessorLeague, needsSeasonRollover } from './leagueSync';
 
 /**
  * Regression coverage for the sync ownership rules (see the doc comment on
@@ -120,5 +120,82 @@ describe('decideTeamOwnerId', () => {
         actingUserId: null,
       })
     ).toBe('app-user-b');
+  });
+});
+
+/**
+ * Regression coverage for Sleeper season rollover: Sleeper mints a new
+ * `league_id` every season, and the app has to follow `previous_league_id`
+ * forward to find it. See the doc comment on `findSuccessorLeague` and the
+ * rollover block in `syncSleeperLeague`.
+ */
+describe('needsSeasonRollover', () => {
+  it('flags a league whose reported season is behind the target season', () => {
+    expect(needsSeasonRollover('2025', 2026)).toBe(true);
+  });
+
+  it('does not flag a league already on the target season', () => {
+    expect(needsSeasonRollover('2026', 2026)).toBe(false);
+  });
+
+  it('does not flag a league reported ahead of the target season', () => {
+    expect(needsSeasonRollover('2027', 2026)).toBe(false);
+  });
+
+  it('accepts a numeric season, not just a string', () => {
+    expect(needsSeasonRollover(2025, 2026)).toBe(true);
+  });
+
+  it('never throws and treats missing/garbage input as "no rollover needed"', () => {
+    expect(needsSeasonRollover(undefined, 2026)).toBe(false);
+    expect(needsSeasonRollover(null, 2026)).toBe(false);
+    expect(needsSeasonRollover('not-a-season', 2026)).toBe(false);
+    expect(needsSeasonRollover({}, 2026)).toBe(false);
+  });
+});
+
+describe('findSuccessorLeague', () => {
+  it('finds the league whose previous_league_id matches', () => {
+    const candidates = [
+      { league_id: 'other-league', previous_league_id: 'something-else', name: 'Other' },
+      { league_id: 'new-league-id', previous_league_id: 'old-league-id', name: 'My League', season: '2026', settings: { leg: 1 }, status: 'in_season' },
+    ];
+    const result = findSuccessorLeague(candidates, 'old-league-id');
+    expect(result).toEqual({
+      league_id: 'new-league-id',
+      name: 'My League',
+      season: '2026',
+      settings: { leg: 1 },
+      status: 'in_season',
+    });
+  });
+
+  it('returns null when nothing matches', () => {
+    const candidates = [
+      { league_id: 'a', previous_league_id: 'x' },
+      { league_id: 'b', previous_league_id: 'y' },
+    ];
+    expect(findSuccessorLeague(candidates, 'old-league-id')).toBeNull();
+  });
+
+  it('returns null and does not throw for non-array input', () => {
+    expect(findSuccessorLeague(null, 'old-league-id')).toBeNull();
+    expect(findSuccessorLeague(undefined, 'old-league-id')).toBeNull();
+    expect(findSuccessorLeague('not-an-array', 'old-league-id')).toBeNull();
+    expect(findSuccessorLeague({ league_id: 'x' }, 'old-league-id')).toBeNull();
+  });
+
+  it('returns null and does not throw for malformed entries in an otherwise valid array', () => {
+    const candidates = [null, undefined, 42, 'oops', { previous_league_id: 'old-league-id' /* no league_id */ }];
+    expect(findSuccessorLeague(candidates, 'old-league-id')).toBeNull();
+  });
+
+  it('ignores entries without a string league_id', () => {
+    const candidates = [
+      { league_id: 12345, previous_league_id: 'old-league-id' }, // numeric, not string
+      { league_id: '', previous_league_id: 'old-league-id' }, // empty string
+      { league_id: 'valid-id', previous_league_id: 'old-league-id' },
+    ];
+    expect(findSuccessorLeague(candidates, 'old-league-id')?.league_id).toBe('valid-id');
   });
 });
