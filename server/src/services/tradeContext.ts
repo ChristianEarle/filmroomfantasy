@@ -201,6 +201,27 @@ function computeSeasonPhase(currentWeek: number): TradeContext['seasonPhase'] {
   return currentWeek >= 15 ? 'playoffs' : 'regular';
 }
 
+/**
+ * Display priority for player-prop markets in the AI prompt (lower = first).
+ * Unknown markets sort last, in their original order.
+ */
+const PROP_MARKET_ORDER = [
+  'player_pass_yds',
+  'player_pass_tds',
+  'player_rush_yds',
+  'player_reception_yds',
+  'player_receptions',
+  'player_anytime_td',
+  'player_rush_tds',
+  'player_pass_interceptions',
+  'player_pass_completions',
+  'player_pass_attempts',
+];
+function propMarketRank(market: string): number {
+  const i = PROP_MARKET_ORDER.indexOf(market);
+  return i === -1 ? PROP_MARKET_ORDER.length : i;
+}
+
 /** Implied team total from spread + over/under */
 function computeImpliedTotal(
   gameTotal: number | null,
@@ -566,12 +587,21 @@ export async function buildTradeContext({
           ? Math.round((gameTotal - teamImplied) * 10) / 10
           : null;
       const nameProps = propsByName.get(p.name.toLowerCase());
+      // Order by fantasy relevance: the prompt builder only shows the first
+      // five, and with completions/attempts/interceptions now synced a QB
+      // would otherwise risk having pass yds or TDs pushed off the list by
+      // volume markets in arbitrary DB order.
       const playerProps = nameProps
-        ? Array.from(nameProps.entries()).map(([market, values]) => ({
-            market,
-            overPoint: values.overPoint,
-            underPoint: values.underPoint,
-          }))
+        ? Array.from(nameProps.entries())
+            .map(([market, values]) => ({
+              market,
+              overPoint: values.overPoint,
+              underPoint: values.underPoint,
+            }))
+            .sort(
+              (a, b) =>
+                propMarketRank(a.market) - propMarketRank(b.market)
+            )
         : [];
       marketSignal = {
         teamImpliedTotal:
