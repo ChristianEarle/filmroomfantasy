@@ -618,6 +618,38 @@ describe('DraftRankingsView — Market source toggle', () => {
     expect(await screen.findByText(/Market rankings generate after the projections sync\./i)).toBeInTheDocument();
   });
 
+  it('re-ranks the Market board by rest-of-season points when the "Rest of Season" pill is selected', async () => {
+    hoisted.mockGet.mockImplementation((url: string) => {
+      if (url.includes('/market-rankings')) {
+        return Promise.resolve(marketResponse([
+          // Season Leader ranks #1 on full-season value but has the weaker ROS number
+          // (e.g. a tough remaining schedule); ROS Leader is the opposite. Only a real
+          // re-sort — not just the existing ROS column — flips their table order.
+          makeMarketRanking({ playerId: 'm1', marketRank: 1, positionRank: 1, tier: 1, position: 'RB', name: 'Season Leader', team: 'DET', seasonPoints: 312.4, rosPoints: 90.0 }),
+          makeMarketRanking({ playerId: 'm2', marketRank: 2, positionRank: 2, tier: 1, position: 'WR', name: 'ROS Leader', team: 'MIA', seasonPoints: 298.7, rosPoints: 150.0 }),
+        ]));
+      }
+      return Promise.resolve(response(ALL));
+    });
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Season Leader');
+
+    // Default (Season) order matches the API's marketRank order.
+    const seasonOrder = table().getAllByText(/^(Season Leader|ROS Leader)$/).map(el => el.textContent);
+    expect(seasonOrder).toEqual(['Season Leader', 'ROS Leader']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rest of Season' }));
+
+    await waitFor(() => {
+      const rosOrder = table().getAllByText(/^(Season Leader|ROS Leader)$/).map(el => el.textContent);
+      expect(rosOrder).toEqual(['ROS Leader', 'Season Leader']);
+    });
+
+    expect(screen.getByText(/ranked by rest-of-season points/)).toBeInTheDocument();
+  });
+
   it('caches the Market board per scoring/season: toggling Market -> AI -> Market issues exactly one market request', async () => {
     renderView();
     await loaded();
