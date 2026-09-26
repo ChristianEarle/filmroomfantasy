@@ -305,6 +305,11 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-news');
     await callSync('/api/admin/sync-games');
 
+    // Real pre-game weather for upcoming outdoor games — sync-games above
+    // only ever writes an "Indoor"/"Outdoor" placeholder, so this runs right
+    // after it to fill in an actual forecast.
+    await callSync('/api/admin/sync-game-weather');
+
     // Fan fresh injury news out to in-app notifications for rostered/watched
     // players. Idempotent (dedupe keys), and failures never break the sync.
     try {
