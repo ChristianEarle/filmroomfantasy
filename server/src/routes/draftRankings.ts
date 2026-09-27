@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, asc, desc, inArray } from 'drizzle-orm';
+import { eq, and, asc, desc, inArray, sql } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { cached } from '../utils/cache';
 import { authMiddleware } from '../middleware/auth';
@@ -421,13 +421,21 @@ draftRankingsRoutes.post('/ask', authMiddleware, requireTier('pro', 'Ask AI'), r
 export const marketRankingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
- * GET /api/market-rankings?scoring=ppr&season=2026&limit=300&offset=0
+ * GET /api/market-rankings?scoring=ppr&season=2026&limit=300&offset=0&sort=season
  *
  * Deterministic "Market" (sportsbook-implied) season projection + VORP
  * ranking, populated by POST /api/admin/sync-market-projections. Public,
  * read-only — no auth required, same posture as GET /api/draft-rankings.
  * Returns the most recently computed as_of_week's rows for the season +
  * scoring format. 1-QB only for now (see services/marketRankings.ts).
+ *
+ * `sort` picks the ranking type: `season` (default) orders by the stored
+ * full-season VORP `marketRank`; `ros` re-orders the same rows by
+ * remaining-of-season value (`rosPoints`, nulls last) — a dedicated
+ * "ROS ranking" view without needing separate AI generation, since
+ * `rosPoints` is already computed at sync time. Each row's `rank` field
+ * reflects whichever sort is active; `marketRank` always stays the
+ * season-based DB value for reference.
  *
  * limit (default 300, max 500) and offset (default 0) page through the
  * full ranked list; `pagination.total` is the full count before paging.
@@ -439,9 +447,13 @@ marketRankingsRoutes.get('/', async (c) => {
   // this file — the calendar year is the correct default here, not the NFL
   // season resolver.
   const season = parseInt(c.req.query('season') || String(new Date().getFullYear()), 10);
+  const sort = (c.req.query('sort') || 'season') as 'season' | 'ros';
 
   if (!['ppr', 'half-ppr', 'standard'].includes(scoringFormat)) {
     return c.json({ error: 'Invalid scoring format' }, 400);
+  }
+  if (!['season', 'ros'].includes(sort)) {
+    return c.json({ error: 'Invalid sort' }, 400);
   }
 
   const rawLimit = parseInt(c.req.query('limit') || '300', 10);
@@ -449,7 +461,7 @@ marketRankingsRoutes.get('/', async (c) => {
   const rawOffset = parseInt(c.req.query('offset') || '0', 10);
   const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
 
-  const cacheKey = `market-rankings:${scoringFormat}:${season}`;
+  const cacheKey = `market-rankings:${scoringFormat}:${season}:${sort}`;
   const result = await cached(cacheKey, 5 * 60 * 1000, async () => {
     const asOfWeek = await resolveMarketAsOfWeek(db, season, scoringFormat);
     if (asOfWeek == null) return { asOfWeek: null as number | null, rankings: [] as any[] };
@@ -460,7 +472,12 @@ marketRankingsRoutes.get('/', async (c) => {
         eq(schema.playerMarketProjections.asOfWeek, asOfWeek),
         eq(schema.playerMarketProjections.scoringFormat, scoringFormat)
       ),
-      orderBy: asc(schema.playerMarketProjections.marketRank),
+      // `IS NULL` sorts ascending (false/0 first) to push null rosPoints to
+      // the bottom — D1's SQLite build predates portable `NULLS LAST` syntax.
+      orderBy:
+        sort === 'ros'
+          ? [sql`${schema.playerMarketProjections.rosPoints} IS NULL`, desc(schema.playerMarketProjections.rosPoints)]
+          : asc(schema.playerMarketProjections.marketRank),
     });
 
     // Batch-fetch player name/team/position — chunked to stay under D1's
@@ -481,9 +498,10 @@ marketRankingsRoutes.get('/', async (c) => {
 
     return {
       asOfWeek,
-      rankings: rows.map((r) => ({
+      rankings: rows.map((r, i) => ({
         playerId: r.playerId,
         player: playerById.get(r.playerId) ?? null,
+        rank: sort === 'ros' ? i + 1 : r.marketRank,
         marketRank: r.marketRank,
         positionRank: r.positionRank,
         tier: r.tier,
@@ -510,6 +528,7 @@ marketRankingsRoutes.get('/', async (c) => {
     meta: {
       scoringFormat,
       season,
+      sort,
       asOfWeek: result.asOfWeek,
       count: page.length,
     },
