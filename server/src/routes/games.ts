@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { eq, and, asc, desc, inArray, like } from 'drizzle-orm';
 import * as schema from '../db/schema';
-import { optionalAuthMiddleware } from '../middleware/auth';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { requireTier } from '../middleware/tier';
 import { rateLimit } from '../middleware/rateLimit';
+import { buildCachedSystemBlocks } from '../utils/prompt';
 import { fetchEspnScoreboard, getNflSeasonContext, getTeamDisplayName, getStaticNetwork } from '../services/espn';
 import { getNflState } from '../services/nflState';
 import { getDefaultSeason } from '../utils/seasons';
@@ -14,6 +16,8 @@ export const gameRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 const publicRateLimit = rateLimit(60, 60 * 1000);
 // Stricter rate limit for ESPN proxy: 20 requests per minute
 const espnProxyRateLimit = rateLimit(20, 60 * 1000);
+// Stricter rate limit for the AI recap endpoint: 10 requests per minute
+const gameRecapRateLimit = rateLimit(10, 60 * 1000);
 
 // Apply rate limit to all game routes
 gameRoutes.use('*', publicRateLimit);
@@ -939,6 +943,136 @@ gameRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
     return c.json({ error: 'Failed to fetch game props' }, 500);
   }
 });
+
+// ── AI post-game recap (Pro/Elite) ─────────────────────────────────────────────────────────
+
+const RECAP_AI_MODEL = 'claude-sonnet-5';
+
+// Static instructions for the AI recap. Byte-identical across requests so
+// the cache_control marker in buildCachedSystemBlocks applies.
+const GAME_RECAP_SYSTEM_PROMPT = `You are FilmRoom's fantasy football analyst writing a short recap of a completed NFL game for fantasy managers.
+
+You will receive a data block from our live database: the final score, the pregame spread and over/under, and each team's top fantasy performer with their stat line and points scored.
+
+Write 2-3 short paragraphs (under 150 words total) covering: how the result compared to pregame expectations (spread/total), each team's standout fantasy performer and why it mattered, and any clear waiver-wire or role-change implication you can draw from the data given.
+
+Rules:
+- Use ONLY the facts in the data block. If a data point is missing, acknowledge the gap rather than inventing numbers.
+- Respond in plain text — no markdown, no headings, no bullet lists.`;
+
+// GET /games/:id/recap — cached AI recap for a finalized game (Pro/Elite).
+// Generated at most once per game and shared by every viewer.
+gameRoutes.get(
+  '/:id/recap',
+  authMiddleware,
+  requireTier('pro', 'AI game recap'),
+  gameRecapRateLimit,
+  async (c) => {
+    const db = c.get('db');
+    const anthropicKey = c.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      return c.json({ error: 'AI recap is not configured. Missing API key.' }, 503);
+    }
+
+    try {
+      const game = await db.query.nflGames.findFirst({
+        where: eq(schema.nflGames.id, c.req.param('id')),
+      });
+      if (!game) return c.json({ error: 'Game not found' }, 404);
+
+      const hasScores = game.homeScore != null && game.awayScore != null;
+      const gameTimePast = new Date(game.gameTime).getTime() < Date.now() - 4 * 60 * 60 * 1000;
+      const isFinal = !!game.isComplete || (hasScores && gameTimePast);
+      if (!isFinal) {
+        return c.json({ error: 'A recap is available once the game is final.' }, 400);
+      }
+
+      // Cache first — hits are instant and free.
+      const cachedRow = await db.query.gameAiRecaps.findFirst({
+        where: eq(schema.gameAiRecaps.gameId, game.id),
+      });
+      if (cachedRow) {
+        return c.json({ recap: cachedRow.recap, cached: true, generatedAt: cachedRow.createdAt });
+      }
+
+      const topPerformers = await getTopPerformersForWeek(db, game.week, game.seasonYear, [
+        { homeTeam: game.homeTeam, awayTeam: game.awayTeam, gameId: game.id },
+      ]);
+      const performers = topPerformers.get(game.id) ?? { home: null, away: null };
+
+      const homeScore = game.homeScore ?? 0;
+      const awayScore = game.awayScore ?? 0;
+      const winner = homeScore > awayScore ? game.homeTeam : awayScore > homeScore ? game.awayTeam : null;
+      const totalPoints = homeScore + awayScore;
+
+      const describePerformer = (team: string, p: TopPerformer | null) =>
+        p
+          ? `${team} — ${p.playerName} (${p.position}): ${p.statLine || 'no notable stat line'}, ${p.fantasyPoints.toFixed(1)} PPR pts`
+          : `${team} — no standout fantasy performance recorded`;
+
+      const dataBlock = `GAME DATA (Week ${game.week}, ${game.seasonYear}):
+Final: ${getTeamDisplayName(game.awayTeam)} ${game.awayScore ?? '—'} @ ${getTeamDisplayName(game.homeTeam)} ${game.homeScore ?? '—'}${winner ? ` — ${getTeamDisplayName(winner)} win` : ' — tie'}
+Pregame spread: ${game.spread != null ? game.spread : 'unavailable'}
+Pregame over/under: ${game.overUnder != null ? `${game.overUnder} (actual total: ${totalPoints}, game went ${totalPoints > game.overUnder ? 'over' : totalPoints < game.overUnder ? 'under' : 'exactly on the number'})` : 'unavailable'}
+
+Top fantasy performers:
+${describePerformer(getTeamDisplayName(game.homeTeam), performers.home)}
+${describePerformer(getTeamDisplayName(game.awayTeam), performers.away)}`;
+
+      let recap: string;
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: RECAP_AI_MODEL,
+            max_tokens: 400,
+            system: buildCachedSystemBlocks(GAME_RECAP_SYSTEM_PROMPT),
+            messages: [{ role: 'user', content: dataBlock }],
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          console.error('[games/recap] Anthropic error:', res.status, errText);
+          return c.json({ error: 'AI recap is temporarily unavailable. Please try again shortly.' }, 503);
+        }
+        const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+        const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
+        if (!text) {
+          return c.json({ error: 'AI recap is temporarily unavailable. Please try again shortly.' }, 503);
+        }
+        recap = text;
+      } catch (err) {
+        console.error('[games/recap] AI call failed:', err);
+        return c.json({ error: 'AI recap is temporarily unavailable. Please try again shortly.' }, 503);
+      }
+
+      // Store the recap (idempotent under concurrent generation).
+      try {
+        await db.insert(schema.gameAiRecaps).values({
+          id: crypto.randomUUID(),
+          gameId: game.id,
+          recap,
+          model: RECAP_AI_MODEL,
+        }).onConflictDoNothing();
+      } catch (err) {
+        console.error('[games/recap] failed to cache recap:', err);
+        // Non-fatal — we still return the generated recap.
+      }
+
+      return c.json({ recap, cached: false, generatedAt: new Date().toISOString() });
+    } catch (error) {
+      console.error('Game recap error:', error);
+      return c.json({ error: 'Failed to generate game recap' }, 500);
+    }
+  }
+);
 
 // Get live scores (for in-progress games) — fetches real-time from ESPN
 gameRoutes.get('/live/scores', espnProxyRateLimit, optionalAuthMiddleware, async (c) => {
