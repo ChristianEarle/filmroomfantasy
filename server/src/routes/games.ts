@@ -944,7 +944,7 @@ gameRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
   }
 });
 
-// ── AI post-game recap (Pro/Elite) ─────────────────────────────────────────────────────────
+// ── AI post-game recap (Pro/Elite) ──────────────────────────────────────
 
 const RECAP_AI_MODEL = 'claude-sonnet-5';
 

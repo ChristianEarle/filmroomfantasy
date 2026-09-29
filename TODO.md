@@ -96,7 +96,7 @@ history accrues from the first daily cron.
 - [ ] **PlayerCard Alert/Pin/Compare actions** — deliberately skipped in
   the sprint (Watch/Share shipped). Compare could reuse the Draft
   Rankings compare-basket pattern.
-- [x] **Redraft / Dynasty / Rookie three-way split** - true veteran-inclusive
+- [x] **Redraft / Dynasty / Rookie three-way split** — true veteran-inclusive
   `dynasty` ranking type added alongside `redraft` and the existing
   rookie-only `dynasty_rookie`; Draft Rankings now has Redraft/Dynasty/
   Rookie pills (#301).
