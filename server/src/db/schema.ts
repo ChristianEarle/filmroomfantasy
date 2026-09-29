@@ -803,12 +803,25 @@ export const playerAiAnalyses = sqliteTable('player_ai_analyses', {
     .on(table.playerId, table.seasonYear, table.week),
 }));
 
+/** Cached AI recap for one finalized game, one per gameId. */
+export const gameAiRecaps = sqliteTable('game_ai_recaps', {
+  id: text('id').primaryKey(),
+  gameId: text('game_id').notNull().references(() => nflGames.id, { onDelete: 'cascade' }),
+  recap: text('recap').notNull(),
+  model: text('model').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  gameAiRecapsGameIdUnique: uniqueIndex('idx_game_ai_recaps_game_id').on(table.gameId),
+}));
+
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
 export type TeamDraftPick = typeof teamDraftPicks.$inferSelect;
 export type NewTeamDraftPick = typeof teamDraftPicks.$inferInsert;
 export type PlayerAiAnalysis = typeof playerAiAnalyses.$inferSelect;
 export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
+export type GameAiRecap = typeof gameAiRecaps.$inferSelect;
+export type NewGameAiRecap = typeof gameAiRecaps.$inferInsert;
 
 /** Cached AI scouting narrative for one team, one per (team, season, week). */
 export const teamAiNarratives = sqliteTable('team_ai_narratives', {
