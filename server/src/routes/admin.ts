@@ -18,6 +18,7 @@ import { adminAuthMiddleware } from '../middleware/adminAuth';
 import { syncSleeperLeague } from '../services/leagueSync';
 import { resolveWeekFromCalendar, getNflState } from '../services/nflState';
 import { getDefaultSeason } from '../utils/seasons';
+import { INDOOR_TEAMS, STADIUM_COORDS, fetchStadiumForecast } from '../services/weather';
 import type { Env, Variables } from '../index';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -972,6 +973,99 @@ adminRoutes.post('/sync-games', async (c) => {
     });
   } catch (err) {
     console.error('Sync games error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-weather
+ * Fetches a real hourly forecast (temperature, wind, precip chance) for
+ * every outdoor game's stadium from Open-Meteo (free, no API key) and
+ * merges it into nfl_games.weather. ESPN's own scoreboard weather field
+ * only shows up within a few hours of kickoff and never carries wind/precip
+ * — this fills the gap earlier in the week.
+ * Body: { seasonYear?: number, week?: number } - defaults to the current
+ * NFL week, since Open-Meteo only forecasts ~16 days out anyway.
+ */
+adminRoutes.post('/sync-weather', async (c) => {
+  const db = c.get('db');
+
+  try {
+    let body: { seasonYear?: number; week?: number } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body - use defaults
+    }
+
+    const state = await getNflState(db);
+    const seasonYear = body.seasonYear ?? state.season;
+    const week = body.week ?? state.week;
+    if (seasonYear < 2000 || seasonYear > 2100) {
+      return c.json({ error: 'Invalid season year' }, 400);
+    }
+    if (typeof week !== 'number' || week < 1 || week > 22) {
+      return c.json({ error: 'Invalid week' }, 400);
+    }
+
+    const games = await db.query.nflGames.findMany({
+      where: and(eq(schema.nflGames.week, week), eq(schema.nflGames.seasonYear, seasonYear)),
+    });
+
+    let updated = 0;
+    let skippedIndoor = 0;
+    let skippedNoForecast = 0;
+
+    for (const game of games) {
+      if (game.isComplete || INDOOR_TEAMS.has(game.homeTeam)) {
+        skippedIndoor++;
+        continue;
+      }
+      const coords = STADIUM_COORDS[game.homeTeam];
+      if (!coords) {
+        skippedNoForecast++;
+        continue;
+      }
+
+      const forecast = await fetchStadiumForecast(coords, new Date(game.gameTime));
+      if (!forecast) {
+        skippedNoForecast++;
+        continue;
+      }
+
+      // ESPN's own weather (temperature/displayValue) is authoritative once
+      // it shows up near kickoff — only fill those in if ESPN hasn't set a
+      // real temperature yet. Wind and precip chance always come from us,
+      // since ESPN's feed never carries them.
+      const existing = game.weather ? (JSON.parse(game.weather) as { displayValue?: string; temperature?: number }) : null;
+      const merged = {
+        displayValue: existing?.temperature != null ? existing.displayValue : forecast.displayValue,
+        temperature: existing?.temperature ?? forecast.temperature,
+        windMph: forecast.windMph,
+        precipChance: forecast.precipChance,
+      };
+      await db.update(schema.nflGames).set({ weather: JSON.stringify(merged) }).where(eq(schema.nflGames.id, game.id));
+      updated++;
+    }
+
+    return c.json({
+      success: true,
+      message: 'Weather sync completed',
+      seasonYear,
+      week,
+      updated,
+      skippedIndoor,
+      skippedNoForecast,
+    });
+  } catch (err) {
+    console.error('Sync weather error:', err);
     return c.json(
       {
         error: 'Sync failed',
