@@ -593,6 +593,41 @@ describe('DraftRankingsView — Market source toggle', () => {
     expect(table().getByText('EST')).toBeInTheDocument(); // weekly_extrapolation confidence
   });
 
+  it('re-ranks and reorders the Market board by rest-of-season value when "By ROS" is selected', async () => {
+    // Season order: Bell Cow (marketRank 1, seasonPoints 312.4) ahead of Fading
+    // Vet (marketRank 2, seasonPoints 298.7) — but Fading Vet projects *better*
+    // the rest of the way (260.1 vs 190.0), so "By ROS" should flip the order.
+    hoisted.mockGet.mockImplementation((url: string) => {
+      if (url.includes('/market-rankings')) {
+        return Promise.resolve(marketResponse([
+          makeMarketRanking({ playerId: 'm1', marketRank: 1, positionRank: 1, tier: 1, position: 'RB', name: 'Market Bell Cow', team: 'DET', seasonPoints: 312.4, rosPoints: 190.0 }),
+          makeMarketRanking({ playerId: 'm2', marketRank: 2, positionRank: 2, tier: 1, position: 'RB', name: 'Market Fading Vet', team: 'MIA', seasonPoints: 298.7, rosPoints: 260.1 }),
+        ]));
+      }
+      return Promise.resolve(response(ALL));
+    });
+
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Market Bell Cow');
+
+    const seasonOrder = table().getAllByText(/Market (Bell Cow|Fading Vet)/).map(el => el.textContent);
+    expect(seasonOrder).toEqual(['Market Bell Cow', 'Market Fading Vet']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'By ROS' }));
+
+    await waitFor(() => {
+      const rosOrder = table().getAllByText(/Market (Bell Cow|Fading Vet)/).map(el => el.textContent);
+      expect(rosOrder).toEqual(['Market Fading Vet', 'Market Bell Cow']);
+    });
+
+    // Fading Vet is now #1 overall and #1 at RB (was #2/#2 by season rank).
+    const fadingVetRow = table().getByText('Market Fading Vet').closest('.py-3') as HTMLElement;
+    expect(fadingVetRow.firstElementChild?.textContent).toBe('1'); // rank badge
+    expect(within(fadingVetRow).getByText('RB1')).toBeInTheDocument();
+  });
+
   it('disables rationale expand for Market rows (no chevron, no expand panel on click)', async () => {
     renderView();
     await loaded();
