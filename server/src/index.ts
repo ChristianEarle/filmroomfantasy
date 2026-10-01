@@ -342,20 +342,10 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     const currentWeek = state.week;
     const currentSeason = state.season;
 
-    // Sync stats for current week + previous week (for late-breaking plays)
-    const previousWeek = Math.max(1, currentWeek - 1);
-    const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
-
-    await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
-
-    // In-season, keep league matchups/rosters/ownership fresh every 4h so
-    // "my matchup" doesn't 404 for leagues no one has manually re-synced
-    // since the season rolled over. Runs the same sync logic as the
-    // user-triggered "Sync" button (see server/src/services/leagueSync.ts).
-    // Off-season this instead runs once daily — see the 0 12 * * * block.
-    if (isInSeasonMonth()) {
-      await callSync('/api/admin/sync-leagues');
-    }
+    // Every step below shares this one invocation's CPU and memory budget,
+    // and a step that exceeds it kills the invocation along with every step
+    // after it. The Odds API syncs therefore run first and the league sync
+    // (by far the heaviest step) runs last.
 
     // Sync player prop lines (per-player Vegas O/U) for the current week.
     // The endpoint itself loops over every game and skips any it already
@@ -363,9 +353,25 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // so a full week's props — and the projections generated from them —
     // fill in automatically without re-billing the Odds API for games whose
     // lines haven't had time to move.
-    if (currentWeek <= 18) {
+    // Both syncs match events to regular-season games, so outside the
+    // preseason and regular season every Odds API call would be wasted.
+    if (state.seasonType === 'regular' || state.seasonType === 'preseason') {
       await callSync('/api/admin/sync-player-props', { week: currentWeek });
+      await callSync('/api/admin/sync-odds', { week: currentWeek, season: currentSeason });
     }
+
+    // Sync stats for current week + previous week (for late-breaking plays)
+    const previousWeek = Math.max(1, currentWeek - 1);
+    const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
+    // Plus one older completed week per run, rotating through all of them, so
+    // Sleeper's late stat corrections land and a bad earlier write is repaired.
+    const olderWeeks = currentWeek - 2;
+    if (olderWeeks >= 1) {
+      const runIndex = Math.floor(event.scheduledTime / (4 * 3600 * 1000));
+      weeksToSync.unshift((runIndex % olderWeeks) + 1);
+    }
+
+    await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
 
     await callSync('/api/admin/sync-projections', { week: currentWeek });
 
@@ -378,9 +384,13 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // for computeRemainingGames.
     await callSync('/api/admin/sync-market-projections', { season: currentSeason });
 
-    // Sync current odds during NFL season
-    if (currentWeek <= 18) {
-      await callSync('/api/admin/sync-odds', { week: currentWeek, season: currentSeason });
+    // In-season, keep league matchups/rosters/ownership fresh every 4h so
+    // "my matchup" doesn't 404 for leagues no one has manually re-synced
+    // since the season rolled over. Runs the same sync logic as the
+    // user-triggered "Sync" button (see server/src/services/leagueSync.ts).
+    // Off-season this instead runs once daily — see the 0 12 * * * block.
+    if (isInSeasonMonth()) {
+      await callSync('/api/admin/sync-leagues');
     }
   } else if (event.cron === '0 */6 * * *') {
     // Every 6 hours: sync all news sources

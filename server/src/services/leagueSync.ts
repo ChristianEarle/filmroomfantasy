@@ -31,9 +31,7 @@ import {
   fetchSleeperPlayersCached,
 } from './sleeper';
 import { generateId } from '../utils/id';
-import { generateProjectionsFromProps, PROJECTION_COMPARE_KEYS } from './projections';
 import { resolveWeekFromCalendar } from './nflState';
-import { normalizeScoringFormat } from '../utils/scoringFormat';
 import { rowChanged, rowSetSignature } from '../utils/rowDiff';
 
 // A roster is the same roster when the same players sit in the same slots
@@ -51,15 +49,12 @@ export interface SyncSleeperLeagueResult {
   message: string;
   teamsUpdated: number;
   matchupsImported: number;
-  statsImported: number;
-  projectionsImported: number;
-  propsProjections: number;
   tradesIngested: number;
   draftPicksSynced: number;
   userTeamMatched: boolean;
   warning: string | null;
   /** Rows the sync compared and left alone because Sleeper reported the same values. */
-  unchanged: { rosters: number; matchups: number; stats: number; projections: number };
+  unchanged: { rosters: number; matchups: number };
   /** Set when this sync detected a Sleeper season rollover and followed it to the successor league. */
   rolledOver?: { fromExternalId: string; toExternalId: string; season: number };
 }
@@ -917,279 +912,8 @@ export async function syncSleeperLeague(
     }
   }
 
-  // ========================================
-  // STEP 4: Import player stats for the current season
-  // ========================================
-  let statsImported = 0;
-
-  // Get all unique player external IDs from all rosters (exclude placeholders like Invalid/0)
-  const allRosteredPlayerIds = new Set<string>();
-  for (const roster of rosters) {
-    if (roster.players) {
-      for (const playerId of roster.players) {
-        if (playerId && !INVALID_PLAYER_IDS.has(String(playerId).toLowerCase())) {
-          allRosteredPlayerIds.add(playerId);
-        }
-      }
-    }
-  }
-
-  // Fetch all weeks of stats in parallel (much faster than sequential)
-  const statsWeekLimit = Math.min(effectiveCurrentWeek, totalWeeks);
-  const statsUrls = Array.from({ length: statsWeekLimit }, (_, i) => {
-    const week = i + 1;
-    const seasonType = week > regularSeasonWeeks ? 'post' : 'regular';
-    return `https://api.sleeper.com/stats/nfl/${league.seasonYear}/${week}?season_type=${seasonType}`;
-  });
-  const allWeekStats = await throttledFetchAll<Record<string, any>>(statsUrls, 5, 200);
-
-  // Pre-fetch existing stats for all rostered players in bulk. Full rows,
-  // so each week's incoming stats can be compared and unchanged rows skipped
-  // (a stats row only changes while its game is being played or corrected).
-  const playerIdArray = Array.from(existingPlayersByExtId.entries());
-  const existingStatsMap = new Map<string, Record<string, unknown> & { id: string }>();
-  let statsUnchanged = 0;
-  for (let i = 0; i < playerIdArray.length; i += 50) {
-    const chunk = playerIdArray.slice(i, i + 50).map(([, p]) => p.id);
-    const found = await db.query.playerWeeklyStats.findMany({
-      where: and(
-        inArray(schema.playerWeeklyStats.playerId, chunk),
-        eq(schema.playerWeeklyStats.seasonYear, league.seasonYear)
-      ),
-    });
-    for (const s of found) {
-      existingStatsMap.set(`${s.playerId}_${s.week}`, s);
-    }
-  }
-
-  // Process stats using pre-fetched maps (no per-player DB lookups)
-  for (let i = 0; i < statsWeekLimit; i++) {
-    const week = i + 1;
-    const weekStats = allWeekStats[i];
-    if (!weekStats) continue;
-
-    try {
-      for (const sleeperPlayerId of allRosteredPlayerIds) {
-        const playerStats = weekStats[sleeperPlayerId];
-        if (!playerStats) continue;
-
-        // Use pre-fetched player map instead of DB query
-        const player = existingPlayersByExtId.get(sleeperPlayerId);
-        if (!player) continue;
-
-        const statsKey = `${player.id}_${week}`;
-        const existingStats = existingStatsMap.get(statsKey);
-
-        const statsData = {
-          playerId: player.id,
-          week,
-          seasonYear: league.seasonYear,
-          opponent: playerStats.opponent || null,
-          passAttempts: playerStats.pass_att || 0,
-          passCompletions: playerStats.pass_cmp || 0,
-          passYards: playerStats.pass_yd || 0,
-          passTDs: playerStats.pass_td || 0,
-          passInterceptions: playerStats.pass_int || 0,
-          rushAttempts: playerStats.rush_att || 0,
-          rushYards: playerStats.rush_yd || 0,
-          rushTDs: playerStats.rush_td || 0,
-          targets: playerStats.rec_tgt || 0,
-          receptions: playerStats.rec || 0,
-          receivingYards: playerStats.rec_yd || 0,
-          receivingTDs: playerStats.rec_td || 0,
-          fumbles: playerStats.fum || 0,
-          fumblesLost: playerStats.fum_lost || 0,
-          twoPointConversions: (playerStats.pass_2pt || 0) + (playerStats.rush_2pt || 0) + (playerStats.rec_2pt || 0),
-          fgMade: playerStats.fgm || 0,
-          fgAttempts: playerStats.fga || 0,
-          fg40PlusMade: (playerStats.fgm_40_49 || 0) + (playerStats.fgm_50p || 0),
-          fg50PlusMade: playerStats.fgm_50p || 0,
-          xpMade: playerStats.xpm || 0,
-          xpAttempts: playerStats.xpa || 0,
-          offSnaps: Math.round(playerStats.off_snp || 0),
-          defSnaps: Math.round(playerStats.def_snp || 0),
-          stSnaps: Math.round(playerStats.st_snp || 0),
-          tmOffSnaps: Math.round(playerStats.tm_off_snp || 0),
-          tmDefSnaps: Math.round(playerStats.tm_def_snp || 0),
-          tmStSnaps: Math.round(playerStats.tm_st_snp || 0),
-          sacks: playerStats.sack || 0,
-          defInterceptions: playerStats.int || 0,
-          fumblesRecovered: playerStats.fum_rec || 0,
-          defenseTDs: (playerStats.def_td || 0) + (playerStats.st_td || 0),
-          safeties: playerStats.safe || 0,
-          pointsAllowed: playerStats.pts_allow || 0,
-          fantasyPointsPPR: playerStats.pts_ppr || 0,
-          fantasyPointsHalf: playerStats.pts_half_ppr || 0,
-          fantasyPointsStd: playerStats.pts_std || 0,
-        };
-
-        if (existingStats) {
-          if (rowChanged(existingStats, statsData, Object.keys(statsData))) {
-            await db.update(schema.playerWeeklyStats)
-              .set(statsData)
-              .where(eq(schema.playerWeeklyStats.id, existingStats.id));
-            existingStatsMap.set(statsKey, { ...existingStats, ...statsData });
-          } else {
-            statsUnchanged++;
-          }
-        } else {
-          await db.insert(schema.playerWeeklyStats).values({
-            id: generateId(),
-            ...statsData,
-          });
-          existingStatsMap.set(statsKey, { id: 'new', ...statsData });
-          statsImported++;
-        }
-      }
-    } catch (e) {
-      console.error(`Failed to process stats for week ${week}:`, e);
-    }
-  }
-
-  // ========================================
-  // STEP 5: Import projections for current/upcoming week (ALL players in DB)
-  // Projections are calculated from book lines (player props) first,
-  // then Sleeper projections fill in any remaining players.
-  // ========================================
-  let projectionsImported = 0;
-  let projectionsUnchanged = 0;
-  let propsProjectionsCount = 0;
-  // Use the current week for projections (capped to regular season)
-  const projectionWeek = Math.min(effectiveCurrentWeek, regularSeasonWeeks);
-
-  try {
-    // Step 5a: Generate projections from book lines (player props)
-    const propsResult = await generateProjectionsFromProps(db, projectionWeek, league.seasonYear);
-    propsProjectionsCount = propsResult.generated + propsResult.updated;
-
-    // Track which players already have props-based projections. Read the
-    // stored rows rather than trusting this run's write count: a run where
-    // no book line moved writes nothing, and those players must still be
-    // kept out of the Sleeper fallback below or the two sources would
-    // overwrite each other on alternate runs.
-    const playersCoveredByProps = new Set<string>();
-    {
-      const propsProjections = await db.query.playerProjections.findMany({
-        where: and(
-          eq(schema.playerProjections.week, projectionWeek),
-          eq(schema.playerProjections.seasonYear, league.seasonYear),
-          eq(schema.playerProjections.source, 'props')
-        ),
-        columns: { playerId: true },
-      });
-      for (const p of propsProjections) {
-        playersCoveredByProps.add(p.playerId);
-      }
-    }
-
-    // Step 5b: Sleeper fallback for players without prop lines
-    const projectionsResponse = await fetch(
-      `https://api.sleeper.com/projections/nfl/${league.seasonYear}/${projectionWeek}?season_type=regular`
-    );
-
-    if (projectionsResponse.ok) {
-      const projections = await projectionsResponse.json() as Record<string, any>;
-
-      // Check if week is complete (for snapshot - only snapshot before overwrite if game not played)
-      const gamesForWeek = await db.query.nflGames.findMany({
-        where: and(eq(schema.nflGames.week, projectionWeek), eq(schema.nflGames.seasonYear, league.seasonYear)),
-        columns: { isComplete: true, homeScore: true, awayScore: true },
-      });
-      const weekComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
-
-      // Pre-fetch existing projections for this week in bulk. Normalize the
-      // league's stored spelling so the rows we write use the same key every
-      // other reader queries ('half-ppr', never 'half_ppr').
-      const scoringFormat = normalizeScoringFormat(league.scoringFormat);
-      const existingProjMap = new Map<string, any>();
-      const allPlayerIds = Array.from(existingPlayersByExtId.values()).map(p => p.id);
-      for (let pi = 0; pi < allPlayerIds.length; pi += 50) {
-        const chunk = allPlayerIds.slice(pi, pi + 50);
-        const found = await db.query.playerProjections.findMany({
-          where: and(
-            inArray(schema.playerProjections.playerId, chunk),
-            eq(schema.playerProjections.week, projectionWeek),
-            eq(schema.playerProjections.seasonYear, league.seasonYear),
-            eq(schema.playerProjections.scoringFormat, scoringFormat)
-          ),
-        });
-        for (const p of found) {
-          existingProjMap.set(p.playerId, p);
-        }
-      }
-
-      // Import projections for players NOT already covered by book lines
-      for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
-        if (!playerProj) continue;
-
-        // Use pre-fetched player map instead of DB query
-        const player = existingPlayersByExtId.get(sleeperPlayerId);
-        if (!player) continue;
-
-        // Skip players already covered by book line projections
-        if (playersCoveredByProps.has(player.id)) continue;
-
-        const existingProj = existingProjMap.get(player.id);
-
-        const projData = {
-          playerId: player.id,
-          week: projectionWeek,
-          seasonYear: league.seasonYear,
-          scoringFormat,
-          projectedPoints: scoringFormat === 'ppr'
-            ? (playerProj.pts_ppr || 0)
-            : scoringFormat === 'half-ppr'
-              ? (playerProj.pts_half_ppr || 0)
-              : (playerProj.pts_std || 0),
-          projPassYards: playerProj.pass_yd || null,
-          projPassTDs: playerProj.pass_td || null,
-          projRushYards: playerProj.rush_yd || null,
-          projRushTDs: playerProj.rush_td || null,
-          projReceptions: playerProj.rec || null,
-          projRecYards: playerProj.rec_yd || null,
-          projRecTDs: playerProj.rec_td || null,
-          updatedAt: new Date(),
-        };
-
-        if (existingProj) {
-          // Same line as last time: no snapshot, no update.
-          if (!rowChanged(existingProj, projData, PROJECTION_COMPARE_KEYS)) {
-            projectionsUnchanged++;
-            continue;
-          }
-          if (!weekComplete) {
-            await db.insert(schema.projectionLineSnapshots).values({
-              id: generateId(),
-              playerId: player.id,
-              week: projectionWeek,
-              seasonYear: league.seasonYear,
-              scoringFormat,
-              snapshotAt: new Date(),
-              projectedPoints: existingProj.projectedPoints,
-              projPassYards: existingProj.projPassYards ?? null,
-              projPassTDs: existingProj.projPassTDs ?? null,
-              projRushYards: existingProj.projRushYards ?? null,
-              projRushTDs: existingProj.projRushTDs ?? null,
-              projReceptions: existingProj.projReceptions ?? null,
-              projRecYards: existingProj.projRecYards ?? null,
-              projRecTDs: existingProj.projRecTDs ?? null,
-            });
-          }
-          await db.update(schema.playerProjections)
-            .set(projData)
-            .where(eq(schema.playerProjections.id, existingProj.id));
-        } else {
-          await db.insert(schema.playerProjections).values({
-            id: generateId(),
-            ...projData,
-          });
-          projectionsImported++;
-        }
-      }
-    }
-  } catch (e) {
-    console.error('Failed to fetch projections:', e);
-  }
+  // Player stats and projections are league-wide and belong to the global
+  // sync-stats and sync-projections jobs. This sync writes league rows only.
 
   // Auto-ingest executed trades into the historical trades table.
   // Safe + idempotent — failures don't block the rest of the sync.
@@ -1243,12 +967,9 @@ export async function syncSleeperLeague(
 
   return {
     success: true,
-    message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, ${statsImported} player stats, ${propsProjectionsCount} projections from book lines, ${projectionsImported} projections from Sleeper, and ${tradesIngested} trades updated.`,
+    message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, and ${tradesIngested} trades updated.`,
     teamsUpdated: rosters.length,
     matchupsImported,
-    statsImported,
-    projectionsImported,
-    propsProjections: propsProjectionsCount,
     tradesIngested,
     draftPicksSynced,
     userTeamMatched: userRosterAssigned,
@@ -1256,8 +977,6 @@ export async function syncSleeperLeague(
     unchanged: {
       rosters: rostersUnchanged,
       matchups: matchupsUnchanged,
-      stats: statsUnchanged,
-      projections: projectionsUnchanged,
     },
   };
 }
