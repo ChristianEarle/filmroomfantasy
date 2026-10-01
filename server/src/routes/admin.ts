@@ -6,8 +6,8 @@ import { fetchTwitterTweets } from '../services/twitter';
 import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
-import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr } from '../services/odds';
+import { syncGameOdds } from '../services/gameOddsSync';
 import { generateProjectionsFromProps, calculateFantasyPoints, PROJECTION_COMPARE_KEYS_WITH_SOURCE } from '../services/projections';
 import { rowChanged } from '../utils/rowDiff';
 import { sleeperWeeklyByPlayer } from '../utils/sleeperWeekly';
@@ -1468,57 +1468,11 @@ adminRoutes.post('/sync-projections', async (c) => {
   }
 });
 
-// Readers show one line per game and market, so three major books cover them.
-const GAME_ODDS_BOOKMAKERS = ['draftkings', 'fanduel', 'betmgm'] as const;
-const GAME_ODDS_MARKETS = ['spreads', 'totals', 'h2h'];
-// Flexed and late-season Saturday games move a kickoff by up to about a day
-// from the stored schedule.
-const GAME_ODDS_MAX_KICKOFF_GAP_MS = 36 * 60 * 60 * 1000;
-const GAME_ODDS_LINE_KEYS = [
-  'homePoint', 'awayPoint', 'homePrice', 'awayPrice',
-  'overPoint', 'underPoint', 'overPrice', 'underPrice',
-] as const;
-
-type StoredGameLine = { gameId: string; bookmaker: string; market: string } & Record<(typeof GAME_ODDS_LINE_KEYS)[number], number | null>;
-
-// D1 bills every row a query scans, so the newest-line lookup reads only
-// recent snapshots. A line unchanged for longer than this is written again
-// once per window.
-const GAME_ODDS_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * Newest stored line per (game, book, market) for the given games, keyed
- * `gameId|bookmaker|market`. game_odds keeps every earlier snapshot, so the
- * window function keeps the rows returned to one per key.
- */
-async function latestGameOdds(db: any, gameIds: string[], now: number): Promise<Map<string, StoredGameLine>> {
-  const since = new Date(now - GAME_ODDS_LOOKBACK_MS).toISOString();
-  const rows = await chunkedInArrayFetch(gameIds, DEFAULT_ID_CHUNK, (chunk) =>
-    db.all(sql`
-      SELECT game_id AS gameId, bookmaker, market,
-             home_point AS homePoint, away_point AS awayPoint, home_price AS homePrice, away_price AS awayPrice,
-             over_point AS overPoint, under_point AS underPoint, over_price AS overPrice, under_price AS underPrice
-      FROM (
-        SELECT game_odds.*, ROW_NUMBER() OVER (
-          PARTITION BY game_id, bookmaker, market ORDER BY snapshot_time DESC
-        ) AS rn
-        FROM game_odds
-        WHERE ${inArray(schema.gameOdds.gameId, chunk)}
-          AND ${inArray(schema.gameOdds.bookmaker, [...GAME_ODDS_BOOKMAKERS])}
-          AND ${inArray(schema.gameOdds.market, GAME_ODDS_MARKETS)}
-          AND ${schema.gameOdds.snapshotTime} >= ${since}
-      )
-      WHERE rn = 1
-    `) as Promise<StoredGameLine[]>
-  );
-  return new Map(rows.map((row) => [`${row.gameId}|${row.bookmaker}|${row.market}`, row]));
-}
-
 /**
  * POST /api/admin/sync-odds
  * Fetches current NFL odds from The Odds API and appends a game_odds row for
- * each (game, bookmaker, market) whose line changed since its latest row.
- * Uses batched DB writes (groups of 50) to stay under Worker subrequest limits.
+ * each (game, bookmaker, market) whose line changed since its latest row
+ * (see services/gameOddsSync.ts).
  * Requires X-Admin-Key header matching SYNC_SECRET env var.
  */
 adminRoutes.post('/sync-odds', async (c) => {
@@ -1541,108 +1495,7 @@ adminRoutes.post('/sync-odds', async (c) => {
     }
 
     const season = body.season ?? resolveWeekFromCalendar(new Date()).season;
-    const games = await fetchCurrentOdds(oddsApiKey, GAME_ODDS_BOOKMAKERS);
-    const parsed = parseOddsResponse(games, body.week, undefined, season);
-
-    let inserted = 0;
-    let unchanged = 0;
-    let skipped = 0;
-
-    // Week and season come from the matched game row, not the odds payload.
-    // A team pairing repeats across seasons, so matching is limited to this
-    // season's regular-season games and to a game whose kickoff is close to
-    // the event's.
-    const seasonGames = await db.query.nflGames.findMany({
-      where: and(eq(schema.nflGames.seasonYear, season), eq(schema.nflGames.seasonType, 'regular')),
-      columns: { id: true, homeTeam: true, awayTeam: true, week: true, seasonYear: true, gameTime: true },
-    });
-    const gamesByPair = new Map<string, typeof seasonGames>();
-    for (const g of seasonGames) {
-      const pair = `${g.awayTeam}_${g.homeTeam}`;
-      gamesByPair.set(pair, [...(gamesByPair.get(pair) ?? []), g]);
-    }
-    const matchGame = (pair: string, commenceTime: string) => {
-      const kickoff = Date.parse(commenceTime);
-      let best: (typeof seasonGames)[number] | undefined;
-      let bestGap = Infinity;
-      for (const g of gamesByPair.get(pair) ?? []) {
-        const gap = Math.abs(g.gameTime.getTime() - kickoff);
-        if (gap < bestGap) {
-          best = g;
-          bestGap = gap;
-        }
-      }
-      return bestGap <= GAME_ODDS_MAX_KICKOFF_GAP_MS ? best : undefined;
-    };
-
-    const now = Date.now();
-    const matched: { odds: (typeof parsed)[number]; game: (typeof seasonGames)[number] }[] = [];
-    for (const odds of parsed) {
-      // After kickoff the feed carries live in-game lines, not the game's line.
-      if (Date.parse(odds.commence_time) <= now) {
-        skipped++;
-        continue;
-      }
-      const game = matchGame(odds.game_id, odds.commence_time);
-      if (!game) {
-        skipped++;
-        continue;
-      }
-      matched.push({ odds, game });
-    }
-
-    const latestOdds = await latestGameOdds(db, [...new Set(matched.map((m) => m.game.id))], now);
-
-    const BATCH_SIZE = 50;
-    const statements: any[] = [];
-
-    for (const { odds, game } of matched) {
-      const line = {
-        homePoint: odds.home_point ?? null,
-        awayPoint: odds.away_point ?? null,
-        homePrice: odds.home_price ?? null,
-        awayPrice: odds.away_price ?? null,
-        overPoint: odds.over_point ?? null,
-        underPoint: odds.under_point ?? null,
-        overPrice: odds.over_price ?? null,
-        underPrice: odds.under_price ?? null,
-      };
-      const previous = latestOdds.get(`${game.id}|${odds.bookmaker}|${odds.market}`);
-      if (!rowChanged(previous, line, GAME_ODDS_LINE_KEYS)) {
-        unchanged++;
-        continue;
-      }
-
-      statements.push(
-        db.insert(schema.gameOdds).values({
-          id: odds.id,
-          gameId: game.id,
-          sportKey: odds.sport_key,
-          homeTeam: odds.home_team,
-          awayTeam: odds.away_team,
-          commenceTime: odds.commence_time,
-          bookmaker: odds.bookmaker,
-          market: odds.market,
-          ...line,
-          snapshotTime: odds.snapshot_time,
-          season: game.seasonYear,
-          week: game.week,
-          createdAt: new Date(),
-        }).onConflictDoNothing()
-      );
-      inserted++;
-
-      // Flush batch when reaching size
-      if (statements.length >= BATCH_SIZE) {
-        await db.batch(statements as any);
-        statements.length = 0;
-      }
-    }
-
-    // Flush remaining statements
-    if (statements.length > 0) {
-      await db.batch(statements as any);
-    }
+    const { inserted, unchanged, skipped, total } = await syncGameOdds(db, { apiKey: oddsApiKey, season, week: body.week });
 
     invalidateCache('game-odds:', true);
 
@@ -1652,7 +1505,7 @@ adminRoutes.post('/sync-odds', async (c) => {
       inserted,
       unchanged,
       skipped,
-      total: parsed.length,
+      total,
     });
   } catch (err) {
     console.error('Sync odds error:', err);
