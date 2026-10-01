@@ -313,7 +313,7 @@ export const leagueConnectService = {
 
   // Quick post-connect sync: rosters/teams/current-week only. Stays well under
   // the Workers wall-time limit so the first sync after connect almost always
-  // succeeds. Heavy work (stats, projections, full schedule) runs via
+  // succeeds. The full schedule, trades and draft picks come from
   // syncLeagueFull() — typically triggered by the manual "Sync" button.
   syncLeagueQuick: async (leagueId: string): Promise<{
     success: boolean;

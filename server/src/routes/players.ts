@@ -1963,9 +1963,12 @@ playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
         eq(schema.playerProps.week, week),
         eq(schema.playerProps.season, season)
       ),
+      // player_props keeps every snapshot and the grouping below keeps the
+      // first row per player and market, so newest must sort first.
       orderBy: [
         asc(schema.playerProps.playerName),
         asc(schema.playerProps.market),
+        desc(schema.playerProps.snapshotTime),
       ],
     });
 
@@ -2523,7 +2526,8 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
           eq(schema.playerProps.week, week),
           eq(schema.playerProps.season, s)
         ),
-        orderBy: asc(schema.playerProps.market),
+        // Newest snapshot first: propsByMarket below keeps the first row per market.
+        orderBy: [asc(schema.playerProps.market), desc(schema.playerProps.snapshotTime)],
       });
       return rows.filter(r => normalizePlayerName(r.playerName) === targetNormalized);
     };

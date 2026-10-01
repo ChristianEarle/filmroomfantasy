@@ -114,9 +114,18 @@ export interface ParsedOdds {
   week?: number;
 }
 
-export async function fetchCurrentOdds(apiKey: string): Promise<OddsGame[]> {
+/**
+ * Featured markets (spreads, totals, moneyline) for every listed NFL event.
+ * `bookmakers` narrows the response to those books; up to 10 of them bill the
+ * same as one region.
+ */
+export async function fetchCurrentOdds(apiKey: string, bookmakers?: readonly string[]): Promise<OddsGame[]> {
   const url = new URL(`${ODDS_API_BASE}/sports/americanfootball_nfl/odds`);
-  url.searchParams.set('regions', 'us');
+  if (bookmakers && bookmakers.length > 0) {
+    url.searchParams.set('bookmakers', bookmakers.join(','));
+  } else {
+    url.searchParams.set('regions', 'us');
+  }
   url.searchParams.set('markets', 'spreads,totals,h2h');
   url.searchParams.set('oddsFormat', 'american');
   url.searchParams.set('apiKey', apiKey);

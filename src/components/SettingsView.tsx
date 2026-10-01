@@ -407,7 +407,7 @@ export function SettingsView({ isDarkMode = true, onToggleDarkMode, onLeagueSync
       // variant — it imports rosters + current week only and stays well under
       // the Workers wall-time limit so first-time connect almost always
       // succeeds. The user can hit the manual "Sync" button later to pull
-      // full schedule + historical stats + projections.
+      // the full schedule, trades and draft picks.
       if (result.league?.id) {
         try {
           const syncResult = await leagueConnectService.syncLeagueQuick(result.league.id);
