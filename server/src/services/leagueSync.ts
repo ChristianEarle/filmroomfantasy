@@ -31,10 +31,10 @@ import {
   fetchSleeperPlayersCached,
 } from './sleeper';
 import { generateId } from '../utils/id';
-import { generateProjectionsFromProps, PROJECTION_COMPARE_KEYS } from './projections';
 import { resolveWeekFromCalendar } from './nflState';
-import { normalizeScoringFormat } from '../utils/scoringFormat';
 import { rowChanged, rowSetSignature } from '../utils/rowDiff';
+import { reconcileLeagueTeams, insertPlatformTeam, type PlatformTeam } from './teamIdentity';
+import { mergeLeagueInto } from './leagueIdentity';
 
 // A roster is the same roster when the same players sit in the same slots
 // with the same starter flags; ids and acquisition timestamps are not part
@@ -51,15 +51,12 @@ export interface SyncSleeperLeagueResult {
   message: string;
   teamsUpdated: number;
   matchupsImported: number;
-  statsImported: number;
-  projectionsImported: number;
-  propsProjections: number;
   tradesIngested: number;
   draftPicksSynced: number;
   userTeamMatched: boolean;
   warning: string | null;
   /** Rows the sync compared and left alone because Sleeper reported the same values. */
-  unchanged: { rosters: number; matchups: number; stats: number; projections: number };
+  unchanged: { rosters: number; matchups: number };
   /** Set when this sync detected a Sleeper season rollover and followed it to the successor league. */
   rolledOver?: { fromExternalId: string; toExternalId: string; season: number };
 }
@@ -89,6 +86,31 @@ export interface SyncSleeperLeagueOptions {
    * runs a second time and can't loop.
    */
   _rolledOverFrom?: string;
+}
+
+/**
+ * What team identity needs to know about rosters `isValidSleeperRoster`
+ * filtered out. A roster whose manager left comes back with `owner_id: null`
+ * and is dropped from the sync, but it is still a team in the league: its
+ * roster id is passed to reconcile so a row already stamped with it survives.
+ * Its legacy row (keyed on the departed manager's id) can't be recognized,
+ * so whenever any roster was dropped the team list is incomplete and
+ * reconcile must not prune. Exported for unit tests.
+ */
+export function sleeperRosterIdentity(
+  rostersRaw: unknown,
+  validCount: number,
+): { unmanagedRosterIds: string[]; complete: boolean } {
+  const raw = Array.isArray(rostersRaw) ? rostersRaw : [];
+  const unmanagedRosterIds: string[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== 'object') continue;
+    const roster = r as { roster_id?: unknown; owner_id?: unknown };
+    if (typeof roster.roster_id === 'number' && typeof roster.owner_id !== 'string') {
+      unmanagedRosterIds.push(String(roster.roster_id));
+    }
+  }
+  return { unmanagedRosterIds, complete: raw.length === validCount };
 }
 
 /**
@@ -296,6 +318,10 @@ export async function syncSleeperLeague(
   }
   const rostersRaw = await rostersResponse.json();
   const rosters = validateSleeperArray(rostersRaw, isValidSleeperRoster, 'rosters');
+  // Rosters the validator dropped (Sleeper reports owner_id null for a
+  // roster whose manager left) still exist; team identity must know about
+  // them so their rows are not mistaken for ghosts. See sleeperRosterIdentity.
+  const rosterIdentity = sleeperRosterIdentity(rostersRaw, rosters.length);
   if (rosters.length === 0) {
     throw new Error('No valid rosters returned from Sleeper');
   }
@@ -319,10 +345,12 @@ export async function syncSleeperLeague(
         }
       }
     }
-    // Any manager who moved to the successor league lists it, so a handful
-    // of lookups is enough; keep the fan-out small since this re-runs on
-    // every cron pass for a league that was never renewed.
-    const candidateIds = Array.from(managerIds).slice(0, 4);
+    // Any manager who moved to the successor league lists it. Ask every
+    // roster owner (a league has at most 14-16) rather than the first few:
+    // the ones who didn't renew are exactly the ones with nothing to show,
+    // and a cron pass on a never-renewed league costs a dozen cheap GETs.
+    const MAX_ROLLOVER_LOOKUPS = 16;
+    const candidateIds = Array.from(managerIds).slice(0, MAX_ROLLOVER_LOOKUPS);
 
     let successor: ReturnType<typeof findSuccessorLeague> = null;
     for (const managerId of candidateIds) {
@@ -345,6 +373,22 @@ export async function syncSleeperLeague(
       console.log(
         `[sleeper sync] League ${league.id} rolled over from Sleeper league ${fromExternalId} (season ${sleeperLeagueResult?.season}) to ${successor.league_id} (season ${targetSeason})`
       );
+
+      // The successor may already be stored as its own row (someone connected
+      // this season's league directly). One platform league is one row
+      // (leagues_platform_external_unique). This row is the one carrying
+      // prior seasons' trades, grades and picks — trade ingest only ever
+      // fetches the current Sleeper league, so that history can't be
+      // re-imported — while the other row holds only this season's data,
+      // which the sync below re-imports. So the other row folds into this
+      // one (its members carry over), freeing the external id for the
+      // normal rollover below.
+      const alreadyStored = await db.query.leagues.findFirst({
+        where: and(eq(schema.leagues.platform, league.platform ?? 'sleeper'), eq(schema.leagues.externalId, successor.league_id)),
+      });
+      if (alreadyStored && alreadyStored.id !== league.id) {
+        await mergeLeagueInto(db, league.id, alreadyStored.id);
+      }
 
       await db.update(schema.leagues)
         .set({
@@ -401,6 +445,7 @@ export async function syncSleeperLeague(
   if (!usersResponse.ok) {
     throw new Error('Failed to fetch users from Sleeper');
   }
+
   const sleeperUsersRaw = await usersResponse.json();
   const sleeperUsers = validateSleeperArray(sleeperUsersRaw, isValidSleeperUser, 'users');
 
@@ -467,16 +512,20 @@ export async function syncSleeperLeague(
     }
   }
 
-  // Find the acting user's pre-existing team in our database, if any. This
-  // only matters the first time a manually-created (pre-Sleeper) team gets
-  // linked up — once externalOwnerId is set, the generic externalOwnerId
-  // match below finds it every time.
-  const userTeam = actingUserId
-    ? (league.teams.find(t => t.ownerId === actingUserId) ||
-        (userSleeperUserId
-          ? league.teams.find(t => t.externalOwnerId === userSleeperUserId)
-          : undefined))
-    : undefined;
+  // One row per Sleeper roster, keyed on roster_id (services/teamIdentity.ts).
+  // Reconcile adopts rows written before roster ids were stored (keyed on the
+  // manager's user id), lets each member's roster claim their unlinked
+  // placeholder from /connect, merges duplicates and drops empty ghosts.
+  const platformTeams: PlatformTeam[] = [
+    ...rosters.map((r) => ({
+      externalTeamId: String(r.roster_id),
+      legacyOwnerKey: String(r.owner_id),
+      appUserId: sleeperIdToAppUserId.get(String(r.owner_id)) ?? null,
+    })),
+    ...rosterIdentity.unmanagedRosterIds.map((id) => ({ externalTeamId: id, legacyOwnerKey: null })),
+  ];
+  const reconciled = await reconcileLeagueTeams(db, league.id, platformTeams, { prune: rosterIdentity.complete });
+  const teamIdByRosterId = new Map<number, string>();
 
   // Track whether the acting user's roster has been paired up yet
   let userRosterAssigned = false;
@@ -515,93 +564,61 @@ export async function syncSleeperLeague(
     const teamName = sleeperUser?.metadata?.team_name || sleeperUser?.display_name || `Team ${roster.roster_id}`;
     const ownerDisplayName = sleeperUser?.display_name || sleeperUser?.username || `Owner ${roster.roster_id}`;
     const sleeperOwnerId = String(roster.owner_id);
+    const rosterKey = String(roster.roster_id);
 
-    // Check if this roster belongs to the acting user - match by Sleeper user ID only (no fallback to first roster)
-    const isUserTeam = !!(actingUserId && userTeam && !userRosterAssigned && userSleeperUserId && roster.owner_id === userSleeperUserId);
+    // The acting user's own roster, matched by Sleeper user id only.
+    const isUserTeam = !!(actingUserId && userSleeperUserId && !userRosterAssigned && sleeperOwnerId === userSleeperUserId);
+    if (isUserTeam) userRosterAssigned = true;
 
-    let team;
-    if (isUserTeam) {
-      // Update the existing user team with Sleeper data
-      team = userTeam!;
-      userRosterAssigned = true;
-      const teamPatch = {
-        ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: team.ownerId, actingUserId, actingUserSleeperId: userSleeperUserId }),
-        externalOwnerId: sleeperOwnerId,
-        ownerDisplayName,
-        name: teamName,
-        wins: roster.settings?.wins || 0,
-        losses: roster.settings?.losses || 0,
-        ties: roster.settings?.ties || 0,
-        pointsFor: roster.settings?.fpts || 0,
-        pointsAgainst: roster.settings?.fpts_against || 0,
-        waiverPriority: roster.settings?.waiver_position || 1,
-        faabBudget: roster.settings?.waiver_budget_used != null
-          ? Math.max(0, (league.waiverBudget || 100) - roster.settings.waiver_budget_used)
-          : league.waiverBudget || 100,
+    const teamPatch = {
+      externalOwnerId: sleeperOwnerId,
+      ownerDisplayName,
+      name: teamName,
+      wins: roster.settings?.wins || 0,
+      losses: roster.settings?.losses || 0,
+      ties: roster.settings?.ties || 0,
+      pointsFor: roster.settings?.fpts || 0,
+      pointsAgainst: roster.settings?.fpts_against || 0,
+      waiverPriority: roster.settings?.waiver_position || 1,
+      // FAAB was only ever refreshed on the acting user's own row; kept as is.
+      ...(isUserTeam
+        ? {
+            faabBudget: roster.settings?.waiver_budget_used != null
+              ? Math.max(0, (league.waiverBudget || 100) - roster.settings.waiver_budget_used)
+              : league.waiverBudget || 100,
+          }
+        : {}),
+    };
+
+    let team: { id: string };
+    const existingTeam = reconciled.teamsByExternalTeamId.get(rosterKey);
+    if (existingTeam) {
+      team = existingTeam;
+      const patch = {
+        ...teamPatch,
+        ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: existingTeam.ownerId, actingUserId, actingUserSleeperId: userSleeperUserId }),
       };
       // Only write the row when Sleeper reports something different.
-      if (rowChanged(team as Record<string, unknown>, teamPatch, Object.keys(teamPatch))) {
+      if (rowChanged(existingTeam as Record<string, unknown>, patch, Object.keys(patch))) {
         await db.update(schema.teams)
-          .set({ ...teamPatch, updatedAt: new Date() })
+          .set({ ...patch, updatedAt: new Date() })
           .where(eq(schema.teams.id, team.id));
       }
     } else {
-      // Check if an opponent team already exists for this Sleeper user.
-      // Prefer externalOwnerId — it's the stable Sleeper user_id and won't
-      // collide when two teams share a display name. Fall back to the
-      // legacy name-based match only for teams created by older syncs
-      // that never recorded externalOwnerId.
-      const existingTeam =
-        league.teams.find(t => t.externalOwnerId === sleeperOwnerId) ||
-        league.teams.find(t =>
-          !t.externalOwnerId && (t.name === teamName || t.name.includes(`Roster ${roster.roster_id}`))
-        );
-
-      if (existingTeam) {
-        team = existingTeam;
-        const teamPatch = {
-          ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: existingTeam.ownerId, actingUserId, actingUserSleeperId: userSleeperUserId }),
-          externalOwnerId: sleeperOwnerId,
-          ownerDisplayName,
-          name: teamName,
-          wins: roster.settings?.wins || 0,
-          losses: roster.settings?.losses || 0,
-          ties: roster.settings?.ties || 0,
-          pointsFor: roster.settings?.fpts || 0,
-          pointsAgainst: roster.settings?.fpts_against || 0,
-          waiverPriority: roster.settings?.waiver_position || 1,
-        };
-        if (rowChanged(existingTeam as Record<string, unknown>, teamPatch, Object.keys(teamPatch))) {
-          await db.update(schema.teams)
-            .set({ ...teamPatch, updatedAt: new Date() })
-            .where(eq(schema.teams.id, team.id));
-        }
-      } else {
-        // Create new team for this roster. ownerId prefers a known app
-        // member match — an unmatched opponent roster falls back to
-        // whoever is running the sync, since teams.ownerId is NOT NULL
-        // (see decideTeamOwnerId doc comment above).
-        const teamId = generateId();
-        await db.insert(schema.teams).values({
-          id: teamId,
-          leagueId: league.id,
-          ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: null, actingUserId, actingUserSleeperId: userSleeperUserId }),
-          externalOwnerId: sleeperOwnerId,
-          ownerDisplayName,
-          name: teamName,
-          wins: roster.settings?.wins || 0,
-          losses: roster.settings?.losses || 0,
-          ties: roster.settings?.ties || 0,
-          pointsFor: roster.settings?.fpts || 0,
-          pointsAgainst: roster.settings?.fpts_against || 0,
-          waiverPriority: roster.settings?.waiver_position || 1,
-          faabBudget: roster.settings?.waiver_budget_used != null
-            ? Math.max(0, (league.waiverBudget || 100) - roster.settings.waiver_budget_used)
-            : league.waiverBudget || 100,
-        });
-        team = { id: teamId };
-      }
+      // New roster. ownerId prefers a known app member match; an unmatched
+      // opponent roster falls back to whoever is running the sync, since
+      // teams.ownerId is NOT NULL (see decideTeamOwnerId doc comment above).
+      const teamId = await insertPlatformTeam(db, {
+        id: generateId(),
+        leagueId: league.id,
+        externalTeamId: rosterKey,
+        ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: null, actingUserId, actingUserSleeperId: userSleeperUserId }),
+        faabBudget: league.waiverBudget || 100,
+        ...teamPatch,
+      });
+      team = { id: teamId };
     }
+    teamIdByRosterId.set(roster.roster_id, team.id);
 
     // Sync roster players.
     // We build the full set of new roster_spots rows in memory first, then
@@ -609,7 +626,7 @@ export async function syncSleeperLeague(
     // previous pattern (delete-then-insert-in-a-loop) left a team with an
     // empty roster if any player insert failed mid-way. Doing all the work
     // up-front means a thrown error aborts before we wipe the old rows.
-    if (roster.players && roster.players.length > 0 && (isUserTeam || team)) {
+    if (roster.players && roster.players.length > 0) {
       // Get starters array from roster. Sleeper orders this array to match the
       // non-bench entries of the league's `roster_positions`, and uses the
       // sentinel "0" / "Invalid" for empty starter slots — so `starters[i]`
@@ -723,26 +740,9 @@ export async function syncSleeperLeague(
     }
   }
 
-  // Now sync matchups from Sleeper
-  // Build a map of roster_id to team_id
-  const rosterIdToTeamId = new Map<number, string>();
-
-  // Re-fetch teams after creating them
-  const updatedTeams = await db.query.teams.findMany({
-    where: eq(schema.teams.leagueId, league.id),
-  });
-
-  // Map rosters to teams by externalOwnerId (stable Sleeper user_id).
-  // Falling back to name would mis-route matchups when two Sleeper users
-  // share a display name; the team rows we just upserted above all carry
-  // externalOwnerId, so this lookup is reliable.
-  for (const roster of rosters) {
-    const sleeperOwnerId = String(roster.owner_id);
-    const matchingTeam = updatedTeams.find(t => t.externalOwnerId === sleeperOwnerId);
-    if (matchingTeam) {
-      rosterIdToTeamId.set(roster.roster_id, matchingTeam.id);
-    }
-  }
+  // Now sync matchups from Sleeper. Sleeper matchups reference roster_id,
+  // which is exactly the key every team row was just reconciled on.
+  const rosterIdToTeamId = teamIdByRosterId;
 
   // ── Apply Sleeper league metadata (fetched earlier) for week & settings ──
   let matchupsImported = 0;
@@ -917,279 +917,8 @@ export async function syncSleeperLeague(
     }
   }
 
-  // ========================================
-  // STEP 4: Import player stats for the current season
-  // ========================================
-  let statsImported = 0;
-
-  // Get all unique player external IDs from all rosters (exclude placeholders like Invalid/0)
-  const allRosteredPlayerIds = new Set<string>();
-  for (const roster of rosters) {
-    if (roster.players) {
-      for (const playerId of roster.players) {
-        if (playerId && !INVALID_PLAYER_IDS.has(String(playerId).toLowerCase())) {
-          allRosteredPlayerIds.add(playerId);
-        }
-      }
-    }
-  }
-
-  // Fetch all weeks of stats in parallel (much faster than sequential)
-  const statsWeekLimit = Math.min(effectiveCurrentWeek, totalWeeks);
-  const statsUrls = Array.from({ length: statsWeekLimit }, (_, i) => {
-    const week = i + 1;
-    const seasonType = week > regularSeasonWeeks ? 'post' : 'regular';
-    return `https://api.sleeper.com/stats/nfl/${league.seasonYear}/${week}?season_type=${seasonType}`;
-  });
-  const allWeekStats = await throttledFetchAll<Record<string, any>>(statsUrls, 5, 200);
-
-  // Pre-fetch existing stats for all rostered players in bulk. Full rows,
-  // so each week's incoming stats can be compared and unchanged rows skipped
-  // (a stats row only changes while its game is being played or corrected).
-  const playerIdArray = Array.from(existingPlayersByExtId.entries());
-  const existingStatsMap = new Map<string, Record<string, unknown> & { id: string }>();
-  let statsUnchanged = 0;
-  for (let i = 0; i < playerIdArray.length; i += 50) {
-    const chunk = playerIdArray.slice(i, i + 50).map(([, p]) => p.id);
-    const found = await db.query.playerWeeklyStats.findMany({
-      where: and(
-        inArray(schema.playerWeeklyStats.playerId, chunk),
-        eq(schema.playerWeeklyStats.seasonYear, league.seasonYear)
-      ),
-    });
-    for (const s of found) {
-      existingStatsMap.set(`${s.playerId}_${s.week}`, s);
-    }
-  }
-
-  // Process stats using pre-fetched maps (no per-player DB lookups)
-  for (let i = 0; i < statsWeekLimit; i++) {
-    const week = i + 1;
-    const weekStats = allWeekStats[i];
-    if (!weekStats) continue;
-
-    try {
-      for (const sleeperPlayerId of allRosteredPlayerIds) {
-        const playerStats = weekStats[sleeperPlayerId];
-        if (!playerStats) continue;
-
-        // Use pre-fetched player map instead of DB query
-        const player = existingPlayersByExtId.get(sleeperPlayerId);
-        if (!player) continue;
-
-        const statsKey = `${player.id}_${week}`;
-        const existingStats = existingStatsMap.get(statsKey);
-
-        const statsData = {
-          playerId: player.id,
-          week,
-          seasonYear: league.seasonYear,
-          opponent: playerStats.opponent || null,
-          passAttempts: playerStats.pass_att || 0,
-          passCompletions: playerStats.pass_cmp || 0,
-          passYards: playerStats.pass_yd || 0,
-          passTDs: playerStats.pass_td || 0,
-          passInterceptions: playerStats.pass_int || 0,
-          rushAttempts: playerStats.rush_att || 0,
-          rushYards: playerStats.rush_yd || 0,
-          rushTDs: playerStats.rush_td || 0,
-          targets: playerStats.rec_tgt || 0,
-          receptions: playerStats.rec || 0,
-          receivingYards: playerStats.rec_yd || 0,
-          receivingTDs: playerStats.rec_td || 0,
-          fumbles: playerStats.fum || 0,
-          fumblesLost: playerStats.fum_lost || 0,
-          twoPointConversions: (playerStats.pass_2pt || 0) + (playerStats.rush_2pt || 0) + (playerStats.rec_2pt || 0),
-          fgMade: playerStats.fgm || 0,
-          fgAttempts: playerStats.fga || 0,
-          fg40PlusMade: (playerStats.fgm_40_49 || 0) + (playerStats.fgm_50p || 0),
-          fg50PlusMade: playerStats.fgm_50p || 0,
-          xpMade: playerStats.xpm || 0,
-          xpAttempts: playerStats.xpa || 0,
-          offSnaps: Math.round(playerStats.off_snp || 0),
-          defSnaps: Math.round(playerStats.def_snp || 0),
-          stSnaps: Math.round(playerStats.st_snp || 0),
-          tmOffSnaps: Math.round(playerStats.tm_off_snp || 0),
-          tmDefSnaps: Math.round(playerStats.tm_def_snp || 0),
-          tmStSnaps: Math.round(playerStats.tm_st_snp || 0),
-          sacks: playerStats.sack || 0,
-          defInterceptions: playerStats.int || 0,
-          fumblesRecovered: playerStats.fum_rec || 0,
-          defenseTDs: (playerStats.def_td || 0) + (playerStats.st_td || 0),
-          safeties: playerStats.safe || 0,
-          pointsAllowed: playerStats.pts_allow || 0,
-          fantasyPointsPPR: playerStats.pts_ppr || 0,
-          fantasyPointsHalf: playerStats.pts_half_ppr || 0,
-          fantasyPointsStd: playerStats.pts_std || 0,
-        };
-
-        if (existingStats) {
-          if (rowChanged(existingStats, statsData, Object.keys(statsData))) {
-            await db.update(schema.playerWeeklyStats)
-              .set(statsData)
-              .where(eq(schema.playerWeeklyStats.id, existingStats.id));
-            existingStatsMap.set(statsKey, { ...existingStats, ...statsData });
-          } else {
-            statsUnchanged++;
-          }
-        } else {
-          await db.insert(schema.playerWeeklyStats).values({
-            id: generateId(),
-            ...statsData,
-          });
-          existingStatsMap.set(statsKey, { id: 'new', ...statsData });
-          statsImported++;
-        }
-      }
-    } catch (e) {
-      console.error(`Failed to process stats for week ${week}:`, e);
-    }
-  }
-
-  // ========================================
-  // STEP 5: Import projections for current/upcoming week (ALL players in DB)
-  // Projections are calculated from book lines (player props) first,
-  // then Sleeper projections fill in any remaining players.
-  // ========================================
-  let projectionsImported = 0;
-  let projectionsUnchanged = 0;
-  let propsProjectionsCount = 0;
-  // Use the current week for projections (capped to regular season)
-  const projectionWeek = Math.min(effectiveCurrentWeek, regularSeasonWeeks);
-
-  try {
-    // Step 5a: Generate projections from book lines (player props)
-    const propsResult = await generateProjectionsFromProps(db, projectionWeek, league.seasonYear);
-    propsProjectionsCount = propsResult.generated + propsResult.updated;
-
-    // Track which players already have props-based projections. Read the
-    // stored rows rather than trusting this run's write count: a run where
-    // no book line moved writes nothing, and those players must still be
-    // kept out of the Sleeper fallback below or the two sources would
-    // overwrite each other on alternate runs.
-    const playersCoveredByProps = new Set<string>();
-    {
-      const propsProjections = await db.query.playerProjections.findMany({
-        where: and(
-          eq(schema.playerProjections.week, projectionWeek),
-          eq(schema.playerProjections.seasonYear, league.seasonYear),
-          eq(schema.playerProjections.source, 'props')
-        ),
-        columns: { playerId: true },
-      });
-      for (const p of propsProjections) {
-        playersCoveredByProps.add(p.playerId);
-      }
-    }
-
-    // Step 5b: Sleeper fallback for players without prop lines
-    const projectionsResponse = await fetch(
-      `https://api.sleeper.com/projections/nfl/${league.seasonYear}/${projectionWeek}?season_type=regular`
-    );
-
-    if (projectionsResponse.ok) {
-      const projections = await projectionsResponse.json() as Record<string, any>;
-
-      // Check if week is complete (for snapshot - only snapshot before overwrite if game not played)
-      const gamesForWeek = await db.query.nflGames.findMany({
-        where: and(eq(schema.nflGames.week, projectionWeek), eq(schema.nflGames.seasonYear, league.seasonYear)),
-        columns: { isComplete: true, homeScore: true, awayScore: true },
-      });
-      const weekComplete = gamesForWeek.length > 0 && gamesForWeek.every(g => g.isComplete || (g.homeScore != null && g.awayScore != null));
-
-      // Pre-fetch existing projections for this week in bulk. Normalize the
-      // league's stored spelling so the rows we write use the same key every
-      // other reader queries ('half-ppr', never 'half_ppr').
-      const scoringFormat = normalizeScoringFormat(league.scoringFormat);
-      const existingProjMap = new Map<string, any>();
-      const allPlayerIds = Array.from(existingPlayersByExtId.values()).map(p => p.id);
-      for (let pi = 0; pi < allPlayerIds.length; pi += 50) {
-        const chunk = allPlayerIds.slice(pi, pi + 50);
-        const found = await db.query.playerProjections.findMany({
-          where: and(
-            inArray(schema.playerProjections.playerId, chunk),
-            eq(schema.playerProjections.week, projectionWeek),
-            eq(schema.playerProjections.seasonYear, league.seasonYear),
-            eq(schema.playerProjections.scoringFormat, scoringFormat)
-          ),
-        });
-        for (const p of found) {
-          existingProjMap.set(p.playerId, p);
-        }
-      }
-
-      // Import projections for players NOT already covered by book lines
-      for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
-        if (!playerProj) continue;
-
-        // Use pre-fetched player map instead of DB query
-        const player = existingPlayersByExtId.get(sleeperPlayerId);
-        if (!player) continue;
-
-        // Skip players already covered by book line projections
-        if (playersCoveredByProps.has(player.id)) continue;
-
-        const existingProj = existingProjMap.get(player.id);
-
-        const projData = {
-          playerId: player.id,
-          week: projectionWeek,
-          seasonYear: league.seasonYear,
-          scoringFormat,
-          projectedPoints: scoringFormat === 'ppr'
-            ? (playerProj.pts_ppr || 0)
-            : scoringFormat === 'half-ppr'
-              ? (playerProj.pts_half_ppr || 0)
-              : (playerProj.pts_std || 0),
-          projPassYards: playerProj.pass_yd || null,
-          projPassTDs: playerProj.pass_td || null,
-          projRushYards: playerProj.rush_yd || null,
-          projRushTDs: playerProj.rush_td || null,
-          projReceptions: playerProj.rec || null,
-          projRecYards: playerProj.rec_yd || null,
-          projRecTDs: playerProj.rec_td || null,
-          updatedAt: new Date(),
-        };
-
-        if (existingProj) {
-          // Same line as last time: no snapshot, no update.
-          if (!rowChanged(existingProj, projData, PROJECTION_COMPARE_KEYS)) {
-            projectionsUnchanged++;
-            continue;
-          }
-          if (!weekComplete) {
-            await db.insert(schema.projectionLineSnapshots).values({
-              id: generateId(),
-              playerId: player.id,
-              week: projectionWeek,
-              seasonYear: league.seasonYear,
-              scoringFormat,
-              snapshotAt: new Date(),
-              projectedPoints: existingProj.projectedPoints,
-              projPassYards: existingProj.projPassYards ?? null,
-              projPassTDs: existingProj.projPassTDs ?? null,
-              projRushYards: existingProj.projRushYards ?? null,
-              projRushTDs: existingProj.projRushTDs ?? null,
-              projReceptions: existingProj.projReceptions ?? null,
-              projRecYards: existingProj.projRecYards ?? null,
-              projRecTDs: existingProj.projRecTDs ?? null,
-            });
-          }
-          await db.update(schema.playerProjections)
-            .set(projData)
-            .where(eq(schema.playerProjections.id, existingProj.id));
-        } else {
-          await db.insert(schema.playerProjections).values({
-            id: generateId(),
-            ...projData,
-          });
-          projectionsImported++;
-        }
-      }
-    }
-  } catch (e) {
-    console.error('Failed to fetch projections:', e);
-  }
+  // Player stats and projections are league-wide and belong to the global
+  // sync-stats and sync-projections jobs. This sync writes league rows only.
 
   // Auto-ingest executed trades into the historical trades table.
   // Safe + idempotent — failures don't block the rest of the sync.
@@ -1243,12 +972,9 @@ export async function syncSleeperLeague(
 
   return {
     success: true,
-    message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, ${statsImported} player stats, ${propsProjectionsCount} projections from book lines, ${projectionsImported} projections from Sleeper, and ${tradesIngested} trades updated.`,
+    message: `League synced successfully from Sleeper. ${rosters.length} teams, ${matchupsImported} matchups, and ${tradesIngested} trades updated.`,
     teamsUpdated: rosters.length,
     matchupsImported,
-    statsImported,
-    projectionsImported,
-    propsProjections: propsProjectionsCount,
     tradesIngested,
     draftPicksSynced,
     userTeamMatched: userRosterAssigned,
@@ -1256,8 +982,6 @@ export async function syncSleeperLeague(
     unchanged: {
       rosters: rostersUnchanged,
       matchups: matchupsUnchanged,
-      stats: statsUnchanged,
-      projections: projectionsUnchanged,
     },
   };
 }

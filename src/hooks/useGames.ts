@@ -80,6 +80,28 @@ export function useGame(gameId: string | null) {
   const [awayPlayers, setAwayPlayers] = useState<import('../services').Player[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const fetchSeqRef = useRef(0);
+
+  // `background` skips the loading spinner — used by the live-game poll below
+  // so a routine refresh doesn't flash the full-screen loader every 30s.
+  const fetchGame = useCallback(async (background = false) => {
+    if (!gameId) return;
+    const seq = ++fetchSeqRef.current;
+    if (!background) setIsLoading(true);
+    try {
+      const response = await gameService.getGame(gameId);
+      if (seq !== fetchSeqRef.current) return;
+      setGame(response.game);
+      setHomePlayers(response.homePlayers);
+      setAwayPlayers(response.awayPlayers);
+      setError(null);
+    } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
+      setError(err instanceof Error ? err : new Error('Failed to fetch game'));
+    } finally {
+      if (seq === fetchSeqRef.current && !background) setIsLoading(false);
+    }
+  }, [gameId]);
 
   useEffect(() => {
     // Reset stale data whenever the target game changes so the previous
@@ -92,31 +114,44 @@ export function useGame(gameId: string | null) {
       setIsLoading(false);
       return;
     }
-
-    let cancelled = false;
-    const fetchGame = async () => {
-      setIsLoading(true);
-      try {
-        const response = await gameService.getGame(gameId);
-        if (cancelled) return;
-        setGame(response.game);
-        setHomePlayers(response.homePlayers);
-        setAwayPlayers(response.awayPlayers);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err : new Error('Failed to fetch game'));
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-
     fetchGame();
-    return () => {
-      cancelled = true;
-    };
-  }, [gameId]);
+  }, [gameId, fetchGame]);
 
-  return { game, homePlayers, awayPlayers, isLoading, error };
+  // Keep scores/stats live while the game is in progress. Without this, a
+  // modal left open through kickoff or the final whistle stays frozen at
+  // whatever data was fetched when it was first opened.
+  useEffect(() => {
+    if (!game || game.isComplete) return;
+    const tick = () => {
+      if (document.visibilityState === 'visible') fetchGame(true);
+    };
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    const startPolling = () => {
+      intervalId = setInterval(tick, 30_000);
+      document.addEventListener('visibilitychange', tick);
+    };
+    // Opened before kickoff: start polling at kickoff (with an immediate
+    // refresh then), so a modal left open into the game doesn't stay frozen.
+    // Beyond setTimeout's ~24.8-day limit, there's nothing to schedule.
+    const untilKickoff = new Date(game.gameTime).getTime() - Date.now();
+    let kickoffTimer: ReturnType<typeof setTimeout> | undefined;
+    if (untilKickoff > 0) {
+      if (untilKickoff > 2_147_000_000) return;
+      kickoffTimer = setTimeout(() => {
+        tick();
+        startPolling();
+      }, untilKickoff);
+    } else {
+      startPolling();
+    }
+    return () => {
+      if (kickoffTimer) clearTimeout(kickoffTimer);
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [game?.id, game?.isComplete, game?.gameTime, fetchGame]);
+
+  return { game, homePlayers, awayPlayers, isLoading, error, refetch: fetchGame };
 }
 
 export function useLiveScores(pollInterval: number = 30000) {
