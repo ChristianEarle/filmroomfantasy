@@ -13,12 +13,19 @@ interface LeaguesContextType {
 const LeaguesContext = createContext<LeaguesContextType | undefined>(undefined);
 
 export function LeaguesProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [leagues, setLeagues] = useState<League[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   const refetch = useCallback(async () => {
+    // On a page refresh the saved session is restored asynchronously; until
+    // it is, stay "loading" rather than reporting an empty list — consumers
+    // treat a loaded empty list as "this user has no leagues".
+    if (authLoading) {
+      setIsLoading(true);
+      return;
+    }
     if (!isAuthenticated) {
       setLeagues([]);
       setIsLoading(false);
@@ -34,7 +41,7 @@ export function LeaguesProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, authLoading]);
 
   useEffect(() => {
     refetch();

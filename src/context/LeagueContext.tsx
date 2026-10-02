@@ -205,7 +205,7 @@ const LeagueContext = createContext<LeagueContextType | undefined>(undefined);
 
 export function LeagueProvider({ children }: { children: ReactNode }) {
   const { user, isAuthenticated } = useAuth();
-  const { leagues, isLoading: leaguesLoading } = useLeaguesContext();
+  const { leagues, isLoading: leaguesLoading, error: leaguesError } = useLeaguesContext();
 
   // State
   const [selectedLeagueId, setSelectedLeagueIdState] = useState<string | null>(() => {
@@ -261,7 +261,11 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
         setSelectedLeagueId(leagues[0].id);
       }
     } else {
-      setSelectedLeagueId(null);
+      // An empty list only means "no leagues" when it's authoritative: signed
+      // in and fetched without error. Signed out, or a failed fetch, must not
+      // forget the saved league — otherwise the next load falls back to the
+      // first league instead of the one the user had open.
+      if (isAuthenticated && !leaguesError) setSelectedLeagueId(null);
       setLeague(null);
       setUserTeam(null);
       setViewedTeamId(null);
@@ -269,7 +273,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
       setMatchup(null);
       setStandings([]);
     }
-  }, [leagues, leaguesLoading, selectedLeagueId, setSelectedLeagueId]);
+  }, [leagues, leaguesLoading, leaguesError, isAuthenticated, selectedLeagueId, setSelectedLeagueId]);
 
   // Reset viewedTeamId when league changes (so we can set it to the user's team)
   useEffect(() => {
