@@ -9,6 +9,7 @@ import {
   fetchSleeperPlayersCached,
 } from '../services/sleeper';
 import { syncSleeperLeague } from '../services/leagueSync';
+import { resolveActingUserTeam } from '../services/teamDedupe';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
@@ -747,11 +748,9 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
 
     let teamsImported = 0;
     let userRosterAssigned = false;
-    const userTeam =
-      league.teams.find(t => t.ownerId === user.id) ||
-      (userSleeperUserId
-        ? league.teams.find(t => t.externalOwnerId === userSleeperUserId)
-        : undefined);
+    // Sleeper id first; app ownership only for a never-linked row (see
+    // services/teamDedupe.ts for why claiming a linked row created duplicates).
+    const userTeam = resolveActingUserTeam(league.teams, user.id, userSleeperUserId);
 
     for (const roster of rosters) {
       const su = userMap.get(roster.owner_id);

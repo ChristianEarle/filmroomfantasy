@@ -33,6 +33,7 @@ import {
 import { generateId } from '../utils/id';
 import { resolveWeekFromCalendar } from './nflState';
 import { rowChanged, rowSetSignature } from '../utils/rowDiff';
+import { mergeDuplicateTeams, resolveActingUserTeam } from './teamDedupe';
 
 // A roster is the same roster when the same players sit in the same slots
 // with the same starter flags; ids and acquisition timestamps are not part
@@ -396,6 +397,15 @@ export async function syncSleeperLeague(
   if (!usersResponse.ok) {
     throw new Error('Failed to fetch users from Sleeper');
   }
+
+  // Self-heal duplicate team rows (two rows for one Sleeper owner) before
+  // matching rosters to rows — see services/teamDedupe.ts for how they arise
+  // and why the League Analyzer ranked a ghost row first.
+  const dedupe = await mergeDuplicateTeams(db, league.id);
+  const leagueTeams = dedupe.removedTeamIds.size > 0
+    ? league.teams.filter((t) => !dedupe.removedTeamIds.has(t.id))
+    : league.teams;
+
   const sleeperUsersRaw = await usersResponse.json();
   const sleeperUsers = validateSleeperArray(sleeperUsersRaw, isValidSleeperUser, 'users');
 
@@ -465,13 +475,10 @@ export async function syncSleeperLeague(
   // Find the acting user's pre-existing team in our database, if any. This
   // only matters the first time a manually-created (pre-Sleeper) team gets
   // linked up — once externalOwnerId is set, the generic externalOwnerId
-  // match below finds it every time.
-  const userTeam = actingUserId
-    ? (league.teams.find(t => t.ownerId === actingUserId) ||
-        (userSleeperUserId
-          ? league.teams.find(t => t.externalOwnerId === userSleeperUserId)
-          : undefined))
-    : undefined;
+  // match below finds it every time. Sleeper id first, app ownership only
+  // for a never-linked row: a linked row owned by the acting user may be an
+  // opponent's placeholder-owned row, and claiming it created duplicates.
+  const userTeam = resolveActingUserTeam(leagueTeams, actingUserId, userSleeperUserId);
 
   // Track whether the acting user's roster has been paired up yet
   let userRosterAssigned = false;
@@ -547,8 +554,8 @@ export async function syncSleeperLeague(
       // legacy name-based match only for teams created by older syncs
       // that never recorded externalOwnerId.
       const existingTeam =
-        league.teams.find(t => t.externalOwnerId === sleeperOwnerId) ||
-        league.teams.find(t =>
+        leagueTeams.find(t => t.externalOwnerId === sleeperOwnerId) ||
+        leagueTeams.find(t =>
           !t.externalOwnerId && (t.name === teamName || t.name.includes(`Roster ${roster.roster_id}`))
         );
 
