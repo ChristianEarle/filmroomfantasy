@@ -1,4 +1,5 @@
 import type { Player } from '../App';
+import { resolveWeekFromCalendar, resolveSeasonInFocus } from '../hooks/useNflState';
 
 /** API response shape for a player from the /players endpoint */
 export interface APIPlayer {
@@ -11,6 +12,8 @@ export interface APIPlayer {
   headshotUrl?: string | null;
   avgPointsPPR: number;
   projectedPoints: number;
+  /** Server flag: a projection row exists for the requested week. */
+  hasProjection?: boolean;
   weeklyProjectedPoints?: number;
   isRostered: boolean;
   /** Season mode only: genuine full-season AI-projected total (redraft pool), or null if uncovered. */
@@ -80,7 +83,10 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
     team: player.team,
     position: validPosition,
     keyLine,
-    projectedPoints: projPts > 0 ? projPts : avgPts,
+    // Never substitute the season average for a missing projection: in an
+    // early week that is just last week's score wearing a "Proj" label.
+    projectedPoints: projPts,
+    hasProjection: player.hasProjection ?? projPts > 0,
     weekChange: 0,
     weeklyProjectedPoints: player.weeklyProjectedPoints,
     headshotUrl: player.headshotUrl ?? null,
@@ -88,12 +94,26 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
 }
 
 /**
- * Get the default NFL season year.
- * NFL season spans into early next year: Jan–Feb = previous year's season.
+ * Get the default NFL season year. Delegates to the calendar resolver
+ * (src/hooks/useNflState.ts) so this stays in sync with the single
+ * source of truth for "what NFL season is it".
  */
 export function getDefaultSeason(): number {
-  const d = new Date();
-  return d.getMonth() <= 3 ? d.getFullYear() - 1 : d.getFullYear();
+  return resolveWeekFromCalendar(new Date()).season;
+}
+
+/**
+ * The season the NFL world is focused on: the one in progress, or the
+ * upcoming one during the offseason. Use for connecting leagues and season
+ * pickers; use getDefaultSeason() for "which season has data to display".
+ */
+export function getSeasonInFocus(): number {
+  return resolveSeasonInFocus(new Date());
+}
+
+/** Clamp a stored league week into the 1..18 regular-season range. */
+export function clampWeek(week: number | null | undefined): number {
+  return Math.min(18, Math.max(1, week ?? 1));
 }
 
 /**
@@ -118,3 +138,24 @@ export function scoringToFormat(scoring: 'PPR' | 'Half PPR' | 'Standard'): strin
 
 /** NFL regular season weeks */
 export const NFL_WEEKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] as const;
+
+/**
+ * A league's stored scoring format arrives in two spellings: 'half_ppr'
+ * from the connect flow and league settings, 'half-ppr' from the Sleeper
+ * sync. Normalize before branching so a synced half-PPR league isn't
+ * treated as full PPR.
+ */
+export type LeagueScoringFormat = 'ppr' | 'half_ppr' | 'standard';
+
+export function normalizeLeagueScoringFormat(raw: string | null | undefined): LeagueScoringFormat {
+  const f = (raw ?? '').toString().trim().toLowerCase();
+  if (f.includes('half')) return 'half_ppr';
+  if (f === 'standard' || f === 'std' || f === 'non-ppr' || f === 'non_ppr') return 'standard';
+  return 'ppr';
+}
+
+/** The spelling the projections and players API expect ('half-ppr'). */
+export function toApiScoringFormat(raw: string | null | undefined): 'ppr' | 'half-ppr' | 'standard' {
+  const f = normalizeLeagueScoringFormat(raw);
+  return f === 'half_ppr' ? 'half-ppr' : f;
+}

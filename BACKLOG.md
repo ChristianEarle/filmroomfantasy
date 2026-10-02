@@ -292,15 +292,24 @@
 - [x] **Audit SettingsView + FeedbackWidget** - Fixed 33 issues
 - [x] **Audit PlayoffPredictorView** - Fixed 18 issues (ties in records, findIndex guards, dynamic playoff weeks, memoization, tied scores, ARIA tabs, aria-labels, error display, unused vars)
 - [x] **Audit TradeHistoryView** - Fixed 11 issues (fetchAll race condition w/ cancellation token, handleIngest/handleGrade stale-league races, double fetch on league change, ingestNotice/error persistence across league switches, defensive seasons sort, dead callerTeamId field, dead aiAnalysis optional fields, label htmlFor, aria-pressed on season tabs, aria-expanded + aria-label on trade row expand button, clearing expanded set on league change)
+- [x] **Audit GameSlateView + GameDetailModal** - Fixed 2 issues: `useGame` fetched a game's detail once on mount and never again, so a modal left open through kickoff or the final whistle stayed frozen on pregame projections instead of showing live/final stats (added a 30s visibility-aware live poll, same pattern GameSlateView already used, with a background-fetch flag so it doesn't flash the loading spinner); the player-fetch error state had no way to recover short of closing and reopening the modal (added a "Try Again" button wired to the hook's new `refetch`). Added `useGames.test.ts` covering the polling/refetch behavior.
 
 **Views — Not yet audited:**
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
 - [ ] **Audit WaiversView** - Waiver claims, player search, bid management
-- [ ] **Audit GameSlateView + GameDetailModal** - NFL schedule, live scores, game detail overlay
 - [ ] **Audit TrendsView** - Roster trends, projection movers
-- [ ] **Audit AllPlayersView** - Full player list with filters, pagination
+- [x] **Audit AllPlayersView** - Full player list with filters, pagination.
+  Fixed: the "Load More" pagination was missing entirely — the view always
+  fetched only the first `ALL_PLAYERS_PAGE_SIZE` (350) players sorted by
+  projected points and silently discarded the API's `pagination.total`,
+  so any player ranked below the cutoff (very common — the position/status
+  universe regularly exceeds 350) was unreachable via search or scroll on
+  this view. Added incremental "Load More" fetching plus a visible
+  "X of Y players" count, and fixed a latent type bug where the error
+  state's Retry button passed its click `MouseEvent` into `fetchPlayers`
+  as the `pageNum`/`append` args.
 - [ ] **Audit ProfileView** - User profile, password change, Google link status
-- [ ] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth
+- [x] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth. Found and fixed a real bug: switching between the Login/Register/Forgot-password screens didn't clear the previous screen's error banner, so a stale "invalid password" message could reappear on a fresh form the user hadn't touched yet. Password-complexity policy (register requires uppercase+number, reset-password only enforces 8 chars) and progressive-cooldown persistence are noted as pre-existing product decisions, not addressed here.
 - [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
 
 **Shared Components — Not yet audited:**
@@ -321,7 +330,19 @@
   (previously untested) covering the fallback chain, initials generation,
   and blank/whitespace-only names.
 - [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget
-- [ ] **Audit ErrorBoundary** - Error catch/display, recovery
+- [x] **Audit ErrorBoundary** - Component itself (catch/display/retry/reset-on-nav)
+  was already solid. Real bug was in how `App.tsx` wired it up: only 3 of
+  ~20 routed views (Trends, Playoffs, LeagueAnalyzer) were individually
+  wrapped, so a crash in any other view (Board, Team, Matchup, Settings,
+  AllPlayers, Waivers, DraftRankings, TradeAnalyzer, Admin, ...) fell
+  through to the single root boundary with no `resetKeys`, blanking the
+  entire app shell (sidebar/header/bottom nav included) instead of just
+  the failed view, with no automatic recovery on navigation. Moved to one
+  `ErrorBoundary` wrapping the whole view switch with `resetKeys={[activeView]}`
+  so every view gets the same per-view isolation and recovers on
+  navigation; removed the 3 now-redundant per-view wrappers. Added
+  `ErrorBoundary.test.tsx` (catch/fallback/retry/resetKeys) — the
+  component had no test coverage before.
 - [ ] **Audit App.tsx** - Routing, state management, context wiring, page transitions
 
 ---

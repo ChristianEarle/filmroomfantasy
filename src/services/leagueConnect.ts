@@ -7,6 +7,7 @@
 // See server/src/routes/platformProxy.ts for the proxy endpoints.
 
 import api, { ApiError } from './api';
+import { getSeasonInFocus } from '../utils/playerUtils';
 
 export type Platform = 'sleeper' | 'espn' | 'yahoo' | 'mfl';
 
@@ -182,7 +183,7 @@ export const sleeperApi = {
 // (requiring SWID/ESPN_S2 cookies) surface as a 403 from the proxy, which
 // proxyGet() maps to PlatformError('unknown', 'espn', ..., 403).
 export const espnApi = {
-  getLeague: async (leagueId: string, season: number = new Date().getFullYear()): Promise<ExternalLeague | null> => {
+  getLeague: async (leagueId: string, season: number = getSeasonInFocus()): Promise<ExternalLeague | null> => {
     interface EspnLeagueRaw {
       settings?: {
         name?: string;
@@ -218,7 +219,7 @@ export const espnApi = {
 
 // MFL API — public read via /api/mfl/league/:id.
 export const mflApi = {
-  getLeague: async (leagueId: string, season: number = new Date().getFullYear()): Promise<ExternalLeague | null> => {
+  getLeague: async (leagueId: string, season: number = getSeasonInFocus()): Promise<ExternalLeague | null> => {
     interface MflLeagueResponse {
       league?: {
         name?: string;
@@ -312,7 +313,7 @@ export const leagueConnectService = {
 
   // Quick post-connect sync: rosters/teams/current-week only. Stays well under
   // the Workers wall-time limit so the first sync after connect almost always
-  // succeeds. Heavy work (stats, projections, full schedule) runs via
+  // succeeds. The full schedule, trades and draft picks come from
   // syncLeagueFull() — typically triggered by the manual "Sync" button.
   syncLeagueQuick: async (leagueId: string): Promise<{
     success: boolean;
@@ -330,6 +331,20 @@ export const leagueConnectService = {
     warning?: string | null;
   }> => {
     return api.post(`/leagues/${leagueId}/sync`);
+  },
+
+  // Sync-on-open: the server syncs only if the league's last sync is older
+  // than its staleness window (hours in season, a day off season), so this
+  // is safe to call on every league open. `synced: false` with reason
+  // 'fresh' or 'in_progress' is the normal case.
+  syncLeagueIfStale: async (leagueId: string): Promise<{
+    synced: boolean;
+    reason?: 'fresh' | 'in_progress' | 'unsupported' | 'failed';
+    lastSyncedAt?: string | null;
+    rolledOver?: { fromExternalId: string; toExternalId: string; season: number } | null;
+    warning?: string | null;
+  }> => {
+    return api.post(`/leagues/${leagueId}/sync/if-stale`);
   },
 
   disconnectLeague: async (leagueId: string): Promise<{ success: boolean }> => {

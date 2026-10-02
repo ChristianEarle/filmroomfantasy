@@ -4,7 +4,9 @@ import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
+import { resolveLeagueWeek } from '../services/nflState';
 import type { Env, Variables } from '../index';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 // Rate limit for team routes: 60 req/min per IP
 const teamRateLimit = rateLimit(60, 60 * 1000);
@@ -255,23 +257,36 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     },
   });
 
-  const seasonYear = team.league?.seasonYear || new Date().getFullYear();
-  const scoringFormat = team.league?.scoringFormat || 'ppr';
-  const currentWeek = team.league?.currentWeek || 1;
+  const resolved = await resolveLeagueWeek(db, team.league ?? null);
+  const seasonYear = resolved.season;
+  // Optional ?week= lets the Team page show another week's projections and
+  // actuals; otherwise default to the live week for this league.
+  const weekParam = c.req.query('week');
+  const requestedWeek = weekParam !== undefined ? Number(weekParam) : undefined;
+  if (requestedWeek !== undefined && (!Number.isInteger(requestedWeek) || requestedWeek < 1 || requestedWeek > 18)) {
+    return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
+  }
+  const currentWeek = requestedWeek ?? resolved.week;
+  // Normalize the league's stored spelling ('half_ppr' vs 'half-ppr') to
+  // the key projections and points columns use, or a half-PPR league finds
+  // no projection rows at all and every player shows 0.
+  const scoringFormat = normalizeScoringFormat(team.league?.scoringFormat);
 
   // Enrich roster with stats and projections
   const enrichedRoster = await Promise.all(roster.map(async (r) => {
     // Get season stats
     const seasonStats = await getPlayerStatsSummary(db, r.player.id, seasonYear, r.player.position);
 
-    // Get current projection
+    // Get the CURRENT week's projection. This used to take the highest
+    // week that had any projection, which showed a stale (or future) week's
+    // number under this week's label whenever the weeks didn't line up.
     const projection = await db.query.playerProjections.findFirst({
       where: and(
         eq(schema.playerProjections.playerId, r.player.id),
         eq(schema.playerProjections.seasonYear, seasonYear),
+        eq(schema.playerProjections.week, currentWeek),
         eq(schema.playerProjections.scoringFormat, scoringFormat)
       ),
-      orderBy: desc(schema.playerProjections.week),
     });
 
     // Get current week's actual stats
@@ -306,12 +321,12 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
           averageSnapPct: seasonStats.averageSnapPct ?? null,
           totalPoints: scoringFormat === 'ppr'
             ? seasonStats.fantasyPointsPPR
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? seasonStats.fantasyPointsHalf
               : seasonStats.fantasyPointsStd,
           avgPoints: scoringFormat === 'ppr'
             ? seasonStats.avgPointsPPR
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? seasonStats.avgPointsHalf
               : seasonStats.avgPointsStd,
           passYards: seasonStats.passYards,
@@ -328,7 +343,7 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
         actualPoints: currentWeekStats
           ? (scoringFormat === 'ppr'
             ? currentWeekStats.fantasyPointsPPR
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? currentWeekStats.fantasyPointsHalf
               : currentWeekStats.fantasyPointsStd)
           : null,
@@ -336,7 +351,7 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
         lastWeekPoints: lastWeekStats
           ? (scoringFormat === 'ppr'
             ? lastWeekStats.fantasyPointsPPR
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? lastWeekStats.fantasyPointsHalf
               : lastWeekStats.fantasyPointsStd)
           : null,
@@ -355,6 +370,7 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     roster: {
       starters,
       bench,
+      week: currentWeek,
       projectedTotal: Math.round(projectedTotal * 10) / 10,
       scoringFormat,
     },

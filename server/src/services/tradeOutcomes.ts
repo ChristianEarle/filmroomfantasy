@@ -17,6 +17,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 import { reconstructRosterAt } from './tradeIngest';
 import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
+import { getDefaultSeason } from '../utils/seasons';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -96,7 +97,7 @@ export async function computeOutcome(
   // Fetch weekly stats for all traded players for the relevant season,
   // from the week after the trade onward.
   const weekCutoff = trade.weekExecuted ?? 0;
-  const seasonYear = trade.seasonYear ?? new Date().getFullYear();
+  const seasonYear = trade.seasonYear ?? getDefaultSeason();
 
   const weeklyStats =
     playerIds.size > 0

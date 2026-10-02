@@ -39,6 +39,33 @@ function clearAuthCookie(c: any) {
   });
 }
 
+// Without a session row the token would be rejected on the very next
+// request, so a failed insert has to fail the sign-in. D1 refuses every
+// write once its daily write budget is spent; say so instead of the generic
+// "Login failed" that sends people chasing their password.
+const SESSION_UNAVAILABLE_MESSAGE =
+  'Sign-in is temporarily unavailable because the database is not accepting new sessions right now. Please try again in a little while.';
+// Registration commits the user row before the session row, so a failure
+// here has still created the account: point at sign-in, not at registering
+// again (which would now be refused as a duplicate email).
+const REGISTER_SESSION_UNAVAILABLE_MESSAGE =
+  'Your account was created, but sign-in is temporarily unavailable because the database is not accepting new sessions right now. Please sign in from the login page in a little while.';
+
+async function createSession(db: Variables['db'], userId: string, token: string): Promise<boolean> {
+  try {
+    await db.insert(schema.sessions).values({
+      id: generateId(),
+      userId,
+      token,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
+    });
+    return true;
+  } catch (err) {
+    console.error('[auth] session insert failed:', err);
+    return false;
+  }
+}
+
 export const authRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // Rate limit auth endpoints: 10 attempts per 15 minutes for login/register, 5 for password reset
@@ -252,13 +279,9 @@ authRoutes.post('/register', authRateLimit, async (c) => {
     const token = await generateToken(userId, c.env.JWT_SECRET);
 
     // Create session for token revocation support
-    const sessionId = generateId();
-    await db.insert(schema.sessions).values({
-      id: sessionId,
-      userId,
-      token,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
-    });
+    if (!(await createSession(db, userId, token))) {
+      return c.json({ error: REGISTER_SESSION_UNAVAILABLE_MESSAGE }, 503);
+    }
 
     // Set httpOnly cookie (primary auth) + return token in body (fallback for
     // browsers that block cross-origin cookies)
@@ -324,13 +347,9 @@ authRoutes.post('/login', authRateLimit, async (c) => {
     const token = await generateToken(user.id, c.env.JWT_SECRET);
 
     // Create session for token revocation support
-    const sessionId = generateId();
-    await db.insert(schema.sessions).values({
-      id: sessionId,
-      userId: user.id,
-      token,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
-    });
+    if (!(await createSession(db, user.id, token))) {
+      return c.json({ error: SESSION_UNAVAILABLE_MESSAGE }, 503);
+    }
 
     // Set httpOnly cookie (primary auth) + return token in body (fallback for
     // browsers that block cross-origin cookies)
@@ -643,13 +662,9 @@ authRoutes.post('/google', authRateLimit, async (c) => {
     const token = await generateToken(user.id, c.env.JWT_SECRET);
 
     // Create session for token revocation support
-    const sessionId = generateId();
-    await db.insert(schema.sessions).values({
-      id: sessionId,
-      userId: user.id,
-      token,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
-    });
+    if (!(await createSession(db, user.id, token))) {
+      return c.json({ error: SESSION_UNAVAILABLE_MESSAGE }, 503);
+    }
 
     // Set httpOnly cookie (primary auth) + return token in body (fallback for
     // browsers that block cross-origin cookies)

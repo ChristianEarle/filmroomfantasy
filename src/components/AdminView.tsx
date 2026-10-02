@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Users, TrendingUp, Shield, Loader2, Search, ChevronUp, ChevronDown, BarChart3, Globe, Monitor, Smartphone, Tablet, Eye, MousePointer, FileText, Medal, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
+import { useNflState } from '../hooks';
+import { getDefaultSeason } from '../utils/playerUtils';
 import { ArticleEditor } from './ArticleEditor';
 
 interface AdminViewProps {
@@ -685,9 +687,16 @@ function GamesSyncAdminCard({
   textPrimary: string;
   textSecondary: string;
 }) {
-  const [seasonYear, setSeasonYear] = useState(new Date().getFullYear());
+  const [seasonYear, setSeasonYear] = useState(getDefaultSeason());
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const { season: nflSeason } = useNflState();
+  // Default the picker to the actual current NFL season once it resolves,
+  // unless the admin already changed the field themselves.
+  const [seasonTouched, setSeasonTouched] = useState(false);
+  useEffect(() => {
+    if (!seasonTouched && nflSeason != null) setSeasonYear(nflSeason);
+  }, [seasonTouched, nflSeason]);
 
   const sync = async () => {
     setSyncing(true);
@@ -728,7 +737,7 @@ function GamesSyncAdminCard({
           <input
             type="number"
             value={seasonYear}
-            onChange={(e) => setSeasonYear(Number(e.target.value))}
+            onChange={(e) => { setSeasonTouched(true); setSeasonYear(Number(e.target.value)); }}
             className={inputClass}
           />
         </div>
@@ -764,9 +773,22 @@ function PlayerPropsSyncAdminCard({
   textSecondary: string;
 }) {
   const [week, setWeek] = useState(1);
-  const [season, setSeason] = useState(new Date().getFullYear());
+  const [season, setSeason] = useState(getDefaultSeason());
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const { week: nflWeek, season: nflSeason } = useNflState();
+  // Default the picker to the actual current NFL week and season once they
+  // resolve (they must come from the same source — in January the current
+  // week belongs to last year's season), unless the admin already changed
+  // the field themselves.
+  const [weekTouched, setWeekTouched] = useState(false);
+  const [seasonTouched, setSeasonTouched] = useState(false);
+  useEffect(() => {
+    if (!weekTouched && nflWeek != null) setWeek(nflWeek);
+  }, [weekTouched, nflWeek]);
+  useEffect(() => {
+    if (!seasonTouched && nflSeason != null) setSeason(nflSeason);
+  }, [seasonTouched, nflSeason]);
 
   const sync = async () => {
     setSyncing(true);
@@ -812,7 +834,7 @@ function PlayerPropsSyncAdminCard({
             min={1}
             max={18}
             value={week}
-            onChange={(e) => setWeek(Number(e.target.value))}
+            onChange={(e) => { setWeekTouched(true); setWeek(Number(e.target.value)); }}
             className={inputClass}
           />
         </div>
@@ -821,7 +843,7 @@ function PlayerPropsSyncAdminCard({
           <input
             type="number"
             value={season}
-            onChange={(e) => setSeason(Number(e.target.value))}
+            onChange={(e) => { setSeasonTouched(true); setSeason(Number(e.target.value)); }}
             className={inputClass}
           />
         </div>
@@ -864,12 +886,19 @@ function SeasonPropsImportAdminCard({
   textPrimary: string;
   textSecondary: string;
 }) {
-  const [season, setSeason] = useState(new Date().getFullYear());
+  const [season, setSeason] = useState(getDefaultSeason());
   const [input, setInput] = useState('');
   const [replaceSameCapture, setReplaceSameCapture] = useState(false);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [summary, setSummary] = useState<SeasonPropsSyncResponse | null>(null);
+  const { season: nflSeason } = useNflState();
+  // Default the picker to the actual current NFL season once it resolves,
+  // unless the admin already changed the field themselves.
+  const [seasonTouched, setSeasonTouched] = useState(false);
+  useEffect(() => {
+    if (!seasonTouched && nflSeason != null) setSeason(nflSeason);
+  }, [seasonTouched, nflSeason]);
 
   const runImport = async () => {
     if (!input.trim()) return;
@@ -920,7 +949,7 @@ function SeasonPropsImportAdminCard({
           <input
             type="number"
             value={season}
-            onChange={(e) => setSeason(Number(e.target.value))}
+            onChange={(e) => { setSeasonTouched(true); setSeason(Number(e.target.value)); }}
             className={inputClass}
           />
         </div>

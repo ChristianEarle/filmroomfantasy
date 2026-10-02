@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
+import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
 
 // Rate limits for Yahoo OAuth routes
@@ -449,7 +450,7 @@ function parseYahooLeagues(data: any): Array<{
             externalId,
             leagueKey,
             name: l.name || `Yahoo League`,
-            seasonYear: parseInt(l.season) || new Date().getFullYear(),
+            seasonYear: parseInt(l.season) || getDefaultSeason(),
             teamCount: parseInt(l.num_teams) || 12,
             // Requires the `;out=settings` sub-resource on the leagues request;
             // without it there are no stat_modifiers and this falls back to
