@@ -52,29 +52,31 @@ export function regularSeasonLength(schedule: ScheduleMatchup[]): number {
  * The regular-season games still to play, capped per team at
  * (season length − games already played). The cap guards against a sync that
  * never flagged finished games complete; it never drops legitimate games
- * because a team's real remaining games always fit inside it.
+ * because a team's real remaining games always fit inside it. Stale rows are
+ * the oldest weeks, so the cap keeps the latest weeks. Returned oldest first.
  */
 export function remainingRegularSeasonGames(
   standings: StandingInput[],
   schedule: ScheduleMatchup[],
 ): ScheduleMatchup[] {
   const seasonLength = regularSeasonLength(schedule);
-  const unplayed = schedule
-    .filter((m) => !m.isComplete && !m.isPlayoff)
-    .sort((a, b) => a.week - b.week);
-  if (seasonLength <= 0) return unplayed;
+  const unplayed = schedule.filter((m) => !m.isComplete && !m.isPlayoff);
+  if (seasonLength <= 0) return unplayed.sort((a, b) => a.week - b.week);
 
   const cap = new Map<string, number>();
   for (const s of standings) cap.set(s.teamId, Math.max(0, seasonLength - (s.wins + s.losses + s.ties)));
   const used = new Map<string, number>();
-  return unplayed.filter((m) => {
-    const ok1 = (used.get(m.team1Id) || 0) < (cap.get(m.team1Id) ?? Infinity);
-    const ok2 = (used.get(m.team2Id) || 0) < (cap.get(m.team2Id) ?? Infinity);
-    if (!ok1 || !ok2) return false;
-    used.set(m.team1Id, (used.get(m.team1Id) || 0) + 1);
-    used.set(m.team2Id, (used.get(m.team2Id) || 0) + 1);
-    return true;
-  });
+  return unplayed
+    .sort((a, b) => b.week - a.week)
+    .filter((m) => {
+      const ok1 = (used.get(m.team1Id) || 0) < (cap.get(m.team1Id) ?? Infinity);
+      const ok2 = (used.get(m.team2Id) || 0) < (cap.get(m.team2Id) ?? Infinity);
+      if (!ok1 || !ok2) return false;
+      used.set(m.team1Id, (used.get(m.team1Id) || 0) + 1);
+      used.set(m.team2Id, (used.get(m.team2Id) || 0) + 1);
+      return true;
+    })
+    .sort((a, b) => a.week - b.week);
 }
 
 /** Points per game per team; teams with no games get the league average. */

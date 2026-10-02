@@ -106,13 +106,6 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
     [matchups],
   );
 
-  // Get remaining (incomplete) regular-season weeks
-  const remainingWeeks = useMemo(() => {
-    return matchupWeeks.filter(week =>
-      matchups.some(m => m.week === week && !m.isComplete && !m.isPlayoff)
-    );
-  }, [matchupWeeks, matchups]);
-
   const standingsInput = useMemo(
     () => (standings || []).map(s => ({
       teamId: s.teamId,
@@ -128,6 +121,13 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
   const remainingGames = useMemo(
     () => remainingRegularSeasonGames(standingsInput, matchups),
     [standingsInput, matchups],
+  );
+
+  // Weeks with regular-season games still to play — taken from the same
+  // capped set the odds use, so "weeks left" and the odds always agree.
+  const remainingWeeks = useMemo(
+    () => [...new Set(remainingGames.map(m => m.week))].sort((a, b) => a - b),
+    [remainingGames],
   );
 
   // Run Monte Carlo simulation
@@ -265,12 +265,16 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
   // Compute playoff week range dynamically from matchup data / league settings
   const playoffWeekLabel = useMemo(() => {
     if (!league) return '';
-    // Prefer the bracket weeks themselves; otherwise count back from the last scheduled week.
+    // Prefer the bracket weeks themselves. Mid-season the bracket often isn't
+    // synced yet, so otherwise the playoffs start the week after the last
+    // regular-season week and run for the league's playoff length.
     const bracketWeeks = [...new Set(matchups.filter(m => m.isPlayoff).map(m => m.week))].sort((a, b) => a - b);
-    const maxWeek = bracketWeeks.length > 0 ? bracketWeeks[bracketWeeks.length - 1] : allWeeks.length > 0 ? Math.max(...allWeeks) : 17;
-    const startWeek = bracketWeeks.length > 0 ? bracketWeeks[0] : maxWeek - (league.playoffWeeks || 3) + 1;
+    const playoffWeeks = league.playoffWeeks || 3;
+    const lastRegularWeek = matchupWeeks.length > 0 ? matchupWeeks[matchupWeeks.length - 1] : allWeeks.length > 0 ? allWeeks[allWeeks.length - 1] : 14;
+    const startWeek = bracketWeeks.length > 0 ? bracketWeeks[0] : lastRegularWeek + 1;
+    const maxWeek = bracketWeeks.length > 0 ? bracketWeeks[bracketWeeks.length - 1] : startWeek + playoffWeeks - 1;
     return startWeek === maxWeek ? `Week ${startWeek}` : `Week ${startWeek}-${maxWeek}`;
-  }, [league, matchups, allWeeks]);
+  }, [league, matchups, matchupWeeks, allWeeks]);
 
   // Pre-compute user's rank (by playoff %) — returns '-' if user team not found
   const userPlayoffRank = useMemo(() => {

@@ -49,8 +49,9 @@ describe('remainingRegularSeasonGames', () => {
       { teamId: 'b', wins: 0, losses: 2, ties: 0, pointsFor: 180 },
     ];
     // 3-week season, both teams have played 2, but all 3 weeks are still flagged incomplete.
+    // The stale rows are the already-played early weeks, so week 3 is the one kept.
     const schedule: ScheduleMatchup[] = [1, 2, 3].map((week) => ({ id: `${week}`, week, team1Id: 'a', team2Id: 'b', isComplete: false }));
-    expect(remainingRegularSeasonGames(standings, schedule).map((m) => m.week)).toEqual([1]);
+    expect(remainingRegularSeasonGames(standings, schedule).map((m) => m.week)).toEqual([3]);
   });
 });
 
