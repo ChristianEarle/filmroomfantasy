@@ -379,6 +379,14 @@ function AppContent() {
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Clear stale login/register errors when the auth screen changes — otherwise
+  // switching Login -> Register -> Login (or -> Forgot -> Login) redisplays a
+  // failed-attempt banner from before the user ever touched the new form.
+  useEffect(() => {
+    setLoginError(null);
+    setRegisterError(null);
+  }, [authView]);
+
   // Sync URL when activeView changes (BUG-001 fix: URL now updates on sidebar nav)
   useEffect(() => {
     // Keep the user's typo'd URL visible when they hit a 404 — don't rewrite it.
@@ -680,6 +688,11 @@ function AppContent() {
 
         <main className={`flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 pb-20 sm:pb-20 md:pb-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
           <PageTransition viewKey={activeView}>
+            {/* Isolates a crash in the active view from the rest of the app shell
+                (sidebar, header, bottom nav) instead of falling through to the
+                root ErrorBoundary and blanking the whole page. resetKeys clears
+                a caught error on navigation so the next view gets a fresh render. */}
+            <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
             {activeView === 'Home' ? (
               showLoginGate ? (
                 <LoginSyncGate
@@ -763,25 +776,21 @@ function AppContent() {
                 />
               </Suspense>
             ) : activeView === 'Trends' ? (
-              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
-                <Suspense fallback={suspenseFallback}>
-                  <TrendsView
-                    onPlayerClick={handlePlayerClick}
-                    isDarkMode={isDarkMode}
-                  />
-                </Suspense>
-              </ErrorBoundary>
+              <Suspense fallback={suspenseFallback}>
+                <TrendsView
+                  onPlayerClick={handlePlayerClick}
+                  isDarkMode={isDarkMode}
+                />
+              </Suspense>
             ) : activeView === 'Playoffs' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
-                  <Suspense fallback={suspenseFallback}>
-                    <PlayoffPredictorView isDarkMode={isDarkMode} />
-                  </Suspense>
-                </ErrorBoundary>
+                <Suspense fallback={suspenseFallback}>
+                  <PlayoffPredictorView isDarkMode={isDarkMode} />
+                </Suspense>
               )
             ) : activeView === 'Settings' ? (
               showLoginGate ? (
@@ -864,11 +873,9 @@ function AppContent() {
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
-                  <Suspense fallback={suspenseFallback}>
-                    <LeagueAnalyzerView isDarkMode={isDarkMode} />
-                  </Suspense>
-                </ErrorBoundary>
+                <Suspense fallback={suspenseFallback}>
+                  <LeagueAnalyzerView isDarkMode={isDarkMode} />
+                </Suspense>
               )
             ) : activeView === 'TradeAnalyzer' ? (
               <Suspense fallback={suspenseFallback}><TradeAnalyzerShell isDarkMode={isDarkMode} /></Suspense>
@@ -985,6 +992,7 @@ function AppContent() {
                 </div>
               </div>
             )}
+            </ErrorBoundary>
           </PageTransition>
           <AppFooter isDarkMode={isDarkMode} onNavigate={(view) => setActiveView(view as any)} />
         </main>

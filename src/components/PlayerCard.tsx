@@ -633,6 +633,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
                 const props = propsData?.props || {};
                 const actual = propsData?.actual || {};
+                const gameStatus: string | undefined = propsData?.status;
                 const markets = Object.keys(props);
 
                 const isFallback = Boolean(propsData?.isFallback);
@@ -715,6 +716,18 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                                   </div>
                                   {result && <div className={`text-xs font-bold ${resultColor}`}>{result}</div>}
                                 </>
+                              ) : gameStatus === 'did_not_play' ? (
+                                <>
+                                  <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>DNP</div>
+                                  <div className={`text-xs font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>VOID</div>
+                                </>
+                              ) : gameStatus === 'unknown' ? (
+                                <div
+                                  className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+                                  title="Stats for this game aren't available, so this line isn't graded."
+                                >
+                                  No stats
+                                </div>
                               ) : (
                                 <div className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>—</div>
                               )}

@@ -149,6 +149,58 @@ export function shouldReportActuals({
   return week < currentWeek;
 }
 
+/**
+ * Whether a week's prop lines can be graded for a player:
+ * - `pending`: the game hasn't finished.
+ * - `played`: the player took part, so results grade normally.
+ * - `did_not_play`: he was inactive or got no snaps; books void these props.
+ * - `unknown`: we can't tell. An all-zero stats row with no team snaps is
+ *   what a failed stats sync leaves behind, and a missing row only means
+ *   "didn't play" once other players from the same game have stats.
+ */
+export type PropGameStatus = 'pending' | 'played' | 'did_not_play' | 'unknown';
+
+export interface ParticipationStats {
+  offSnaps?: number | null;
+  defSnaps?: number | null;
+  stSnaps?: number | null;
+  tmOffSnaps?: number | null;
+  passAttempts?: number | null;
+  rushAttempts?: number | null;
+  targets?: number | null;
+  receptions?: number | null;
+}
+
+export function hasParticipation(stats: ParticipationStats): boolean {
+  return [stats.offSnaps, stats.defSnaps, stats.stSnaps, stats.passAttempts, stats.rushAttempts, stats.targets, stats.receptions]
+    .some((value) => (value ?? 0) > 0);
+}
+
+export function propGameStatus({
+  gameFinished,
+  stats,
+  gameStatsSynced,
+}: {
+  gameFinished: boolean;
+  stats: ParticipationStats | null | undefined;
+  /** Whether any other player in the same game has a stats row for the week. */
+  gameStatsSynced: boolean;
+}): PropGameStatus {
+  if (!gameFinished) return 'pending';
+  if (stats) {
+    if (hasParticipation(stats)) return 'played';
+    // Sleeper lists an inactive player with his team's snap count and none of his own.
+    return (stats.tmOffSnaps ?? 0) > 0 ? 'did_not_play' : 'unknown';
+  }
+  // Sleeper omits players who didn't suit up.
+  return gameStatsSynced ? 'did_not_play' : 'unknown';
+}
+
+/** Sportsbooks settle anytime-TD on any touchdown the player scores; throwing one doesn't count. */
+export function scoredAnytimeTd(stats: { rushTDs?: number | null; receivingTDs?: number | null; defenseTDs?: number | null }): boolean {
+  return (stats.rushTDs ?? 0) + (stats.receivingTDs ?? 0) + (stats.defenseTDs ?? 0) > 0;
+}
+
 export interface ShouldFallBackToPriorSeasonArgs {
   /** Whether any props were found for the requested season+week. */
   propsForRequestedWeek: boolean;
