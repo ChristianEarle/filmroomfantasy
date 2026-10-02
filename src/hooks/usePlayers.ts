@@ -81,8 +81,12 @@ export function usePlayer(playerId: string | null) {
 export function usePlayerSearch() {
   const [results, setResults] = useState<Player[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  // Monotonic sequence so a slow response for an earlier keystroke can't
+  // overwrite the results of a later, faster-resolving search.
+  const seqRef = useRef(0);
 
   const search = useCallback(async (query: string) => {
+    const seq = ++seqRef.current;
     if (query.length < 2) {
       setResults([]);
       return;
@@ -91,15 +95,18 @@ export function usePlayerSearch() {
     setIsSearching(true);
     try {
       const response = await playerService.searchPlayers(query);
+      if (seq !== seqRef.current) return;
       setResults(response.players);
     } catch {
+      if (seq !== seqRef.current) return;
       setResults([]);
     } finally {
-      setIsSearching(false);
+      if (seq === seqRef.current) setIsSearching(false);
     }
   }, []);
 
   const clearResults = useCallback(() => {
+    seqRef.current++;
     setResults([]);
   }, []);
 
