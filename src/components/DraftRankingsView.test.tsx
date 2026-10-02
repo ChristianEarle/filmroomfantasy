@@ -628,6 +628,17 @@ describe('DraftRankingsView — Market source toggle', () => {
     expect(within(fadingVetRow).getByText('RB1')).toBeInTheDocument();
   });
 
+  it('only shows the Season/ROS sort on the Market board, not on the FilmRoom AI source', async () => {
+    // Ported from the duplicate #339: the AI board has no ROS values to sort by.
+    renderView();
+    await loaded();
+    expect(screen.queryByRole('button', { name: 'By ROS' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'By Season' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    expect(await screen.findByRole('button', { name: 'By ROS' })).toBeInTheDocument();
+  });
+
   it('disables rationale expand for Market rows (no chevron, no expand panel on click)', async () => {
     renderView();
     await loaded();
