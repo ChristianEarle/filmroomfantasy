@@ -226,6 +226,11 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   // 1-QB, season-long-only board (see services/marketRankings.ts) — the
   // Redraft/Dynasty/Rookie + Superflex controls only apply to the AI source.
   const [source, setSource] = useState<'ai' | 'market'>('ai');
+  // Market-only sort mode: 'season' ranks by full-season value (the
+  // deterministic marketRank already returned by the API); 'ros' re-ranks
+  // client-side by remaining-season value (rosPoints) — no new endpoint
+  // needed since the full Market board is already fetched in one page.
+  const [marketSort, setMarketSort] = useState<'season' | 'ros'>('season');
   const [marketRankings, setMarketRankings] = useState<MarketRanking[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
@@ -380,8 +385,17 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     if (watchingOnly) {
       filtered = filtered.filter(r => watchlist.watchedIds.has(r.player.id));
     }
+    if (marketSort === 'ros') {
+      filtered = [...filtered].sort((a, b) => (b.rosPoints ?? -Infinity) - (a.rosPoints ?? -Infinity));
+      const posCounts: Record<string, number> = {};
+      filtered = filtered.map((r, i) => {
+        const pos = r.player.position;
+        posCounts[pos] = (posCounts[pos] ?? 0) + 1;
+        return { ...r, overallRank: i + 1, positionRank: posCounts[pos] };
+      });
+    }
     return filtered;
-  }, [marketRankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
+  }, [marketRankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds, marketSort]);
 
   const handlePlayerClick = useCallback((ranking: DraftRanking) => {
     const p = ranking.player;
@@ -472,6 +486,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
                 <>
                   {marketAsOfWeek != null && <>As of week {marketAsOfWeek} · </>}
                   {activeCount} players ranked
+                  {marketSort === 'ros' && <> · sorted by ROS</>}
                 </>
               ) : (
                 <>
@@ -534,6 +549,18 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
         </div>
 
         <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+
+        {isMarket && (
+          <>
+            {/* Sort: full-season value vs remaining-season (ROS) value */}
+            <div className="flex gap-1">
+              {pill(marketSort === 'season', () => setMarketSort('season'), 'Season')}
+              {pill(marketSort === 'ros', () => setMarketSort('ros'), 'ROS')}
+            </div>
+
+            <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+          </>
+        )}
 
         {!isMarket && (
           <>
@@ -685,8 +712,8 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
             }`}>
               <span className="w-6 sm:w-8 text-center">#</span>
               <span className="flex-1 min-w-0">Player</span>
-              <span className="text-right w-14 sm:w-20">Season Proj</span>
-              <span className="hidden sm:inline text-right" style={{ width: '70px' }}>ROS</span>
+              <span className={`text-right w-14 sm:w-20 ${marketSort === 'season' ? (isDarkMode ? 'text-slate-300' : 'text-slate-700') : ''}`}>Season Proj</span>
+              <span className={`hidden sm:inline text-right ${marketSort === 'ros' ? (isDarkMode ? 'text-slate-300' : 'text-slate-700') : ''}`} style={{ width: '70px' }}>ROS</span>
               <span className="hidden sm:inline text-center" style={{ width: '44px' }}>Tier</span>
               <span className="flex justify-center w-[90px]">Confidence</span>
             </div>
