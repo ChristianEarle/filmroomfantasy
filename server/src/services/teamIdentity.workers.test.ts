@@ -97,6 +97,19 @@ describe('reconcileLeagueTeams (workers pool)', () => {
     expect(await teamIds(leagueId)).toEqual([live, historyGhost].sort());
   });
 
+  it('does not prune when told the team list may be incomplete', async () => {
+    const { d, user, leagueId } = await seedLeague();
+    const live = generateId();
+    const unknown = generateId();
+    await d.insert(schema.teams).values([
+      { id: live, leagueId, ownerId: user, externalOwnerId: 'mgr-a', name: 'Live' },
+      { id: unknown, leagueId, ownerId: user, externalOwnerId: 'mgr-left', name: 'Manager left' },
+    ]);
+    const result = await reconcileLeagueTeams(d, leagueId, [{ externalTeamId: '1', legacyOwnerKey: 'mgr-a' }], { prune: false });
+    expect(result.pruned).toEqual([]);
+    expect(await teamIds(leagueId)).toEqual([live, unknown].sort());
+  });
+
   it('never prunes when the platform returned no teams', async () => {
     const { d, user, leagueId } = await seedLeague();
     await d.insert(schema.teams).values({ id: generateId(), leagueId, ownerId: user, externalOwnerId: null, name: 'Mine' });

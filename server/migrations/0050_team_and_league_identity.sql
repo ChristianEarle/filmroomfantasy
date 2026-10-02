@@ -18,17 +18,22 @@ WHERE external_owner_id IS NOT NULL
   AND league_id IN (SELECT id FROM leagues WHERE platform IN ('espn', 'yahoo', 'mfl'));
 
 -- 2. Fold duplicate league rows (same platform + external_id) into one. The
---    survivor is the row with the most members, then the oldest. Members
---    carry over (keeping commissioner rights and any known platform
---    identity); the duplicate's teams, matchups, trades, picks and AI caches
---    are copies of the same platform data and cascade away with it.
+--    survivor is the row with the most trade history (prior seasons' trades
+--    can't be re-imported: trade ingest only reads the current Sleeper
+--    league), then the most members, then the oldest. Members carry over
+--    (keeping commissioner rights and any known platform identity); the
+--    duplicate's current-season teams, matchups, trades and picks are copies
+--    of the same platform data and cascade away with it. In production on
+--    2026-10-02 this folds Skeetsters 337f07d6 (14 trades, all also in the
+--    survivor) into 5f5691c4 (37 trades incl. 2025), losing nothing.
 CREATE TABLE _league_merge (loser_id TEXT PRIMARY KEY, keeper_id TEXT NOT NULL);
 
 INSERT INTO _league_merge (loser_id, keeper_id)
 SELECT l.id,
        (SELECT k.id FROM leagues k
          WHERE k.platform IS l.platform AND k.external_id = l.external_id
-         ORDER BY (SELECT count(*) FROM league_members m WHERE m.league_id = k.id) DESC,
+         ORDER BY (SELECT count(*) FROM trades t WHERE t.league_id = k.id) DESC,
+                  (SELECT count(*) FROM league_members m WHERE m.league_id = k.id) DESC,
                   k.created_at ASC,
                   k.id ASC
          LIMIT 1)

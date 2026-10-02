@@ -261,13 +261,29 @@ async function referencedTeamIds(db: DB, leagueId: string, teamIds: string[]): P
   return refs;
 }
 
+export interface ReconcileOptions {
+  /**
+   * Delete unreferenced rows matching no platform team. Pass false whenever
+   * `platformTeams` might not be the platform's complete team list (e.g. a
+   * validator dropped some rosters), or when the platform gives no way to
+   * tell which team a member's placeholder belongs to. Default true.
+   */
+  prune?: boolean;
+}
+
 /**
  * Make the league's rows agree with the platform's team list. Call once per
  * sync, after fetching the platform's teams and before writing any team row.
- * Does nothing to orphans when `platformTeams` is empty (a failed or partial
- * fetch must never read as "every team left the league").
+ * Never prunes when `platformTeams` is empty (a failed fetch must never read
+ * as "every team left the league") or when `opts.prune` is false.
  */
-export async function reconcileLeagueTeams(db: DB, leagueId: string, platformTeams: PlatformTeam[]): Promise<ReconcileResult> {
+export async function reconcileLeagueTeams(
+  db: DB,
+  leagueId: string,
+  platformTeams: PlatformTeam[],
+  opts: ReconcileOptions = {},
+): Promise<ReconcileResult> {
+  const prune = opts.prune !== false;
   const result: ReconcileResult = { teamsByExternalTeamId: new Map(), merged: [], pruned: [], keptOrphans: [] };
   const rows = await db.query.teams.findMany({ where: eq(schema.teams.leagueId, leagueId) });
   const { groups, orphans } = assignRowsToPlatformTeams(rows, platformTeams);
@@ -286,7 +302,7 @@ export async function reconcileLeagueTeams(db: DB, leagueId: string, platformTea
     result.teamsByExternalTeamId.set(externalTeamId, { ...keeper, externalTeamId });
   }
 
-  if (platformTeams.length > 0 && orphans.length > 0) {
+  if (prune && platformTeams.length > 0 && orphans.length > 0) {
     const orphanIds = orphans.map((o) => o.id);
     const referenced = await referencedTeamIds(db, leagueId, orphanIds);
     const prune = orphanIds.filter((id) => !referenced.has(id));

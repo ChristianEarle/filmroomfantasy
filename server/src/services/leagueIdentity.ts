@@ -11,8 +11,10 @@
  *
  * `mergeLeagueInto` folds a duplicate into the surviving row. Only the
  * memberships carry over: everything else in the duplicate (teams, rosters,
- * matchups, trades, picks, AI caches) is a copy of the same platform data and
- * cascades away, and the survivor's next sync re-imports it.
+ * matchups, trades, picks, AI caches) cascades away. Callers must make the
+ * survivor the row carrying prior seasons' history: the survivor's next sync
+ * re-imports only the current Sleeper league, so the loser's current-season
+ * data comes back but its older trades and grades would not.
  */
 
 import { and, eq } from 'drizzle-orm';

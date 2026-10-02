@@ -8,7 +8,7 @@ import {
   validateSleeperArray,
   fetchSleeperPlayersCached,
 } from '../services/sleeper';
-import { syncSleeperLeague } from '../services/leagueSync';
+import { syncSleeperLeague, sleeperRosterIdentity } from '../services/leagueSync';
 import { reconcileLeagueTeams, insertPlatformTeam } from '../services/teamIdentity';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
@@ -673,7 +673,9 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
     if (!rostersResponse.ok) {
       return c.json({ error: 'Failed to fetch rosters from Sleeper' }, 500);
     }
-    const rosters = validateSleeperArray(await rostersResponse.json(), isValidSleeperRoster, 'rosters');
+    const rostersRaw = await rostersResponse.json();
+    const rosters = validateSleeperArray(rostersRaw, isValidSleeperRoster, 'rosters');
+    const rosterIdentity = sleeperRosterIdentity(rostersRaw, rosters.length);
     if (rosters.length === 0) {
       return c.json({ error: 'No valid rosters returned from Sleeper' }, 500);
     }
@@ -759,11 +761,14 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
     // One row per Sleeper roster (services/teamIdentity.ts). The acting
     // user's roster claims their placeholder from /connect; other members'
     // placeholders are merged or pruned the same way the full sync does.
-    const reconciled = await reconcileLeagueTeams(db, league.id, rosters.map((r) => ({
-      externalTeamId: String(r.roster_id),
-      legacyOwnerKey: String(r.owner_id),
-      appUserId: userSleeperUserId && String(r.owner_id) === userSleeperUserId ? user.id : null,
-    })));
+    const reconciled = await reconcileLeagueTeams(db, league.id, [
+      ...rosters.map((r) => ({
+        externalTeamId: String(r.roster_id),
+        legacyOwnerKey: String(r.owner_id),
+        appUserId: userSleeperUserId && String(r.owner_id) === userSleeperUserId ? user.id : null,
+      })),
+      ...rosterIdentity.unmanagedRosterIds.map((id) => ({ externalTeamId: id, legacyOwnerKey: null })),
+    ], { prune: rosterIdentity.complete });
 
     for (const roster of rosters) {
       const su = userMap.get(roster.owner_id);
@@ -1030,10 +1035,14 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
           if (arr) yahooTeamIds.push(yahooTeamIdOf(arr, i));
         }
       }
+      // No pruning: this sync can't tell which Yahoo team is a member's, so
+      // a member's /connect placeholder is the only row "my team" resolves
+      // to (rosters.ts resolveUserTeamId falls back to ownerId).
       const reconciled = await reconcileLeagueTeams(
         db,
         league.id,
         yahooTeamIds.map((id) => ({ externalTeamId: id, legacyOwnerKey: id })),
+        { prune: false },
       );
 
       if (teamsObj) {
@@ -1367,10 +1376,13 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
 
       // One row per MFL franchise (services/teamIdentity.ts). externalOwnerId
       // keeps holding the franchise id too: the matchup import below reads it.
+      // No pruning, for the same reason as Yahoo: MFL franchises can't be
+      // tied to app members here, so their placeholders must stay.
       const reconciled = await reconcileLeagueTeams(
         db,
         league.id,
         franchises.filter((f) => f?.id).map((f) => ({ externalTeamId: String(f.id), legacyOwnerKey: String(f.id) })),
+        { prune: false },
       );
 
       // Process each franchise/roster
@@ -1744,8 +1756,11 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         const existing = reconciled.teamsByExternalTeamId.get(espnTeamId);
         if (existing) {
           teamId = existing.id;
+          // The claimed team becomes the user's: their placeholder was just
+          // folded into this row, and "my team" falls back to ownerId for
+          // ESPN (externalUsername is a name claim, not an ESPN id).
           await db.update(schema.teams)
-            .set({ ...teamFields, updatedAt: new Date() })
+            .set({ ...teamFields, ...(isUserTeam ? { ownerId: user.id } : {}), updatedAt: new Date() })
             .where(eq(schema.teams.id, existing.id));
         } else {
           teamId = await insertPlatformTeam(db, {

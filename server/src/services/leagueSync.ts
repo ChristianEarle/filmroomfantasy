@@ -59,12 +59,6 @@ export interface SyncSleeperLeagueResult {
   unchanged: { rosters: number; matchups: number };
   /** Set when this sync detected a Sleeper season rollover and followed it to the successor league. */
   rolledOver?: { fromExternalId: string; toExternalId: string; season: number };
-  /**
-   * Set when the rollover target was already stored as another league row:
-   * this row was folded into that one (see services/leagueIdentity.ts) and
-   * no longer exists. Clients should switch to this id.
-   */
-  mergedIntoLeagueId?: string;
 }
 
 export interface SyncSleeperLeagueOptions {
@@ -92,6 +86,31 @@ export interface SyncSleeperLeagueOptions {
    * runs a second time and can't loop.
    */
   _rolledOverFrom?: string;
+}
+
+/**
+ * What team identity needs to know about rosters `isValidSleeperRoster`
+ * filtered out. A roster whose manager left comes back with `owner_id: null`
+ * and is dropped from the sync, but it is still a team in the league: its
+ * roster id is passed to reconcile so a row already stamped with it survives.
+ * Its legacy row (keyed on the departed manager's id) can't be recognized,
+ * so whenever any roster was dropped the team list is incomplete and
+ * reconcile must not prune. Exported for unit tests.
+ */
+export function sleeperRosterIdentity(
+  rostersRaw: unknown,
+  validCount: number,
+): { unmanagedRosterIds: string[]; complete: boolean } {
+  const raw = Array.isArray(rostersRaw) ? rostersRaw : [];
+  const unmanagedRosterIds: string[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== 'object') continue;
+    const roster = r as { roster_id?: unknown; owner_id?: unknown };
+    if (typeof roster.roster_id === 'number' && typeof roster.owner_id !== 'string') {
+      unmanagedRosterIds.push(String(roster.roster_id));
+    }
+  }
+  return { unmanagedRosterIds, complete: raw.length === validCount };
 }
 
 /**
@@ -299,6 +318,10 @@ export async function syncSleeperLeague(
   }
   const rostersRaw = await rostersResponse.json();
   const rosters = validateSleeperArray(rostersRaw, isValidSleeperRoster, 'rosters');
+  // Rosters the validator dropped (Sleeper reports owner_id null for a
+  // roster whose manager left) still exist; team identity must know about
+  // them so their rows are not mistaken for ghosts. See sleeperRosterIdentity.
+  const rosterIdentity = sleeperRosterIdentity(rostersRaw, rosters.length);
   if (rosters.length === 0) {
     throw new Error('No valid rosters returned from Sleeper');
   }
@@ -351,24 +374,18 @@ export async function syncSleeperLeague(
 
       // The successor may already be stored as its own row (someone connected
       // this season's league directly). One platform league is one row
-      // (leagues_platform_external_unique), so fold this row into that one
-      // and sync it instead of moving this row onto the same external id.
+      // (leagues_platform_external_unique). This row is the one carrying
+      // prior seasons' trades, grades and picks — trade ingest only ever
+      // fetches the current Sleeper league, so that history can't be
+      // re-imported — while the other row holds only this season's data,
+      // which the sync below re-imports. So the other row folds into this
+      // one (its members carry over), freeing the external id for the
+      // normal rollover below.
       const alreadyStored = await db.query.leagues.findFirst({
         where: and(eq(schema.leagues.platform, league.platform ?? 'sleeper'), eq(schema.leagues.externalId, successor.league_id)),
       });
       if (alreadyStored && alreadyStored.id !== league.id) {
-        await mergeLeagueInto(db, alreadyStored.id, league.id);
-        const survivorTeams = await db.query.teams.findMany({ where: eq(schema.teams.leagueId, alreadyStored.id) });
-        const result = await syncSleeperLeague(db, { ...alreadyStored, teams: survivorTeams }, {
-          ...opts,
-          targetSeason,
-          _rolledOverFrom: fromExternalId,
-        });
-        return {
-          ...result,
-          rolledOver: { fromExternalId, toExternalId: successor.league_id, season: targetSeason },
-          mergedIntoLeagueId: alreadyStored.id,
-        };
+        await mergeLeagueInto(db, league.id, alreadyStored.id);
       }
 
       await db.update(schema.leagues)
@@ -497,12 +514,15 @@ export async function syncSleeperLeague(
   // Reconcile adopts rows written before roster ids were stored (keyed on the
   // manager's user id), lets each member's roster claim their unlinked
   // placeholder from /connect, merges duplicates and drops empty ghosts.
-  const platformTeams: PlatformTeam[] = rosters.map((r) => ({
-    externalTeamId: String(r.roster_id),
-    legacyOwnerKey: String(r.owner_id),
-    appUserId: sleeperIdToAppUserId.get(String(r.owner_id)) ?? null,
-  }));
-  const reconciled = await reconcileLeagueTeams(db, league.id, platformTeams);
+  const platformTeams: PlatformTeam[] = [
+    ...rosters.map((r) => ({
+      externalTeamId: String(r.roster_id),
+      legacyOwnerKey: String(r.owner_id),
+      appUserId: sleeperIdToAppUserId.get(String(r.owner_id)) ?? null,
+    })),
+    ...rosterIdentity.unmanagedRosterIds.map((id) => ({ externalTeamId: id, legacyOwnerKey: null })),
+  ];
+  const reconciled = await reconcileLeagueTeams(db, league.id, platformTeams, { prune: rosterIdentity.complete });
   const teamIdByRosterId = new Map<number, string>();
 
   // Track whether the acting user's roster has been paired up yet
