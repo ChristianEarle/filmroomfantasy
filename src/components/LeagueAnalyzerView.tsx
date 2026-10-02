@@ -3,10 +3,13 @@ import { BarChart3, ChevronDown, RefreshCw, AlertTriangle, Calendar, Trophy, Spa
 import { useLeagueContext } from '../context/LeagueContext';
 import { useAuth } from '../context/AuthContext';
 import api, { ApiError } from '../services/api';
+import { LeagueTrends } from './leagueAnalyzer/LeagueTrends';
+import { SlotRankGrid } from './leagueAnalyzer/SlotRankGrid';
 
 // ── Types (mirror GET /api/league-analyzer/:leagueId) ─────────────────────────
 
 interface PositionBreakdown {
+  /** Lineup slot group: QB, RB, WR, TE, FLEX, SFLEX (superflex), K or DEF. */
   position: string;
   starterCount: number;
   avgPoints: number;
@@ -14,6 +17,10 @@ interface PositionBreakdown {
   deltaPct: number;
   status: 'surplus' | 'balanced' | 'deficit';
   pointShare: number;
+  /** League rank at this slot by average points per starter (1 = best); null with no starter. */
+  rank: number | null;
+  /** Number of teams ranked at this slot. */
+  rankOf: number;
 }
 
 interface SwingGame {
@@ -31,6 +38,10 @@ interface AnalyzedTeam {
   rank: number;
   record: { wins: number; losses: number; ties: number };
   gamesPlayed: number;
+  /** Record if the team had played every other team every completed week; winPct 0-100. */
+  allPlay: { wins: number; losses: number; ties: number; winPct: number | null };
+  /** Actual win % minus all-play win %, in points; positive = the schedule has helped. */
+  luck: number | null;
   pointsFor: number;
   pointsAgainst: number;
   ppg: number;
@@ -130,6 +141,8 @@ const POS_COLORS: Record<string, string> = {
   RB: 'bg-green-500/15 text-green-500',
   WR: 'bg-blue-500/15 text-blue-500',
   TE: 'bg-amber-500/15 text-amber-500',
+  FLEX: 'bg-cyan-500/15 text-cyan-500',
+  SFLEX: 'bg-pink-500/15 text-pink-500',
   K: 'bg-purple-500/15 text-purple-500',
   DEF: 'bg-slate-500/15 text-slate-500',
 };
@@ -162,7 +175,13 @@ const heatCellClasses = (status: PositionBreakdown['status'], isDarkMode: boolea
     : 'bg-slate-100 text-slate-500 border-slate-200';
 };
 
-const scheduleChipClasses = (label: 'tough' | 'average' | 'easy' | null, isDarkMode: boolean): string => {
+/** "+8.3" / "-4.1" / "0.0" for a luck value in win-% points. */
+const formatLuck = (luck: number) => `${luck > 0 ? '+' : ''}${luck.toFixed(1)}`;
+
+/** Plain-language read of schedule luck; a few points either way is noise. */
+const luckLabel = (luck: number) => (luck >= 5 ? 'Lucky' : luck <= -5 ? 'Unlucky' : 'Neutral luck');
+
+const scheduleChipClasses =(label: 'tough' | 'average' | 'easy' | null, isDarkMode: boolean): string => {
   if (label === 'tough') return 'bg-red-500/15 text-red-500 border-red-500/30';
   if (label === 'easy') return 'bg-green-500/15 text-green-500 border-green-500/30';
   return isDarkMode
@@ -442,6 +461,15 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
             <div className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
               Playoff odds <span className={`font-semibold ${oddsColor(userTeamData.playoffOdds)}`}>{userTeamData.playoffOdds}%</span>
             </div>
+            {userTeamData.allPlay.winPct != null && (
+              <div
+                className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}
+                title="Your record if you had played every team every week. The gap to your real record is schedule luck."
+              >
+                All-play <span className="font-semibold">{formatRecord(userTeamData.allPlay.wins, userTeamData.allPlay.losses, userTeamData.allPlay.ties)}</span>
+                {userTeamData.luck != null && <> • Luck <span className="font-semibold">{formatLuck(userTeamData.luck)}</span></>}
+              </div>
+            )}
             {userTeamData.tradeTargetPosition && (
               <div className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                 Trade target: <span className="font-semibold">{userTeamData.tradeTargetPosition}</span>
@@ -487,6 +515,21 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
           <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No AI briefing available yet.</p>
         )}
       </div>
+
+      {/* Season trends: playoff odds, standings, scoring and AI power rank by week */}
+      <LeagueTrends
+        leagueId={analysis.league.id}
+        isDarkMode={isDarkMode}
+        defaultTeamId={userTeamData?.id ?? userTeam?.id ?? null}
+      />
+
+      {/* League-wide slot rankings grid */}
+      <SlotRankGrid
+        teams={displayTeams}
+        columns={positionColumns}
+        isDarkMode={isDarkMode}
+        cellClasses={heatCellClasses}
+      />
 
       {/* Ranked team cards */}
       <div className="flex items-center gap-2 px-1">
@@ -544,7 +587,15 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
                       )}
                     </div>
                     <div className={`text-xs mt-0.5 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <span>{team.ownerName} • {formatRecord(team.record.wins, team.record.losses, team.record.ties)} • {team.ppg.toFixed(1)} PPG • {team.pointsAgainst.toFixed(1)} PA</span>
+                      <span>
+                        {team.ownerName} • {formatRecord(team.record.wins, team.record.losses, team.record.ties)}
+                        {team.allPlay.winPct != null && (
+                          <span title="Record if this team had played every other team every week">
+                            {' '}(all-play {formatRecord(team.allPlay.wins, team.allPlay.losses, team.allPlay.ties)})
+                          </span>
+                        )}
+                        {' '}• {team.ppg.toFixed(1)} PPG • {team.pointsAgainst.toFixed(1)} PA
+                      </span>
                       {team.recentFormPpg != null && team.trend !== 'steady' && (
                         <span
                           title={`Last 3 games: ${team.recentFormPpg.toFixed(1)} PPG`}
@@ -634,6 +685,23 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
                     >
                       {recordVsStrengthLabel[team.recordVsStrength]}
                     </span>
+
+                    {team.allPlay.winPct != null && (
+                      <span
+                        title={`If this team had played every other team every week, it would be ${formatRecord(team.allPlay.wins, team.allPlay.losses, team.allPlay.ties)} (${team.allPlay.winPct.toFixed(1)}%).${team.luck != null ? ` Its real win rate is ${formatLuck(team.luck)} points ${team.luck >= 0 ? 'above' : 'below'} that — schedule luck.` : ''}`}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-semibold ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}
+                      >
+                        <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>All-play</span>
+                        <span className={isDarkMode ? 'text-white' : 'text-slate-900'}>
+                          {formatRecord(team.allPlay.wins, team.allPlay.losses, team.allPlay.ties)} ({team.allPlay.winPct.toFixed(1)}%)
+                        </span>
+                        {team.luck != null && (
+                          <span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>
+                            • {luckLabel(team.luck)} {formatLuck(team.luck)}
+                          </span>
+                        )}
+                      </span>
+                    )}
 
                     {team.biggestSwingGame && (
                       <span
@@ -736,7 +804,12 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
                           <thead>
                             <tr className={`border-b text-left ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
                               <th className={`py-1.5 pr-3 text-xs font-semibold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Pos</th>
-                              <th className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Starters</th>
+                              <th
+                                className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+                                title="League rank at this slot by average points per starter"
+                              >
+                                Rank
+                              </th>
                               <th className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Team Avg</th>
                               <th className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>League Avg</th>
                               <th className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>vs League</th>
@@ -747,7 +820,17 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
                             {team.positions.map((pos) => (
                               <tr key={pos.position} className={`border-b last:border-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                                 <td className={`py-1.5 pr-3 font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{pos.position}</td>
-                                <td className={`py-1.5 pr-3 text-right ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{pos.starterCount}</td>
+                                <td
+                                  className={`py-1.5 pr-3 text-right whitespace-nowrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}
+                                  title={pos.rank != null ? `${pos.position}: #${pos.rank} of ${pos.rankOf} teams by average points per starter` : `No ${pos.position} starter`}
+                                >
+                                  {pos.rank != null ? (
+                                    <>
+                                      <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>#{pos.rank}</span>
+                                      <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}> of {pos.rankOf}</span>
+                                    </>
+                                  ) : '—'}
+                                </td>
                                 <td className={`py-1.5 pr-3 text-right ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{pos.avgPoints.toFixed(1)}</td>
                                 <td className={`py-1.5 pr-3 text-right ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{pos.leagueAvg.toFixed(1)}</td>
                                 <td className={`py-1.5 pr-3 text-right font-semibold ${
@@ -790,7 +873,7 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
       {teams.length > 0 && (
         <div className={`rounded-lg border px-5 py-4 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            Grades compare each team's points per game to the league average. Positional cells are green when starters outproduce the league average at that position by 10%+ and red when they trail it by 10%+.
+            Grades compare each team's points per game to the league average. The positional breakdown groups starters by the lineup slot they fill, so a running back in a flex spot counts toward FLEX, and SFLEX is the superflex slot. Cells are green when a slot's starters outproduce the league average for that slot by 10%+ and red when they trail it by 10%+.
             Playoff odds come from {(5000).toLocaleString()} Monte Carlo simulations of the remaining schedule ({positionColumns.length > 0 ? `${analysis.league.scoringFormat.toUpperCase()} scoring` : 'league scoring'}).
           </p>
         </div>

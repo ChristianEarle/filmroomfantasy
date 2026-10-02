@@ -1,5 +1,5 @@
 import { sqliteTable, text, integer, real, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 // ============================================
 // USER & AUTHENTICATION
@@ -111,7 +111,11 @@ export const teams = sqliteTable('teams', {
   id: text('id').primaryKey(),
   leagueId: text('league_id').notNull().references(() => leagues.id, { onDelete: 'cascade' }),
   ownerId: text('owner_id').notNull().references(() => users.id),
-  externalOwnerId: text('external_owner_id'), // Sleeper/ESPN user ID - identifies which platform user owns this team
+  externalOwnerId: text('external_owner_id'), // Sleeper: manager's user_id (changes when a roster changes hands). ESPN/Yahoo/MFL: the team id (legacy)
+  // The platform's stable team key — Sleeper roster_id, ESPN/Yahoo team id,
+  // MFL franchise id. Unique per league (teams_league_external_team_unique,
+  // migration 0050); written only via services/teamIdentity.ts.
+  externalTeamId: text('external_team_id'),
   ownerDisplayName: text('owner_display_name'), // Display name from Sleeper/ESPN/Yahoo (so we don't show the app user for every team)
   name: text('name').notNull(),
   wins: integer('wins').notNull().default(0),
@@ -948,6 +952,100 @@ export const rankingBatchJobs = sqliteTable('ranking_batch_jobs', {
 
 export type RankingBatchJob = typeof rankingBatchJobs.$inferSelect;
 export type NewRankingBatchJob = typeof rankingBatchJobs.$inferInsert;
+
+// ============================================
+// INGEST FRAMEWORK
+// ============================================
+// Job ledger for the filmroom-ingest Worker (see server/src/ingest/ledger.ts,
+// which owns all writes). Times are integer ms since epoch, compared in SQL
+// against D1's clock, so they are plain numbers here rather than Dates.
+
+export const ingestJobs = sqliteTable('ingest_jobs', {
+  key: text('key').primaryKey(),
+  kind: text('kind').notNull(),
+  groupName: text('group_name').notNull(),
+  params: text('params').notNull().default('{}'), // JSON
+  resourceClass: text('resource_class').notNull().default('light'), // 'light' | 'heavy'
+  priority: integer('priority').notNull().default(5), // 1 = most urgent
+  nextRunAt: integer('next_run_at').notNull(),
+  dirtyAt: integer('dirty_at'),
+  dirtyDueAt: integer('dirty_due_at'),
+  dispatchToken: text('dispatch_token'),
+  queuedUntil: integer('queued_until'),
+  currentRunId: text('current_run_id'),
+  runExpiresAt: integer('run_expires_at'),
+  attempts: integer('attempts').notNull().default(0), // consecutive failures
+  disabledUntil: integer('disabled_until'), // quarantine
+  lastStartedAt: integer('last_started_at'),
+  lastFinishedAt: integer('last_finished_at'),
+  lastSuccessAt: integer('last_success_at'),
+  lastStatus: text('last_status'),
+  lastError: text('last_error'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (table) => ({
+  dueIdx: index('idx_ingest_jobs_due').on(table.nextRunAt),
+  runIdx: index('idx_ingest_jobs_run').on(table.runExpiresAt).where(sql`current_run_id IS NOT NULL`),
+}));
+
+export const ingestRuns = sqliteTable('ingest_runs', {
+  id: text('id').primaryKey(),
+  jobKey: text('job_key').notNull(),
+  kind: text('kind').notNull(),
+  dispatchToken: text('dispatch_token'), // the claimed message's token
+  startedAt: integer('started_at').notNull(),
+  finishedAt: integer('finished_at'),
+  status: text('status').notNull(), // 'running' | 'ok' | 'partial' | 'skipped' | 'failed' | 'killed' | 'superseded'
+  d1Calls: integer('d1_calls'),
+  rowsRead: integer('rows_read'),
+  rowsWritten: integer('rows_written'),
+  upstreamCalls: integer('upstream_calls'),
+  creditsUsed: integer('credits_used'),
+  detail: text('detail'), // JSON
+  error: text('error'),
+}, (table) => ({
+  jobIdx: index('idx_ingest_runs_job').on(table.jobKey, table.startedAt),
+}));
+
+export const ingestOwner = sqliteTable('ingest_owner', {
+  groupName: text('group_name').primaryKey(),
+  owner: text('owner').notNull(), // 'legacy' | 'ingest'
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const ingestHeartbeat = sqliteTable('ingest_heartbeat', {
+  name: text('name').primaryKey(),
+  at: integer('at').notNull(),
+  detail: text('detail'), // JSON
+});
+
+export const paidCalls = sqliteTable('paid_calls', {
+  idemKey: text('idem_key').primaryKey(),
+  status: text('status').notNull(),
+  externalRef: text('external_ref'),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const providerState = sqliteTable('provider_state', {
+  provider: text('provider').primaryKey(),
+  quotaUsed: integer('quota_used'),
+  quotaRemaining: integer('quota_remaining'),
+  lastCost: integer('last_cost'),
+  observedAt: integer('observed_at'),
+  blockedReason: text('blocked_reason'),
+  blockedSince: integer('blocked_since'),
+});
+
+export const alertLog = sqliteTable('alert_log', {
+  alertKey: text('alert_key').primaryKey(),
+  openedAt: integer('opened_at').notNull(),
+  lastSeenAt: integer('last_seen_at').notNull(),
+  breaches: integer('breaches').notNull().default(0),
+  resolvedAt: integer('resolved_at'),
+});
+
+export type IngestJob = typeof ingestJobs.$inferSelect;
+export type IngestRun = typeof ingestRuns.$inferSelect;
 
 // ============================================
 // TYPE EXPORTS

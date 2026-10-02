@@ -6,6 +6,13 @@ import type { Env, Variables } from '../index';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { sanitizePromptInput, getTodayKey, buildCachedSystemBlocks, type ConversationTurn } from '../utils/prompt';
+import {
+  EFFORT_QUICK,
+  describeResponse,
+  firstText,
+  maxTokensWithThinking,
+  type AnthropicTextResponse,
+} from '../utils/aiOutput';
 import { requireTier } from '../middleware/tier';
 import {
   buildTradeContext,
@@ -512,7 +519,9 @@ tradesRoutes.post(
         },
         body: JSON.stringify({
           model: 'claude-sonnet-5',
-          max_tokens: 1024,
+          // 1024 visible tokens plus thinking headroom — see utils/aiOutput.ts.
+          max_tokens: maxTokensWithThinking(1024),
+          output_config: EFFORT_QUICK,
           // Static prompt with cache marker (content-block form). Note: this
           // prompt is small, so it may fall below the model's minimum
           // cacheable prefix — the marker is harmless either way.
@@ -531,12 +540,10 @@ tradesRoutes.post(
         return c.json({ error: 'AI follow-up failed. Please try again later.' }, 502);
       }
 
-      const data = (await res.json()) as {
-        content?: { type: string; text?: string }[];
-      };
-      const textBlock = data.content?.find((b) => b.type === 'text');
-      const answer = textBlock?.text?.trim();
+      const data = (await res.json()) as AnthropicTextResponse;
+      const answer = firstText(data);
       if (!answer) {
+        console.error(`[trades/follow-up] no text block (${describeResponse(data)})`);
         return c.json({ error: 'AI returned an empty response.' }, 502);
       }
 
