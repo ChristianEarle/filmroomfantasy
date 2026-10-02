@@ -98,6 +98,10 @@ describe('league analyzer (workers pool)', () => {
     expect(byGroup.get('FLEX')?.avgPoints).toBe(14);
     // Bench players never count.
     expect(team0.positions.reduce((s, p) => s + p.starterCount, 0)).toBe(8);
+    // Each team's players score more with its index, so team 0 ranks last and team 3 first at every slot.
+    expect(team0.positions.every((p) => p.rank === 4 && p.rankOf === 4)).toBe(true);
+    const team3 = analysis.teams.find((t) => t.id === teamIds[3])!;
+    expect(team3.positions.every((p) => p.rank === 1)).toBe(true);
     expect(analysis.aiDetail).toBeUndefined();
   });
 
@@ -137,6 +141,7 @@ describe('league analyzer (workers pool)', () => {
       'Schedule luck:',
       'SUPERFLEX (1 starter)',
       'FLEX (1 starter): 14.0 PPG per starter',
+      'ranked #4 of 4 in the league',
       'Game log:',
       'Wk 1: L 100.0-110.0 vs Team 1',
       'Remaining opponents: Wk 4 Team 1',
