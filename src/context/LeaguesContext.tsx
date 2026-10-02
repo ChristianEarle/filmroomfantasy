@@ -17,6 +17,11 @@ export function LeaguesProvider({ children }: { children: ReactNode }) {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  // The sign-in state the current `leagues` list was loaded for. Right after
+  // login or logout the list still belongs to the previous state until the
+  // refetch effect runs; reporting it as loaded would let consumers read a
+  // signed-out empty list as "this user has no leagues".
+  const [loadedFor, setLoadedFor] = useState<boolean | null>(null);
 
   const refetch = useCallback(async () => {
     // On a page refresh the saved session is restored asynchronously; until
@@ -28,6 +33,7 @@ export function LeaguesProvider({ children }: { children: ReactNode }) {
     }
     if (!isAuthenticated) {
       setLeagues([]);
+      setLoadedFor(false);
       setIsLoading(false);
       return;
     }
@@ -39,6 +45,7 @@ export function LeaguesProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch leagues'));
     } finally {
+      setLoadedFor(true);
       setIsLoading(false);
     }
   }, [isAuthenticated, authLoading]);
@@ -47,8 +54,10 @@ export function LeaguesProvider({ children }: { children: ReactNode }) {
     refetch();
   }, [refetch]);
 
+  const stale = !authLoading && loadedFor !== isAuthenticated;
+
   return (
-    <LeaguesContext.Provider value={{ leagues, isLoading, error, refetch }}>
+    <LeaguesContext.Provider value={{ leagues, isLoading: isLoading || stale, error, refetch }}>
       {children}
     </LeaguesContext.Provider>
   );

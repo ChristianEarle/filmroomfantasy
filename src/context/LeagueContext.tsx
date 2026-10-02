@@ -618,11 +618,18 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   refreshAllRef.current = refreshAll;
 
   // Fetch league when selected league changes
+  // The saved league id is only used once it's confirmed to be one of the
+  // signed-in user's leagues. It now survives logout, so right after a login
+  // it may belong to someone else (or a deleted league) until the leagues
+  // list loads and the auto-select effect above validates or replaces it.
+  const selectionReady =
+    isAuthenticated && !leaguesLoading && !!selectedLeagueId && leagues.some(l => l.id === selectedLeagueId);
+
   useEffect(() => {
-    if (selectedLeagueId && isAuthenticated) {
+    if (selectionReady) {
       refreshLeague();
     }
-  }, [selectedLeagueId, isAuthenticated, refreshLeague]);
+  }, [selectionReady, refreshLeague]);
 
   // Sync-on-open: once per league per page load, ask the server to re-sync
   // the league if its last sync is stale. The pages render whatever is
@@ -630,7 +637,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   // press Sync to see waiver moves, trades or the current week.
   const staleSyncAttempted = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!selectedLeagueId || !isAuthenticated) return;
+    if (!selectionReady || !selectedLeagueId) return;
     if (staleSyncAttempted.current.has(selectedLeagueId)) return;
     staleSyncAttempted.current.add(selectedLeagueId);
     let cancelled = false;
@@ -644,7 +651,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
         // The server released its claim, so the next open retries.
       });
     return () => { cancelled = true; };
-  }, [selectedLeagueId, isAuthenticated]);
+  }, [selectedLeagueId, selectionReady]);
 
   // Fetch roster when the viewed team or the requested week changes
   // (refreshRoster's identity changes with rosterWeek).
