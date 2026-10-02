@@ -7,7 +7,10 @@ import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr } from '../services/odds';
-import { generateProjectionsFromProps, calculateFantasyPoints } from '../services/projections';
+import { syncGameOdds } from '../services/gameOddsSync';
+import { generateProjectionsFromProps, calculateFantasyPoints, PROJECTION_COMPARE_KEYS_WITH_SOURCE } from '../services/projections';
+import { rowChanged } from '../utils/rowDiff';
+import { sleeperWeeklyByPlayer } from '../utils/sleeperWeekly';
 import type { SeasonStatKey, SeasonStatVector } from '../services/marketRankings';
 import {
   submitDraftRankingsBatch,
@@ -1025,6 +1028,8 @@ adminRoutes.post('/sync-stats', async (c) => {
 
     let statsImported = 0;
     let statsUpdated = 0;
+    let statsUnchanged = 0;
+    let statsRemoved = 0;
 
     // Fetch all players once (1 subrequest)
     const allPlayers = await db.query.nflPlayers.findMany({
@@ -1040,14 +1045,19 @@ adminRoutes.post('/sync-stats', async (c) => {
         // Throttle: 150ms delay between sequential stats fetches
         if (week > weeksToSync[0]) await sleep(150);
 
-        // Delete existing stats for this week first, then insert fresh
-        // This avoids per-player existence checks that blow past subrequest limits
-        await db.delete(schema.playerWeeklyStats).where(
-          and(
+        // Load this week's stored rows once so each incoming line can be
+        // compared: unchanged rows are skipped, changed rows updated, new
+        // rows inserted. The previous delete-and-reinsert rewrote every row
+        // on every 4-hour run and spent the D1 daily write budget on
+        // identical data.
+        const storedRows = await db.query.playerWeeklyStats.findMany({
+          where: and(
             eq(schema.playerWeeklyStats.week, week),
             eq(schema.playerWeeklyStats.seasonYear, seasonYear)
-          )
-        );
+          ),
+        });
+        const storedByPlayer = new Map(storedRows.map((r) => [r.playerId, r]));
+        const seenPlayerIds = new Set<string>();
 
         const statsResponse = await fetch(
           `https://api.sleeper.com/stats/nfl/${seasonYear}/${week}?season_type=regular`
@@ -1058,29 +1068,12 @@ adminRoutes.post('/sync-stats', async (c) => {
           continue;
         }
 
-        const raw = await statsResponse.json();
-        const weekEntries: { sleeperPlayerId: string; playerStats: any }[] = [];
+        const weekStats = sleeperWeeklyByPlayer(await statsResponse.json());
 
-        if (Array.isArray(raw)) {
-          for (const item of raw) {
-            const pid = item?.player_id;
-            if (!pid) continue;
-            const s = item.stats || {};
-            weekEntries.push({
-              sleeperPlayerId: String(pid),
-              playerStats: { ...s, opponent: item.opponent },
-            });
-          }
-        } else if (raw && typeof raw === 'object') {
-          for (const sleeperPlayerId of Object.keys(raw)) {
-            const playerStats = (raw as Record<string, any>)[sleeperPlayerId];
-            if (playerStats) weekEntries.push({ sleeperPlayerId, playerStats });
-          }
-        }
-
-        for (const { sleeperPlayerId, playerStats } of weekEntries) {
+        for (const [sleeperPlayerId, playerStats] of weekStats) {
           const playerId = playerMap.get(sleeperPlayerId);
           if (!playerId) continue;
+          seenPlayerIds.add(playerId);
 
           const statsData = {
             playerId,
@@ -1125,18 +1118,50 @@ adminRoutes.post('/sync-stats', async (c) => {
             fantasyPointsStd: playerStats.pts_std || 0,
           };
 
-          statsStatements.push(
-            db.insert(schema.playerWeeklyStats).values({
-              id: generateId(),
-              ...statsData,
-            })
-          );
-          statsImported++;
+          const stored = storedByPlayer.get(playerId);
+          if (stored) {
+            if (!rowChanged(stored, statsData, Object.keys(statsData))) {
+              statsUnchanged++;
+              continue;
+            }
+            statsStatements.push(
+              db.update(schema.playerWeeklyStats)
+                .set(statsData)
+                .where(eq(schema.playerWeeklyStats.id, stored.id))
+            );
+            statsUpdated++;
+          } else {
+            statsStatements.push(
+              db.insert(schema.playerWeeklyStats).values({
+                id: generateId(),
+                ...statsData,
+              })
+            );
+            statsImported++;
+          }
 
           // Flush batch when reaching size
           if (statsStatements.length >= BATCH_SIZE) {
             await db.batch(statsStatements as any);
             statsStatements.length = 0;
+          }
+        }
+
+        // A stored line Sleeper no longer reports for this week (a withdrawn
+        // stat correction) is removed, as the old delete-and-reinsert did.
+        // Skipped when the response was empty or covers under half the stored
+        // players, so a bad or truncated fetch cannot wipe a settled week.
+        if (weekStats.size > 0 && seenPlayerIds.size * 2 >= storedByPlayer.size) {
+          for (const [playerId, stored] of storedByPlayer) {
+            if (seenPlayerIds.has(playerId)) continue;
+            statsStatements.push(
+              db.delete(schema.playerWeeklyStats).where(eq(schema.playerWeeklyStats.id, stored.id))
+            );
+            statsRemoved++;
+            if (statsStatements.length >= BATCH_SIZE) {
+              await db.batch(statsStatements as any);
+              statsStatements.length = 0;
+            }
           }
         }
       } catch (e) {
@@ -1160,6 +1185,8 @@ adminRoutes.post('/sync-stats', async (c) => {
       weeks: weeksToSync,
       inserted: statsImported,
       updated: statsUpdated,
+      unchanged: statsUnchanged,
+      removed: statsRemoved,
       total: statsImported + statsUpdated,
     });
   } catch (err) {
@@ -1173,6 +1200,14 @@ adminRoutes.post('/sync-stats', async (c) => {
     );
   }
 });
+
+function isPlaceholderProjection(row: typeof schema.playerProjections.$inferSelect): boolean {
+  return row.source === 'sleeper'
+    && !row.projectedPoints
+    && !row.projPassYards && !row.projPassTDs
+    && !row.projRushYards && !row.projRushTDs
+    && !row.projReceptions && !row.projRecYards && !row.projRecTDs;
+}
 
 /**
  * POST /api/admin/sync-projections
@@ -1217,9 +1252,10 @@ adminRoutes.post('/sync-projections', async (c) => {
 
     let inserted = 0;
     let updated = 0;
+    let unchanged = 0;
     let propsGenerated = 0;
     let propsUpdated = 0;
-    const weekResults: { week: number; inserted: number; updated: number; propsProjections?: number; error?: string }[] = [];
+    const weekResults: { week: number; inserted: number; updated: number; unchanged?: number; propsProjections?: number; error?: string }[] = [];
 
     // Pre-fetch all players with external IDs for batch lookup (shared across all weeks)
     const allPlayers = await db.query.nflPlayers.findMany({
@@ -1234,6 +1270,7 @@ adminRoutes.post('/sync-projections', async (c) => {
     for (const weekNum of weeksToSync) {
       let weekInserted = 0;
       let weekUpdated = 0;
+      let weekUnchanged = 0;
       let weekPropsProjections = 0;
       const projStatements: any[] = [];
 
@@ -1247,12 +1284,17 @@ adminRoutes.post('/sync-projections', async (c) => {
           propsUpdated += propsResult.updated;
           weekPropsProjections = propsResult.generated + propsResult.updated;
 
-          // Track which players already have props-based projections
-          if (weekPropsProjections > 0) {
+          // Track which players already have props-based projections. Read
+          // the stored rows rather than trusting this run's write count: a
+          // run where no book line moved writes nothing, and those players
+          // must still be kept out of the Sleeper fallback or the two
+          // sources would overwrite each other on alternate runs.
+          {
             const propsProjections = await db.query.playerProjections.findMany({
               where: and(
                 eq(schema.playerProjections.week, weekNum),
-                eq(schema.playerProjections.seasonYear, seasonYear)
+                eq(schema.playerProjections.seasonYear, seasonYear),
+                eq(schema.playerProjections.source, 'props')
               ),
               columns: { playerId: true },
             });
@@ -1276,11 +1318,20 @@ adminRoutes.post('/sync-projections', async (c) => {
             }
             // Props already generated some, continue with what we have
           } else {
-            const projections = await projResponse.json() as Record<string, any>;
+            const projections = sleeperWeeklyByPlayer(await projResponse.json());
 
-            for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
-              if (!playerProj) continue;
+            // One read for the week's stored rows instead of a lookup per
+            // (player, format); each incoming line is then compared and only
+            // written when it moved.
+            const storedProjections = await db.query.playerProjections.findMany({
+              where: and(
+                eq(schema.playerProjections.week, weekNum),
+                eq(schema.playerProjections.seasonYear, seasonYear)
+              ),
+            });
+            const storedByKey = new Map(storedProjections.map((p) => [`${p.playerId}::${p.scoringFormat}`, p]));
 
+            for (const [sleeperPlayerId, playerProj] of projections) {
               const playerId = playerByExtId.get(sleeperPlayerId);
               if (!playerId) continue;
 
@@ -1299,14 +1350,7 @@ adminRoutes.post('/sync-projections', async (c) => {
 
                 const dbFormat = scoringFormat === 'half_ppr' ? 'half-ppr' : scoringFormat;
 
-                const existingProj = await db.query.playerProjections.findFirst({
-                  where: and(
-                    eq(schema.playerProjections.playerId, playerId),
-                    eq(schema.playerProjections.week, weekNum),
-                    eq(schema.playerProjections.seasonYear, seasonYear),
-                    eq(schema.playerProjections.scoringFormat, dbFormat)
-                  ),
-                });
+                const existingProj = storedByKey.get(`${playerId}::${dbFormat}`);
 
                 const projData = {
                   playerId,
@@ -1326,10 +1370,16 @@ adminRoutes.post('/sync-projections', async (c) => {
                 };
 
                 if (existingProj) {
+                  if (!rowChanged(existingProj, projData, PROJECTION_COMPARE_KEYS_WITH_SOURCE)) {
+                    weekUnchanged++;
+                    continue;
+                  }
                   // Snapshot the old projection before overwriting so /projection-movements can compute net change.
                   // Snapshot's source matches the OLD row's source — the same-source filter on movement queries
                   // then prevents conflating a provider switch with real line movement.
-                  projStatements.push(
+                  // A 0-point Sleeper row with no stat lines is a placeholder, not a line, so
+                  // replacing it is not movement.
+                  if (!isPlaceholderProjection(existingProj)) projStatements.push(
                     db.insert(schema.projectionLineSnapshots).values({
                       id: generateId(),
                       playerId,
@@ -1380,13 +1430,15 @@ adminRoutes.post('/sync-projections', async (c) => {
         }
       } catch (weekErr) {
         console.error(`[sync-projections] Error syncing week ${weekNum}:`, weekErr);
-        weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated, propsProjections: weekPropsProjections, error: weekErr instanceof Error ? weekErr.message : 'Unknown error' });
+        unchanged += weekUnchanged;
+        weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated, unchanged: weekUnchanged, propsProjections: weekPropsProjections, error: weekErr instanceof Error ? weekErr.message : 'Unknown error' });
         continue;
       }
 
       inserted += weekInserted;
       updated += weekUpdated;
-      weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated, propsProjections: weekPropsProjections });
+      unchanged += weekUnchanged;
+      weekResults.push({ week: weekNum, inserted: weekInserted, updated: weekUpdated, unchanged: weekUnchanged, propsProjections: weekPropsProjections });
     }
 
     // Invalidate projection-related caches so fresh data is served immediately
@@ -1400,7 +1452,7 @@ adminRoutes.post('/sync-projections', async (c) => {
       weeks: weeksToSync,
       scoringFormats,
       propsProjections: { generated: propsGenerated, updated: propsUpdated },
-      sleeperFallback: { inserted, updated },
+      sleeperFallback: { inserted, updated, unchanged },
       total: inserted + updated + propsGenerated + propsUpdated,
       weekResults,
     });
@@ -1418,8 +1470,9 @@ adminRoutes.post('/sync-projections', async (c) => {
 
 /**
  * POST /api/admin/sync-odds
- * Fetches current NFL odds from The Odds API and stores them in game_odds table.
- * Uses batched DB writes (groups of 50) to stay under Worker subrequest limits.
+ * Fetches current NFL odds from The Odds API and appends a game_odds row for
+ * each (game, bookmaker, market) whose line changed since its latest row
+ * (see services/gameOddsSync.ts).
  * Requires X-Admin-Key header matching SYNC_SECRET env var.
  */
 adminRoutes.post('/sync-odds', async (c) => {
@@ -1441,75 +1494,8 @@ adminRoutes.post('/sync-odds', async (c) => {
       // No body
     }
 
-    const games = await fetchCurrentOdds(oddsApiKey);
-    const parsed = parseOddsResponse(games, body.week, undefined, body.season);
-
-    let inserted = 0;
-    let skipped = 0;
-
-    // Fetch all existing games to map to game IDs (week/season come from the
-    // matched game record, not the odds payload — see historical bug where
-    // parseOddsResponse's guessed week/season silently mismatched the DB).
-    const existingGames = await db.query.nflGames.findMany({
-      columns: {
-        id: true,
-        homeTeam: true,
-        awayTeam: true,
-        week: true,
-        seasonYear: true,
-      },
-    });
-    const gameMap = new Map(
-      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g])
-    );
-
-    const BATCH_SIZE = 50;
-    const statements: any[] = [];
-
-    for (const odds of parsed) {
-      const game = gameMap.get(odds.game_id);
-      if (!game) {
-        skipped++;
-        continue;
-      }
-
-      statements.push(
-        db.insert(schema.gameOdds).values({
-          id: odds.id,
-          gameId: game.id,
-          sportKey: odds.sport_key,
-          homeTeam: odds.home_team,
-          awayTeam: odds.away_team,
-          commenceTime: odds.commence_time,
-          bookmaker: odds.bookmaker,
-          market: odds.market,
-          homePoint: odds.home_point ?? null,
-          awayPoint: odds.away_point ?? null,
-          homePrice: odds.home_price ?? null,
-          awayPrice: odds.away_price ?? null,
-          overPoint: odds.over_point ?? null,
-          underPoint: odds.under_point ?? null,
-          overPrice: odds.over_price ?? null,
-          underPrice: odds.under_price ?? null,
-          snapshotTime: odds.snapshot_time,
-          season: game.seasonYear,
-          week: game.week,
-          createdAt: new Date(),
-        }).onConflictDoNothing()
-      );
-      inserted++;
-
-      // Flush batch when reaching size
-      if (statements.length >= BATCH_SIZE) {
-        await db.batch(statements as any);
-        statements.length = 0;
-      }
-    }
-
-    // Flush remaining statements
-    if (statements.length > 0) {
-      await db.batch(statements as any);
-    }
+    const season = body.season ?? resolveWeekFromCalendar(new Date()).season;
+    const { inserted, unchanged, skipped, total } = await syncGameOdds(db, { apiKey: oddsApiKey, season, week: body.week });
 
     invalidateCache('game-odds:', true);
 
@@ -1517,8 +1503,9 @@ adminRoutes.post('/sync-odds', async (c) => {
       success: true,
       message: 'Odds sync completed',
       inserted,
+      unchanged,
       skipped,
-      total: parsed.length,
+      total,
     });
   } catch (err) {
     console.error('Sync odds error:', err);
@@ -2196,6 +2183,19 @@ adminRoutes.get('/season-props/summary', async (c) => {
   }
 });
 
+// The market projection columns worth an upsert; ids and computedAt are not.
+const MARKET_PROJECTION_COMPARE_KEYS = [
+  'seasonPoints',
+  'rosPoints',
+  'perGameRate',
+  'remainingGames',
+  'marketRank',
+  'positionRank',
+  'tier',
+  'vorp',
+  'confidence',
+] as const;
+
 /**
  * POST /api/admin/sync-market-projections
  *
@@ -2608,6 +2608,21 @@ adminRoutes.post('/sync-market-projections', async (c) => {
         };
       });
 
+      // Skip rows whose ranking inputs produced the same numbers as the
+      // stored row: every 4-hour run recomputes all three formats, and most
+      // of the time nothing has moved.
+      const storedMarketRows = await db.query.playerMarketProjections.findMany({
+        where: and(
+          eq(schema.playerMarketProjections.seasonYear, season),
+          eq(schema.playerMarketProjections.asOfWeek, asOfWeek),
+          eq(schema.playerMarketProjections.scoringFormat, format)
+        ),
+      });
+      const storedMarketByPlayer = new Map(storedMarketRows.map((r) => [r.playerId, r]));
+      const changedRows = upsertRows.filter((row) =>
+        rowChanged(storedMarketByPlayer.get(row.playerId), row, MARKET_PROJECTION_COMPARE_KEYS)
+      );
+
       // Each row is its own insert…onConflictDoUpdate statement (~16 bound
       // params) rather than one multi-row `.values(chunk)` insert — D1 caps
       // bound params per statement at ~100, and 50 rows × 16 columns in a
@@ -2615,8 +2630,8 @@ adminRoutes.post('/sync-market-projections', async (c) => {
       // ~50 single-row statements per db.batch() call keeps each statement's
       // param count low while still executing them together as one
       // subrequest, mirroring the sync-players upsert above.
-      for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
-        const chunk = upsertRows.slice(i, i + UPSERT_CHUNK);
+      for (let i = 0; i < changedRows.length; i += UPSERT_CHUNK) {
+        const chunk = changedRows.slice(i, i + UPSERT_CHUNK);
         if (chunk.length === 0) continue;
         const statements = chunk.map((row) =>
           db
@@ -2952,7 +2967,7 @@ adminRoutes.get('/ranking-batch-jobs', async (c) => {
  * - leagueId: sync just this one league (season/limit are ignored)
  * - season: defaults to the app's current NFL season
  * - limit: max leagues processed this call, default 25, ordered by
- *   `updatedAt` ascending so the least-recently-synced leagues go first and
+ *   `lastSyncedAt` ascending so the least-recently-synced leagues go first and
  *   one slow/broken league can't starve the rest across repeated cron runs
  * - platform: only 'sleeper' is implemented today; Yahoo/ESPN leagues are
  *   counted in `skipped` rather than erroring the whole batch
@@ -2995,8 +3010,9 @@ adminRoutes.post('/sync-leagues', async (c) => {
         // Sleeper successor instead of never being selected again.
         where: and(eq(schema.leagues.platform, 'sleeper'), gte(schema.leagues.seasonYear, season - 1)),
         // Current-season leagues first so never-renewed prior-season rows
-        // can't crowd them out of the per-run limit.
-        orderBy: (l, { asc, desc }) => [desc(l.seasonYear), asc(l.updatedAt)],
+        // can't crowd them out of the per-run limit; within a season the
+        // least-recently-synced first (NULL = never synced sorts first).
+        orderBy: (l, { asc, desc }) => [desc(l.seasonYear), asc(l.lastSyncedAt)],
         limit,
       });
     }

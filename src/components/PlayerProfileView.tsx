@@ -9,7 +9,7 @@ import { SEO, getPlayerProfileSEOProps } from './SEO';
 import { buildPlayerProfilePath } from '../utils/slug';
 import { useAuth } from '../context/AuthContext';
 import { useNflState } from '../hooks';
-import { getDefaultSeason } from '../utils/playerUtils';
+import { getDefaultSeason, normalizeLeagueScoringFormat } from '../utils/playerUtils';
 
 interface PlayerProfileViewProps {
   playerId: string;
@@ -145,7 +145,7 @@ export function PlayerProfileView({
   // uses) instead.
   const season = seasonYear ?? nflSeason ?? getDefaultSeason();
 
-  const normalizedFormat = scoringFormat === 'half_ppr' ? 'half_ppr' : scoringFormat === 'standard' ? 'standard' : 'ppr';
+  const normalizedFormat = normalizeLeagueScoringFormat(scoringFormat);
   const scoringLabel = normalizedFormat === 'half_ppr' ? 'Half PPR' : normalizedFormat === 'standard' ? 'Standard' : 'PPR';
 
   const getFantasyPoints = (s: APIWeeklyStat): number => {
@@ -388,6 +388,11 @@ export function PlayerProfileView({
               {player.weight != null && <span><span className={`font-semibold ${bodyColor}`}>{player.weight}</span> lbs</span>}
               {player.college && <span><span className={`font-semibold ${bodyColor}`}>{player.college}</span></span>}
               {player.yearsExp != null && <span><span className={`font-semibold ${bodyColor}`}>{player.yearsExp}</span> yrs exp</span>}
+              {player.depthChartOrder != null && player.depthChartOrder > 0 && (
+                <span>
+                  Depth chart <span className={`font-semibold ${bodyColor}`}>{position}{player.depthChartOrder}</span>
+                </span>
+              )}
             </div>
 
             {player.injuryNote && (
@@ -695,6 +700,7 @@ function PropsList({ propsData, isDarkMode }: { propsData: any; isDarkMode: bool
 
   const props = propsData?.props ?? {};
   const actual = propsData?.actual ?? {};
+  const gameStatus: string | undefined = propsData?.status;
   const markets = Object.keys(props);
 
   return (
@@ -708,9 +714,15 @@ function PropsList({ propsData, isDarkMode }: { propsData: any; isDarkMode: bool
             <span className={isDarkMode ? 'text-slate-200' : 'text-slate-800'}>{label}</span>
             <span className={`flex items-center gap-3 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
               <span className="font-semibold">{p?.line ?? '—'}</span>
-              {actualVal != null && (
-                <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>actual: {String(actualVal)}</span>
-              )}
+              {actualVal != null ? (
+                <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                  actual: {typeof actualVal === 'boolean' ? (actualVal ? 'Yes' : 'No') : String(actualVal)}
+                </span>
+              ) : gameStatus === 'did_not_play' ? (
+                <span className="text-xs text-slate-500">DNP · void</span>
+              ) : gameStatus === 'unknown' ? (
+                <span className="text-xs text-slate-500" title="Stats for this game aren't available, so this line isn't graded.">no stats</span>
+              ) : null}
             </span>
           </li>
         );

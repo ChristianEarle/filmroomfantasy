@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, or, isNull, lt } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import {
   sleep,
@@ -8,7 +8,8 @@ import {
   validateSleeperArray,
   fetchSleeperPlayersCached,
 } from '../services/sleeper';
-import { syncSleeperLeague } from '../services/leagueSync';
+import { syncSleeperLeague, sleeperRosterIdentity } from '../services/leagueSync';
+import { reconcileLeagueTeams, insertPlatformTeam } from '../services/teamIdentity';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
@@ -24,6 +25,7 @@ import {
   ensureArray,
 } from '../services/mfl';
 import type { Env, Variables } from '../index';
+import { isLeagueSyncStale, leagueSyncStaleCutoff, leagueSyncStaleHours } from '../services/leagueFreshness';
 
 // Rate limit for league routes: 60 req/min per IP (all auth-gated)
 const leagueRateLimit = rateLimit(60, 60 * 1000);
@@ -294,7 +296,7 @@ leagueRoutes.put('/:id', authMiddleware, async (c) => {
       updates.name = body.name.trim();
     }
     if (body.scoringFormat !== undefined) {
-      if (!['ppr', 'half_ppr', 'standard'].includes(body.scoringFormat)) {
+      if (!['ppr', 'half_ppr', 'half-ppr', 'standard'].includes(body.scoringFormat)) {
         return c.json({ error: 'Invalid scoring format' }, 400);
       }
       updates.scoringFormat = body.scoringFormat;
@@ -554,7 +556,10 @@ leagueRoutes.post('/connect', connectRateLimit, authMiddleware, async (c) => {
       }, 201);
     }
 
-    // Create new league from external platform
+    // Create new league from external platform. One platform league is one
+    // row (leagues_platform_external_unique): if a concurrent connect won
+    // the race, this insert is a no-op and the caller retries into the
+    // join-existing path above.
     const leagueId = generateId();
 
     await db.insert(schema.leagues).values({
@@ -567,7 +572,11 @@ leagueRoutes.post('/connect', connectRateLimit, authMiddleware, async (c) => {
       seasonYear,
       waiverType: 'faab',
       waiverBudget: 100,
-    });
+    }).onConflictDoNothing();
+    const created = await db.query.leagues.findFirst({ where: eq(schema.leagues.id, leagueId), columns: { id: true } });
+    if (!created) {
+      return c.json({ error: 'This league was connected by someone else a moment ago. Please try again to join it.' }, 409);
+    }
 
     // Add user as commissioner
     await db.insert(schema.leagueMembers).values({
@@ -664,7 +673,9 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
     if (!rostersResponse.ok) {
       return c.json({ error: 'Failed to fetch rosters from Sleeper' }, 500);
     }
-    const rosters = validateSleeperArray(await rostersResponse.json(), isValidSleeperRoster, 'rosters');
+    const rostersRaw = await rostersResponse.json();
+    const rosters = validateSleeperArray(rostersRaw, isValidSleeperRoster, 'rosters');
+    const rosterIdentity = sleeperRosterIdentity(rostersRaw, rosters.length);
     if (rosters.length === 0) {
       return c.json({ error: 'No valid rosters returned from Sleeper' }, 500);
     }
@@ -746,64 +757,53 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
 
     let teamsImported = 0;
     let userRosterAssigned = false;
-    const userTeam =
-      league.teams.find(t => t.ownerId === user.id) ||
-      (userSleeperUserId
-        ? league.teams.find(t => t.externalOwnerId === userSleeperUserId)
-        : undefined);
+
+    // One row per Sleeper roster (services/teamIdentity.ts). The acting
+    // user's roster claims their placeholder from /connect; other members'
+    // placeholders are merged or pruned the same way the full sync does.
+    const reconciled = await reconcileLeagueTeams(db, league.id, [
+      ...rosters.map((r) => ({
+        externalTeamId: String(r.roster_id),
+        legacyOwnerKey: String(r.owner_id),
+        appUserId: userSleeperUserId && String(r.owner_id) === userSleeperUserId ? user.id : null,
+      })),
+      ...rosterIdentity.unmanagedRosterIds.map((id) => ({ externalTeamId: id, legacyOwnerKey: null })),
+    ], { prune: rosterIdentity.complete });
 
     for (const roster of rosters) {
       const su = userMap.get(roster.owner_id);
       const teamName = su?.metadata?.team_name || su?.display_name || `Team ${roster.roster_id}`;
       const ownerDisplayName = su?.display_name || su?.username || `Owner ${roster.roster_id}`;
-      const isUserTeam = userTeam && !userRosterAssigned && userSleeperUserId && roster.owner_id === userSleeperUserId;
+      const isUserTeam = !userRosterAssigned && !!userSleeperUserId && String(roster.owner_id) === userSleeperUserId;
+      if (isUserTeam) userRosterAssigned = true;
+
+      const teamFields = {
+        externalOwnerId: String(roster.owner_id),
+        ownerDisplayName,
+        name: teamName,
+        wins: roster.settings?.wins || 0,
+        losses: roster.settings?.losses || 0,
+        ties: roster.settings?.ties || 0,
+        pointsFor: roster.settings?.fpts || 0,
+        pointsAgainst: roster.settings?.fpts_against || 0,
+      };
 
       let teamId: string;
-      if (isUserTeam) {
-        teamId = userTeam.id;
-        userRosterAssigned = true;
-        await db.update(schema.teams).set({
-          externalOwnerId: String(roster.owner_id),
-          ownerDisplayName,
-          name: teamName,
-          wins: roster.settings?.wins || 0,
-          losses: roster.settings?.losses || 0,
-          ties: roster.settings?.ties || 0,
-          pointsFor: roster.settings?.fpts || 0,
-          pointsAgainst: roster.settings?.fpts_against || 0,
-          updatedAt: new Date(),
-        }).where(eq(schema.teams.id, userTeam.id));
+      const existing = reconciled.teamsByExternalTeamId.get(String(roster.roster_id));
+      if (existing) {
+        teamId = existing.id;
+        await db.update(schema.teams)
+          .set({ ...teamFields, ...(isUserTeam ? { ownerId: user.id } : {}), updatedAt: new Date() })
+          .where(eq(schema.teams.id, existing.id));
       } else {
-        const existing = league.teams.find(t => t.externalOwnerId === String(roster.owner_id));
-        if (existing) {
-          teamId = existing.id;
-          await db.update(schema.teams).set({
-            ownerDisplayName,
-            name: teamName,
-            wins: roster.settings?.wins || 0,
-            losses: roster.settings?.losses || 0,
-            ties: roster.settings?.ties || 0,
-            pointsFor: roster.settings?.fpts || 0,
-            pointsAgainst: roster.settings?.fpts_against || 0,
-            updatedAt: new Date(),
-          }).where(eq(schema.teams.id, existing.id));
-        } else {
-          teamId = generateId();
-          await db.insert(schema.teams).values({
-            id: teamId,
-            leagueId: league.id,
-            ownerId: user.id,
-            externalOwnerId: String(roster.owner_id),
-            ownerDisplayName,
-            name: teamName,
-            wins: roster.settings?.wins || 0,
-            losses: roster.settings?.losses || 0,
-            ties: roster.settings?.ties || 0,
-            pointsFor: roster.settings?.fpts || 0,
-            pointsAgainst: roster.settings?.fpts_against || 0,
-            faabBudget: 100,
-          });
-        }
+        teamId = await insertPlatformTeam(db, {
+          id: generateId(),
+          leagueId: league.id,
+          externalTeamId: String(roster.roster_id),
+          ownerId: user.id,
+          faabBudget: 100,
+          ...teamFields,
+        });
       }
       teamsImported++;
 
@@ -856,6 +856,10 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
       ? `League synced. To highlight your team, set your Sleeper username in league settings.`
       : null;
 
+    await db.update(schema.leagues)
+      .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+      .where(eq(schema.leagues.id, league.id));
+
     return c.json({
       success: true,
       message: `Quick sync complete: ${teamsImported} teams imported.`,
@@ -866,6 +870,80 @@ leagueRoutes.post('/:id/sync/quick', quickSyncRateLimit, authMiddleware, async (
     const err = error instanceof Error ? error : new Error(String(error));
     console.error('Quick sync error:', err);
     return c.json({ error: err.message || 'Quick sync failed' }, 500);
+  }
+});
+
+// ----------------------------------------------------------------
+// Sync-on-open. The client calls this whenever a league is opened; the
+// server syncs only if the league's last sync is older than the staleness
+// window (services/leagueFreshness.ts) — a few hours in season, a day off
+// season — so nobody has to press Sync and the cron is just a backstop.
+//
+// Concurrency: two tabs or two members opening the league at once must not
+// both sync. The claim is a conditional UPDATE of last_synced_at that only
+// succeeds while the row is still stale; a second caller sees zero rows
+// affected and reports "in progress". A failed sync restores the previous
+// timestamp so the next open retries instead of waiting out the window.
+// ----------------------------------------------------------------
+const ifStaleRateLimit = rateLimit(30, 15 * 60 * 1000);
+leagueRoutes.post('/:id/sync/if-stale', ifStaleRateLimit, authMiddleware, async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+  const leagueId = c.req.param('id');
+  if (!user) return c.json({ error: 'Not authenticated' }, 401);
+
+  const membership = await db.query.leagueMembers.findFirst({
+    where: and(eq(schema.leagueMembers.userId, user.id), eq(schema.leagueMembers.leagueId, leagueId)),
+  });
+  if (!membership) return c.json({ error: 'Not a member of this league' }, 403);
+
+  const league = await db.query.leagues.findFirst({
+    where: eq(schema.leagues.id, leagueId),
+    with: { teams: true },
+  });
+  if (!league) return c.json({ error: 'League not found' }, 404);
+
+  if (league.platform !== 'sleeper' || !league.externalId) {
+    return c.json({ synced: false, reason: 'unsupported', lastSyncedAt: league.lastSyncedAt ?? null });
+  }
+
+  const now = new Date();
+  if (!isLeagueSyncStale(league.lastSyncedAt, now)) {
+    return c.json({ synced: false, reason: 'fresh', lastSyncedAt: league.lastSyncedAt, staleAfterHours: leagueSyncStaleHours(now) });
+  }
+
+  // Claim the sync. Only one caller wins while the row is stale.
+  const cutoff = leagueSyncStaleCutoff(now);
+  const claimed = await db.update(schema.leagues)
+    .set({ lastSyncedAt: now })
+    .where(and(
+      eq(schema.leagues.id, leagueId),
+      or(isNull(schema.leagues.lastSyncedAt), lt(schema.leagues.lastSyncedAt, cutoff))
+    ))
+    .returning({ id: schema.leagues.id });
+  if (claimed.length === 0) {
+    return c.json({ synced: false, reason: 'in_progress', lastSyncedAt: league.lastSyncedAt });
+  }
+
+  try {
+    const result = await syncSleeperLeague(db, league, { actingUserId: user.id });
+    return c.json({
+      synced: true,
+      lastSyncedAt: new Date(),
+      rolledOver: result.rolledOver ?? null,
+      userTeamMatched: result.userTeamMatched,
+      warning: result.warning,
+      message: result.message,
+    });
+  } catch (error) {
+    // Give the claim back so the next open retries rather than believing
+    // the league is fresh for a whole window.
+    await db.update(schema.leagues)
+      .set({ lastSyncedAt: league.lastSyncedAt ?? null })
+      .where(eq(schema.leagues.id, leagueId));
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error('Sync-on-open error:', err);
+    return c.json({ synced: false, reason: 'failed', error: err.message || 'Sync failed' }, 500);
   }
 });
 
@@ -944,6 +1022,29 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       let teamsImported = 0;
       let playersImported = 0;
 
+      // Yahoo's team id ("423.l.123456.t.1" -> "1") is the team's identity.
+      const yahooTeamIdOf = (teamArr: any, idx: number): string => {
+        const info = Array.isArray(teamArr?.[0]) ? teamArr[0] : [];
+        const keyItem = info.find((item: any) => item && typeof item === 'object' && 'team_key' in item);
+        return (keyItem?.team_key ? String(keyItem.team_key).split('.t.').pop() : '') || String(idx + 1);
+      };
+      const yahooTeamIds: string[] = [];
+      if (teamsObj) {
+        for (let i = 0; teamsObj[String(i)]; i++) {
+          const arr = teamsObj[String(i)].team;
+          if (arr) yahooTeamIds.push(yahooTeamIdOf(arr, i));
+        }
+      }
+      // No pruning: this sync can't tell which Yahoo team is a member's, so
+      // a member's /connect placeholder is the only row "my team" resolves
+      // to (rosters.ts resolveUserTeamId falls back to ownerId).
+      const reconciled = await reconcileLeagueTeams(
+        db,
+        league.id,
+        yahooTeamIds.map((id) => ({ externalTeamId: id, legacyOwnerKey: id })),
+        { prune: false },
+      );
+
       if (teamsObj) {
         let teamIdx = 0;
         while (teamsObj[String(teamIdx)]) {
@@ -970,26 +1071,29 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
           }
 
           // Extract team ID from key (e.g., "423.l.123456.t.1" -> "1")
+          // (same derivation as yahooTeamIdOf in the pre-pass above)
           const teamExternalId = teamKey.split('.t.').pop() || String(teamIdx + 1);
 
-          // Upsert team (use externalOwnerId to store Yahoo team external ID)
-          const existingTeam = league.teams.find(t => t.externalOwnerId === teamExternalId);
+          // One row per Yahoo team (services/teamIdentity.ts). externalOwnerId
+          // keeps holding the team id too: the matchup import below reads it.
+          const existingTeam = reconciled.teamsByExternalTeamId.get(teamExternalId);
           let teamId: string;
 
           if (existingTeam) {
             teamId = existingTeam.id;
             await db.update(schema.teams).set({
               name: teamName,
+              externalOwnerId: teamExternalId,
               updatedAt: new Date(),
             }).where(eq(schema.teams.id, existingTeam.id));
           } else {
-            teamId = crypto.randomUUID();
-            await db.insert(schema.teams).values({
-              id: teamId,
+            teamId = await insertPlatformTeam(db, {
+              id: crypto.randomUUID(),
               name: teamName,
               leagueId: league.id,
               ownerId: user.id, // Default to current user; will be corrected if manager info available
               externalOwnerId: teamExternalId,
+              externalTeamId: teamExternalId,
             });
           }
           teamsImported++;
@@ -1270,14 +1374,24 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
         console.error('Failed to fetch MFL players (sync continues with name matching):', e);
       }
 
+      // One row per MFL franchise (services/teamIdentity.ts). externalOwnerId
+      // keeps holding the franchise id too: the matchup import below reads it.
+      // No pruning, for the same reason as Yahoo: MFL franchises can't be
+      // tied to app members here, so their placeholders must stay.
+      const reconciled = await reconcileLeagueTeams(
+        db,
+        league.id,
+        franchises.filter((f) => f?.id).map((f) => ({ externalTeamId: String(f.id), legacyOwnerKey: String(f.id) })),
+        { prune: false },
+      );
+
       // Process each franchise/roster
       for (const roster of mflRosters) {
         const franchise = franchiseMap.get(roster.id);
         const teamName = franchise?.name || `Team ${roster.id}`;
         const ownerName = franchise?.owner_name || teamName;
 
-        // Upsert team
-        const existingTeam = league.teams.find(t => t.externalOwnerId === roster.id);
+        const existingTeam = reconciled.teamsByExternalTeamId.get(String(roster.id));
         let teamId: string;
 
         if (existingTeam) {
@@ -1285,17 +1399,18 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
           await db.update(schema.teams).set({
             name: teamName,
             ownerDisplayName: ownerName,
+            externalOwnerId: String(roster.id),
             faabBudget: franchise?.bbidAvailableBalance ? parseInt(franchise.bbidAvailableBalance, 10) : undefined,
             updatedAt: new Date(),
           }).where(eq(schema.teams.id, existingTeam.id));
         } else {
-          teamId = generateId();
-          await db.insert(schema.teams).values({
-            id: teamId,
+          teamId = await insertPlatformTeam(db, {
+            id: generateId(),
             name: teamName,
             leagueId: league.id,
             ownerId: user.id,
-            externalOwnerId: roster.id,
+            externalOwnerId: String(roster.id),
+            externalTeamId: String(roster.id),
             ownerDisplayName: ownerName,
             faabBudget: franchise?.bbidAvailableBalance ? parseInt(franchise.bbidAvailableBalance, 10) : 100,
           });
@@ -1570,8 +1685,11 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       // ESPN position/lineup mappings (limited to fantasy-relevant slots).
       // Source: ESPN's internal constants — these are well-known and stable.
       const POSITION: Record<number, string> = { 1: 'QB', 2: 'RB', 3: 'WR', 4: 'TE', 5: 'K', 16: 'DEF' };
+      // 7 is ESPN's superflex slot ("OP", QB/RB/WR/TE) — labelled OP so the
+      // League Analyzer reports it as SUPERFLEX, not FLEX. 3 (RB/WR) and
+      // 5 (WR/TE) are starting flex slots; unmapped, they were saved as bench.
       const LINEUP_SLOT: Record<number, string> = {
-        0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 7: 'FLEX',
+        0: 'QB', 2: 'RB', 3: 'RB/WR', 4: 'WR', 5: 'WR/TE', 6: 'TE', 7: 'OP',
         16: 'DEF', 17: 'K', 20: 'BN', 21: 'IR', 23: 'FLEX',
       };
       // ESPN pro team ID → standard NFL abbreviation. Used to match DEF.
@@ -1591,56 +1709,71 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       // app username to SWID, so we match by team display name as a best-effort.
       const userClaim = membership.externalUsername?.toLowerCase().trim();
 
+      const espnTeamName = (t: any) =>
+        [t.location, t.nickname].filter(Boolean).join(' ').trim() || t.name || `Team ${String(t.id)}`;
+      // The user's own team: the first whose name matches their claim.
+      const userTeamEspnId = userClaim
+        ? espnTeams
+            .map((t: any) => ({ id: String(t.id), name: espnTeamName(t).toLowerCase() }))
+            .find((t: { id: string; name: string }) => t.name === userClaim || t.name.includes(userClaim))?.id ?? null
+        : null;
+
+      // One row per ESPN team (services/teamIdentity.ts). The claimed team
+      // takes over the user's placeholder from /connect. Previously the
+      // fallback grabbed any row the user owned — and every ESPN row is
+      // owned by whoever synced — the same bug that duplicated Sleeper teams.
+      // externalOwnerId keeps holding the team id: the matchup import reads it.
+      const reconciled = await reconcileLeagueTeams(
+        db,
+        league.id,
+        espnTeams.map((t: any) => ({
+          externalTeamId: String(t.id),
+          legacyOwnerKey: String(t.id),
+          appUserId: String(t.id) === userTeamEspnId ? user.id : null,
+        })),
+      );
+
       for (const espnTeam of espnTeams) {
         const espnTeamId = String(espnTeam.id);
-        const teamName = [espnTeam.location, espnTeam.nickname].filter(Boolean).join(' ').trim()
-          || espnTeam.name
-          || `Team ${espnTeamId}`;
+        const teamName = espnTeamName(espnTeam);
         // ESPN's public API only exposes a SWID GUID in `owners[]`, not a display
         // name — show the team name instead so we don't render a raw GUID to users.
         const ownerDisplayName = teamName;
         const record = espnTeam.record?.overall || {};
 
-        const isUserTeam =
-          !userRosterAssigned && userClaim &&
-          (teamName.toLowerCase() === userClaim ||
-           teamName.toLowerCase().includes(userClaim));
+        const isUserTeam = espnTeamId === userTeamEspnId;
+        if (isUserTeam) userRosterAssigned = true;
 
-        const existing = league.teams.find(t => t.externalOwnerId === espnTeamId)
-          || (isUserTeam ? league.teams.find(t => t.ownerId === user.id) : undefined);
+        const teamFields = {
+          externalOwnerId: espnTeamId,
+          ownerDisplayName,
+          name: teamName,
+          wins: record.wins || 0,
+          losses: record.losses || 0,
+          ties: record.ties || 0,
+          pointsFor: record.pointsFor || 0,
+          pointsAgainst: record.pointsAgainst || 0,
+        };
 
         let teamId: string;
+        const existing = reconciled.teamsByExternalTeamId.get(espnTeamId);
         if (existing) {
           teamId = existing.id;
-          await db.update(schema.teams).set({
-            externalOwnerId: espnTeamId,
-            ownerDisplayName,
-            name: teamName,
-            wins: record.wins || 0,
-            losses: record.losses || 0,
-            ties: record.ties || 0,
-            pointsFor: record.pointsFor || 0,
-            pointsAgainst: record.pointsAgainst || 0,
-            updatedAt: new Date(),
-          }).where(eq(schema.teams.id, existing.id));
-          if (isUserTeam) userRosterAssigned = true;
+          // The claimed team becomes the user's: their placeholder was just
+          // folded into this row, and "my team" falls back to ownerId for
+          // ESPN (externalUsername is a name claim, not an ESPN id).
+          await db.update(schema.teams)
+            .set({ ...teamFields, ...(isUserTeam ? { ownerId: user.id } : {}), updatedAt: new Date() })
+            .where(eq(schema.teams.id, existing.id));
         } else {
-          teamId = generateId();
-          await db.insert(schema.teams).values({
-            id: teamId,
+          teamId = await insertPlatformTeam(db, {
+            id: generateId(),
             leagueId: league.id,
+            externalTeamId: espnTeamId,
             ownerId: user.id,
-            externalOwnerId: espnTeamId,
-            ownerDisplayName,
-            name: teamName,
-            wins: record.wins || 0,
-            losses: record.losses || 0,
-            ties: record.ties || 0,
-            pointsFor: record.pointsFor || 0,
-            pointsAgainst: record.pointsAgainst || 0,
             faabBudget: 100,
+            ...teamFields,
           });
-          if (isUserTeam) userRosterAssigned = true;
         }
         teamsImported++;
 

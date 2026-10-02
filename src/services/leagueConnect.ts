@@ -313,7 +313,7 @@ export const leagueConnectService = {
 
   // Quick post-connect sync: rosters/teams/current-week only. Stays well under
   // the Workers wall-time limit so the first sync after connect almost always
-  // succeeds. Heavy work (stats, projections, full schedule) runs via
+  // succeeds. The full schedule, trades and draft picks come from
   // syncLeagueFull() — typically triggered by the manual "Sync" button.
   syncLeagueQuick: async (leagueId: string): Promise<{
     success: boolean;
@@ -333,6 +333,20 @@ export const leagueConnectService = {
     rolledOver?: { fromExternalId: string; toExternalId: string; season: number };
   }> => {
     return api.post(`/leagues/${leagueId}/sync`);
+  },
+
+  // Sync-on-open: the server syncs only if the league's last sync is older
+  // than its staleness window (hours in season, a day off season), so this
+  // is safe to call on every league open. `synced: false` with reason
+  // 'fresh' or 'in_progress' is the normal case.
+  syncLeagueIfStale: async (leagueId: string): Promise<{
+    synced: boolean;
+    reason?: 'fresh' | 'in_progress' | 'unsupported' | 'failed';
+    lastSyncedAt?: string | null;
+    rolledOver?: { fromExternalId: string; toExternalId: string; season: number } | null;
+    warning?: string | null;
+  }> => {
+    return api.post(`/leagues/${leagueId}/sync/if-stale`);
   },
 
   disconnectLeague: async (leagueId: string): Promise<{ success: boolean }> => {

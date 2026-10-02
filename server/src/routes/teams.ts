@@ -6,6 +6,7 @@ import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
 import { resolveLeagueWeek } from '../services/nflState';
 import type { Env, Variables } from '../index';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 // Rate limit for team routes: 60 req/min per IP
 const teamRateLimit = rateLimit(60, 60 * 1000);
@@ -266,7 +267,10 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
     return c.json({ error: 'Invalid week (must be 1-18)' }, 400);
   }
   const currentWeek = requestedWeek ?? resolved.week;
-  const scoringFormat = team.league?.scoringFormat || 'ppr';
+  // Normalize the league's stored spelling ('half_ppr' vs 'half-ppr') to
+  // the key projections and points columns use, or a half-PPR league finds
+  // no projection rows at all and every player shows 0.
+  const scoringFormat = normalizeScoringFormat(team.league?.scoringFormat);
 
   // Enrich roster with stats and projections
   const enrichedRoster = await Promise.all(roster.map(async (r) => {
@@ -317,12 +321,12 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
           averageSnapPct: seasonStats.averageSnapPct ?? null,
           totalPoints: scoringFormat === 'ppr'
             ? seasonStats.fantasyPointsPPR
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? seasonStats.fantasyPointsHalf
               : seasonStats.fantasyPointsStd,
           avgPoints: scoringFormat === 'ppr'
             ? seasonStats.avgPointsPPR
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? seasonStats.avgPointsHalf
               : seasonStats.avgPointsStd,
           passYards: seasonStats.passYards,
@@ -339,7 +343,7 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
         actualPoints: currentWeekStats
           ? (scoringFormat === 'ppr'
             ? currentWeekStats.fantasyPointsPPR
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? currentWeekStats.fantasyPointsHalf
               : currentWeekStats.fantasyPointsStd)
           : null,
@@ -347,7 +351,7 @@ teamRoutes.get('/:id/roster', authMiddleware, async (c) => {
         lastWeekPoints: lastWeekStats
           ? (scoringFormat === 'ppr'
             ? lastWeekStats.fantasyPointsPPR
-            : scoringFormat === 'half_ppr'
+            : scoringFormat === 'half-ppr'
               ? lastWeekStats.fantasyPointsHalf
               : lastWeekStats.fantasyPointsStd)
           : null,

@@ -33,22 +33,27 @@ export const PlayerAvatar = memo(function PlayerAvatar({
   isDarkMode = true,
 }: PlayerAvatarProps) {
   const safeName = name || 'Unknown Player';
-  const url = headshotUrl || imageUrl;
-  // Track WHICH url failed rather than a boolean: a new url (e.g. a different
-  // player, or a corrected headshot) is retried automatically without needing
-  // an effect-based reset that briefly renders the wrong state.
-  const [erroredUrl, setErroredUrl] = useState<string | null>(null);
+  // Try headshotUrl first, then imageUrl — a caller can pass both as
+  // independent sources, and a broken first source shouldn't skip straight
+  // to initials while a second candidate is still available.
+  const candidates = [headshotUrl, imageUrl].filter((u): u is string => !!u);
+  // Track WHICH urls failed rather than a boolean: a new url (e.g. a
+  // different player, or a corrected headshot) is retried automatically
+  // without needing an effect-based reset that briefly renders the wrong
+  // state.
+  const [failedUrls, setFailedUrls] = useState<ReadonlySet<string>>(() => new Set());
 
-  const showImage = url && erroredUrl !== url;
+  const url = candidates.find((u) => !failedUrls.has(u));
 
-  if (showImage) {
+  if (url) {
     return (
       <img
+        key={url}
         src={url}
         alt={`${safeName} headshot`}
         className={className}
         loading="lazy"
-        onError={() => setErroredUrl(url)}
+        onError={() => setFailedUrls((prev) => new Set(prev).add(url))}
       />
     );
   }

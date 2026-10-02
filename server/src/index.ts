@@ -9,6 +9,7 @@ import { cleanupExpiredRateLimits } from './middleware/rateLimit';
 import { snapshotRankHistory } from './services/draftRankings';
 import { generateInjuryNewsNotifications } from './services/notifications';
 import { getNflState } from './services/nflState';
+import { legacyOwns } from './ingest/ownership';
 
 // Import routes
 import { authRoutes } from './routes/auth';
@@ -22,6 +23,8 @@ import { feedbackRoutes } from './routes/feedback';
 import { yahooRoutes } from './routes/yahoo';
 import { billingRoutes } from './routes/billing';
 import { adminStatsRoutes } from './routes/admin-stats';
+import { adminIngestRoutes } from './routes/adminIngest';
+import { statusRoutes } from './routes/status';
 import { tradesRoutes } from './routes/trades';
 import { rostersRoutes } from './routes/rosters';
 import { tradeHistoryRoutes } from './routes/tradeHistory';
@@ -32,6 +35,7 @@ import { watchlistRoutes } from './routes/watchlist';
 import { notificationRoutes } from './routes/notifications';
 import { leagueAnalyzerRoutes } from './routes/leagueAnalyzer';
 import { platformProxyRoutes } from './routes/platformProxy';
+import { isInSeasonMonth } from './services/leagueFreshness';
 
 // Types
 export type Env = {
@@ -215,7 +219,11 @@ app.route('/api/billing', billingRoutes);
 app.route('/api/trades', tradesRoutes);
 app.route('/api/trade-history', tradeHistoryRoutes);
 app.route('/api/rosters', rostersRoutes);
+// Before adminStatsRoutes: its use('*') CORS middleware would otherwise run
+// on /api/admin/ingest/* and replace the global CORS origin.
+app.route('/api/admin', adminIngestRoutes);
 app.route('/api/admin', adminStatsRoutes);
+app.route('/api/status', statusRoutes);
 app.route('/api/analytics', analyticsRoutes);
 app.route('/api/articles', articleRoutes);
 app.route('/api/draft-rankings', draftRankingsRoutes);
@@ -245,12 +253,24 @@ app.onError((err, c) => {
   }, 500);
 });
 
-// NFL regular/postseason months, UTC. Used to decide how often the league
+// isInSeasonMonth (services/leagueFreshness.ts) decides how often the league
 // sync cron (POST /api/admin/sync-leagues) runs — every 4h in-season to keep
-// matchups/rosters fresh, once a day off-season since nothing changes.
-function isInSeasonMonth(date: Date = new Date()): boolean {
-  const month = date.getUTCMonth() + 1; // 1-12
-  return month >= 9 || month === 1;
+// matchups/rosters fresh, once a day off-season since nothing changes — and
+// how stale a league may get before opening it in the app re-syncs it.
+
+type CallSync = (path: string, body?: object) => Promise<boolean>;
+
+/**
+ * The 4-hour cron's game-odds step. The owner is read at run time, so cutting
+ * the odds group over to the ingest Worker (or back) takes effect on the next
+ * tick and only one scheduler writes it.
+ */
+export async function runLegacyOddsSync(db: D1Database, callSync: CallSync, week: number, season: number): Promise<void> {
+  if (await legacyOwns(db, 'odds')) {
+    await callSync('/api/admin/sync-odds', { week, season });
+  } else {
+    console.log('[cron] /api/admin/sync-odds skipped: the odds group is owned by the ingest Worker');
+  }
 }
 
 // Scheduled handler for Cloudflare Cron Triggers
@@ -344,20 +364,10 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     const currentWeek = state.week;
     const currentSeason = state.season;
 
-    // Sync stats for current week + previous week (for late-breaking plays)
-    const previousWeek = Math.max(1, currentWeek - 1);
-    const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
-
-    await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
-
-    // In-season, keep league matchups/rosters/ownership fresh every 4h so
-    // "my matchup" doesn't 404 for leagues no one has manually re-synced
-    // since the season rolled over. Runs the same sync logic as the
-    // user-triggered "Sync" button (see server/src/services/leagueSync.ts).
-    // Off-season this instead runs once daily — see the 0 12 * * * block.
-    if (isInSeasonMonth()) {
-      await callSync('/api/admin/sync-leagues');
-    }
+    // Every step below shares this one invocation's CPU and memory budget,
+    // and a step that exceeds it kills the invocation along with every step
+    // after it. The Odds API syncs therefore run first and the league sync
+    // (by far the heaviest step) runs last.
 
     // Sync player prop lines (per-player Vegas O/U) for the current week.
     // The endpoint itself loops over every game and skips any it already
@@ -365,9 +375,25 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // so a full week's props — and the projections generated from them —
     // fill in automatically without re-billing the Odds API for games whose
     // lines haven't had time to move.
-    if (currentWeek <= 18) {
+    // Both syncs match events to regular-season games, so outside the
+    // preseason and regular season every Odds API call would be wasted.
+    if (state.seasonType === 'regular' || state.seasonType === 'preseason') {
       await callSync('/api/admin/sync-player-props', { week: currentWeek });
+      await runLegacyOddsSync(env.DB, callSync, currentWeek, currentSeason);
     }
+
+    // Sync stats for current week + previous week (for late-breaking plays)
+    const previousWeek = Math.max(1, currentWeek - 1);
+    const weeksToSync = currentWeek === previousWeek ? [currentWeek] : [previousWeek, currentWeek];
+    // Plus one older completed week per run, rotating through all of them, so
+    // Sleeper's late stat corrections land and a bad earlier write is repaired.
+    const olderWeeks = currentWeek - 2;
+    if (olderWeeks >= 1) {
+      const runIndex = Math.floor(event.scheduledTime / (4 * 3600 * 1000));
+      weeksToSync.unshift((runIndex % olderWeeks) + 1);
+    }
+
+    await callSync('/api/admin/sync-stats', { weeks: weeksToSync });
 
     await callSync('/api/admin/sync-projections', { week: currentWeek });
 
@@ -380,9 +406,13 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // for computeRemainingGames.
     await callSync('/api/admin/sync-market-projections', { season: currentSeason });
 
-    // Sync current odds during NFL season
-    if (currentWeek <= 18) {
-      await callSync('/api/admin/sync-odds', { week: currentWeek, season: currentSeason });
+    // In-season, keep league matchups/rosters/ownership fresh every 4h so
+    // "my matchup" doesn't 404 for leagues no one has manually re-synced
+    // since the season rolled over. Runs the same sync logic as the
+    // user-triggered "Sync" button (see server/src/services/leagueSync.ts).
+    // Off-season this instead runs once daily — see the 0 12 * * * block.
+    if (isInSeasonMonth()) {
+      await callSync('/api/admin/sync-leagues');
     }
   } else if (event.cron === '0 */6 * * *') {
     // Every 6 hours: sync all news sources

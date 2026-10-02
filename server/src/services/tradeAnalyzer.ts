@@ -28,6 +28,15 @@ import {
   type LeagueSettings,
 } from './tradeContext';
 import { buildCachedSystemBlocks } from '../utils/prompt';
+import {
+  EFFORT_REASONING,
+  describeResponse,
+  firstText,
+  hitMaxTokens,
+  maxTokensWithThinking,
+  parseJsonObject,
+  type AnthropicTextResponse,
+} from '../utils/aiOutput';
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -424,18 +433,20 @@ Respond with the JSON schema described in the system prompt.`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        // Scales with team count: a 4-team trade needs a teamGrades entry
-        // (2-3 sentences) per team plus winnerExplanation/keyFactors/
-        // improvements on top — the fixed 2048 cap was truncating longer
-        // multi-team responses mid-JSON, which is indistinguishable from a
-        // genuinely malformed response once JSON.parse fails. No cost
-        // downside to a generous cap — Anthropic bills actual tokens
-        // generated, not this ceiling.
-        max_tokens: 2048 + body.teams.length * 512,
+        // Visible output scales with team count: a 4-team trade needs a
+        // teamGrades entry (2-3 sentences) per team plus winnerExplanation/
+        // keyFactors/improvements on top. On top of that, Sonnet 5's hidden
+        // thinking also counts toward max_tokens — see utils/aiOutput.ts —
+        // so the cap carries explicit thinking headroom. No cost downside to
+        // a generous cap: Anthropic bills generated tokens, not the ceiling.
+        max_tokens: maxTokensWithThinking(2048 + body.teams.length * 512),
+        // Bound the thinking itself; at the default effort a three-team
+        // dynasty trade thought for longer than the fetch timeout.
+        output_config: EFFORT_REASONING,
         system: systemBlocks,
         messages: [{ role: 'user', content: userMessage }],
       }),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(60000),
     });
   } catch (err) {
     console.error('[tradeAnalyzer] fetch failed:', err);
@@ -448,33 +459,43 @@ Respond with the JSON schema described in the system prompt.`;
     return { ok: false, error: 'AI analysis failed. Please try again later.', status: 502 };
   }
 
-  let data: { content?: { type: string; text?: string }[]; stop_reason?: string };
+  let data: AnthropicTextResponse;
   try {
-    data = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string };
+    data = (await res.json()) as AnthropicTextResponse;
   } catch {
     return { ok: false, error: 'AI returned malformed response', status: 502 };
   }
 
-  const textBlock = data.content?.find((b) => b.type === 'text');
-  const rawText = textBlock?.text?.trim();
+  // stop_reason === 'max_tokens' means the budget ran out — either entirely on
+  // hidden thinking (no text block at all) or mid-JSON (unparseable text).
+  // Neither is a "malformed" reply; logged distinctly so a recurrence is
+  // diagnosable without a wrangler tail session.
+  const rawText = firstText(data);
   if (!rawText) {
-    return { ok: false, error: 'AI returned an empty response. Please try again.', status: 502 };
+    console.error(`[tradeAnalyzer] no text block (${describeResponse(data)}, teams=${body.teams.length})`);
+    return {
+      ok: false,
+      error: hitMaxTokens(data)
+        ? 'AI analysis ran out of room before answering. Please try again.'
+        : 'AI returned an empty response. Please try again.',
+      status: 502,
+    };
   }
 
-  // Parse JSON (strip potential markdown fences)
-  const jsonStr = rawText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-  let parsed: TradeAnalysisResult;
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch {
-    // stop_reason === 'max_tokens' means the response was cut off mid-JSON,
-    // not genuinely malformed — logged distinctly so a recurrence is
-    // immediately diagnosable without a manual wrangler tail session.
+  // Tolerates ```json fences and any preamble/trailing prose around the object.
+  const parsed = parseJsonObject<TradeAnalysisResult>(rawText);
+  if (!parsed) {
     console.error(
-      `[tradeAnalyzer] JSON parse failed (stop_reason=${data.stop_reason ?? 'unknown'}, teams=${body.teams.length}, textLength=${rawText.length}):`,
+      `[tradeAnalyzer] JSON parse failed (${describeResponse(data)}, teams=${body.teams.length}):`,
       rawText.slice(0, 500),
     );
-    return { ok: false, error: 'AI returned an invalid response. Please try again.', status: 502 };
+    return {
+      ok: false,
+      error: hitMaxTokens(data)
+        ? 'AI analysis was cut off before it finished. Please try again.'
+        : 'AI returned an invalid response. Please try again.',
+      status: 502,
+    };
   }
 
   // Validate shape and team names. The description may suffix the

@@ -94,12 +94,16 @@ interface MarketRankingsResponse {
  * render, so the Market view reuses the same row component (with
  * source="market" disabling the AI-only affordances) instead of duplicating
  * the table markup.
+ *
+ * `rankOverride` swaps in a different overall/position rank than the row's
+ * season-VORP `marketRank`/`positionRank` — used by the "By ROS" sort so the
+ * displayed # and position rank reflect rest-of-season value instead.
  */
-function marketRowToDraftRanking(m: MarketRanking): DraftRanking {
+function marketRowToDraftRanking(m: MarketRanking, rankOverride?: { overallRank: number; positionRank: number }): DraftRanking {
   return {
     id: `mkt-${m.playerId}`,
-    overallRank: m.marketRank ?? 0,
-    positionRank: m.positionRank ?? 0,
+    overallRank: rankOverride?.overallRank ?? m.marketRank ?? 0,
+    positionRank: rankOverride?.positionRank ?? m.positionRank ?? 0,
     tier: m.tier ?? 8,
     projectedPoints: m.seasonPoints,
     adp: null,
@@ -230,6 +234,9 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketAsOfWeek, setMarketAsOfWeek] = useState<number | null>(null);
+  // Market-only: sort/rank by full-season value (the API's default marketRank)
+  // or by rest-of-season value (rosPoints) — a dedicated "ROS ranking" view.
+  const [marketSort, setMarketSort] = useState<'season' | 'ros'>('season');
 
   const { user, isAuthenticated } = useAuth();
   const watchlist = useWatchlist();
@@ -364,10 +371,38 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     return filtered;
   }, [rankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
 
+  // Re-rank the Market board by rest-of-season value instead of the API's
+  // default full-season marketRank/positionRank. Computed over the full
+  // (unfiltered) list, same as the API-provided season ranks, so filtering
+  // by position/search below doesn't renumber the displayed rank.
+  const rosRanks = useMemo(() => {
+    const ranked = new Map<string, { overallRank: number; positionRank: number }>();
+    const sorted = [...marketRankings].sort((a, b) => {
+      if (a.rosPoints == null && b.rosPoints == null) return 0;
+      if (a.rosPoints == null) return 1;
+      if (b.rosPoints == null) return -1;
+      return b.rosPoints - a.rosPoints;
+    });
+    const posCounts = new Map<string, number>();
+    sorted.forEach((m, idx) => {
+      const pos = m.player?.position ?? '';
+      const positionRank = (posCounts.get(pos) ?? 0) + 1;
+      posCounts.set(pos, positionRank);
+      ranked.set(m.playerId, { overallRank: idx + 1, positionRank });
+    });
+    return ranked;
+  }, [marketRankings]);
+
   // Market rows adapted into the same shape PlayerRow renders, filtered the
-  // same way as the AI list (position/search/watching).
+  // same way as the AI list (position/search/watching), sorted/ranked by
+  // season or ROS value per `marketSort`.
   const filteredMarketRankings = useMemo(() => {
-    let filtered = marketRankings.map(marketRowToDraftRanking);
+    let filtered = marketRankings.map(m =>
+      marketRowToDraftRanking(m, marketSort === 'ros' ? rosRanks.get(m.playerId) : undefined),
+    );
+    if (marketSort === 'ros') {
+      filtered = [...filtered].sort((a, b) => a.overallRank - b.overallRank);
+    }
     if (positionFilter !== 'ALL') {
       filtered = filtered.filter(r => r.player.position === positionFilter);
     }
@@ -381,7 +416,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
       filtered = filtered.filter(r => watchlist.watchedIds.has(r.player.id));
     }
     return filtered;
-  }, [marketRankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
+  }, [marketRankings, marketSort, rosRanks, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
 
   const handlePlayerClick = useCallback((ranking: DraftRanking) => {
     const p = ranking.player;
@@ -505,7 +540,7 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
               downloadRankingsCsv(
                 isMarket ? filteredMarketRankings : filteredRankings,
                 isMarket
-                  ? `market-rankings-${scoringFormat}-${new Date().getFullYear()}.csv`
+                  ? `market-rankings-${scoringFormat}${marketSort === 'ros' ? '-ros' : ''}-${new Date().getFullYear()}.csv`
                   : `draft-rankings-${rankingType}-${scoringFormat}${superflex ? '-superflex' : ''}-${new Date().getFullYear()}.csv`,
               )
             }
@@ -556,6 +591,18 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
         </div>
 
         <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+
+        {isMarket && (
+          <>
+            {/* Market-only: rank by full-season value or rest-of-season value */}
+            <div className="flex gap-1">
+              {pill(marketSort === 'season', () => setMarketSort('season'), 'By Season')}
+              {pill(marketSort === 'ros', () => setMarketSort('ros'), 'By ROS')}
+            </div>
+
+            <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+          </>
+        )}
 
         {/* Position filter */}
         <div className="flex gap-1">
@@ -685,8 +732,8 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
             }`}>
               <span className="w-6 sm:w-8 text-center">#</span>
               <span className="flex-1 min-w-0">Player</span>
-              <span className="text-right w-14 sm:w-20">Season Proj</span>
-              <span className="hidden sm:inline text-right" style={{ width: '70px' }}>ROS</span>
+              <span className={`text-right w-14 sm:w-20 ${marketSort === 'season' ? (isDarkMode ? 'text-blue-400' : 'text-blue-600') : ''}`}>Season Proj</span>
+              <span className={`hidden sm:inline text-right ${marketSort === 'ros' ? (isDarkMode ? 'text-blue-400' : 'text-blue-600') : ''}`} style={{ width: '70px' }}>ROS</span>
               <span className="hidden sm:inline text-center" style={{ width: '44px' }}>Tier</span>
               <span className="flex justify-center w-[90px]">Confidence</span>
             </div>
