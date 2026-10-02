@@ -122,6 +122,9 @@ export function AllPlayersView({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A failed "Load more" keeps the rows already shown and offers a retry of
+  // the same page, instead of replacing the table with the full error panel.
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
@@ -177,7 +180,7 @@ export function AllPlayersView({
   const fetchPlayers = useCallback(async (pageNum: number, append: boolean) => {
     const seq = ++fetchSeqRef.current;
     if (append) setLoadingMore(true); else setLoading(true);
-    setError(null);
+    if (append) setLoadMoreError(null); else { setError(null); setLoadMoreError(null); }
     try {
       const params = new URLSearchParams({
         page: String(pageNum),
@@ -225,8 +228,12 @@ export function AllPlayersView({
     } catch (err) {
       if (seq !== fetchSeqRef.current) return;
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch players';
-      setError(errorMessage);
-      if (!append) setPlayers([]);
+      if (append) {
+        setLoadMoreError(errorMessage);
+      } else {
+        setError(errorMessage);
+        setPlayers([]);
+      }
     } finally {
       if (seq === fetchSeqRef.current) {
         setLoading(false);
@@ -558,14 +565,19 @@ export function AllPlayersView({
             </table>
           )}
           {!loading && !error && players.length < totalCount && (
-            <div className="flex justify-center py-4">
+            <div className="flex flex-col items-center gap-2 py-4">
+              {loadMoreError && (
+                <p role="alert" className="text-xs text-red-500">
+                  Couldn't load more players: {loadMoreError}
+                </p>
+              )}
               <button
                 onClick={handleLoadMore}
                 disabled={loadingMore}
                 className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 {loadingMore && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
-                {loadingMore ? 'Loading…' : `Load more (${players.length} of ${totalCount})`}
+                {loadingMore ? 'Loading…' : loadMoreError ? 'Try again' : `Load more (${players.length} of ${totalCount})`}
               </button>
             </div>
           )}
