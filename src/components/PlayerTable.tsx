@@ -59,6 +59,12 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
 
   const oddsDisplay = formatOdds();
 
+  // "RB2", "WR3", etc. — falls back to the bare position when depth chart
+  // order isn't known (most K/DEF rows, and any player Sleeper hasn't slotted).
+  const positionLabel = player.depthChartOrder != null && player.depthChartOrder > 0
+    ? `${player.position}${player.depthChartOrder}`
+    : player.position;
+
   return (
     <>
     <tr
@@ -99,7 +105,7 @@ const PlayerRow = memo(function PlayerRow({ player, onToggleExpand, onOpenCard, 
             )}
           </div>
           <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-            {player.team} · {player.position}
+            {player.team} · {positionLabel}
             {oddsDisplay && (
               <div className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                 {oddsDisplay}

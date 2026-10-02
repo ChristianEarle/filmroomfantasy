@@ -180,9 +180,23 @@ export async function ingestSleeperTrades(
     teamsByName.set(normalizeName(t.name), t);
   }
 
+  // roster_id is the team's identity (teams.external_team_id, migration 0050).
+  const teamsByRosterId = new Map(
+    teams
+      .filter((t) => t.externalTeamId)
+      .map((t) => [t.externalTeamId as string, t])
+  );
+
   for (const r of sleeperRosters) {
     seenRosterIds.push(r.roster_id);
-    // 1. Primary: owner_id -> externalOwnerId match
+    // 0. Primary: roster_id -> externalTeamId match (survives owner changes
+    //    and orphaned rosters, unlike the owner-based fallbacks below).
+    const byRoster = teamsByRosterId.get(String(r.roster_id));
+    if (byRoster) {
+      rosterIdToTeamId.set(r.roster_id, byRoster.id);
+      continue;
+    }
+    // 1. owner_id -> externalOwnerId match (rows not yet stamped since 0050)
     if (r.owner_id) {
       const team = teamsByExternalOwnerId.get(r.owner_id);
       if (team) {

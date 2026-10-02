@@ -444,15 +444,19 @@ export async function syncDraftPicks(
 
   const teams = await db.query.teams.findMany({
     where: eq(schema.teams.leagueId, leagueId),
-    columns: { id: true, externalOwnerId: true },
+    columns: { id: true, externalOwnerId: true, externalTeamId: true },
   });
+  // roster_id is the team's identity (teams.external_team_id); the owner
+  // match covers rows not yet stamped by a sync since migration 0050.
+  const teamByRosterId = new Map<string, string>();
   const teamByExternalOwner = new Map<string, string>();
   for (const t of teams) {
+    if (t.externalTeamId) teamByRosterId.set(t.externalTeamId, t.id);
     if (t.externalOwnerId) teamByExternalOwner.set(t.externalOwnerId, t.id);
   }
   const rosterIdToTeamId = new Map<number, string>();
   for (const r of rosters) {
-    const teamId = teamByExternalOwner.get(String(r.owner_id));
+    const teamId = teamByRosterId.get(String(r.roster_id)) ?? teamByExternalOwner.get(String(r.owner_id));
     if (teamId) rosterIdToTeamId.set(r.roster_id, teamId);
   }
   if (rosterIdToTeamId.size === 0) {

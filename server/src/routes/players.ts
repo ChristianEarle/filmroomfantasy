@@ -15,12 +15,19 @@ import {
   type ConversationTurn,
 } from '../utils/prompt';
 import { buildProjectionsFromProps } from '../services/projections';
-import { resolveWeekComplete, computeFetchWindow, shouldFallBackToPriorSeason, shouldReportActuals } from './playersLogic';
+import { resolveWeekComplete, computeFetchWindow, shouldFallBackToPriorSeason, shouldReportActuals, propGameStatus, scoredAnytimeTd } from './playersLogic';
 import { resolveWeekFromCalendar, getNflState } from '../services/nflState';
 import { resolveMarketAsOfWeek } from '../services/marketRankingsQueries';
 import { buildPlayerCard, buildPlayerCards } from '../services/playerCard';
 import { extractMentionedPlayers, type MentionCandidate } from '../utils/playerMentions';
 import { runAskWithTools, AnthropicApiError } from '../utils/anthropicTools';
+import {
+  EFFORT_QUICK,
+  describeResponse,
+  firstText,
+  maxTokensWithThinking,
+  type AnthropicTextResponse,
+} from '../utils/aiOutput';
 import { buildAskTools } from '../services/askTools';
 import type { Env, Variables } from '../index';
 
@@ -1610,7 +1617,9 @@ ${newsBlock}`;
           },
           body: JSON.stringify({
             model: AI_MODEL,
-            max_tokens: 600,
+            // 600 visible tokens plus thinking headroom — see utils/aiOutput.ts.
+            max_tokens: maxTokensWithThinking(600),
+            output_config: EFFORT_QUICK,
             system: buildCachedSystemBlocks(PLAYER_ANALYSIS_SYSTEM_PROMPT),
             messages: [{ role: 'user', content: dataBlock }],
           }),
@@ -1622,9 +1631,10 @@ ${newsBlock}`;
           console.error('[players/analysis] Anthropic error:', res.status, errText);
           return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
         }
-        const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-        const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
+        const data = (await res.json()) as AnthropicTextResponse;
+        const text = firstText(data);
         if (!text) {
+          console.error(`[players/analysis] no text block (${describeResponse(data)})`);
           return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
         }
         analysis = text;
@@ -1963,9 +1973,12 @@ playerRoutes.get('/props', optionalAuthMiddleware, async (c) => {
         eq(schema.playerProps.week, week),
         eq(schema.playerProps.season, season)
       ),
+      // player_props keeps every snapshot and the grouping below keeps the
+      // first row per player and market, so newest must sort first.
       orderBy: [
         asc(schema.playerProps.playerName),
         asc(schema.playerProps.market),
+        desc(schema.playerProps.snapshotTime),
       ],
     });
 
@@ -2523,7 +2536,8 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
           eq(schema.playerProps.week, week),
           eq(schema.playerProps.season, s)
         ),
-        orderBy: asc(schema.playerProps.market),
+        // Newest snapshot first: propsByMarket below keeps the first row per market.
+        orderBy: [asc(schema.playerProps.market), desc(schema.playerProps.snapshotTime)],
       });
       return rows.filter(r => normalizePlayerName(r.playerName) === targetNormalized);
     };
@@ -2605,46 +2619,76 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
     // Only attach actual results once the player's game for this week has
     // been played. The stats sync can write zero rows for an upcoming week,
     // which would otherwise render as settled NO/UNDER results before kickoff.
-    let gamePlayed = false;
-    if (weeklyStats) {
-      const now = new Date();
-      const state = await getNflState(db, now);
-      const weekGames = await db.query.nflGames.findMany({
-        where: and(
-          eq(schema.nflGames.seasonYear, effectiveSeason),
-          eq(schema.nflGames.week, week),
-          eq(schema.nflGames.seasonType, 'regular')
-        ),
-        columns: { week: true, gameTime: true, isComplete: true, homeScore: true, awayScore: true, homeTeam: true, awayTeam: true },
-      });
-      // Team abbreviations differ slightly between sources (WAS/WSH, JAX/JAC, LAR/LA).
-      const TEAM_ALIASES: Record<string, string> = { WSH: 'WAS', JAC: 'JAX', LA: 'LAR', OAK: 'LV', SD: 'LAC', STL: 'LAR' };
-      const norm = (t: string | null | undefined) => {
-        const u = (t ?? '').toUpperCase();
-        return TEAM_ALIASES[u] ?? u;
-      };
-      const team = norm(player.team);
-      const teamGame = team ? weekGames.find((g) => norm(g.homeTeam) === team || norm(g.awayTeam) === team) ?? null : null;
-      gamePlayed = shouldReportActuals({
-        teamGame,
-        now,
-        week,
-        season: effectiveSeason,
-        currentWeek: state.week,
-        currentSeason: state.season,
-      });
+    const now = new Date();
+    const state = await getNflState(db, now);
+    const weekGames = await db.query.nflGames.findMany({
+      where: and(
+        eq(schema.nflGames.seasonYear, effectiveSeason),
+        eq(schema.nflGames.week, week),
+        eq(schema.nflGames.seasonType, 'regular')
+      ),
+      columns: { week: true, gameTime: true, isComplete: true, homeScore: true, awayScore: true, homeTeam: true, awayTeam: true },
+    });
+    // Team abbreviations differ slightly between sources (WAS/WSH, JAX/JAC, LAR/LA).
+    const TEAM_ALIASES: Record<string, string> = { WSH: 'WAS', JAC: 'JAX', LA: 'LAR', OAK: 'LV', SD: 'LAC', STL: 'LAR' };
+    const norm = (t: string | null | undefined) => {
+      const u = (t ?? '').toUpperCase();
+      return TEAM_ALIASES[u] ?? u;
+    };
+    const spellings = (t: string) => [t, ...Object.keys(TEAM_ALIASES).filter((alias) => TEAM_ALIASES[alias] === t)];
+    // The lines' own event names the game, which stays right for a player
+    // who has changed teams since; his current team is the fallback.
+    const eventTeams = props.length > 0 ? [norm(props[0].homeTeam), norm(props[0].awayTeam)] : [];
+    const team = norm(player.team);
+    const teamGame =
+      (eventTeams[0] && eventTeams[1]
+        ? weekGames.find((g) => eventTeams.includes(norm(g.homeTeam)) && eventTeams.includes(norm(g.awayTeam)))
+        : undefined)
+      ?? (team ? weekGames.find((g) => norm(g.homeTeam) === team || norm(g.awayTeam) === team) : undefined)
+      ?? null;
+    const gameFinished = shouldReportActuals({
+      teamGame,
+      now,
+      week,
+      season: effectiveSeason,
+      currentWeek: state.week,
+      currentSeason: state.season,
+    });
+
+    // A player with no stats row didn't suit up only if the rest of his game
+    // has stats; otherwise the sync just hasn't reached that game. Stats sync
+    // every 4 hours and a game counts as finished 5 hours after kickoff, so
+    // before 9 hours the rows found could be from a mid-game sync that a late
+    // entrant missed.
+    const postGameSyncDue = !teamGame || now.getTime() >= teamGame.gameTime.getTime() + 9 * 60 * 60 * 1000;
+    let gameStatsSynced = false;
+    if (gameFinished && !weeklyStats && props.length > 0 && postGameSyncDue) {
+      const gameTeams = teamGame ? [norm(teamGame.homeTeam), norm(teamGame.awayTeam)] : eventTeams;
+      const opponents = gameTeams.filter(Boolean).flatMap(spellings);
+      if (opponents.length > 0) {
+        const teammateOrOpponent = await db.query.playerWeeklyStats.findFirst({
+          where: and(
+            eq(schema.playerWeeklyStats.seasonYear, effectiveSeason),
+            eq(schema.playerWeeklyStats.week, week),
+            inArray(schema.playerWeeklyStats.opponent, opponents)
+          ),
+          columns: { id: true },
+        });
+        gameStatsSynced = !!teammateOrOpponent;
+      }
     }
+    const status = propGameStatus({ gameFinished, stats: weeklyStats, gameStatsSynced });
 
     // Build response with actual values from stats
     const actual: Record<string, any> = {};
-    if (weeklyStats && gamePlayed) {
+    if (weeklyStats && status === 'played') {
       actual.passYds = weeklyStats.passYards;
       actual.passTds = weeklyStats.passTDs;
       actual.rushYds = weeklyStats.rushYards;
       actual.rushTds = weeklyStats.rushTDs;
       actual.recYds = weeklyStats.receivingYards;
       actual.recs = weeklyStats.receptions;
-      actual.scoredTd = (weeklyStats.passTDs || 0) + (weeklyStats.rushTDs || 0) + (weeklyStats.receivingTDs || 0) > 0;
+      actual.scoredTd = scoredAnytimeTd(weeklyStats);
     }
 
     return c.json({
@@ -2655,6 +2699,8 @@ playerRoutes.get('/:id/props', optionalAuthMiddleware, async (c) => {
       },
       props: propsByMarket,
       actual,
+      // pending | played | did_not_play (props void) | unknown (stats can't be trusted)
+      status,
       week,
       season: effectiveSeason,
       requestedSeason: season,

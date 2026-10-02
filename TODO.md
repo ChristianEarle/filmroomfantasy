@@ -108,7 +108,10 @@ history accrues from the first daily cron.
 
 - [ ] Practice reports / injury designations (nflverse or ESPN, free)
 - [ ] Usage data: snap %, target share, red-zone touches (nflverse, free)
-- [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
+- [x] **Depth charts** — Sleeper's `depth_chart_order` was already synced to
+  `nfl_players.depth_chart_order` and returned by `GET /players`, just never
+  shown; `PlayerTable` and `PlayerCard` now label the position with the
+  depth slot (e.g. "RB2") whenever it's known.
 - [x] **Weather for outdoor games** — `services/weather.ts` fetches a real
   hourly forecast (temp/wind/precip chance) per stadium from Open-Meteo
   (free, no key), merged into `nfl_games.weather` via a new
@@ -149,10 +152,11 @@ history accrues from the first daily cron.
   the value a global assistant would add.
 - [ ] **AI post-game recaps** — cron on `gameStatus === 'final'`,
   cache per game; surface on GameDetailModal + matchup recap.
-- [ ] **ROS rankings** — partially done: Market projections already carry
-  a `rosProjectedPoints` number per player (#309), and `GET /market-rankings`
-  exposes it. What's still missing is a dedicated ROS *ranking type* (sorted
-  by remaining-season value rather than full-season value).
+- [x] **ROS rankings** — Market board gained a "By Season / By ROS" sort
+  toggle: selecting "By ROS" re-ranks the Market rankings table (overall +
+  position rank) by `rosPoints` instead of the default full-season VORP
+  rank, computed client-side from the existing `GET /market-rankings`
+  payload (no backend change needed).
 - [ ] **Expanded player row on the board** (inline stat breakdown) — the
   modal + AI take cover this; inline expand is a UX preference.
 - [ ] **De-shadow vendored `src/components/ui/*` primitives** — left
