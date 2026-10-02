@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { decideTeamOwnerId, findSuccessorLeague, needsSeasonRollover } from './leagueSync';
+import { decideTeamOwnerId, findSuccessorLeague, needsSeasonRollover, sleeperRosterIdentity } from './leagueSync';
+
+describe('sleeperRosterIdentity', () => {
+  it('reports rosters whose manager left and marks the list incomplete', () => {
+    const raw = [
+      { roster_id: 1, owner_id: 'a' },
+      { roster_id: 2, owner_id: null },
+      { roster_id: 3 },
+    ];
+    expect(sleeperRosterIdentity(raw, 1)).toEqual({ unmanagedRosterIds: ['2', '3'], complete: false });
+  });
+
+  it('is complete when every roster validated', () => {
+    expect(sleeperRosterIdentity([{ roster_id: 1, owner_id: 'a' }], 1)).toEqual({ unmanagedRosterIds: [], complete: true });
+  });
+
+  it('tolerates junk input', () => {
+    expect(sleeperRosterIdentity(null, 0)).toEqual({ unmanagedRosterIds: [], complete: true });
+    expect(sleeperRosterIdentity([null, 'x', { roster_id: 'nope' }], 0).unmanagedRosterIds).toEqual([]);
+  });
+});
 
 /**
  * Regression coverage for the sync ownership rules (see the doc comment on

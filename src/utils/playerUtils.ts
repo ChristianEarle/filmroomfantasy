@@ -10,6 +10,8 @@ export interface APIPlayer {
   status: string;
   byeWeek: number | null;
   headshotUrl?: string | null;
+  /** Depth chart rank within the player's own position on their team (1 = starter). Sourced from Sleeper; null when unknown. */
+  depthChartOrder?: number | null;
   avgPointsPPR: number;
   projectedPoints: number;
   /** Server flag: a projection row exists for the requested week. */
@@ -90,6 +92,7 @@ export function convertAPIPlayerToPlayer(player: APIPlayer, index: number): Play
     weekChange: 0,
     weeklyProjectedPoints: player.weeklyProjectedPoints,
     headshotUrl: player.headshotUrl ?? null,
+    depthChartOrder: player.depthChartOrder ?? null,
   };
 }
 

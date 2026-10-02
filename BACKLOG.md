@@ -275,7 +275,7 @@
 - [ ] **Standalone player page** - Add a real `/players/:slug-:externalId` route rendering a full player profile (headshot, season + recent stats, projections, matchup grade, news, props history, AI take). Modal stays for in-app speed; the page is what gets shared externally and indexed by Google. Companion to the SEO section below — track them together since the page implementation and the SEO/SSR work are the same lift. Update `PlayerCard` modal to include a "View full profile →" link to the new route.
 - [ ] **League Analyzer page with AI team analyzer** - New top-level view that audits the user's league at a glance: team-by-team strength grades, positional surplus/deficit per team, schedule difficulty ROS, championship odds, and an AI-generated narrative for each team ("biggest strength", "biggest hole", "most likely to fall off", "trade target fits"). Reuses the Monte Carlo engine from PlayoffPredictorView for the odds piece and the trade-finder's `LeagueContextSnapshot` for roster construction. Pro/Elite gated.
 - [ ] **AI analysis of players** - Per-player AI take surfaced in the PlayerCard modal AND on the standalone player page: 1-2 paragraph analysis covering recent form, upcoming matchup, role/usage trend, and start/sit recommendation. Generated against current week stats + projections + recent news. Cache by `(playerId, week, season)` so each player's take is only generated once per week. Can reuse the prompt/model setup from the existing draft-rankings rationale generator (`server/src/services/draftRankings.ts`). Pro/Elite gated to control cost.
-- [x] **AI post-game analysis** - `GET /games/:id/recap` generates a short AI recap for a finalized game (pregame spread/total vs. actual result, each team's top fantasy performer, waiver-wire implications), cached per game in `game_ai_recaps` (migration `0049`) and surfaced on GameDetailModal. Pro/Elite gated. Generated on first view rather than via a cron — same cache-per-key pattern as the per-player AI take, so no scheduled job was needed.
+- [x] **AI post-game analysis** - `GET /games/:id/recap` generates a short AI recap for a finalized game (pregame spread/total vs. actual result, each team's top fantasy performer, waiver-wire implications), cached per game in `game_ai_recaps` (migration `0051`) and surfaced on GameDetailModal. Pro/Elite gated. Generated on first view rather than via a cron — same cache-per-key pattern as the per-player AI take, so no scheduled job was needed.
 - [ ] **AI chat assistant** - Persistent chat bubble (bottom-right) that answers fantasy questions in the context of the user's actual league: roster, matchup, waiver wire, trade ideas, start/sit calls. Reuses the existing trade-finder `LeagueContextSnapshot` for context-injection. Streamed responses. Conversation history persisted per user. Pro/Elite gated. Should also be reachable via slash-style entry points from PlayerCard ("Ask about Josh Allen"), Matchup view ("Who should I start?"), and Trade Analyzer follow-ups.
 - [ ] **Page-by-page polish pass** - Comprehensive UX/visual polish across every page: tighten loading states, empty states, error messages, micro-animations, hover states, focus rings, and consistency of typography/spacing. Audit each view for "feels finished vs. feels prototype" gaps. Track per-page: HomeView, Board, Matchup, GameSlate, Trends, AllPlayers, Team, Waivers, PlayoffPredictor, TradeAnalyzer, TradeHistory, TradeFinder, DraftRankings, Settings, Profile, League Analyzer (new), standalone player page (new).
 - [ ] **Finish odds movement tracking on Trends** - The current TrendsView has "Roster Trends" and "Projection Movers" tabs. Add a third tab: "Odds Movement" — surfaces player prop line movement throughout the week (over/under yardage, anytime TD, receptions). Needs an external odds source (DraftKings/FanDuel public endpoints or a paid odds API like The Odds API). Schema: new `player_prop_lines` table keyed on `(playerId, propType, sportsbook, capturedAt)` with a daily-or-better cron. Display: per-player chip showing current line, opening line, % change, and a small sparkline. Related to (and consolidates with) the existing LOW item "Trends based on player prop movements" and the MEDIUM "Player Card → Projection breakdown working" since both depend on the same data source.
@@ -292,15 +292,24 @@
 - [x] **Audit SettingsView + FeedbackWidget** - Fixed 33 issues
 - [x] **Audit PlayoffPredictorView** - Fixed 18 issues (ties in records, findIndex guards, dynamic playoff weeks, memoization, tied scores, ARIA tabs, aria-labels, error display, unused vars)
 - [x] **Audit TradeHistoryView** - Fixed 11 issues (fetchAll race condition w/ cancellation token, handleIngest/handleGrade stale-league races, double fetch on league change, ingestNotice/error persistence across league switches, defensive seasons sort, dead callerTeamId field, dead aiAnalysis optional fields, label htmlFor, aria-pressed on season tabs, aria-expanded + aria-label on trade row expand button, clearing expanded set on league change)
+- [x] **Audit GameSlateView + GameDetailModal** - Fixed 2 issues: `useGame` fetched a game's detail once on mount and never again, so a modal left open through kickoff or the final whistle stayed frozen on pregame projections instead of showing live/final stats (added a 30s visibility-aware live poll, same pattern GameSlateView already used, with a background-fetch flag so it doesn't flash the loading spinner); the player-fetch error state had no way to recover short of closing and reopening the modal (added a "Try Again" button wired to the hook's new `refetch`). Added `useGames.test.ts` covering the polling/refetch behavior.
 
 **Views — Not yet audited:**
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
 - [ ] **Audit WaiversView** - Waiver claims, player search, bid management
-- [ ] **Audit GameSlateView + GameDetailModal** - NFL schedule, live scores, game detail overlay
 - [ ] **Audit TrendsView** - Roster trends, projection movers
-- [ ] **Audit AllPlayersView** - Full player list with filters, pagination
+- [x] **Audit AllPlayersView** - Full player list with filters, pagination.
+  Fixed: the "Load More" pagination was missing entirely — the view always
+  fetched only the first `ALL_PLAYERS_PAGE_SIZE` (350) players sorted by
+  projected points and silently discarded the API's `pagination.total`,
+  so any player ranked below the cutoff (very common — the position/status
+  universe regularly exceeds 350) was unreachable via search or scroll on
+  this view. Added incremental "Load More" fetching plus a visible
+  "X of Y players" count, and fixed a latent type bug where the error
+  state's Retry button passed its click `MouseEvent` into `fetchPlayers`
+  as the `pageNum`/`append` args.
 - [ ] **Audit ProfileView** - User profile, password change, Google link status
-- [ ] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth
+- [x] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth. Found and fixed a real bug: switching between the Login/Register/Forgot-password screens didn't clear the previous screen's error banner, so a stale "invalid password" message could reappear on a fresh form the user hadn't touched yet. Password-complexity policy (register requires uppercase+number, reset-password only enforces 8 chars) and progressive-cooldown persistence are noted as pre-existing product decisions, not addressed here.
 - [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
 
 **Shared Components — Not yet audited:**
@@ -313,9 +322,27 @@
   close) and added `aria-current`/`aria-expanded`/`aria-controls`/nav
   `aria-label` for screen readers.
 - [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
-- [ ] **Audit PlayerAvatar** - Image loading, fallback initials
+- [x] **Audit PlayerAvatar** - Fixed a real fallback-chain bug: the component
+  accepted both `headshotUrl` and `imageUrl` props but picked one source
+  permanently via `headshotUrl || imageUrl`, so a broken `headshotUrl`
+  fell straight to initials instead of trying `imageUrl`. Now tracks failed
+  urls in a set and tries each candidate in order. Added a test file
+  (previously untested) covering the fallback chain, initials generation,
+  and blank/whitespace-only names.
 - [ ] **Audit NewsPanel + NewsSnippet + BiggestMovers** - News feed, player movers widget
-- [ ] **Audit ErrorBoundary** - Error catch/display, recovery
+- [x] **Audit ErrorBoundary** - Component itself (catch/display/retry/reset-on-nav)
+  was already solid. Real bug was in how `App.tsx` wired it up: only 3 of
+  ~20 routed views (Trends, Playoffs, LeagueAnalyzer) were individually
+  wrapped, so a crash in any other view (Board, Team, Matchup, Settings,
+  AllPlayers, Waivers, DraftRankings, TradeAnalyzer, Admin, ...) fell
+  through to the single root boundary with no `resetKeys`, blanking the
+  entire app shell (sidebar/header/bottom nav included) instead of just
+  the failed view, with no automatic recovery on navigation. Moved to one
+  `ErrorBoundary` wrapping the whole view switch with `resetKeys={[activeView]}`
+  so every view gets the same per-view isolation and recovers on
+  navigation; removed the 3 now-redundant per-view wrappers. Added
+  `ErrorBoundary.test.tsx` (catch/fallback/retry/resetKeys) — the
+  component had no test coverage before.
 - [ ] **Audit App.tsx** - Routing, state management, context wiring, page transitions
 
 ---

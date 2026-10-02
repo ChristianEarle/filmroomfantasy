@@ -7,8 +7,10 @@ import { checkNewsRelevance } from '../services/ai';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr } from '../services/odds';
+import { syncGameOdds } from '../services/gameOddsSync';
 import { generateProjectionsFromProps, calculateFantasyPoints, PROJECTION_COMPARE_KEYS_WITH_SOURCE } from '../services/projections';
 import { rowChanged } from '../utils/rowDiff';
+import { sleeperWeeklyByPlayer } from '../utils/sleeperWeekly';
 import type { SeasonStatKey, SeasonStatVector } from '../services/marketRankings';
 import {
   submitDraftRankingsBatch,
@@ -1066,27 +1068,9 @@ adminRoutes.post('/sync-stats', async (c) => {
           continue;
         }
 
-        const raw = await statsResponse.json();
-        const weekEntries: { sleeperPlayerId: string; playerStats: any }[] = [];
+        const weekStats = sleeperWeeklyByPlayer(await statsResponse.json());
 
-        if (Array.isArray(raw)) {
-          for (const item of raw) {
-            const pid = item?.player_id;
-            if (!pid) continue;
-            const s = item.stats || {};
-            weekEntries.push({
-              sleeperPlayerId: String(pid),
-              playerStats: { ...s, opponent: item.opponent },
-            });
-          }
-        } else if (raw && typeof raw === 'object') {
-          for (const sleeperPlayerId of Object.keys(raw)) {
-            const playerStats = (raw as Record<string, any>)[sleeperPlayerId];
-            if (playerStats) weekEntries.push({ sleeperPlayerId, playerStats });
-          }
-        }
-
-        for (const { sleeperPlayerId, playerStats } of weekEntries) {
+        for (const [sleeperPlayerId, playerStats] of weekStats) {
           const playerId = playerMap.get(sleeperPlayerId);
           if (!playerId) continue;
           seenPlayerIds.add(playerId);
@@ -1165,9 +1149,9 @@ adminRoutes.post('/sync-stats', async (c) => {
 
         // A stored line Sleeper no longer reports for this week (a withdrawn
         // stat correction) is removed, as the old delete-and-reinsert did.
-        // Skipped when the response was empty so a bad fetch cannot wipe a
-        // week.
-        if (weekEntries.length > 0) {
+        // Skipped when the response was empty or covers under half the stored
+        // players, so a bad or truncated fetch cannot wipe a settled week.
+        if (weekStats.size > 0 && seenPlayerIds.size * 2 >= storedByPlayer.size) {
           for (const [playerId, stored] of storedByPlayer) {
             if (seenPlayerIds.has(playerId)) continue;
             statsStatements.push(
@@ -1216,6 +1200,14 @@ adminRoutes.post('/sync-stats', async (c) => {
     );
   }
 });
+
+function isPlaceholderProjection(row: typeof schema.playerProjections.$inferSelect): boolean {
+  return row.source === 'sleeper'
+    && !row.projectedPoints
+    && !row.projPassYards && !row.projPassTDs
+    && !row.projRushYards && !row.projRushTDs
+    && !row.projReceptions && !row.projRecYards && !row.projRecTDs;
+}
 
 /**
  * POST /api/admin/sync-projections
@@ -1326,7 +1318,7 @@ adminRoutes.post('/sync-projections', async (c) => {
             }
             // Props already generated some, continue with what we have
           } else {
-            const projections = await projResponse.json() as Record<string, any>;
+            const projections = sleeperWeeklyByPlayer(await projResponse.json());
 
             // One read for the week's stored rows instead of a lookup per
             // (player, format); each incoming line is then compared and only
@@ -1339,9 +1331,7 @@ adminRoutes.post('/sync-projections', async (c) => {
             });
             const storedByKey = new Map(storedProjections.map((p) => [`${p.playerId}::${p.scoringFormat}`, p]));
 
-            for (const [sleeperPlayerId, playerProj] of Object.entries(projections)) {
-              if (!playerProj) continue;
-
+            for (const [sleeperPlayerId, playerProj] of projections) {
               const playerId = playerByExtId.get(sleeperPlayerId);
               if (!playerId) continue;
 
@@ -1387,7 +1377,9 @@ adminRoutes.post('/sync-projections', async (c) => {
                   // Snapshot the old projection before overwriting so /projection-movements can compute net change.
                   // Snapshot's source matches the OLD row's source — the same-source filter on movement queries
                   // then prevents conflating a provider switch with real line movement.
-                  projStatements.push(
+                  // A 0-point Sleeper row with no stat lines is a placeholder, not a line, so
+                  // replacing it is not movement.
+                  if (!isPlaceholderProjection(existingProj)) projStatements.push(
                     db.insert(schema.projectionLineSnapshots).values({
                       id: generateId(),
                       playerId,
@@ -1478,8 +1470,9 @@ adminRoutes.post('/sync-projections', async (c) => {
 
 /**
  * POST /api/admin/sync-odds
- * Fetches current NFL odds from The Odds API and stores them in game_odds table.
- * Uses batched DB writes (groups of 50) to stay under Worker subrequest limits.
+ * Fetches current NFL odds from The Odds API and appends a game_odds row for
+ * each (game, bookmaker, market) whose line changed since its latest row
+ * (see services/gameOddsSync.ts).
  * Requires X-Admin-Key header matching SYNC_SECRET env var.
  */
 adminRoutes.post('/sync-odds', async (c) => {
@@ -1501,75 +1494,8 @@ adminRoutes.post('/sync-odds', async (c) => {
       // No body
     }
 
-    const games = await fetchCurrentOdds(oddsApiKey);
-    const parsed = parseOddsResponse(games, body.week, undefined, body.season);
-
-    let inserted = 0;
-    let skipped = 0;
-
-    // Fetch all existing games to map to game IDs (week/season come from the
-    // matched game record, not the odds payload — see historical bug where
-    // parseOddsResponse's guessed week/season silently mismatched the DB).
-    const existingGames = await db.query.nflGames.findMany({
-      columns: {
-        id: true,
-        homeTeam: true,
-        awayTeam: true,
-        week: true,
-        seasonYear: true,
-      },
-    });
-    const gameMap = new Map(
-      existingGames.map(g => [`${g.awayTeam}_${g.homeTeam}`, g])
-    );
-
-    const BATCH_SIZE = 50;
-    const statements: any[] = [];
-
-    for (const odds of parsed) {
-      const game = gameMap.get(odds.game_id);
-      if (!game) {
-        skipped++;
-        continue;
-      }
-
-      statements.push(
-        db.insert(schema.gameOdds).values({
-          id: odds.id,
-          gameId: game.id,
-          sportKey: odds.sport_key,
-          homeTeam: odds.home_team,
-          awayTeam: odds.away_team,
-          commenceTime: odds.commence_time,
-          bookmaker: odds.bookmaker,
-          market: odds.market,
-          homePoint: odds.home_point ?? null,
-          awayPoint: odds.away_point ?? null,
-          homePrice: odds.home_price ?? null,
-          awayPrice: odds.away_price ?? null,
-          overPoint: odds.over_point ?? null,
-          underPoint: odds.under_point ?? null,
-          overPrice: odds.over_price ?? null,
-          underPrice: odds.under_price ?? null,
-          snapshotTime: odds.snapshot_time,
-          season: game.seasonYear,
-          week: game.week,
-          createdAt: new Date(),
-        }).onConflictDoNothing()
-      );
-      inserted++;
-
-      // Flush batch when reaching size
-      if (statements.length >= BATCH_SIZE) {
-        await db.batch(statements as any);
-        statements.length = 0;
-      }
-    }
-
-    // Flush remaining statements
-    if (statements.length > 0) {
-      await db.batch(statements as any);
-    }
+    const season = body.season ?? resolveWeekFromCalendar(new Date()).season;
+    const { inserted, unchanged, skipped, total } = await syncGameOdds(db, { apiKey: oddsApiKey, season, week: body.week });
 
     invalidateCache('game-odds:', true);
 
@@ -1577,8 +1503,9 @@ adminRoutes.post('/sync-odds', async (c) => {
       success: true,
       message: 'Odds sync completed',
       inserted,
+      unchanged,
       skipped,
-      total: parsed.length,
+      total,
     });
   } catch (err) {
     console.error('Sync odds error:', err);

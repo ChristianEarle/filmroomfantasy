@@ -108,7 +108,10 @@ history accrues from the first daily cron.
 
 - [ ] Practice reports / injury designations (nflverse or ESPN, free)
 - [ ] Usage data: snap %, target share, red-zone touches (nflverse, free)
-- [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
+- [x] **Depth charts** — Sleeper's `depth_chart_order` was already synced to
+  `nfl_players.depth_chart_order` and returned by `GET /players`, just never
+  shown; `PlayerTable` and `PlayerCard` now label the position with the
+  depth slot (e.g. "RB2") whenever it's known.
 - [ ] Weather for outdoor games (Open-Meteo/NWS, free)
 - [x] **Redraft ADP** — via FantasyFootballCalculator's public JSON API
   (not Sleeper/Underdog as originally scoped), feeding both the AI
@@ -144,14 +147,15 @@ history accrues from the first daily cron.
 - [x] **AI post-game recaps** — `GET /games/:id/recap` generates a short
   Anthropic recap (pregame spread/total vs. actual result, each team's top
   fantasy performer, waiver-wire implications) for a finalized game,
-  generated once and cached per game (`game_ai_recaps`, migration `0049`).
+  generated once and cached per game (`game_ai_recaps`, migration `0051`).
   Pro/Elite gated like the per-player AI take. Surfaced on GameDetailModal;
   no cron needed — generated on first view, same pattern as the per-player
   AI take.
-- [ ] **ROS rankings** — partially done: Market projections already carry
-  a `rosProjectedPoints` number per player (#309), and `GET /market-rankings`
-  exposes it. What's still missing is a dedicated ROS *ranking type* (sorted
-  by remaining-season value rather than full-season value).
+- [x] **ROS rankings** — Market board gained a "By Season / By ROS" sort
+  toggle: selecting "By ROS" re-ranks the Market rankings table (overall +
+  position rank) by `rosPoints` instead of the default full-season VORP
+  rank, computed client-side from the existing `GET /market-rankings`
+  payload (no backend change needed).
 - [ ] **Expanded player row on the board** (inline stat breakdown) — the
   modal + AI take cover this; inline expand is a UX preference.
 - [ ] **De-shadow vendored `src/components/ui/*` primitives** — left

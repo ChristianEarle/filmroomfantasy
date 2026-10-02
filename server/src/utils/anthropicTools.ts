@@ -11,6 +11,8 @@
  * slow tool handler could otherwise blow past a caller's own timeout.
  */
 
+import { EFFORT_QUICK, maxTokensWithThinking } from './aiOutput';
+
 export interface AnthropicTextBlock {
   type: 'text';
   text: string;
@@ -127,7 +129,11 @@ export async function runAskWithTools(opts: RunAskWithToolsOptions): Promise<Run
     const isFinalRound = round === maxRounds;
     const body: Record<string, unknown> = {
       model: opts.model,
-      max_tokens: maxTokens,
+      // `maxTokens` is the visible answer budget; Sonnet 5's hidden thinking
+      // also counts toward max_tokens, so add headroom — see utils/aiOutput.ts.
+      max_tokens: maxTokensWithThinking(maxTokens),
+      // Ask AI runs under a tight wall-clock budget; keep the thinking short.
+      output_config: EFFORT_QUICK,
       system: opts.system,
       messages,
     };
