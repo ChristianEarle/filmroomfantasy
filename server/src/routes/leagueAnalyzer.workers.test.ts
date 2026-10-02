@@ -120,7 +120,10 @@ describe('league analyzer (workers pool)', () => {
     const analysis = await computeLeagueAnalysis(db, league, member, { withAiDetail: true });
     const detail = analysis.aiDetail?.[teamIds[0]];
     expect(detail?.roster).toHaveLength(LINEUP.length);
-    expect(detail?.roster.at(-1)?.isStarter).toBe(false);
+    expect(detail?.roster.map((p) => p.slot)).toEqual(['QB', 'RB1', 'WR1', 'TE', 'FLEX', 'SUPER_FLEX', 'K', 'DEF', 'BN1']);
+    // Trade advice never names a flex slot.
+    for (const t of analysis.teams) expect(['FLEX', 'SFLEX']).not.toContain(t.tradeTargetPosition);
+    expect(analysis.teams.map((t) => t.narrative).join(' ')).not.toMatch(/hole is (FLEX|SFLEX)\b/);
     expect(detail?.weeklyResults.map((r) => r.week)).toEqual([1, 2, 3]);
     expect(detail?.streak).toBe('L3');
     expect(detail?.remainingSchedule.map((s) => s.week)).toEqual([4, 5]);

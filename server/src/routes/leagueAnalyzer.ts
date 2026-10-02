@@ -413,6 +413,21 @@ export interface TeamAiDetail {
   roster: AiRosterPlayer[];
 }
 
+/** Reader-facing name for a lineup group: flex slots aren't positions. */
+function groupPhrase(group: BreakdownGroup): string {
+  if (group === 'FLEX') return 'the FLEX spot';
+  if (group === 'SFLEX') return 'the superflex spot';
+  return group;
+}
+
+/** Lineup display order for a starter: group order, then the slot's number (RB1 before RB2). */
+export function lineupOrder(slot: string, position: string): [number, number] {
+  const group = slotGroup(slot, position);
+  const groupIdx = group ? BREAKDOWN_GROUPS.indexOf(group) : BREAKDOWN_GROUPS.length;
+  const n = Number(/(\d+)$/.exec(slot)?.[1] ?? 0);
+  return [groupIdx, n];
+}
+
 /** Deterministic per-team narrative assembled from computed facts. */
 function buildNarrative(input: {
   name: string;
@@ -453,13 +468,13 @@ function buildNarrative(input: {
 
   if (best && best.deltaPct > 0) {
     sentences.push(
-      `Their biggest strength is ${best.position}, where the starters average ${round1(best.avgPoints)} points per game — ${round1(best.deltaPct)}% above the league average.`,
+      `Their biggest strength is ${groupPhrase(best.position)}, where the starters average ${round1(best.avgPoints)} points per game — ${round1(best.deltaPct)}% above the league average.`,
     );
   }
 
   if (worst && worst.deltaPct < 0) {
     sentences.push(
-      `The clearest hole is ${worst.position} (${round1(Math.abs(worst.deltaPct))}% below league average) — that's the position to target in trades or on waivers.`,
+      `The clearest hole is ${groupPhrase(worst.position)} (${round1(Math.abs(worst.deltaPct))}% below league average) — that's the spot to upgrade in trades or on waivers.`,
     );
   } else if (rated.length > 0) {
     sentences.push(`There's no glaring positional hole — balanced production is this roster's best asset.`);
@@ -852,7 +867,9 @@ export async function computeLeagueAnalysis(
         scheduleDeltaPct == null ? null : scheduleDeltaPct >= 3 ? 'tough' : scheduleDeltaPct <= -3 ? 'easy' : 'average';
 
       const mc = mcResults.get(team.id);
-      const rated = positions.filter((p) => p.starterCount > 0 && p.leagueAvg > 0);
+      // Trade targets are positions you can actually acquire, so the flex
+      // slot rows (filled by players of several positions) don't qualify.
+      const rated = positions.filter((p) => p.starterCount > 0 && p.leagueAvg > 0 && p.position !== 'FLEX' && p.position !== 'SFLEX');
       const worst = rated.length > 0 ? rated.reduce((a, b) => (b.deltaPct < a.deltaPct ? b : a)) : null;
 
       // Best-effort user-team flag via the membership's stored Sleeper user id.
@@ -1009,7 +1026,11 @@ export async function computeLeagueAnalysis(
           // Starters first in slot order, then bench by value.
           .sort((a, b) => {
             if (a.isStarter !== b.isStarter) return a.isStarter ? -1 : 1;
-            if (a.isStarter) return a.slot.localeCompare(b.slot, undefined, { numeric: true });
+            if (a.isStarter) {
+              const [ga, na] = lineupOrder(a.slot, a.position);
+              const [gb, nb] = lineupOrder(b.slot, b.position);
+              return ga !== gb ? ga - gb : na - nb;
+            }
             return (b.seasonPpg ?? b.projectedThisWeek ?? 0) - (a.seasonPpg ?? a.projectedThisWeek ?? 0);
           });
 

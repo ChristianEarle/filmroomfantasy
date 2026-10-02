@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { computeAllPlay, currentStreak, slotGroup, stdDev, weeklyResultsFor, type ScoredMatchup } from './leagueAnalyzer';
+import { computeAllPlay, currentStreak, lineupOrder, slotGroup, stdDev, weeklyResultsFor, type ScoredMatchup } from './leagueAnalyzer';
+
+describe('lineupOrder', () => {
+  it('orders starters QB, RB, WR, TE, FLEX, SUPERFLEX, K, DEF with numbered slots in sequence', () => {
+    const slots: Array<[string, string]> = [
+      ['DEF', 'DEF'], ['K', 'K'], ['SUPER_FLEX', 'QB'], ['FLEX2', 'WR'], ['FLEX1', 'RB'], ['TE', 'TE'],
+      ['WR2', 'WR'], ['WR1', 'WR'], ['RB2', 'RB'], ['RB1', 'RB'], ['QB', 'QB'],
+    ];
+    const sorted = [...slots].sort((a, b) => {
+      const [ga, na] = lineupOrder(a[0], a[1]);
+      const [gb, nb] = lineupOrder(b[0], b[1]);
+      return ga !== gb ? ga - gb : na - nb;
+    });
+    expect(sorted.map((s) => s[0])).toEqual(['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'TE', 'FLEX1', 'FLEX2', 'SUPER_FLEX', 'K', 'DEF']);
+  });
+
+  it('maps ESPN’s OP and RB/WR, WR/TE slots', () => {
+    expect(slotGroup('OP', 'QB')).toBe('SFLEX');
+    expect(slotGroup('RB/WR', 'RB')).toBe('FLEX');
+    expect(slotGroup('WR/TE', 'TE')).toBe('FLEX');
+  });
+});
 
 describe('slotGroup', () => {
   it('groups numbered Sleeper slots by the slot, not the player', () => {
