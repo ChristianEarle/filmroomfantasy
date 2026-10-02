@@ -33,7 +33,8 @@ import {
 import { generateId } from '../utils/id';
 import { resolveWeekFromCalendar } from './nflState';
 import { rowChanged, rowSetSignature } from '../utils/rowDiff';
-import { mergeDuplicateTeams, resolveActingUserTeam } from './teamDedupe';
+import { reconcileLeagueTeams, insertPlatformTeam, type PlatformTeam } from './teamIdentity';
+import { mergeLeagueInto } from './leagueIdentity';
 
 // A roster is the same roster when the same players sit in the same slots
 // with the same starter flags; ids and acquisition timestamps are not part
@@ -58,6 +59,12 @@ export interface SyncSleeperLeagueResult {
   unchanged: { rosters: number; matchups: number };
   /** Set when this sync detected a Sleeper season rollover and followed it to the successor league. */
   rolledOver?: { fromExternalId: string; toExternalId: string; season: number };
+  /**
+   * Set when the rollover target was already stored as another league row:
+   * this row was folded into that one (see services/leagueIdentity.ts) and
+   * no longer exists. Clients should switch to this id.
+   */
+  mergedIntoLeagueId?: string;
 }
 
 export interface SyncSleeperLeagueOptions {
@@ -342,6 +349,28 @@ export async function syncSleeperLeague(
         `[sleeper sync] League ${league.id} rolled over from Sleeper league ${fromExternalId} (season ${sleeperLeagueResult?.season}) to ${successor.league_id} (season ${targetSeason})`
       );
 
+      // The successor may already be stored as its own row (someone connected
+      // this season's league directly). One platform league is one row
+      // (leagues_platform_external_unique), so fold this row into that one
+      // and sync it instead of moving this row onto the same external id.
+      const alreadyStored = await db.query.leagues.findFirst({
+        where: and(eq(schema.leagues.platform, league.platform ?? 'sleeper'), eq(schema.leagues.externalId, successor.league_id)),
+      });
+      if (alreadyStored && alreadyStored.id !== league.id) {
+        await mergeLeagueInto(db, alreadyStored.id, league.id);
+        const survivorTeams = await db.query.teams.findMany({ where: eq(schema.teams.leagueId, alreadyStored.id) });
+        const result = await syncSleeperLeague(db, { ...alreadyStored, teams: survivorTeams }, {
+          ...opts,
+          targetSeason,
+          _rolledOverFrom: fromExternalId,
+        });
+        return {
+          ...result,
+          rolledOver: { fromExternalId, toExternalId: successor.league_id, season: targetSeason },
+          mergedIntoLeagueId: alreadyStored.id,
+        };
+      }
+
       await db.update(schema.leagues)
         .set({
           externalId: successor.league_id,
@@ -397,14 +426,6 @@ export async function syncSleeperLeague(
   if (!usersResponse.ok) {
     throw new Error('Failed to fetch users from Sleeper');
   }
-
-  // Self-heal duplicate team rows (two rows for one Sleeper owner) before
-  // matching rosters to rows — see services/teamDedupe.ts for how they arise
-  // and why the League Analyzer ranked a ghost row first.
-  const dedupe = await mergeDuplicateTeams(db, league.id);
-  const leagueTeams = dedupe.removedTeamIds.size > 0
-    ? league.teams.filter((t) => !dedupe.removedTeamIds.has(t.id))
-    : league.teams;
 
   const sleeperUsersRaw = await usersResponse.json();
   const sleeperUsers = validateSleeperArray(sleeperUsersRaw, isValidSleeperUser, 'users');
@@ -472,13 +493,17 @@ export async function syncSleeperLeague(
     }
   }
 
-  // Find the acting user's pre-existing team in our database, if any. This
-  // only matters the first time a manually-created (pre-Sleeper) team gets
-  // linked up — once externalOwnerId is set, the generic externalOwnerId
-  // match below finds it every time. Sleeper id first, app ownership only
-  // for a never-linked row: a linked row owned by the acting user may be an
-  // opponent's placeholder-owned row, and claiming it created duplicates.
-  const userTeam = resolveActingUserTeam(leagueTeams, actingUserId, userSleeperUserId);
+  // One row per Sleeper roster, keyed on roster_id (services/teamIdentity.ts).
+  // Reconcile adopts rows written before roster ids were stored (keyed on the
+  // manager's user id), lets each member's roster claim their unlinked
+  // placeholder from /connect, merges duplicates and drops empty ghosts.
+  const platformTeams: PlatformTeam[] = rosters.map((r) => ({
+    externalTeamId: String(r.roster_id),
+    legacyOwnerKey: String(r.owner_id),
+    appUserId: sleeperIdToAppUserId.get(String(r.owner_id)) ?? null,
+  }));
+  const reconciled = await reconcileLeagueTeams(db, league.id, platformTeams);
+  const teamIdByRosterId = new Map<number, string>();
 
   // Track whether the acting user's roster has been paired up yet
   let userRosterAssigned = false;
@@ -517,93 +542,61 @@ export async function syncSleeperLeague(
     const teamName = sleeperUser?.metadata?.team_name || sleeperUser?.display_name || `Team ${roster.roster_id}`;
     const ownerDisplayName = sleeperUser?.display_name || sleeperUser?.username || `Owner ${roster.roster_id}`;
     const sleeperOwnerId = String(roster.owner_id);
+    const rosterKey = String(roster.roster_id);
 
-    // Check if this roster belongs to the acting user - match by Sleeper user ID only (no fallback to first roster)
-    const isUserTeam = !!(actingUserId && userTeam && !userRosterAssigned && userSleeperUserId && roster.owner_id === userSleeperUserId);
+    // The acting user's own roster, matched by Sleeper user id only.
+    const isUserTeam = !!(actingUserId && userSleeperUserId && !userRosterAssigned && sleeperOwnerId === userSleeperUserId);
+    if (isUserTeam) userRosterAssigned = true;
 
-    let team;
-    if (isUserTeam) {
-      // Update the existing user team with Sleeper data
-      team = userTeam!;
-      userRosterAssigned = true;
-      const teamPatch = {
-        ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: team.ownerId, actingUserId, actingUserSleeperId: userSleeperUserId }),
-        externalOwnerId: sleeperOwnerId,
-        ownerDisplayName,
-        name: teamName,
-        wins: roster.settings?.wins || 0,
-        losses: roster.settings?.losses || 0,
-        ties: roster.settings?.ties || 0,
-        pointsFor: roster.settings?.fpts || 0,
-        pointsAgainst: roster.settings?.fpts_against || 0,
-        waiverPriority: roster.settings?.waiver_position || 1,
-        faabBudget: roster.settings?.waiver_budget_used != null
-          ? Math.max(0, (league.waiverBudget || 100) - roster.settings.waiver_budget_used)
-          : league.waiverBudget || 100,
+    const teamPatch = {
+      externalOwnerId: sleeperOwnerId,
+      ownerDisplayName,
+      name: teamName,
+      wins: roster.settings?.wins || 0,
+      losses: roster.settings?.losses || 0,
+      ties: roster.settings?.ties || 0,
+      pointsFor: roster.settings?.fpts || 0,
+      pointsAgainst: roster.settings?.fpts_against || 0,
+      waiverPriority: roster.settings?.waiver_position || 1,
+      // FAAB was only ever refreshed on the acting user's own row; kept as is.
+      ...(isUserTeam
+        ? {
+            faabBudget: roster.settings?.waiver_budget_used != null
+              ? Math.max(0, (league.waiverBudget || 100) - roster.settings.waiver_budget_used)
+              : league.waiverBudget || 100,
+          }
+        : {}),
+    };
+
+    let team: { id: string };
+    const existingTeam = reconciled.teamsByExternalTeamId.get(rosterKey);
+    if (existingTeam) {
+      team = existingTeam;
+      const patch = {
+        ...teamPatch,
+        ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: existingTeam.ownerId, actingUserId, actingUserSleeperId: userSleeperUserId }),
       };
       // Only write the row when Sleeper reports something different.
-      if (rowChanged(team as Record<string, unknown>, teamPatch, Object.keys(teamPatch))) {
+      if (rowChanged(existingTeam as Record<string, unknown>, patch, Object.keys(patch))) {
         await db.update(schema.teams)
-          .set({ ...teamPatch, updatedAt: new Date() })
+          .set({ ...patch, updatedAt: new Date() })
           .where(eq(schema.teams.id, team.id));
       }
     } else {
-      // Check if an opponent team already exists for this Sleeper user.
-      // Prefer externalOwnerId — it's the stable Sleeper user_id and won't
-      // collide when two teams share a display name. Fall back to the
-      // legacy name-based match only for teams created by older syncs
-      // that never recorded externalOwnerId.
-      const existingTeam =
-        leagueTeams.find(t => t.externalOwnerId === sleeperOwnerId) ||
-        leagueTeams.find(t =>
-          !t.externalOwnerId && (t.name === teamName || t.name.includes(`Roster ${roster.roster_id}`))
-        );
-
-      if (existingTeam) {
-        team = existingTeam;
-        const teamPatch = {
-          ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: existingTeam.ownerId, actingUserId, actingUserSleeperId: userSleeperUserId }),
-          externalOwnerId: sleeperOwnerId,
-          ownerDisplayName,
-          name: teamName,
-          wins: roster.settings?.wins || 0,
-          losses: roster.settings?.losses || 0,
-          ties: roster.settings?.ties || 0,
-          pointsFor: roster.settings?.fpts || 0,
-          pointsAgainst: roster.settings?.fpts_against || 0,
-          waiverPriority: roster.settings?.waiver_position || 1,
-        };
-        if (rowChanged(existingTeam as Record<string, unknown>, teamPatch, Object.keys(teamPatch))) {
-          await db.update(schema.teams)
-            .set({ ...teamPatch, updatedAt: new Date() })
-            .where(eq(schema.teams.id, team.id));
-        }
-      } else {
-        // Create new team for this roster. ownerId prefers a known app
-        // member match — an unmatched opponent roster falls back to
-        // whoever is running the sync, since teams.ownerId is NOT NULL
-        // (see decideTeamOwnerId doc comment above).
-        const teamId = generateId();
-        await db.insert(schema.teams).values({
-          id: teamId,
-          leagueId: league.id,
-          ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: null, actingUserId, actingUserSleeperId: userSleeperUserId }),
-          externalOwnerId: sleeperOwnerId,
-          ownerDisplayName,
-          name: teamName,
-          wins: roster.settings?.wins || 0,
-          losses: roster.settings?.losses || 0,
-          ties: roster.settings?.ties || 0,
-          pointsFor: roster.settings?.fpts || 0,
-          pointsAgainst: roster.settings?.fpts_against || 0,
-          waiverPriority: roster.settings?.waiver_position || 1,
-          faabBudget: roster.settings?.waiver_budget_used != null
-            ? Math.max(0, (league.waiverBudget || 100) - roster.settings.waiver_budget_used)
-            : league.waiverBudget || 100,
-        });
-        team = { id: teamId };
-      }
+      // New roster. ownerId prefers a known app member match; an unmatched
+      // opponent roster falls back to whoever is running the sync, since
+      // teams.ownerId is NOT NULL (see decideTeamOwnerId doc comment above).
+      const teamId = await insertPlatformTeam(db, {
+        id: generateId(),
+        leagueId: league.id,
+        externalTeamId: rosterKey,
+        ownerId: decideTeamOwnerId({ sleeperOwnerId, sleeperIdToAppUserId, currentOwnerId: null, actingUserId, actingUserSleeperId: userSleeperUserId }),
+        faabBudget: league.waiverBudget || 100,
+        ...teamPatch,
+      });
+      team = { id: teamId };
     }
+    teamIdByRosterId.set(roster.roster_id, team.id);
 
     // Sync roster players.
     // We build the full set of new roster_spots rows in memory first, then
@@ -611,7 +604,7 @@ export async function syncSleeperLeague(
     // previous pattern (delete-then-insert-in-a-loop) left a team with an
     // empty roster if any player insert failed mid-way. Doing all the work
     // up-front means a thrown error aborts before we wipe the old rows.
-    if (roster.players && roster.players.length > 0 && (isUserTeam || team)) {
+    if (roster.players && roster.players.length > 0) {
       // Get starters array from roster. Sleeper orders this array to match the
       // non-bench entries of the league's `roster_positions`, and uses the
       // sentinel "0" / "Invalid" for empty starter slots — so `starters[i]`
@@ -725,26 +718,9 @@ export async function syncSleeperLeague(
     }
   }
 
-  // Now sync matchups from Sleeper
-  // Build a map of roster_id to team_id
-  const rosterIdToTeamId = new Map<number, string>();
-
-  // Re-fetch teams after creating them
-  const updatedTeams = await db.query.teams.findMany({
-    where: eq(schema.teams.leagueId, league.id),
-  });
-
-  // Map rosters to teams by externalOwnerId (stable Sleeper user_id).
-  // Falling back to name would mis-route matchups when two Sleeper users
-  // share a display name; the team rows we just upserted above all carry
-  // externalOwnerId, so this lookup is reliable.
-  for (const roster of rosters) {
-    const sleeperOwnerId = String(roster.owner_id);
-    const matchingTeam = updatedTeams.find(t => t.externalOwnerId === sleeperOwnerId);
-    if (matchingTeam) {
-      rosterIdToTeamId.set(roster.roster_id, matchingTeam.id);
-    }
-  }
+  // Now sync matchups from Sleeper. Sleeper matchups reference roster_id,
+  // which is exactly the key every team row was just reconciled on.
+  const rosterIdToTeamId = teamIdByRosterId;
 
   // ── Apply Sleeper league metadata (fetched earlier) for week & settings ──
   let matchupsImported = 0;
