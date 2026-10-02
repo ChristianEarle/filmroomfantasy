@@ -136,6 +136,12 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   // Some callers pass richer player objects than App's Player interface declares.
   const playerExtras = player as Player & { status?: string; externalId?: string };
 
+  // "RB2", "WR3", etc. — falls back to the bare position when depth chart
+  // order isn't known (most K/DEF rows, and any player Sleeper hasn't slotted).
+  const positionLabel = player.depthChartOrder != null && player.depthChartOrder > 0
+    ? `${player.position}${player.depthChartOrder}`
+    : player.position;
+
   // --- Quick actions: Watch + Share ---
   const watchlist = useWatchlist();
   const isWatched = watchlist.isWatched(player.id);
@@ -499,7 +505,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       )}
                     </div>
                     <div className={`flex items-center gap-1.5 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <span>{player.team} • {player.position} •</span>
+                      <span>{player.team} • {positionLabel} •</span>
                       <select
                         value={selectedWeek}
                         onChange={(e) => { weekTouchedRef.current = true; setSelectedWeek(Number(e.target.value)); }}

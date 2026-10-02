@@ -9,6 +9,7 @@ import { cleanupExpiredRateLimits } from './middleware/rateLimit';
 import { snapshotRankHistory } from './services/draftRankings';
 import { generateInjuryNewsNotifications } from './services/notifications';
 import { getNflState } from './services/nflState';
+import { legacyOwns } from './ingest/ownership';
 
 // Import routes
 import { authRoutes } from './routes/auth';
@@ -22,6 +23,8 @@ import { feedbackRoutes } from './routes/feedback';
 import { yahooRoutes } from './routes/yahoo';
 import { billingRoutes } from './routes/billing';
 import { adminStatsRoutes } from './routes/admin-stats';
+import { adminIngestRoutes } from './routes/adminIngest';
+import { statusRoutes } from './routes/status';
 import { tradesRoutes } from './routes/trades';
 import { rostersRoutes } from './routes/rosters';
 import { tradeHistoryRoutes } from './routes/tradeHistory';
@@ -216,7 +219,11 @@ app.route('/api/billing', billingRoutes);
 app.route('/api/trades', tradesRoutes);
 app.route('/api/trade-history', tradeHistoryRoutes);
 app.route('/api/rosters', rostersRoutes);
+// Before adminStatsRoutes: its use('*') CORS middleware would otherwise run
+// on /api/admin/ingest/* and replace the global CORS origin.
+app.route('/api/admin', adminIngestRoutes);
 app.route('/api/admin', adminStatsRoutes);
+app.route('/api/status', statusRoutes);
 app.route('/api/analytics', analyticsRoutes);
 app.route('/api/articles', articleRoutes);
 app.route('/api/draft-rankings', draftRankingsRoutes);
@@ -250,6 +257,21 @@ app.onError((err, c) => {
 // sync cron (POST /api/admin/sync-leagues) runs — every 4h in-season to keep
 // matchups/rosters fresh, once a day off-season since nothing changes — and
 // how stale a league may get before opening it in the app re-syncs it.
+
+type CallSync = (path: string, body?: object) => Promise<boolean>;
+
+/**
+ * The 4-hour cron's game-odds step. The owner is read at run time, so cutting
+ * the odds group over to the ingest Worker (or back) takes effect on the next
+ * tick and only one scheduler writes it.
+ */
+export async function runLegacyOddsSync(db: D1Database, callSync: CallSync, week: number, season: number): Promise<void> {
+  if (await legacyOwns(db, 'odds')) {
+    await callSync('/api/admin/sync-odds', { week, season });
+  } else {
+    console.log('[cron] /api/admin/sync-odds skipped: the odds group is owned by the ingest Worker');
+  }
+}
 
 // Scheduled handler for Cloudflare Cron Triggers
 // Uses app.fetch() to call existing admin endpoints internally
@@ -357,7 +379,7 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // preseason and regular season every Odds API call would be wasted.
     if (state.seasonType === 'regular' || state.seasonType === 'preseason') {
       await callSync('/api/admin/sync-player-props', { week: currentWeek });
-      await callSync('/api/admin/sync-odds', { week: currentWeek, season: currentSeason });
+      await runLegacyOddsSync(env.DB, callSync, currentWeek, currentSeason);
     }
 
     // Sync stats for current week + previous week (for late-breaking plays)

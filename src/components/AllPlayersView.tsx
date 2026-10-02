@@ -120,7 +120,13 @@ export function AllPlayersView({
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [players, setPlayers] = useState<APIPlayer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A failed "Load more" keeps the rows already shown and offers a retry of
+  // the same page, instead of replacing the table with the full error panel.
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -166,14 +172,18 @@ export function AllPlayersView({
   // clobber the state written by a newer request when filters change quickly.
   const fetchSeqRef = useRef(0);
 
-  // Fetch players from API (week-specific: past weeks = actual pts, current = projections)
-  const fetchPlayers = useCallback(async () => {
+  // Fetch players from API (week-specific: past weeks = actual pts, current = projections).
+  // pageNum/append drive "Load More": append=false replaces the list (filters changed),
+  // append=true tacks the next page on (server total is much larger than one page — see
+  // ALL_PLAYERS_PAGE_SIZE — so without this, players ranked below the page cutoff were
+  // simply unreachable).
+  const fetchPlayers = useCallback(async (pageNum: number, append: boolean) => {
     const seq = ++fetchSeqRef.current;
-    setLoading(true);
-    setError(null);
+    if (append) setLoadingMore(true); else setLoading(true);
+    if (append) setLoadMoreError(null); else { setError(null); setLoadMoreError(null); }
     try {
       const params = new URLSearchParams({
-        page: '1',
+        page: String(pageNum),
         limit: String(ALL_PLAYERS_PAGE_SIZE),
         includeStats: 'true',
         sortBy: 'projectedPoints',
@@ -212,22 +222,34 @@ export function AllPlayersView({
         );
       }
 
-      setPlayers(playersList);
+      setPlayers(prev => append ? [...prev, ...playersList] : playersList);
+      setPage(pageNum);
+      setTotalCount(response?.pagination?.total ?? playersList.length);
     } catch (err) {
       if (seq !== fetchSeqRef.current) return;
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch players';
-      setError(errorMessage);
-      setPlayers([]);
+      if (append) {
+        setLoadMoreError(errorMessage);
+      } else {
+        setError(errorMessage);
+        setPlayers([]);
+      }
     } finally {
       if (seq === fetchSeqRef.current) {
         setLoading(false);
+        setLoadingMore(false);
       }
     }
   }, [selectedPosition, league?.id, debouncedSearchQuery, currentWeek, seasonYear, scoringFormat]);
 
   useEffect(() => {
-    fetchPlayers();
+    fetchPlayers(1, false);
   }, [fetchPlayers]);
+
+  const handleLoadMore = useCallback(() => {
+    if (loading || loadingMore) return;
+    fetchPlayers(page + 1, true);
+  }, [fetchPlayers, loading, loadingMore, page]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -419,7 +441,9 @@ export function AllPlayersView({
             <div className="flex-1"></div>
 
             <span className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-              {sortedAndFilteredPlayers.length} players
+              {players.length < totalCount
+                ? `${sortedAndFilteredPlayers.length} of ${totalCount} players`
+                : `${sortedAndFilteredPlayers.length} players`}
             </span>
           </div>
         </div>
@@ -431,7 +455,7 @@ export function AllPlayersView({
               <p className="font-medium">Error loading players</p>
               <p className="text-sm opacity-80 mt-1">{error}</p>
               <button
-                onClick={fetchPlayers}
+                onClick={() => fetchPlayers(1, false)}
                 className="mt-3 px-4 py-2 text-sm font-medium rounded-lg bg-red-500/20 hover:bg-red-500/30 transition-colors"
               >
                 Retry
@@ -539,6 +563,23 @@ export function AllPlayersView({
               </tbody>
 
             </table>
+          )}
+          {!loading && !error && players.length < totalCount && (
+            <div className="flex flex-col items-center gap-2 py-4">
+              {loadMoreError && (
+                <p role="alert" className="text-xs text-red-500">
+                  Couldn't load more players: {loadMoreError}
+                </p>
+              )}
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              >
+                {loadingMore && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+                {loadingMore ? 'Loading…' : loadMoreError ? 'Try again' : `Load more (${players.length} of ${totalCount})`}
+              </button>
+            </div>
           )}
         </div>
 
