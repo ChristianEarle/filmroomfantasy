@@ -3,6 +3,8 @@ import { BarChart3, ChevronDown, RefreshCw, AlertTriangle, Calendar, Trophy, Spa
 import { useLeagueContext } from '../context/LeagueContext';
 import { useAuth } from '../context/AuthContext';
 import api, { ApiError } from '../services/api';
+import { LeagueTrends } from './leagueAnalyzer/LeagueTrends';
+import { SlotRankGrid } from './leagueAnalyzer/SlotRankGrid';
 
 // ── Types (mirror GET /api/league-analyzer/:leagueId) ─────────────────────────
 
@@ -36,6 +38,10 @@ interface AnalyzedTeam {
   rank: number;
   record: { wins: number; losses: number; ties: number };
   gamesPlayed: number;
+  /** Record if the team had played every other team every completed week; winPct 0-100. */
+  allPlay: { wins: number; losses: number; ties: number; winPct: number | null };
+  /** Actual win % minus all-play win %, in points; positive = the schedule has helped. */
+  luck: number | null;
   pointsFor: number;
   pointsAgainst: number;
   ppg: number;
@@ -169,7 +175,13 @@ const heatCellClasses = (status: PositionBreakdown['status'], isDarkMode: boolea
     : 'bg-slate-100 text-slate-500 border-slate-200';
 };
 
-const scheduleChipClasses = (label: 'tough' | 'average' | 'easy' | null, isDarkMode: boolean): string => {
+/** "+8.3" / "-4.1" / "0.0" for a luck value in win-% points. */
+const formatLuck = (luck: number) => `${luck > 0 ? '+' : ''}${luck.toFixed(1)}`;
+
+/** Plain-language read of schedule luck; a few points either way is noise. */
+const luckLabel = (luck: number) => (luck >= 5 ? 'Lucky' : luck <= -5 ? 'Unlucky' : 'Neutral luck');
+
+const scheduleChipClasses =(label: 'tough' | 'average' | 'easy' | null, isDarkMode: boolean): string => {
   if (label === 'tough') return 'bg-red-500/15 text-red-500 border-red-500/30';
   if (label === 'easy') return 'bg-green-500/15 text-green-500 border-green-500/30';
   return isDarkMode
@@ -449,6 +461,15 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
             <div className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
               Playoff odds <span className={`font-semibold ${oddsColor(userTeamData.playoffOdds)}`}>{userTeamData.playoffOdds}%</span>
             </div>
+            {userTeamData.allPlay.winPct != null && (
+              <div
+                className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}
+                title="Your record if you had played every team every week. The gap to your real record is schedule luck."
+              >
+                All-play <span className="font-semibold">{formatRecord(userTeamData.allPlay.wins, userTeamData.allPlay.losses, userTeamData.allPlay.ties)}</span>
+                {userTeamData.luck != null && <> • Luck <span className="font-semibold">{formatLuck(userTeamData.luck)}</span></>}
+              </div>
+            )}
             {userTeamData.tradeTargetPosition && (
               <div className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                 Trade target: <span className="font-semibold">{userTeamData.tradeTargetPosition}</span>
@@ -494,6 +515,21 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
           <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>No AI briefing available yet.</p>
         )}
       </div>
+
+      {/* Season trends: playoff odds, standings, scoring and AI power rank by week */}
+      <LeagueTrends
+        leagueId={analysis.league.id}
+        isDarkMode={isDarkMode}
+        defaultTeamId={userTeamData?.id ?? userTeam?.id ?? null}
+      />
+
+      {/* League-wide slot rankings grid */}
+      <SlotRankGrid
+        teams={displayTeams}
+        columns={positionColumns}
+        isDarkMode={isDarkMode}
+        cellClasses={heatCellClasses}
+      />
 
       {/* Ranked team cards */}
       <div className="flex items-center gap-2 px-1">
@@ -551,7 +587,15 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
                       )}
                     </div>
                     <div className={`text-xs mt-0.5 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <span>{team.ownerName} • {formatRecord(team.record.wins, team.record.losses, team.record.ties)} • {team.ppg.toFixed(1)} PPG • {team.pointsAgainst.toFixed(1)} PA</span>
+                      <span>
+                        {team.ownerName} • {formatRecord(team.record.wins, team.record.losses, team.record.ties)}
+                        {team.allPlay.winPct != null && (
+                          <span title="Record if this team had played every other team every week">
+                            {' '}(all-play {formatRecord(team.allPlay.wins, team.allPlay.losses, team.allPlay.ties)})
+                          </span>
+                        )}
+                        {' '}• {team.ppg.toFixed(1)} PPG • {team.pointsAgainst.toFixed(1)} PA
+                      </span>
                       {team.recentFormPpg != null && team.trend !== 'steady' && (
                         <span
                           title={`Last 3 games: ${team.recentFormPpg.toFixed(1)} PPG`}
@@ -641,6 +685,23 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
                     >
                       {recordVsStrengthLabel[team.recordVsStrength]}
                     </span>
+
+                    {team.allPlay.winPct != null && (
+                      <span
+                        title={`If this team had played every other team every week, it would be ${formatRecord(team.allPlay.wins, team.allPlay.losses, team.allPlay.ties)} (${team.allPlay.winPct.toFixed(1)}%).${team.luck != null ? ` Its real win rate is ${formatLuck(team.luck)} points ${team.luck >= 0 ? 'above' : 'below'} that — schedule luck.` : ''}`}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-semibold ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}
+                      >
+                        <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>All-play</span>
+                        <span className={isDarkMode ? 'text-white' : 'text-slate-900'}>
+                          {formatRecord(team.allPlay.wins, team.allPlay.losses, team.allPlay.ties)} ({team.allPlay.winPct.toFixed(1)}%)
+                        </span>
+                        {team.luck != null && (
+                          <span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>
+                            • {luckLabel(team.luck)} {formatLuck(team.luck)}
+                          </span>
+                        )}
+                      </span>
+                    )}
 
                     {team.biggestSwingGame && (
                       <span
