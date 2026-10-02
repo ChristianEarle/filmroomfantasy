@@ -144,8 +144,13 @@ history accrues from the first daily cron.
   tool-calling loop (lookup_player/search_players/get_matchup/
   get_my_lineup) and league awareness via `leagueId`, which covers most of
   the value a global assistant would add.
-- [ ] **AI post-game recaps** — cron on `gameStatus === 'final'`,
-  cache per game; surface on GameDetailModal + matchup recap.
+- [x] **AI post-game recaps** — `GET /games/:id/recap` generates a short
+  Anthropic recap (pregame spread/total vs. actual result, each team's top
+  fantasy performer, waiver-wire implications) for a finalized game,
+  generated once and cached per game (`game_ai_recaps`, migration `0051`).
+  Pro/Elite gated like the per-player AI take. Surfaced on GameDetailModal;
+  no cron needed — generated on first view, same pattern as the per-player
+  AI take.
 - [x] **ROS rankings** — Market board gained a "By Season / By ROS" sort
   toggle: selecting "By ROS" re-ranks the Market rankings table (overall +
   position rank) by `rosPoints` instead of the default full-season VORP
