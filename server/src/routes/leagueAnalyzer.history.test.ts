@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { computeLeagueHistory, type ScoredMatchup } from './leagueAnalyzer';
 
 type M = ScoredMatchup & { id: string };
@@ -25,7 +25,7 @@ function season(weeksPlayed: number): M[] {
 
 describe('computeLeagueHistory', () => {
   it('has one entry per completed regular-season week, with cumulative records', () => {
-    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], season(2), 2, 500);
+    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], season(2), 2, { numSims: 500 });
     expect(h.map((w) => w.week)).toEqual([1, 2]);
     const wk2 = new Map(h[1].teams.map((t) => [t.teamId, t]));
     expect(wk2.get('a')).toMatchObject({ wins: 2, losses: 0, pointsFor: 260, standingsRank: 1, scoringRank: 1 });
@@ -33,7 +33,7 @@ describe('computeLeagueHistory', () => {
   });
 
   it('gives final odds once the regular season is over and ignores the playoff bracket', () => {
-    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], season(3), 2, 500);
+    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], season(3), 2, { numSims: 500 });
     expect(h.map((w) => w.week)).toEqual([1, 2, 3]);
     const final = new Map(h[2].teams.map((t) => [t.teamId, t.playoffOdds]));
     expect(final.get('a')).toBe(100);
@@ -43,7 +43,7 @@ describe('computeLeagueHistory', () => {
   });
 
   it('shows real uncertainty mid-season', () => {
-    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], season(1), 2, 2000);
+    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], season(1), 2, { numSims: 2000 });
     const odds = h[0].teams.map((t) => t.playoffOdds);
     expect(odds.some((o) => o > 0 && o < 100)).toBe(true);
     // Two playoff spots: the odds sum to about 200.
@@ -57,11 +57,32 @@ describe('computeLeagueHistory', () => {
     const games = season(2).map((g) =>
       g.week === 2 && g.homeTeamId === 'b' ? { ...g, isComplete: false } : g,
     );
-    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], games, 2, 200);
+    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], games, 2, { numSims: 200 });
     expect(h.map((w) => w.week)).toEqual([1]);
   });
 
   it('returns nothing before any week is complete', () => {
-    expect(computeLeagueHistory(['a', 'b', 'c', 'd'], season(0), 2, 100)).toEqual([]);
+    expect(computeLeagueHistory(['a', 'b', 'c', 'd'], season(0), 2, { numSims: 100 })).toEqual([]);
+  });
+
+  it('counts a scored game that was never flagged complete once later weeks are done', () => {
+    // Week 1's b-c game was played (scored) but the sync never flagged it.
+    const games = season(2).map((g) => (g.week === 1 && g.homeTeamId === 'b' ? { ...g, isComplete: false } : g));
+    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], games, 2, { numSims: 100 });
+    expect(h.map((w) => w.week)).toEqual([1, 2]);
+    const wk2 = new Map(h[1].teams.map((t) => [t.teamId, t]));
+    expect(wk2.get('b')).toMatchObject({ wins: 2, losses: 0 });
+    expect(wk2.get('c')).toMatchObject({ wins: 0, losses: 2 });
+  });
+
+  it('adds the weekly median game in median leagues', () => {
+    const h = computeLeagueHistory(['a', 'b', 'c', 'd'], season(1), 2, { numSims: 100, medianGames: true });
+    const wk1 = new Map(h[0].teams.map((t) => [t.teamId, t]));
+    // Scores 130/115/100/85: a and b beat the median, c and d don't.
+    expect(wk1.get('a')).toMatchObject({ wins: 2, losses: 0 });
+    expect(wk1.get('b')).toMatchObject({ wins: 2, losses: 0 });
+    expect(wk1.get('c')).toMatchObject({ wins: 0, losses: 2 });
+    expect(wk1.get('d')).toMatchObject({ wins: 0, losses: 2 });
   });
 });
+

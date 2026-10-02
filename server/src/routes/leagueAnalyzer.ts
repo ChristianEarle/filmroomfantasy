@@ -370,17 +370,28 @@ export interface HistoryWeek {
  * playoff odds the same Monte Carlo model would have given at that point
  * (that week's records against the schedule still to come). Needs no stored
  * snapshots, so a league gets its full history the first time it's viewed.
- * A week counts once every regular-season game in it is complete and scored.
+ *
+ * - A game counts as played when it has scores and is flagged complete, or
+ *   when a later week has completed games (a sync that never flagged it must
+ *   not drop the week or leave both teams a game short from then on).
+ * - A week counts once every regular-season game in it has been played.
+ * - `medianGames`: leagues with a weekly "vs. median" game give every team an
+ *   extra result per week (top half of scores win). The synced records the
+ *   headline numbers use include them, so the replay must too.
+ * - Same simulation count as the headline odds, so the latest point matches.
  */
 export function computeLeagueHistory(
   teamIds: string[],
   matchups: Array<ScoredMatchup & { id: string }>,
   playoffSpots: number,
-  numSims = 2000,
+  opts: { numSims?: number; medianGames?: boolean } = {},
 ): HistoryWeek[] {
+  const numSims = opts.numSims ?? NUM_SIMULATIONS;
   const regular = matchups.filter((m) => !m.isPlayoff);
   const weeks = [...new Set(regular.map((m) => m.week))].sort((a, b) => a - b);
-  const done = (m: ScoredMatchup) => m.isComplete && m.homeScore != null && m.awayScore != null;
+  const lastFlaggedWeek = Math.max(0, ...regular.filter((m) => m.isComplete).map((m) => m.week));
+  const done = (m: ScoredMatchup) =>
+    m.homeScore != null && m.awayScore != null && (m.isComplete || m.week < lastFlaggedWeek);
   const completedWeeks = weeks.filter((w) => {
     const games = regular.filter((m) => m.week === w);
     return games.length > 0 && games.every(done);
@@ -389,6 +400,7 @@ export function computeLeagueHistory(
   const history: HistoryWeek[] = [];
   for (const week of completedWeeks) {
     const rec = new Map(teamIds.map((id) => [id, { wins: 0, losses: 0, ties: 0, pointsFor: 0 }]));
+    const scoresByWeek = new Map<number, Array<[string, number]>>();
     for (const m of regular) {
       if (m.week > week || !done(m)) continue;
       const h = rec.get(m.homeTeamId);
@@ -399,6 +411,22 @@ export function computeLeagueHistory(
       h.pointsFor += hs;
       a.pointsFor += as;
       if (hs > as) { h.wins++; a.losses++; } else if (as > hs) { a.wins++; h.losses++; } else { h.ties++; a.ties++; }
+      const list = scoresByWeek.get(m.week) || [];
+      list.push([m.homeTeamId, hs], [m.awayTeamId, as]);
+      scoresByWeek.set(m.week, list);
+    }
+    if (opts.medianGames) {
+      for (const scores of scoresByWeek.values()) {
+        const sorted = scores.map(([, s]) => s).sort((x, y) => x - y);
+        const mid = sorted.length / 2;
+        const median = sorted.length % 2 === 1 ? sorted[Math.floor(mid)] : (sorted[mid - 1] + sorted[mid]) / 2;
+        for (const [id, s] of scores) {
+          const r = rec.get(id)!;
+          if (s > median) r.wins++;
+          else if (s < median) r.losses++;
+          else r.ties++;
+        }
+      }
     }
     const standings: StandingInput[] = teamIds.map((id) => ({ teamId: id, ...rec.get(id)! }));
     const remaining: RemainingMatchup[] = regular
@@ -1229,13 +1257,23 @@ leagueAnalyzerRoutes.get('/:leagueId/history', authMiddleware, async (c) => {
 
   try {
     const [teams, matchups] = await Promise.all([
-      db.query.teams.findMany({ where: eq(schema.teams.leagueId, leagueId), columns: { id: true, name: true } }),
+      db.query.teams.findMany({
+        where: eq(schema.teams.leagueId, leagueId),
+        columns: { id: true, name: true, wins: true, losses: true, ties: true },
+      }),
       db.query.matchups.findMany({
         where: eq(schema.matchups.leagueId, leagueId),
         columns: { id: true, week: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true, isComplete: true, isPlayoff: true },
       }),
     ]);
-    const weeks = computeLeagueHistory(teams.map((t) => t.id), matchups, league.playoffTeams || 6);
+    const teamRecords = teams;
+    // Median-game leagues: the synced records (what the headline numbers use)
+    // carry about two results per played week — one head-to-head, one vs. the
+    // median — so team games come to roughly twice the completed matchup slots.
+    const completedTeamGames = 2 * matchups.filter((m) => !m.isPlayoff && m.isComplete).length;
+    const recordedTeamGames = teamRecords.reduce((s, t) => s + t.wins + t.losses + t.ties, 0);
+    const medianGames = completedTeamGames > 0 && recordedTeamGames >= completedTeamGames * 1.75;
+    const weeks = computeLeagueHistory(teams.map((t) => t.id), matchups, league.playoffTeams || 6, { medianGames });
 
     let urlHostname: string | null = null;
     try { urlHostname = new URL(c.req.url).hostname; } catch { urlHostname = null; }
@@ -1253,8 +1291,12 @@ leagueAnalyzerRoutes.get('/:leagueId/history', authMiddleware, async (c) => {
         try {
           const ranking = JSON.parse(p.rankingJson) as unknown;
           // Keep only the current team ids (a merged or removed team drops out).
-          if (Array.isArray(ranking)) {
-            aiPowerRankings.push({ week: p.week, ranking: ranking.filter((id): id is string => typeof id === 'string' && teamIdSet.has(id)) });
+          // A pulse is stored under the week in progress when it was generated,
+          // so it reflects results through the week before — plot it there, in
+          // line with the other trend lines ("Wk N" = after week N).
+          const reflectsWeek = p.week - 1;
+          if (Array.isArray(ranking) && reflectsWeek >= 1) {
+            aiPowerRankings.push({ week: reflectsWeek, ranking: ranking.filter((id): id is string => typeof id === 'string' && teamIdSet.has(id)) });
           }
         } catch {
           // A corrupted cache row just leaves that week out.

@@ -28,10 +28,10 @@ interface LeagueHistory {
 type Metric = 'odds' | 'standings' | 'scoring' | 'power';
 
 const METRICS: Array<{ key: Metric; label: string; isRank: boolean; describe: string }> = [
-  { key: 'odds', label: 'Playoff odds', isRank: false, describe: 'Playoff odds after each week, from the same 5,000-run simulation as above, replayed from that week\'s records.' },
+  { key: 'odds', label: 'Playoff odds', isRank: false, describe: 'Playoff odds as they stood after each week: the same 5,000-run simulation as the odds above, replayed from that week\'s records.' },
   { key: 'standings', label: 'Standings', isRank: true, describe: 'Win-loss standings rank after each week (points for breaks ties).' },
   { key: 'scoring', label: 'Scoring rank', isRank: true, describe: 'Rank by points per game after each week.' },
-  { key: 'power', label: 'AI power rank', isRank: true, describe: 'The FilmRoom AI power ranking for each week it was generated.' },
+  { key: 'power', label: 'AI power rank', isRank: true, describe: 'The FilmRoom AI power ranking, plotted at the week of results it was based on, for each week one was generated.' },
 ];
 
 /** Emphasis palette: one highlighted team, everything else is gray context. Validated against both card surfaces. */
