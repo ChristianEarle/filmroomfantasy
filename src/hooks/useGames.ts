@@ -122,14 +122,31 @@ export function useGame(gameId: string | null) {
   // whatever data was fetched when it was first opened.
   useEffect(() => {
     if (!game || game.isComplete) return;
-    if (new Date(game.gameTime).getTime() > Date.now()) return; // hasn't kicked off yet
     const tick = () => {
       if (document.visibilityState === 'visible') fetchGame(true);
     };
-    const intervalId = setInterval(tick, 30_000);
-    document.addEventListener('visibilitychange', tick);
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    const startPolling = () => {
+      intervalId = setInterval(tick, 30_000);
+      document.addEventListener('visibilitychange', tick);
+    };
+    // Opened before kickoff: start polling at kickoff (with an immediate
+    // refresh then), so a modal left open into the game doesn't stay frozen.
+    // Beyond setTimeout's ~24.8-day limit, there's nothing to schedule.
+    const untilKickoff = new Date(game.gameTime).getTime() - Date.now();
+    let kickoffTimer: ReturnType<typeof setTimeout> | undefined;
+    if (untilKickoff > 0) {
+      if (untilKickoff > 2_147_000_000) return;
+      kickoffTimer = setTimeout(() => {
+        tick();
+        startPolling();
+      }, untilKickoff);
+    } else {
+      startPolling();
+    }
     return () => {
-      clearInterval(intervalId);
+      if (kickoffTimer) clearTimeout(kickoffTimer);
+      if (intervalId) clearInterval(intervalId);
       document.removeEventListener('visibilitychange', tick);
     };
   }, [game?.id, game?.isComplete, game?.gameTime, fetchGame]);

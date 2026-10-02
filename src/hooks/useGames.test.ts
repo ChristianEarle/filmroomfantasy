@@ -57,20 +57,27 @@ describe('useGame', () => {
     expect(h.getGame).toHaveBeenCalledTimes(2);
   });
 
-  it('does not poll a game that has not kicked off yet', async () => {
+  it('waits for kickoff, then refreshes and keeps polling', async () => {
+    vi.useFakeTimers();
     h.getGame.mockResolvedValue({
       game: makeGame({ gameTime: new Date(Date.now() + 3_600_000).toISOString() }),
       homePlayers: [],
       awayPlayers: [],
     });
 
-    vi.useFakeTimers();
     renderHook(() => useGame('g1'));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(h.getGame).toHaveBeenCalledTimes(1);
 
+    // Before kickoff: no polling.
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(h.getGame).toHaveBeenCalledTimes(1);
+
+    // At kickoff: an immediate refresh, then every 30s.
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_540_000); });
+    expect(h.getGame).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(h.getGame).toHaveBeenCalledTimes(3);
   });
 
   it('refetch() re-fetches in the foreground', async () => {
