@@ -230,6 +230,9 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketAsOfWeek, setMarketAsOfWeek] = useState<number | null>(null);
+  // Market-only sort: 'season' (default, matches marketRank/VORP) or 'ros'
+  // (remaining-season value) — the dedicated ROS ranking type.
+  const [marketSortBy, setMarketSortBy] = useState<'season' | 'ros'>('season');
 
   const { user, isAuthenticated } = useAuth();
   const watchlist = useWatchlist();
@@ -365,7 +368,9 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
   }, [rankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
 
   // Market rows adapted into the same shape PlayerRow renders, filtered the
-  // same way as the AI list (position/search/watching).
+  // same way as the AI list (position/search/watching). When sorted by ROS,
+  // re-rank the filtered list by remaining-season value instead of the
+  // season-long VORP rank the API returns rows in.
   const filteredMarketRankings = useMemo(() => {
     let filtered = marketRankings.map(marketRowToDraftRanking);
     if (positionFilter !== 'ALL') {
@@ -380,8 +385,13 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
     if (watchingOnly) {
       filtered = filtered.filter(r => watchlist.watchedIds.has(r.player.id));
     }
+    if (marketSortBy === 'ros') {
+      filtered = [...filtered]
+        .sort((a, b) => (b.rosPoints ?? -Infinity) - (a.rosPoints ?? -Infinity))
+        .map((r, i) => ({ ...r, overallRank: r.rosPoints != null ? i + 1 : r.overallRank }));
+    }
     return filtered;
-  }, [marketRankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds]);
+  }, [marketRankings, positionFilter, searchQuery, watchingOnly, watchlist.watchedIds, marketSortBy]);
 
   const handlePlayerClick = useCallback((ranking: DraftRanking) => {
     const p = ranking.player;
@@ -542,6 +552,18 @@ export function DraftRankingsView({ onPlayerClick, isDarkMode, onNavigate }: Dra
               {pill(rankingView === 'redraft', () => setRankingView('redraft'), 'Redraft')}
               {pill(rankingView === 'dynasty', () => setRankingView('dynasty'), 'Dynasty')}
               {pill(rankingView === 'rookie', () => setRankingView('rookie'), 'Rookie')}
+            </div>
+
+            <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+          </>
+        )}
+
+        {isMarket && (
+          <>
+            {/* Sort: full-season (VORP/market rank) vs remaining-season value */}
+            <div className="flex gap-1">
+              {pill(marketSortBy === 'season', () => setMarketSortBy('season'), 'Season')}
+              {pill(marketSortBy === 'ros', () => setMarketSortBy('ros'), 'ROS')}
             </div>
 
             <span className={`hidden sm:inline-block h-5 w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />

@@ -593,6 +593,32 @@ describe('DraftRankingsView — Market source toggle', () => {
     expect(table().getByText('EST')).toBeInTheDocument(); // weekly_extrapolation confidence
   });
 
+  it('re-sorts the Market board by remaining-season value when the ROS pill is clicked', async () => {
+    hoisted.mockGet.mockImplementation((url: string) => {
+      if (url.includes('/market-rankings')) {
+        return Promise.resolve(marketResponse([
+          // Higher season total but a late bye/injury drags its ROS total below Faller's.
+          makeMarketRanking({ playerId: 'm1', marketRank: 1, position: 'RB', name: 'Market Riser', team: 'DET', seasonPoints: 312.4, rosPoints: 80.0 }),
+          makeMarketRanking({ playerId: 'm2', marketRank: 2, position: 'WR', name: 'Market Faller', team: 'MIA', seasonPoints: 298.7, rosPoints: 240.5 }),
+        ]));
+      }
+      return Promise.resolve(response(ALL));
+    });
+    renderView();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Market' }));
+    await screen.findByText('Market Riser');
+
+    const namesInOrder = () => table().getAllByText(/^Market (Riser|Faller)$/).map(el => el.textContent);
+
+    // Default (Season) order matches marketRank: Riser (#1) before Faller (#2).
+    expect(namesInOrder()).toEqual(['Market Riser', 'Market Faller']);
+
+    // ROS flips the order since Faller's remaining-season total is higher.
+    fireEvent.click(screen.getByRole('button', { name: 'ROS' }));
+    expect(namesInOrder()).toEqual(['Market Faller', 'Market Riser']);
+  });
+
   it('disables rationale expand for Market rows (no chevron, no expand panel on click)', async () => {
     renderView();
     await loaded();

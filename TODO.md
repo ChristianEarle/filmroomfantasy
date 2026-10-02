@@ -143,10 +143,11 @@ history accrues from the first daily cron.
   the value a global assistant would add.
 - [ ] **AI post-game recaps** — cron on `gameStatus === 'final'`,
   cache per game; surface on GameDetailModal + matchup recap.
-- [ ] **ROS rankings** — partially done: Market projections already carry
-  a `rosProjectedPoints` number per player (#309), and `GET /market-rankings`
-  exposes it. What's still missing is a dedicated ROS *ranking type* (sorted
-  by remaining-season value rather than full-season value).
+- [x] **ROS rankings** — Market projections already carry a
+  `rosProjectedPoints` number per player (#309), and `GET /market-rankings`
+  exposes it. The Market board on Draft Rankings now has a Season/ROS sort
+  toggle that re-ranks the (filtered) list by remaining-season value instead
+  of the full-season VORP rank when ROS is selected.
 - [ ] **Expanded player row on the board** (inline stat breakdown) — the
   modal + AI take cover this; inline expand is a UX preference.
 - [ ] **De-shadow vendored `src/components/ui/*` primitives** — left
