@@ -3,6 +3,8 @@
  * Uses Claude API to determine relevance of tweets/articles to specific players.
  */
 
+import { parseJsonObject } from '../utils/aiOutput';
+
 export interface RelevanceResult {
   relevantPlayerNames: string[];
   summary: string;
@@ -83,9 +85,8 @@ Rules:
     const content = data.content?.find((c) => c.type === 'text')?.text?.trim();
     if (!content) return null;
 
-    // Parse JSON (handle potential markdown code block)
-    const jsonStr = content.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-    const parsed = JSON.parse(jsonStr) as RelevanceResult;
+    // Tolerates ```json fences and any preamble/trailing prose around the object.
+    const parsed = parseJsonObject<RelevanceResult>(content);
     if (!parsed || !Array.isArray(parsed.relevantPlayerNames)) {
       return null;
     }

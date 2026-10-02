@@ -21,6 +21,13 @@ import { resolveMarketAsOfWeek } from '../services/marketRankingsQueries';
 import { buildPlayerCard, buildPlayerCards } from '../services/playerCard';
 import { extractMentionedPlayers, type MentionCandidate } from '../utils/playerMentions';
 import { runAskWithTools, AnthropicApiError } from '../utils/anthropicTools';
+import {
+  EFFORT_QUICK,
+  describeResponse,
+  firstText,
+  maxTokensWithThinking,
+  type AnthropicTextResponse,
+} from '../utils/aiOutput';
 import { buildAskTools } from '../services/askTools';
 import type { Env, Variables } from '../index';
 
@@ -1610,7 +1617,9 @@ ${newsBlock}`;
           },
           body: JSON.stringify({
             model: AI_MODEL,
-            max_tokens: 600,
+            // 600 visible tokens plus thinking headroom — see utils/aiOutput.ts.
+            max_tokens: maxTokensWithThinking(600),
+            output_config: EFFORT_QUICK,
             system: buildCachedSystemBlocks(PLAYER_ANALYSIS_SYSTEM_PROMPT),
             messages: [{ role: 'user', content: dataBlock }],
           }),
@@ -1622,9 +1631,10 @@ ${newsBlock}`;
           console.error('[players/analysis] Anthropic error:', res.status, errText);
           return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
         }
-        const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-        const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
+        const data = (await res.json()) as AnthropicTextResponse;
+        const text = firstText(data);
         if (!text) {
+          console.error(`[players/analysis] no text block (${describeResponse(data)})`);
           return c.json({ error: 'AI analysis is temporarily unavailable. Please try again shortly.' }, 503);
         }
         analysis = text;
