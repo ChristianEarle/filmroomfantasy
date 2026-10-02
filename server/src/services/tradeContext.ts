@@ -588,9 +588,8 @@ export async function buildTradeContext({
           : null;
       const nameProps = propsByName.get(p.name.toLowerCase());
       // Order by fantasy relevance: the prompt builder only shows the first
-      // five, and with completions/attempts/interceptions now synced a QB
-      // would otherwise risk having pass yds or TDs pushed off the list by
-      // volume markets in arbitrary DB order.
+      // five, and a QB with rushing and receiving lines too would otherwise
+      // risk having pass yds or TDs pushed off the list in arbitrary DB order.
       const playerProps = nameProps
         ? Array.from(nameProps.entries())
             .map(([market, values]) => ({

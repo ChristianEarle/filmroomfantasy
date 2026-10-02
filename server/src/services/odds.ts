@@ -311,10 +311,11 @@ export interface ParsedPlayerProp {
 }
 
 /**
- * Player-prop markets requested from The Odds API per event. The last three
- * (completions, attempts, interceptions) exist as QB markets on the client
- * (see MARKET_LABELS in src/hooks/usePlayerProps.ts) but were never fetched,
- * so they always rendered empty.
+ * Player-prop markets requested from The Odds API per event. Each market
+ * costs one credit per event call, so the QB volume markets the client can
+ * label (completions, attempts, interceptions; see MARKET_LABELS in
+ * src/hooks/usePlayerProps.ts) are deliberately not fetched: adding them
+ * would raise prop spend by about 43% for lines no feature depends on.
  */
 export const PLAYER_PROP_MARKETS = [
   'player_pass_yds',
@@ -324,9 +325,6 @@ export const PLAYER_PROP_MARKETS = [
   'player_rush_tds',
   'player_receptions',
   'player_anytime_td',
-  'player_pass_completions',
-  'player_pass_attempts',
-  'player_pass_interceptions',
 ] as const;
 
 /**
