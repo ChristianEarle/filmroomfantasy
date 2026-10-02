@@ -227,7 +227,7 @@ describe('isRookieEligible', () => {
   it('treats yearsExp === null (blanked by a sync-players run) with no stats history as still rookie-eligible', () => {
     // This is the exact regression: a sync run wrote null instead of 0, and
     // the old `p.yearsExp === 0` filter excluded every true rookie, zeroing
-    // the whole dynasty_rookie pool.
+    // the whole rookie pool.
     expect(
       isRookieEligible(
         { id: 'p2', yearsExp: null },
@@ -269,7 +269,7 @@ describe('isRookieEligible', () => {
 describe('submitDraftRankingsBatch — zero-context variants', () => {
   it('inserts a failed ranking_batch_jobs row instead of silently skipping the variant', async () => {
     // Non-empty MFL rookie ADP fallback so the ADP map is non-zero and the
-    // dynasty_rookie-specific empty-ADP canary (tested separately below)
+    // rookie-specific empty-ADP canary (tested separately below)
     // doesn't intercept this before it reaches the zero-eligible-players
     // check this test is actually about.
     stubMflRookieAdpOnly([{ id: '1', lastFirst: 'Doe, John', adp: 1 }]);
@@ -280,7 +280,7 @@ describe('submitDraftRankingsBatch — zero-context variants', () => {
     const result = await submitDraftRankingsBatch({
       db,
       anthropicKey: 'test-key',
-      variants: [{ rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: false }],
+      variants: [{ rankingType: 'rookie', scoringFormat: 'ppr', superflex: false }],
       seasonYear: 2026,
     });
 
@@ -291,9 +291,9 @@ describe('submitDraftRankingsBatch — zero-context variants', () => {
     expect(failedRow).toBeTruthy();
     expect(failedRow.status).toBe('failed');
     expect(failedRow.seasonYear).toBe(2026);
-    expect(failedRow.anthropicBatchId).toMatch(/^no-batch-dynasty_rookie-ppr-std-/);
+    expect(failedRow.anthropicBatchId).toMatch(/^no-batch-rookie-ppr-std-/);
     const variants = JSON.parse(failedRow.variants);
-    expect(variants[0]).toMatchObject({ rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: false });
+    expect(variants[0]).toMatchObject({ rankingType: 'rookie', scoringFormat: 'ppr', superflex: false });
   });
 
   it('leaves multiple variants each with their own failed job row', async () => {
@@ -308,8 +308,8 @@ describe('submitDraftRankingsBatch — zero-context variants', () => {
       db,
       anthropicKey: 'test-key',
       variants: [
-        { rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: false },
-        { rankingType: 'dynasty_rookie', scoringFormat: 'half-ppr', superflex: false },
+        { rankingType: 'rookie', scoringFormat: 'ppr', superflex: false },
+        { rankingType: 'rookie', scoringFormat: 'half-ppr', superflex: false },
       ],
       seasonYear: 2026,
     });
@@ -321,7 +321,7 @@ describe('submitDraftRankingsBatch — zero-context variants', () => {
 
 // ── Rookie ADP outage canary (empty map, not just a small pool) ─────
 
-describe('submitDraftRankingsBatch — dynasty_rookie empty ADP canary', () => {
+describe('submitDraftRankingsBatch — rookie empty ADP canary', () => {
   it('rookies eligible but ADP map empty (total outage) → failed job row, no submission', async () => {
     // Both the FantasyCalc dynasty feed and the MFL IS_KEEPER=R fallback
     // return payloads that resolve to an empty ADP map — a total outage,
@@ -352,7 +352,7 @@ describe('submitDraftRankingsBatch — dynasty_rookie empty ADP canary', () => {
     const result = await submitDraftRankingsBatch({
       db,
       anthropicKey: 'test-key',
-      variants: [{ rankingType: 'dynasty_rookie', scoringFormat: 'ppr', superflex: false }],
+      variants: [{ rankingType: 'rookie', scoringFormat: 'ppr', superflex: false }],
       seasonYear: 2026,
     });
 
