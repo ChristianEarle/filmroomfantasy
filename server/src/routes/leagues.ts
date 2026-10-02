@@ -1685,8 +1685,11 @@ leagueRoutes.post('/:id/sync', syncRateLimit, authMiddleware, async (c) => {
       // ESPN position/lineup mappings (limited to fantasy-relevant slots).
       // Source: ESPN's internal constants — these are well-known and stable.
       const POSITION: Record<number, string> = { 1: 'QB', 2: 'RB', 3: 'WR', 4: 'TE', 5: 'K', 16: 'DEF' };
+      // 7 is ESPN's superflex slot ("OP", QB/RB/WR/TE) — labelled OP so the
+      // League Analyzer reports it as SUPERFLEX, not FLEX. 3 (RB/WR) and
+      // 5 (WR/TE) are starting flex slots; unmapped, they were saved as bench.
       const LINEUP_SLOT: Record<number, string> = {
-        0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 7: 'FLEX',
+        0: 'QB', 2: 'RB', 3: 'RB/WR', 4: 'WR', 5: 'WR/TE', 6: 'TE', 7: 'OP',
         16: 'DEF', 17: 'K', 20: 'BN', 21: 'IR', 23: 'FLEX',
       };
       // ESPN pro team ID → standard NFL abbreviation. Used to match DEF.
