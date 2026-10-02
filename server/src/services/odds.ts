@@ -310,12 +310,40 @@ export interface ParsedPlayerProp {
   week?: number;
 }
 
+/**
+ * Player-prop markets requested from The Odds API per event. Each market
+ * costs one credit per event call, so the QB volume markets the client can
+ * label (completions, attempts, interceptions; see MARKET_LABELS in
+ * src/hooks/usePlayerProps.ts) are deliberately not fetched: adding them
+ * would raise prop spend by about 43% for lines no feature depends on.
+ */
+export const PLAYER_PROP_MARKETS = [
+  'player_pass_yds',
+  'player_rush_yds',
+  'player_reception_yds',
+  'player_pass_tds',
+  'player_rush_tds',
+  'player_receptions',
+  'player_anytime_td',
+] as const;
+
+/**
+ * Bookmakers we prefer, in order, when more than one has priced the same
+ * player + market. Any other book in the response is used after these, in
+ * response order.
+ */
+export const BOOKMAKER_PRIORITY = ['fanduel', 'draftkings', 'betmgm'] as const;
+
 export async function fetchPlayerProps(
   apiKey: string,
   eventId: string,
   date?: string
 ): Promise<OddsGame | null> {
-  const markets = 'player_pass_yds,player_rush_yds,player_reception_yds,player_pass_tds,player_rush_tds,player_receptions,player_anytime_td';
+  // Quota note: The Odds API bills each event-odds call as
+  // (markets requested) x (regions requested), regardless of how many
+  // bookmakers come back. Adding a market here raises the per-event cost by
+  // one credit; adding bookmakers does not.
+  const markets = PLAYER_PROP_MARKETS.join(',');
 
   const base = date
     ? `${ODDS_API_BASE}/historical/sports/americanfootball_nfl/events/${eventId}/odds`
@@ -351,95 +379,103 @@ export function parsePlayerProps(
   const homeTeamAbbr = teamNameToAbbr(game.home_team);
   const awayTeamAbbr = teamNameToAbbr(game.away_team);
 
-  // Prefer FanDuel, then DraftKings, then BetMGM for consistency across
-  // snapshots — but player-prop markets often go up at different books at
-  // different times (a smaller book may post before the majors do), so fall
-  // back to whichever bookmaker actually has a player_ market rather than
-  // returning nothing just because none of the big three have it yet. The
-  // request already scoped `markets` to player_* props (see fetchPlayerProps),
-  // so any bookmaker present here has at least one of those markets priced.
-  const bookmakersInOrder = ['fanduel', 'draftkings', 'betmgm'];
-  let selectedBookmaker: OddsBookmaker | undefined;
+  // Merge lines across every bookmaker in the response rather than picking
+  // a single book per event. Books post player-prop markets on different
+  // schedules and cover different depth players (FanDuel may have a QB's
+  // passing yards but not his receivers' receptions yet, while DraftKings
+  // already lists both), so taking one book's markets for the whole event
+  // dropped lines that were sitting right there in the same response.
+  //
+  // Resolution is per (player, market): the first book in priority order
+  // that has priced it wins, so a line never mixes an Over from one book
+  // with an Under from another. The request already scoped `markets` to
+  // player_* props (see fetchPlayerProps), so any bookmaker present here has
+  // at least one of those markets priced.
+  const priority = new Map<string, number>(
+    BOOKMAKER_PRIORITY.map((key, i) => [key, i])
+  );
+  const orderedBookmakers = game.bookmakers
+    .map((bookmaker, responseIndex) => ({ bookmaker, responseIndex }))
+    .sort((a, b) => {
+      const pa = priority.get(a.bookmaker.key) ?? BOOKMAKER_PRIORITY.length;
+      const pb = priority.get(b.bookmaker.key) ?? BOOKMAKER_PRIORITY.length;
+      return pa - pb || a.responseIndex - b.responseIndex;
+    })
+    .map(({ bookmaker }) => bookmaker);
 
-  for (const bookmakerKey of bookmakersInOrder) {
-    selectedBookmaker = game.bookmakers.find((b) => b.key === bookmakerKey);
-    if (selectedBookmaker) {
-      break;
-    }
-  }
+  // (market key, player name) pairs already filled by a higher-priority book.
+  const filled = new Set<string>();
 
-  if (!selectedBookmaker) {
-    selectedBookmaker = game.bookmakers[0];
-  }
-
-  if (!selectedBookmaker) {
-    // No bookmaker has posted player-prop markets for this event yet
-    return parsed;
-  }
-
-  for (const market of selectedBookmaker.markets) {
-    // Player props have format like "player_pass_yds"
-    if (!market.key.startsWith('player_')) {
-      continue;
-    }
-
-    // Parse outcomes for this market
-    // API returns outcomes where:
-    // - outcome.description contains the player name (e.g., "Jalen Hurts")
-    // - outcome.name contains "Over"/"Under" (for point-based) or "Yes"/"No" (for binary)
-    // - outcome.point is the threshold (only for over/under)
-    // - outcome.price is the odds
-
-    // Group outcomes by player + outcome type
-    const playerOutcomes: Record<string, any> = {};
-
-    for (const outcome of market.outcomes) {
-      // Player name is in outcome.description, not outcome.name
-      const playerName = outcome.description || '';
-      const type = outcome.name; // "Over", "Under", "Yes", "No"
-
-      if (!playerName) {
+  for (const bookmaker of orderedBookmakers) {
+    for (const market of bookmaker.markets) {
+      // Player props have format like "player_pass_yds"
+      if (!market.key.startsWith('player_')) {
         continue;
       }
 
-      if (!playerOutcomes[playerName]) {
-        playerOutcomes[playerName] = {};
+      // Parse outcomes for this market
+      // API returns outcomes where:
+      // - outcome.description contains the player name (e.g., "Jalen Hurts")
+      // - outcome.name contains "Over"/"Under" (for point-based) or "Yes"/"No" (for binary)
+      // - outcome.point is the threshold (only for over/under)
+      // - outcome.price is the odds
+
+      // Group outcomes by player + outcome type
+      const playerOutcomes: Record<string, any> = {};
+
+      for (const outcome of market.outcomes) {
+        // Player name is in outcome.description, not outcome.name
+        const playerName = outcome.description || '';
+        const type = outcome.name; // "Over", "Under", "Yes", "No"
+
+        if (!playerName) {
+          continue;
+        }
+
+        if (filled.has(`${market.key}|${playerName}`)) {
+          continue;
+        }
+
+        if (!playerOutcomes[playerName]) {
+          playerOutcomes[playerName] = {};
+        }
+
+        if (type === 'Over') {
+          playerOutcomes[playerName].over_point = outcome.point;
+          playerOutcomes[playerName].over_price = outcome.price;
+        } else if (type === 'Under') {
+          playerOutcomes[playerName].under_point = outcome.point;
+          playerOutcomes[playerName].under_price = outcome.price;
+        } else if (type === 'Yes') {
+          playerOutcomes[playerName].yes_price = outcome.price;
+        } else if (type === 'No') {
+          playerOutcomes[playerName].no_price = outcome.price;
+        }
       }
 
-      if (type === 'Over') {
-        playerOutcomes[playerName].over_point = outcome.point;
-        playerOutcomes[playerName].over_price = outcome.price;
-      } else if (type === 'Under') {
-        playerOutcomes[playerName].under_point = outcome.point;
-        playerOutcomes[playerName].under_price = outcome.price;
-      } else if (type === 'Yes') {
-        playerOutcomes[playerName].yes_price = outcome.price;
-      } else if (type === 'No') {
-        playerOutcomes[playerName].no_price = outcome.price;
+      // Create a record for each player in this market
+      for (const playerName of Object.keys(playerOutcomes)) {
+        filled.add(`${market.key}|${playerName}`);
+        const outcome = playerOutcomes[playerName];
+        const prop: ParsedPlayerProp = {
+          id: `${game.id}_${bookmaker.key}_${market.key}_${playerName}_${timestamp}`,
+          event_id: game.id,
+          player_name: playerName,
+          market: market.key,
+          bookmaker: bookmaker.key,
+          over_point: outcome.over_point,
+          over_price: outcome.over_price,
+          under_point: outcome.under_point,
+          under_price: outcome.under_price,
+          yes_price: outcome.yes_price,
+          no_price: outcome.no_price,
+          snapshot_time: timestamp,
+          home_team: homeTeamAbbr,
+          away_team: awayTeamAbbr,
+          week,
+        };
+        parsed.push(prop);
       }
-    }
-
-    // Create a record for each player in this market
-    for (const playerName of Object.keys(playerOutcomes)) {
-      const outcome = playerOutcomes[playerName];
-      const prop: ParsedPlayerProp = {
-        id: `${game.id}_${selectedBookmaker.key}_${market.key}_${playerName}_${timestamp}`,
-        event_id: game.id,
-        player_name: playerName,
-        market: market.key,
-        bookmaker: selectedBookmaker.key,
-        over_point: outcome.over_point,
-        over_price: outcome.over_price,
-        under_point: outcome.under_point,
-        under_price: outcome.under_price,
-        yes_price: outcome.yes_price,
-        no_price: outcome.no_price,
-        snapshot_time: timestamp,
-        home_team: homeTeamAbbr,
-        away_team: awayTeamAbbr,
-        week,
-      };
-      parsed.push(prop);
     }
   }
 
