@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { computeAllPlay, currentStreak, lineupOrder, slotGroup, stdDev, weeklyResultsFor, type ScoredMatchup } from './leagueAnalyzer';
+import { assignPositionRanks, computeAllPlay, currentStreak, lineupOrder, slotGroup, stdDev, weeklyResultsFor, type ScoredMatchup } from './leagueAnalyzer';
+
+describe('assignPositionRanks', () => {
+  const pos = (position: 'RB' | 'TE', avgPoints: number, starterCount = 1) => ({
+    position, avgPoints, starterCount, leagueAvg: 0, deltaPct: 0, status: 'balanced' as const, pointShare: 0, rank: null as number | null, rankOf: 0,
+  });
+
+  it('ranks each slot by average points per starter, ties sharing a rank, unstarted slots unranked', () => {
+    const teams = [
+      { positions: [pos('RB', 12), pos('TE', 8)] },
+      { positions: [pos('RB', 15), pos('TE', 0, 0)] },
+      { positions: [pos('RB', 12), pos('TE', 9)] },
+      { positions: [pos('RB', 10), pos('TE', 7)] },
+    ];
+    assignPositionRanks(teams);
+    expect(teams.map((t) => t.positions[0].rank)).toEqual([2, 1, 2, 4]);
+    expect(teams.map((t) => t.positions[0].rankOf)).toEqual([4, 4, 4, 4]);
+    // The team with no TE starter isn't ranked and doesn't count toward "of N".
+    expect(teams.map((t) => t.positions[1].rank)).toEqual([2, null, 1, 3]);
+    expect(teams[0].positions[1].rankOf).toBe(3);
+  });
+});
 
 describe('lineupOrder', () => {
   it('orders starters QB, RB, WR, TE, FLEX, SUPERFLEX, K, DEF with numbered slots in sequence', () => {

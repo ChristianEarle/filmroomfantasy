@@ -15,6 +15,10 @@ interface PositionBreakdown {
   deltaPct: number;
   status: 'surplus' | 'balanced' | 'deficit';
   pointShare: number;
+  /** League rank at this slot by average points per starter (1 = best); null with no starter. */
+  rank: number | null;
+  /** Number of teams ranked at this slot. */
+  rankOf: number;
 }
 
 interface SwingGame {
@@ -739,7 +743,12 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
                           <thead>
                             <tr className={`border-b text-left ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
                               <th className={`py-1.5 pr-3 text-xs font-semibold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Pos</th>
-                              <th className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Starters</th>
+                              <th
+                                className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+                                title="League rank at this slot by average points per starter"
+                              >
+                                Rank
+                              </th>
                               <th className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Team Avg</th>
                               <th className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>League Avg</th>
                               <th className={`py-1.5 pr-3 text-xs font-semibold text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>vs League</th>
@@ -750,7 +759,17 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
                             {team.positions.map((pos) => (
                               <tr key={pos.position} className={`border-b last:border-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                                 <td className={`py-1.5 pr-3 font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{pos.position}</td>
-                                <td className={`py-1.5 pr-3 text-right ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{pos.starterCount}</td>
+                                <td
+                                  className={`py-1.5 pr-3 text-right whitespace-nowrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}
+                                  title={pos.rank != null ? `${pos.position}: #${pos.rank} of ${pos.rankOf} teams by average points per starter` : `No ${pos.position} starter`}
+                                >
+                                  {pos.rank != null ? (
+                                    <>
+                                      <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>#{pos.rank}</span>
+                                      <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}> of {pos.rankOf}</span>
+                                    </>
+                                  ) : '—'}
+                                </td>
                                 <td className={`py-1.5 pr-3 text-right ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{pos.avgPoints.toFixed(1)}</td>
                                 <td className={`py-1.5 pr-3 text-right ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{pos.leagueAvg.toFixed(1)}</td>
                                 <td className={`py-1.5 pr-3 text-right font-semibold ${

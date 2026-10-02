@@ -139,6 +139,13 @@ interface PositionBreakdown {
   status: 'surplus' | 'balanced' | 'deficit';
   /** Percent of this team's total starter point production coming from this position. */
   pointShare: number;
+  /**
+   * This team's league rank at the slot by average points per starter (1 =
+   * best; ties share a rank). Null when the team has no starter there.
+   */
+  rank: number | null;
+  /** How many teams are ranked at the slot (teams with a starter there). */
+  rankOf: number;
 }
 
 interface StandingInput {
@@ -411,6 +418,24 @@ export interface TeamAiDetail {
   streak: string | null;
   remainingSchedule: Array<{ week: number; opponentName: string; opponentPpg: number }>;
   roster: AiRosterPlayer[];
+}
+
+/**
+ * Rank every team at each lineup slot by average points per starter, in
+ * place. Only teams with a starter at the slot are ranked; equal averages
+ * share a rank ("1, 2, 2, 4").
+ */
+export function assignPositionRanks(teams: Array<{ positions: PositionBreakdown[] }>): void {
+  for (const group of BREAKDOWN_GROUPS) {
+    const entries = teams
+      .map((t) => t.positions.find((p) => p.position === group))
+      .filter((p): p is PositionBreakdown => !!p && p.starterCount > 0)
+      .sort((a, b) => b.avgPoints - a.avgPoints);
+    entries.forEach((p, i) => {
+      p.rank = i > 0 && entries[i - 1].avgPoints === p.avgPoints ? entries[i - 1].rank : i + 1;
+      p.rankOf = entries.length;
+    });
+  }
 }
 
 /** Reader-facing name for a lineup group: flex slots aren't positions. */
@@ -839,6 +864,8 @@ export async function computeLeagueAnalysis(
           deltaPct: round1(deltaPct),
           status,
           pointShare: totalStarterSum > 0 ? round1(((entry?.sum ?? 0) / totalStarterSum) * 100) : 0,
+          rank: null,
+          rankOf: 0,
         };
       });
 
@@ -927,6 +954,8 @@ export async function computeLeagueAnalysis(
           : null,
       };
     });
+
+    assignPositionRanks(unranked);
 
     // Rank by strength (PPG ratio), tiebreak wins then points for
     const ranked = [...unranked].sort((a, b) => {
@@ -1158,7 +1187,7 @@ export function formatTeamFacts(team: AnalyzedTeam, analysis: LeagueAnalysis, de
     .filter((p) => p.starterCount > 0)
     .map(
       (p) =>
-        `  ${GROUP_LABEL[p.position]} (${p.starterCount} starter${p.starterCount === 1 ? '' : 's'}): ${p.avgPoints.toFixed(1)} PPG per starter vs league ${p.leagueAvg.toFixed(1)} (${signed(p.deltaPct)}%, ${p.status}) — ${p.pointShare.toFixed(0)}% of the lineup's points`,
+        `  ${GROUP_LABEL[p.position]} (${p.starterCount} starter${p.starterCount === 1 ? '' : 's'}): ${p.avgPoints.toFixed(1)} PPG per starter vs league ${p.leagueAvg.toFixed(1)} (${signed(p.deltaPct)}%, ${p.status})${p.rank != null ? `, ranked #${p.rank} of ${p.rankOf} in the league` : ''} — ${p.pointShare.toFixed(0)}% of the lineup's points`,
     )
     .join('\n');
 
