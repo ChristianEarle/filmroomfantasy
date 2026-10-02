@@ -1,0 +1,253 @@
+import { and, eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/d1';
+import * as schema from '../db/schema';
+import { fetchEspnCurrentWeek } from './espn';
+
+type DB = ReturnType<typeof drizzle<typeof schema>>;
+
+export interface NflState {
+  season: number;            // e.g. 2026
+  week: number;              // 1..18 regular season week to show by default
+  seasonType: 'preseason' | 'regular' | 'postseason' | 'offseason';
+  source: 'schedule' | 'espn' | 'calendar';   // how it was resolved
+  resolvedAt: string;        // ISO timestamp
+}
+
+/** Subset of an `nfl_games` row that the schedule resolver needs. */
+export interface ScheduleGame {
+  week: number;
+  gameTime: Date;
+  isComplete: boolean;
+  homeScore: number | null;
+  awayScore: number | null;
+}
+
+/**
+ * A game counts as "finished" once we'd trust its result to roll the week
+ * forward: it's marked complete, both scores are in, or enough time has
+ * passed since kickoff that it must be over (covers rows where a sync job
+ * never flipped isComplete).
+ */
+export function isGameFinished(game: ScheduleGame, now: Date): boolean {
+  if (game.isComplete) return true;
+  if (game.homeScore != null && game.awayScore != null) return true;
+  const fiveHoursAfterKickoff = game.gameTime.getTime() + 5 * 3600000;
+  return fiveHoursAfterKickoff < now.getTime();
+}
+
+/**
+ * Resolve the current week from actual schedule rows: the smallest week
+ * that still has an unfinished game. Once every game in a week is finished,
+ * the week rolls forward and never goes back (it falls out of the rule
+ * naturally since a "smallest week with an unfinished game" only increases
+ * as games complete).
+ *
+ * Returns null when there are no rows to reason about (caller should fall
+ * back to ESPN or the calendar).
+ */
+export function resolveWeekFromSchedule(games: ScheduleGame[], now: Date): number | null {
+  if (games.length === 0) return null;
+
+  let maxWeek = 0;
+  const weeksWithUnfinishedGames = new Set<number>();
+  for (const game of games) {
+    maxWeek = Math.max(maxWeek, game.week);
+    if (!isGameFinished(game, now)) {
+      weeksWithUnfinishedGames.add(game.week);
+    }
+  }
+
+  if (weeksWithUnfinishedGames.size === 0) return maxWeek;
+  return Math.min(...weeksWithUnfinishedGames);
+}
+
+/** Labor Day (first Monday of September) for a given season year, UTC-safe. */
+function laborDay(seasonYear: number): Date {
+  const sept1 = new Date(Date.UTC(seasonYear, 8, 1));
+  const dayOfWeek = sept1.getUTCDay(); // 0 = Sunday, 1 = Monday, ...
+  const daysUntilMonday = (8 - dayOfWeek) % 7; // days from Sept 1 to the first Monday
+  return new Date(Date.UTC(seasonYear, 8, 1 + daysUntilMonday));
+}
+
+/**
+ * Fantasy weeks roll over on Tuesday morning US time. 09:00 UTC is 5am ET,
+ * comfortably after the latest Monday Night Football finish, so the
+ * calendar never advances a week while its final game is still on.
+ */
+const WEEK_ROLLOVER_HOUR_UTC = 9;
+
+/**
+ * Deterministic, I/O-free last resort: derive the week purely from the
+ * calendar. NFL week 1 kicks off the Thursday after Labor Day; each
+ * fantasy week runs Tuesday -> Monday, so week 1 starts on the Tuesday
+ * after Labor Day and week N starts 7*(N-1) days after that.
+ */
+export function resolveWeekFromCalendar(now: Date): { season: number; week: number; seasonType: NflState['seasonType'] } {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth(); // 0-indexed
+
+  // A "season" runs from Aug 1 through the following Jul 31, so any date in
+  // Aug-Dec belongs to this calendar year's season and any date in Jan-Jul
+  // belongs to the season that started the previous calendar year.
+  const season = month >= 7 ? year : year - 1;
+
+  // Tuesday after Labor Day, at the rollover hour
+  const week1Start = new Date(laborDay(season).getTime() + (24 + WEEK_ROLLOVER_HOUR_UTC) * 3600000);
+  if (now.getTime() < week1Start.getTime()) {
+    return { season, week: 1, seasonType: 'preseason' };
+  }
+
+  const msPerWeek = 7 * 24 * 3600000;
+  // The Tuesday after week 18's Monday finale is when the postseason window
+  // begins for this season.
+  const postseasonStart = new Date(week1Start.getTime() + 18 * msPerWeek);
+
+  if (now.getTime() < postseasonStart.getTime()) {
+    const weeksElapsed = Math.floor((now.getTime() - week1Start.getTime()) / msPerWeek);
+    const week = Math.min(18, Math.max(1, weeksElapsed + 1));
+    return { season, week, seasonType: 'regular' };
+  }
+
+  // Postseason runs into mid-February; after that it's offseason until the
+  // next preseason kicks off. Both cases still show this season's week 18.
+  const isPostseasonWindow = month === 0 || (month === 1 && now.getUTCDate() <= 15);
+  return { season, week: 18, seasonType: isPostseasonWindow ? 'postseason' : 'offseason' };
+}
+
+/**
+ * The season the NFL world is focused on: the one in progress (regular
+ * season, playoffs, preseason) or, during the Feb-Jul offseason, the
+ * UPCOMING one. This is what league-connect flows, platform lookups and
+ * player-tenure reasoning want; it differs from `resolveWeekFromCalendar`
+ * (whose offseason `season` is the just-completed one, i.e. the season
+ * that has data) only in the offseason.
+ */
+export function resolveSeasonInFocus(now: Date = new Date()): number {
+  const { season, seasonType } = resolveWeekFromCalendar(now);
+  return seasonType === 'offseason' ? season + 1 : season;
+}
+
+interface CachedState {
+  state: NflState;
+  cachedAtMs: number;
+}
+
+const CACHE_TTL_MS = 5 * 60 * 1000;
+let cache: CachedState | null = null;
+
+/** Test-only: clear the module-level cache so tests don't bleed into each other. */
+export function clearNflStateCache(): void {
+  cache = null;
+}
+
+/**
+ * Resolve the current NFL state (season/week/phase) that the app should
+ * default views to. The calendar (driven by `now`, never the wall clock)
+ * decides the phase; during the regular season the week comes from, in
+ * order: real schedule rows in the DB, ESPN's own notion of the current
+ * week, then the calendar. Never throws — a resolver failure just falls
+ * through to the next one.
+ */
+export async function getNflState(db: DB, now: Date = new Date()): Promise<NflState> {
+  if (cache && now.getTime() - cache.cachedAtMs < CACHE_TTL_MS) {
+    return cache.state;
+  }
+
+  const calendar = resolveWeekFromCalendar(now);
+  const resolvedAt = now.toISOString();
+
+  let state: NflState;
+
+  if (calendar.seasonType !== 'regular') {
+    // Preseason: the regular season hasn't started, so there's nothing to
+    // reason about from the schedule yet — week 1 is the only sensible
+    // default. Postseason/offseason: show the finished season's final week,
+    // matching the app's existing behaviour.
+    state = { ...calendar, source: 'calendar', resolvedAt };
+  } else {
+    // Regular season: try real schedule rows first.
+    let resolvedWeek: number | null = null;
+    let source: NflState['source'] = 'calendar';
+
+    try {
+      const rows = await db.query.nflGames.findMany({
+        where: and(eq(schema.nflGames.seasonYear, calendar.season), eq(schema.nflGames.seasonType, 'regular')),
+        columns: { week: true, gameTime: true, isComplete: true, homeScore: true, awayScore: true },
+      });
+      const fromSchedule = resolveWeekFromSchedule(rows, now);
+      // If every stored game is already finished but the table stops short
+      // of week 18, the schedule is only partially synced (e.g. a fresh
+      // season where sync-games hasn't run for later weeks yet). Trusting
+      // it would pin the app to the last synced week, so fall through to
+      // ESPN / the calendar instead.
+      const scheduleIsPartial =
+        fromSchedule != null && fromSchedule < 18 && rows.every((g) => isGameFinished(g, now));
+      if (fromSchedule != null && !scheduleIsPartial) {
+        resolvedWeek = fromSchedule;
+        source = 'schedule';
+      }
+    } catch (err) {
+      console.warn('[nflState] schedule lookup failed:', err instanceof Error ? err.message : err);
+    }
+
+    if (resolvedWeek == null) {
+      try {
+        const espnWeek = await fetchEspnCurrentWeek(calendar.season, '2');
+        if (espnWeek != null) {
+          resolvedWeek = espnWeek;
+          source = 'espn';
+        }
+      } catch (err) {
+        console.warn('[nflState] ESPN current-week lookup failed:', err instanceof Error ? err.message : err);
+      }
+    }
+
+    if (resolvedWeek == null) {
+      resolvedWeek = calendar.week;
+      source = 'calendar';
+    }
+
+    const clampedWeek = Math.min(18, Math.max(1, resolvedWeek));
+    state = { season: calendar.season, week: clampedWeek, seasonType: 'regular', source, resolvedAt };
+  }
+
+  cache = { state, cachedAtMs: now.getTime() };
+  return state;
+}
+
+/** Subset of a league row that `pickLeagueWeek`/`resolveLeagueWeek` need. */
+export interface LeagueWeekInput {
+  seasonYear: number | null;
+  currentWeek: number | null;
+}
+
+function clampWeek(week: number): number {
+  return Math.min(18, Math.max(1, week));
+}
+
+/**
+ * Pure decision for which week/season a league-scoped view should default
+ * to: the live NFL week for a league on the current season (or no league
+ * at all), the league's own stored week for a league parked on a past
+ * season (an archived league should open where it left off, not jump to
+ * whatever week it is today).
+ */
+export function pickLeagueWeek(
+  state: NflState,
+  league: LeagueWeekInput | null | undefined
+): { week: number; season: number } {
+  if (league?.seasonYear != null && league.seasonYear !== state.season) {
+    return { week: clampWeek(league.currentWeek ?? 1), season: league.seasonYear };
+  }
+  return { week: state.week, season: state.season };
+}
+
+/** Week a league-scoped view should default to: the live NFL week for a league on the current season, the league's own stored week for an archived season. */
+export async function resolveLeagueWeek(
+  db: DB,
+  league: LeagueWeekInput | null | undefined,
+  now: Date = new Date()
+): Promise<{ week: number; season: number }> {
+  const state = await getNflState(db, now);
+  return pickLeagueWeek(state, league);
+}

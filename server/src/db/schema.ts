@@ -1,5 +1,5 @@
 import { sqliteTable, text, integer, real, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 // ============================================
 // USER & AUTHENTICATION
@@ -84,6 +84,10 @@ export const leagues = sqliteTable('leagues', {
   leagueType: text('league_type').notNull().default('redraft'), // 'redraft' | 'dynasty' | 'keeper'
   hasSuperflex: integer('has_superflex', { mode: 'boolean' }).notNull().default(false),
   hasTePremium: integer('has_te_premium', { mode: 'boolean' }).notNull().default(false),
+  // Last successful refresh from the platform (full or quick sync). NULL =
+  // never synced since the column existed. Drives sync-on-open — see
+  // services/leagueFreshness.ts and POST /api/leagues/:id/sync/if-stale.
+  lastSyncedAt: integer('last_synced_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
@@ -107,7 +111,11 @@ export const teams = sqliteTable('teams', {
   id: text('id').primaryKey(),
   leagueId: text('league_id').notNull().references(() => leagues.id, { onDelete: 'cascade' }),
   ownerId: text('owner_id').notNull().references(() => users.id),
-  externalOwnerId: text('external_owner_id'), // Sleeper/ESPN user ID - identifies which platform user owns this team
+  externalOwnerId: text('external_owner_id'), // Sleeper: manager's user_id (changes when a roster changes hands). ESPN/Yahoo/MFL: the team id (legacy)
+  // The platform's stable team key — Sleeper roster_id, ESPN/Yahoo team id,
+  // MFL franchise id. Unique per league (teams_league_external_team_unique,
+  // migration 0050); written only via services/teamIdentity.ts.
+  externalTeamId: text('external_team_id'),
   ownerDisplayName: text('owner_display_name'), // Display name from Sleeper/ESPN/Yahoo (so we don't show the app user for every team)
   name: text('name').notNull(),
   wins: integer('wins').notNull().default(0),
@@ -256,6 +264,46 @@ export const playerProjections = sqliteTable('player_projections', {
 }, (table) => ({
   playerProjectionUnique: uniqueIndex('player_projection_unique').on(table.playerId, table.week, table.seasonYear, table.scoringFormat),
 }));
+
+// Deterministic "Market" (sportsbook-implied) season projection + VORP
+// ranking layer. Tier A rows are built from season-long prop lines
+// (services/seasonProps.ts's buildSeasonProjectionsFromSeasonProps); Tier B
+// rows extrapolate from the latest weekly prop-based projection when a
+// player has no season prop coverage. See services/marketRankings.ts for
+// the pure ranking/VORP math and routes/admin.ts's
+// POST /sync-market-projections for the sync job.
+export const playerMarketProjections = sqliteTable('player_market_projections', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  asOfWeek: integer('as_of_week').notNull(),
+  scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
+
+  seasonPoints: real('season_points'),
+  rosPoints: real('ros_points'),
+  perGameRate: real('per_game_rate'),
+  remainingGames: integer('remaining_games'),
+
+  marketRank: integer('market_rank'),
+  positionRank: integer('position_rank'),
+  tier: integer('tier'),
+  vorp: real('vorp'),
+
+  // 'season_props' (all core stats from season-long prop lines) |
+  // 'blended' (some core stats from season lines, the rest filled in from
+  // weekly-projection extrapolation) | 'weekly_extrapolation' (no core
+  // stats from season lines) | 'none' (not persisted, just counted)
+  confidence: text('confidence').notNull().default('none'),
+  source: text('source').notNull().default('market'),
+
+  computedAt: integer('computed_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  marketProjUnique: uniqueIndex('idx_market_proj_unique').on(table.playerId, table.seasonYear, table.asOfWeek, table.scoringFormat),
+  marketProjWeekIdx: index('idx_market_proj_week').on(table.seasonYear, table.asOfWeek, table.scoringFormat, table.marketRank),
+}));
+
+export type PlayerMarketProjection = typeof playerMarketProjections.$inferSelect;
+export type NewPlayerMarketProjection = typeof playerMarketProjections.$inferInsert;
 
 // Historical projection snapshots for trends (biggest movers, etc.)
 export const projectionLineSnapshots = sqliteTable('projection_line_snapshots', {
@@ -551,6 +599,32 @@ export const playerProps = sqliteTable('player_props', {
   playerPropsExternalIdIdx: index('idx_player_props_external_id').on(table.playerExternalId),
 }));
 
+// Season-long sportsbook player prop lines (season O/U totals), imported
+// manually via /api/admin/sync-season-props — there's no API source for
+// these the way there is for weekly game props.
+export const playerSeasonProps = sqliteTable('player_season_props', {
+  id: text('id').primaryKey(),
+  playerId: text('player_id').references(() => nflPlayers.id, { onDelete: 'set null' }),
+  playerName: text('player_name').notNull(),
+  team: text('team'),
+  position: text('position'),
+  season: integer('season').notNull(),
+  stat: text('stat').notNull(), // pass_yds|pass_tds|rush_yds|rush_tds|rec_yds|receptions|rec_tds|interceptions
+  line: real('line').notNull(),
+  overPrice: integer('over_price'),
+  underPrice: integer('under_price'),
+  book: text('book').notNull(),
+  sourceUrl: text('source_url'),
+  capturedAt: text('captured_at').notNull(), // YYYY-MM-DD
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  seasonPropsUnique: uniqueIndex('idx_season_props_unique').on(table.season, table.playerName, table.stat, table.book, table.capturedAt),
+  seasonPropsPlayerIdx: index('idx_season_props_player').on(table.season, table.playerId),
+}));
+
+export type PlayerSeasonProp = typeof playerSeasonProps.$inferSelect;
+export type NewPlayerSeasonProp = typeof playerSeasonProps.$inferInsert;
+
 // ============================================
 // ARTICLES / BLOG
 // ============================================
@@ -740,6 +814,42 @@ export type NewTeamDraftPick = typeof teamDraftPicks.$inferInsert;
 export type PlayerAiAnalysis = typeof playerAiAnalyses.$inferSelect;
 export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
 
+/** Cached AI scouting narrative for one team, one per (team, season, week). */
+export const teamAiNarratives = sqliteTable('team_ai_narratives', {
+  id: text('id').primaryKey(),
+  teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  week: integer('week').notNull(),
+  narrative: text('narrative').notNull(),
+  model: text('model').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  teamAiNarrativesIdentity: uniqueIndex('idx_team_ai_narratives_identity')
+    .on(table.teamId, table.seasonYear, table.week),
+}));
+
+export type TeamAiNarrative = typeof teamAiNarratives.$inferSelect;
+export type NewTeamAiNarrative = typeof teamAiNarratives.$inferInsert;
+
+/** Cached league-wide AI "pulse" narrative, one per (league, season, week). */
+export const leagueAiPulses = sqliteTable('league_ai_pulses', {
+  id: text('id').primaryKey(),
+  leagueId: text('league_id').notNull().references(() => leagues.id, { onDelete: 'cascade' }),
+  seasonYear: integer('season_year').notNull(),
+  week: integer('week').notNull(),
+  narrative: text('narrative').notNull(),
+  /** JSON array of team ids, ordered most to least powerful. Null if the model's ranking failed validation. */
+  rankingJson: text('ranking_json'),
+  model: text('model').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  leagueAiPulsesIdentity: uniqueIndex('idx_league_ai_pulses_identity')
+    .on(table.leagueId, table.seasonYear, table.week),
+}));
+
+export type LeagueAiPulse = typeof leagueAiPulses.$inferSelect;
+export type NewLeagueAiPulse = typeof leagueAiPulses.$inferInsert;
+
 // ============================================
 // DRAFT RANKINGS
 // ============================================
@@ -752,7 +862,7 @@ export type NewPlayerAiAnalysis = typeof playerAiAnalyses.$inferInsert;
 export const draftRankings = sqliteTable('draft_rankings', {
   id: text('id').primaryKey(),
   playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
-  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty' | 'dynasty_rookie'
   scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
   superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
   overallRank: integer('overall_rank').notNull(),
@@ -761,6 +871,15 @@ export const draftRankings = sqliteTable('draft_rankings', {
   projectedPoints: real('projected_points'), // full-season projected total (null for rookies without data)
   adp: real('adp'), // average draft position from Sleeper
   adpDelta: real('adp_delta'), // rank - ADP (negative = value, positive = reach)
+  // Deterministic Market (sportsbook-implied) VORP rank as of write time —
+  // persisted for auditability alongside the AI's overallRank. GET
+  // /api/draft-rankings joins a *live* marketRank from player_market_projections
+  // for display (so it reflects the latest sync even between regenerations);
+  // this column is rebuilt when the batch result is written (same as the adp
+  // column above), NOT what the prompt/AI actually saw hours earlier when
+  // the batch was submitted — see the writeVariantRankings comment in
+  // services/draftRankings.ts.
+  marketRank: integer('market_rank'),
   rationale: text('rationale').notNull(), // AI-generated 1-2 sentence blurb
   analysis: text('analysis'), // AI-generated detailed player analysis (strengths, risks, outlook)
   ceilingRank: integer('ceiling_rank'), // AI best-case overall rank (lower number = better)
@@ -790,7 +909,7 @@ export type NewDraftRanking = typeof draftRankings.$inferInsert;
 export const rankHistory = sqliteTable('rank_history', {
   id: text('id').primaryKey(),
   playerId: text('player_id').notNull().references(() => nflPlayers.id, { onDelete: 'cascade' }),
-  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty_rookie'
+  rankingType: text('ranking_type').notNull(), // 'redraft' | 'dynasty' | 'dynasty_rookie'
   scoringFormat: text('scoring_format').notNull(), // 'ppr' | 'half-ppr' | 'standard'
   superflex: integer('superflex', { mode: 'boolean' }).notNull().default(false),
   overallRank: integer('overall_rank').notNull(),
@@ -833,6 +952,100 @@ export const rankingBatchJobs = sqliteTable('ranking_batch_jobs', {
 
 export type RankingBatchJob = typeof rankingBatchJobs.$inferSelect;
 export type NewRankingBatchJob = typeof rankingBatchJobs.$inferInsert;
+
+// ============================================
+// INGEST FRAMEWORK
+// ============================================
+// Job ledger for the filmroom-ingest Worker (see server/src/ingest/ledger.ts,
+// which owns all writes). Times are integer ms since epoch, compared in SQL
+// against D1's clock, so they are plain numbers here rather than Dates.
+
+export const ingestJobs = sqliteTable('ingest_jobs', {
+  key: text('key').primaryKey(),
+  kind: text('kind').notNull(),
+  groupName: text('group_name').notNull(),
+  params: text('params').notNull().default('{}'), // JSON
+  resourceClass: text('resource_class').notNull().default('light'), // 'light' | 'heavy'
+  priority: integer('priority').notNull().default(5), // 1 = most urgent
+  nextRunAt: integer('next_run_at').notNull(),
+  dirtyAt: integer('dirty_at'),
+  dirtyDueAt: integer('dirty_due_at'),
+  dispatchToken: text('dispatch_token'),
+  queuedUntil: integer('queued_until'),
+  currentRunId: text('current_run_id'),
+  runExpiresAt: integer('run_expires_at'),
+  attempts: integer('attempts').notNull().default(0), // consecutive failures
+  disabledUntil: integer('disabled_until'), // quarantine
+  lastStartedAt: integer('last_started_at'),
+  lastFinishedAt: integer('last_finished_at'),
+  lastSuccessAt: integer('last_success_at'),
+  lastStatus: text('last_status'),
+  lastError: text('last_error'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (table) => ({
+  dueIdx: index('idx_ingest_jobs_due').on(table.nextRunAt),
+  runIdx: index('idx_ingest_jobs_run').on(table.runExpiresAt).where(sql`current_run_id IS NOT NULL`),
+}));
+
+export const ingestRuns = sqliteTable('ingest_runs', {
+  id: text('id').primaryKey(),
+  jobKey: text('job_key').notNull(),
+  kind: text('kind').notNull(),
+  dispatchToken: text('dispatch_token'), // the claimed message's token
+  startedAt: integer('started_at').notNull(),
+  finishedAt: integer('finished_at'),
+  status: text('status').notNull(), // 'running' | 'ok' | 'partial' | 'skipped' | 'failed' | 'killed' | 'superseded'
+  d1Calls: integer('d1_calls'),
+  rowsRead: integer('rows_read'),
+  rowsWritten: integer('rows_written'),
+  upstreamCalls: integer('upstream_calls'),
+  creditsUsed: integer('credits_used'),
+  detail: text('detail'), // JSON
+  error: text('error'),
+}, (table) => ({
+  jobIdx: index('idx_ingest_runs_job').on(table.jobKey, table.startedAt),
+}));
+
+export const ingestOwner = sqliteTable('ingest_owner', {
+  groupName: text('group_name').primaryKey(),
+  owner: text('owner').notNull(), // 'legacy' | 'ingest'
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const ingestHeartbeat = sqliteTable('ingest_heartbeat', {
+  name: text('name').primaryKey(),
+  at: integer('at').notNull(),
+  detail: text('detail'), // JSON
+});
+
+export const paidCalls = sqliteTable('paid_calls', {
+  idemKey: text('idem_key').primaryKey(),
+  status: text('status').notNull(),
+  externalRef: text('external_ref'),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const providerState = sqliteTable('provider_state', {
+  provider: text('provider').primaryKey(),
+  quotaUsed: integer('quota_used'),
+  quotaRemaining: integer('quota_remaining'),
+  lastCost: integer('last_cost'),
+  observedAt: integer('observed_at'),
+  blockedReason: text('blocked_reason'),
+  blockedSince: integer('blocked_since'),
+});
+
+export const alertLog = sqliteTable('alert_log', {
+  alertKey: text('alert_key').primaryKey(),
+  openedAt: integer('opened_at').notNull(),
+  lastSeenAt: integer('last_seen_at').notNull(),
+  breaches: integer('breaches').notNull().default(0),
+  resolvedAt: integer('resolved_at'),
+});
+
+export type IngestJob = typeof ingestJobs.$inferSelect;
+export type IngestRun = typeof ingestRuns.$inferSelect;
 
 // ============================================
 // TYPE EXPORTS

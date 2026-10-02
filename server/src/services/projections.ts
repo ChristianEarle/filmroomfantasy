@@ -3,6 +3,26 @@ import * as schema from '../db/schema';
 import type { PlayerProps } from '../db/schema';
 import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
+import { rowChanged } from '../utils/rowDiff';
+
+/**
+ * The projection columns a sync writes. A stored row whose values match on
+ * every one of these is left alone: no UPDATE, and no line snapshot either,
+ * since a snapshot of an identical line is noise for the movement views.
+ */
+export const PROJECTION_COMPARE_KEYS = [
+  'projectedPoints',
+  'projPassYards',
+  'projPassTDs',
+  'projRushYards',
+  'projRushTDs',
+  'projReceptions',
+  'projRecYards',
+  'projRecTDs',
+] as const;
+
+/** Same, plus the provider, for syncs that may switch a row between sources. */
+export const PROJECTION_COMPARE_KEYS_WITH_SOURCE = [...PROJECTION_COMPARE_KEYS, 'source'] as const;
 
 /**
  * Convert player prop lines (from sportsbooks) into projected fantasy points.
@@ -42,6 +62,13 @@ export interface ProjectedStats {
   projReceptions: number | null;
   projRecYards: number | null;
   projRecTDs: number | null;
+  /**
+   * Optional: only populated for season-long projections built from season
+   * prop lines (see seasonProps.ts). Weekly prop markets (The Odds API) have
+   * no interceptions market, so weekly projections never set this and are
+   * unaffected by the -1/INT deduction below.
+   */
+  interceptions?: number | null;
 }
 
 export interface ProjectionResult {
@@ -225,6 +252,7 @@ export function calculateFantasyPoints(
   // Passing
   points += (stats.projPassYards || 0) * 0.04;   // 1 pt per 25 yds
   points += (stats.projPassTDs || 0) * 4;         // 4 pts per TD
+  points += (stats.interceptions || 0) * -1;      // -1 per INT (applies to all three formats)
 
   // Rushing
   points += (stats.projRushYards || 0) * 0.1;     // 1 pt per 10 yds
@@ -296,7 +324,7 @@ export async function generateProjectionsFromProps(
   db: any,
   week: number,
   seasonYear: number
-): Promise<{ generated: number; updated: number }> {
+): Promise<{ generated: number; updated: number; unchanged: number }> {
   // Fetch all props for this week
   const props = await db.query.playerProps.findMany({
     where: and(
@@ -306,7 +334,7 @@ export async function generateProjectionsFromProps(
   });
 
   if (props.length === 0) {
-    return { generated: 0, updated: 0 };
+    return { generated: 0, updated: 0, unchanged: 0 };
   }
 
   const projections = buildProjectionsFromProps(props);
@@ -325,8 +353,25 @@ export async function generateProjectionsFromProps(
     }
   }
 
+  // Pre-fetch existing projections for this week/season in ONE query instead
+  // of a findFirst per (player, format) pair — that pattern previously blew
+  // the Worker's per-invocation subrequest cap on any event with full prop
+  // coverage (~15 players × 3 formats = 45+ round-trips on top of everything
+  // else in the request).
+  const existingProjections = await db.query.playerProjections.findMany({
+    where: and(
+      eq(schema.playerProjections.week, week),
+      eq(schema.playerProjections.seasonYear, seasonYear)
+    ),
+  });
+  const existingByKey = new Map<string, (typeof existingProjections)[number]>();
+  for (const p of existingProjections) {
+    existingByKey.set(`${p.playerId}::${p.scoringFormat}`, p);
+  }
+
   let generated = 0;
   let updated = 0;
+  let unchanged = 0;
   const BATCH_SIZE = 50;
   const statements: any[] = [];
 
@@ -346,14 +391,7 @@ export async function generateProjectionsFromProps(
     ];
 
     for (const { format, points } of formats) {
-      const existingProj = await db.query.playerProjections.findFirst({
-        where: and(
-          eq(schema.playerProjections.playerId, playerId),
-          eq(schema.playerProjections.week, week),
-          eq(schema.playerProjections.seasonYear, seasonYear),
-          eq(schema.playerProjections.scoringFormat, format)
-        ),
-      });
+      const existingProj = existingByKey.get(`${playerId}::${format}`);
 
       const projData = {
         playerId,
@@ -373,6 +411,10 @@ export async function generateProjectionsFromProps(
       };
 
       if (existingProj) {
+        if (!rowChanged(existingProj, projData, PROJECTION_COMPARE_KEYS_WITH_SOURCE)) {
+          unchanged++;
+          continue;
+        }
         // Snapshot the old projection before overwriting. The snapshot's source matches the OLD row's source
         // (the value being snapshotted) so /projection-movements can filter to same-source comparisons later.
         statements.push(
@@ -425,5 +467,5 @@ export async function generateProjectionsFromProps(
   invalidateCache('projection', true);
 
   console.log(`[projections] Generated ${generated}, updated ${updated} from ${projections.length} player prop lines`);
-  return { generated, updated };
+  return { generated, updated, unchanged };
 }

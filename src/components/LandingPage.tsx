@@ -41,7 +41,7 @@ const LANDING_CSS = `
 .lp .nav-links{display:flex;gap:24px;font-size:14px;font-weight:500;color:var(--muted)}
 .lp .nav-links a{cursor:pointer}
 .lp .nav-links a:hover{color:var(--text)}
-.lp .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;border:none;transition:all .12s;font-family:inherit}
+.lp .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;border:none;transition:all .12s;font-family:inherit;white-space:nowrap}
 .lp .btn-blue{background:var(--blue);color:#fff}
 .lp .btn-blue:hover{background:var(--blue-hover)}
 .lp .btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
@@ -188,6 +188,12 @@ const LANDING_CSS = `
   .lp .trade-grid,.lp .trade-grid.teams-3,.lp .trade-grid.teams-4{grid-template-columns:1fr}
   .lp .swap-col{display:none!important}
 }
+@media(max-width:520px){
+  .lp .container{padding:0 16px}
+  .lp .nav-actions{gap:8px}
+  .lp .nav-actions .btn{padding:8px 12px;font-size:12px}
+  .lp .stats-row{flex-wrap:wrap;gap:10px 20px}
+}
 `;
 
 interface ChipData {
@@ -276,7 +282,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <a onClick={nav('Articles')}>Articles</a>
             <a onClick={nav('Pricing')}>Pricing</a>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="nav-actions" style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-outline" onClick={nav('Login')}>Log in</button>
             <button className="btn btn-blue" onClick={nav('Register')}>Sign Up Free</button>
           </div>

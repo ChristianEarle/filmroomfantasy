@@ -22,7 +22,6 @@ const SECTION_TRAILS: Record<string, string[]> = {
   Playoffs: ['League', 'Playoff Predictor'],
   LeagueAnalyzer: ['League', 'League Analyzer'],
   GameSlate: ['Tools', 'Game Slate'],
-  Research: ['Tools', 'Research'],
   Articles: ['Tools', 'Articles'],
   TradeAnalyzer: ['Trade Analyzer'],
 };

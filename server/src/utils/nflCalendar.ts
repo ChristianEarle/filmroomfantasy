@@ -8,6 +8,8 @@
  * that can go stale. The NFL calendar itself is absolute.
  */
 
+import { resolveWeekFromCalendar } from '../services/nflState';
+
 export type SeasonPhase = 'offseason' | 'preseason' | 'regular' | 'playoffs';
 
 export interface NflCalendarContext {
@@ -28,43 +30,42 @@ export interface NflCalendarContext {
 
 /**
  * Resolve the NFL calendar's view of seasons from a given date alone.
- * Convention: the "2025 NFL season" spans Sept 2025 through the Super
- * Bowl in Feb 2026. Super Bowl falls on the first or second Sunday of
- * Feb; we use Feb 15 as a coarse cutoff so every check is deterministic.
+ * Derived from the calendar resolver (services/nflState.ts) — the single
+ * source of truth for "what NFL week/season is it" — rather than its own
+ * month/day rules, so this stays in sync with the server and frontend
+ * resolvers.
  */
 export function resolveSeasonDirectionFromDate(now: Date): {
   mostRecentCompletedSeason: number;
   upcomingSeason: number;
   currentSeason: number | null;
 } {
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth(); // 0 = Jan
-  const d = now.getUTCDate();
+  const { season, seasonType } = resolveWeekFromCalendar(now);
 
-  // Sep–Dec: regular season of year Y.
-  if (m >= 8 && m <= 11) {
+  if (seasonType === 'regular' || seasonType === 'postseason') {
     return {
-      currentSeason: y,
-      mostRecentCompletedSeason: y - 1,
-      upcomingSeason: y + 1,
+      currentSeason: season,
+      mostRecentCompletedSeason: season - 1,
+      upcomingSeason: season + 1,
     };
   }
 
-  // Jan through ~Feb 15: playoffs of the season that started last September.
-  if (m === 0 || (m === 1 && d <= 15)) {
+  // Offseason: the resolver's `season` is the just-completed season (it
+  // stays pinned to the previous September's season through the whole
+  // Jan-Jul window). Preseason: `season` flips to the season about to
+  // start as soon as August begins, so the "most recently completed" one
+  // is one year earlier.
+  if (seasonType === 'offseason') {
     return {
-      currentSeason: y - 1,
-      mostRecentCompletedSeason: y - 2,
-      upcomingSeason: y,
+      currentSeason: null,
+      mostRecentCompletedSeason: season,
+      upcomingSeason: season + 1,
     };
   }
-
-  // Feb 16 – Aug 31: offseason between the just-completed season (y-1)
-  // and the upcoming one (y).
   return {
     currentSeason: null,
-    mostRecentCompletedSeason: y - 1,
-    upcomingSeason: y,
+    mostRecentCompletedSeason: season - 1,
+    upcomingSeason: season,
   };
 }
 

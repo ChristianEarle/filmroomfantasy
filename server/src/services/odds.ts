@@ -1,3 +1,5 @@
+import { getNflSeasonContext } from './espn';
+
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 /** Strip API key from URLs before logging to prevent credential leakage */
@@ -10,9 +12,9 @@ function sanitizeUrl(url: string): string {
  * The Odds API requires the key as a query parameter (no header auth).
  * This wrapper ensures the key never appears in thrown errors or logs.
  */
-async function safeFetch(url: string): Promise<Response> {
+async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(url);
+    return await fetch(url, init);
   } catch (err) {
     // Network errors may include the full URL — sanitize before re-throwing
     const msg = err instanceof Error ? err.message : 'Network error';
@@ -112,19 +114,63 @@ export interface ParsedOdds {
   week?: number;
 }
 
-export async function fetchCurrentOdds(apiKey: string): Promise<OddsGame[]> {
+/** The Odds API's credit counters, from the x-requests-* headers of a response. */
+export interface OddsApiUsage {
+  remaining: number | null;
+  used: number | null;
+  /** What the call that returned these headers cost. */
+  last: number | null;
+}
+
+function usageHeader(headers: Headers, name: string): number | null {
+  const raw = headers.get(name);
+  if (raw === null || raw.trim() === '') return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** Null when the response carries none of the usage headers. */
+function readOddsApiUsage(headers: Headers): OddsApiUsage | null {
+  const usage = {
+    remaining: usageHeader(headers, 'x-requests-remaining'),
+    used: usageHeader(headers, 'x-requests-used'),
+    last: usageHeader(headers, 'x-requests-last'),
+  };
+  return usage.remaining === null && usage.used === null && usage.last === null ? null : usage;
+}
+
+/**
+ * Featured markets (spreads, totals, moneyline) for every listed NFL event.
+ * `bookmakers` narrows the response to those books; up to 10 of them bill the
+ * same as one region.
+ */
+export async function fetchCurrentOdds(apiKey: string, bookmakers?: readonly string[]): Promise<OddsGame[]> {
+  return (await fetchCurrentOddsWithUsage(apiKey, bookmakers)).games;
+}
+
+/** fetchCurrentOdds, plus the credit counters the response reported. */
+export async function fetchCurrentOddsWithUsage(
+  apiKey: string,
+  bookmakers?: readonly string[],
+  { signal }: { signal?: AbortSignal } = {},
+): Promise<{ games: OddsGame[]; usage: OddsApiUsage | null }> {
   const url = new URL(`${ODDS_API_BASE}/sports/americanfootball_nfl/odds`);
-  url.searchParams.set('regions', 'us');
+  if (bookmakers && bookmakers.length > 0) {
+    url.searchParams.set('bookmakers', bookmakers.join(','));
+  } else {
+    url.searchParams.set('regions', 'us');
+  }
   url.searchParams.set('markets', 'spreads,totals,h2h');
   url.searchParams.set('oddsFormat', 'american');
   url.searchParams.set('apiKey', apiKey);
 
-  const response = await safeFetch(url.toString());
+  const response = await safeFetch(url.toString(), { signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch current odds: ${response.status} ${response.statusText}`);
   }
 
-  return response.json();
+  const games = await response.json() as OddsGame[];
+  return { games, usage: readOddsApiUsage(response.headers) };
 }
 
 interface HistoricalOddsResponse {
@@ -168,10 +214,12 @@ export async function fetchHistoricalOdds(
 export function parseOddsResponse(
   games: OddsGame[],
   week?: number,
-  snapshotTime?: string
+  snapshotTime?: string,
+  season?: number
 ): ParsedOdds[] {
   const parsed: ParsedOdds[] = [];
   const timestamp = snapshotTime || new Date().toISOString();
+  const seasonYear = season ?? getNflSeasonContext().season;
 
   for (const game of games) {
     const homeTeamAbbr = teamNameToAbbr(game.home_team);
@@ -190,7 +238,7 @@ export function parseOddsResponse(
           bookmaker: bookmaker.key,
           market: market.key,
           snapshot_time: timestamp,
-          season: 2025,
+          season: seasonYear,
           week,
         };
 
@@ -303,7 +351,13 @@ export function parsePlayerProps(
   const homeTeamAbbr = teamNameToAbbr(game.home_team);
   const awayTeamAbbr = teamNameToAbbr(game.away_team);
 
-  // Filter to FanDuel bookmaker only (fallback: DraftKings, then BetMGM)
+  // Prefer FanDuel, then DraftKings, then BetMGM for consistency across
+  // snapshots — but player-prop markets often go up at different books at
+  // different times (a smaller book may post before the majors do), so fall
+  // back to whichever bookmaker actually has a player_ market rather than
+  // returning nothing just because none of the big three have it yet. The
+  // request already scoped `markets` to player_* props (see fetchPlayerProps),
+  // so any bookmaker present here has at least one of those markets priced.
   const bookmakersInOrder = ['fanduel', 'draftkings', 'betmgm'];
   let selectedBookmaker: OddsBookmaker | undefined;
 
@@ -315,7 +369,11 @@ export function parsePlayerProps(
   }
 
   if (!selectedBookmaker) {
-    // No supported bookmaker found
+    selectedBookmaker = game.bookmakers[0];
+  }
+
+  if (!selectedBookmaker) {
+    // No bookmaker has posted player-prop markets for this event yet
     return parsed;
   }
 
