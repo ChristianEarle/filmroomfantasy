@@ -16,8 +16,10 @@ interface ArchivedLeagueBannerProps {
  * "Week 1", and zero projections. Rankings read the live season, which is
  * why they look fine while the league pages don't.
  *
- * Sync runs the same full sync as Settings; if the league was renewed on
- * Sleeper it follows the renewal to the new season's league and re-imports.
+ * On Sleeper, Sync runs the same full sync as Settings and follows a season
+ * renewal to the new season's league. ESPN, Yahoo and MFL syncs never change
+ * the stored season, so for those the banner points to Settings instead of
+ * offering a sync that cannot help.
  */
 export function ArchivedLeagueBanner({ isDarkMode }: ArchivedLeagueBannerProps) {
   const { league, refreshAll } = useLeagueContext();
@@ -27,6 +29,7 @@ export function ArchivedLeagueBanner({ isDarkMode }: ArchivedLeagueBannerProps) 
 
   const stale = league?.seasonYear != null && nflSeason != null && league.seasonYear !== nflSeason;
   if (!league || !stale) return null;
+  const canRollOver = league.platform === 'sleeper';
 
   const handleSync = async () => {
     if (syncing) return;
@@ -63,7 +66,10 @@ export function ArchivedLeagueBanner({ isDarkMode }: ArchivedLeagueBannerProps) 
           This league is still on the {league.seasonYear} season.
         </p>
         <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-amber-200/80' : 'text-amber-800'}`}>
-          Rosters, projections and matchups here are from {league.seasonYear}. Sync to move it to {nflSeason}.
+          Rosters, projections and matchups here are from {league.seasonYear}.{' '}
+          {canRollOver
+            ? `Sync to move it to ${nflSeason}.`
+            : `Connect your ${nflSeason} league in Settings to see this season.`}
         </p>
         {result && (
           <p className={`text-xs mt-2 ${result.ok ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-700') : (isDarkMode ? 'text-red-400' : 'text-red-700')}`}>
@@ -71,6 +77,7 @@ export function ArchivedLeagueBanner({ isDarkMode }: ArchivedLeagueBannerProps) 
           </p>
         )}
       </div>
+      {canRollOver && (
       <button
         type="button"
         onClick={handleSync}
@@ -80,6 +87,7 @@ export function ArchivedLeagueBanner({ isDarkMode }: ArchivedLeagueBannerProps) 
         {syncing ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-4 h-4" aria-hidden="true" />}
         {syncing ? 'Syncing…' : `Sync to ${nflSeason}`}
       </button>
+      )}
     </div>
   );
 }
