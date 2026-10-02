@@ -7,6 +7,7 @@ import api, { ApiError } from '../services/api';
 // ── Types (mirror GET /api/league-analyzer/:leagueId) ─────────────────────────
 
 interface PositionBreakdown {
+  /** Lineup slot group: QB, RB, WR, TE, FLEX, SFLEX (superflex), K or DEF. */
   position: string;
   starterCount: number;
   avgPoints: number;
@@ -130,6 +131,8 @@ const POS_COLORS: Record<string, string> = {
   RB: 'bg-green-500/15 text-green-500',
   WR: 'bg-blue-500/15 text-blue-500',
   TE: 'bg-amber-500/15 text-amber-500',
+  FLEX: 'bg-cyan-500/15 text-cyan-500',
+  SFLEX: 'bg-pink-500/15 text-pink-500',
   K: 'bg-purple-500/15 text-purple-500',
   DEF: 'bg-slate-500/15 text-slate-500',
 };
@@ -790,7 +793,7 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
       {teams.length > 0 && (
         <div className={`rounded-lg border px-5 py-4 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            Grades compare each team's points per game to the league average. Positional cells are green when starters outproduce the league average at that position by 10%+ and red when they trail it by 10%+.
+            Grades compare each team's points per game to the league average. The positional breakdown groups starters by the lineup slot they fill, so a running back in a flex spot counts toward FLEX, and SFLEX is the superflex slot. Cells are green when a slot's starters outproduce the league average for that slot by 10%+ and red when they trail it by 10%+.
             Playoff odds come from {(5000).toLocaleString()} Monte Carlo simulations of the remaining schedule ({positionColumns.length > 0 ? `${analysis.league.scoringFormat.toUpperCase()} scoring` : 'league scoring'}).
           </p>
         </div>
