@@ -75,6 +75,74 @@ export interface InjuryNotificationResult {
   relevantNews: number;
   recipients: number;
   attempted: number;
+  emailsSent: number;
+}
+
+export interface EmailDigestConfig {
+  resendApiKey?: string;
+  appUrl?: string;
+}
+
+interface DigestItem {
+  title: string;
+  body: string | null;
+  link: string | null;
+}
+
+/** Builds the HTML body for a per-user injury-alert digest email. */
+export function buildInjuryDigestHtml(items: DigestItem[], appUrl: string): string {
+  const rows = items
+    .map((item) => {
+      const heading = item.link
+        ? `<a href="${appUrl}${item.link}" style="color: #2563eb; text-decoration: none;">${item.title}</a>`
+        : item.title;
+      return `
+        <div style="padding: 12px 0; border-bottom: 1px solid #e2e8f0;">
+          <p style="margin: 0 0 4px; font-weight: 600; color: #1e293b;">${heading}</p>
+          ${item.body ? `<p style="margin: 0; color: #475569; font-size: 14px; line-height: 1.5;">${item.body}</p>` : ''}
+        </div>`;
+    })
+    .join('');
+
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+      <h2 style="color: #1e293b; margin-bottom: 16px;">Injury alerts</h2>
+      <p style="color: #475569; line-height: 1.6; margin-bottom: 8px;">
+        New injury news for players on your roster or watchlist:
+      </p>
+      ${rows}
+      <p style="color: #94a3b8; font-size: 13px; margin-top: 24px;">
+        Manage email alerts anytime in FilmRoom Settings.
+      </p>
+    </div>`;
+}
+
+/** Sends one digest email per recipient via Resend. Never throws. */
+export async function sendInjuryDigestEmail(
+  to: string,
+  items: DigestItem[],
+  appUrl: string,
+  resendApiKey: string
+): Promise<boolean> {
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'FilmRoom <noreply@filmroomfantasy.com>',
+        to: [to],
+        subject: items.length === 1 ? `Injury alert: ${items[0].title}` : `${items.length} new injury alerts`,
+        html: buildInjuryDigestHtml(items, appUrl),
+      }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[notifications] injury digest email failed:', err instanceof Error ? err.message : err);
+    return false;
+  }
 }
 
 /**
@@ -93,7 +161,10 @@ export interface InjuryNotificationResult {
  * All lookups are batched (chunked IN queries) — no per-item or per-user
  * round trips.
  */
-export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNotificationResult> {
+export async function generateInjuryNewsNotifications(
+  db: DB,
+  emailConfig: EmailDigestConfig = {}
+): Promise<InjuryNotificationResult> {
   const cutoff = new Date(Date.now() - NEWS_LOOKBACK_MS);
 
   const recentNews: NewsRow[] = await db
@@ -114,7 +185,7 @@ export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNot
 
   const relevant = recentNews.filter(isInjuryRelevant);
   if (relevant.length === 0) {
-    return { scannedNews: recentNews.length, relevantNews: 0, recipients: 0, attempted: 0 };
+    return { scannedNews: recentNews.length, relevantNews: 0, recipients: 0, attempted: 0, emailsSent: 0 };
   }
 
   // Keep only the freshest relevant item per player per run to avoid stacking
@@ -266,7 +337,7 @@ export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNot
   }
 
   if (rows.length === 0) {
-    return { scannedNews: recentNews.length, relevantNews: items.length, recipients: 0, attempted: 0 };
+    return { scannedNews: recentNews.length, relevantNews: items.length, recipients: 0, attempted: 0, emailsSent: 0 };
   }
 
   // Insert in chunks; the unique (user_id, dedupe_key) index + DO NOTHING makes
@@ -280,10 +351,59 @@ export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNot
     await db.batch(group as any);
   }
 
+  const emailsSent = await sendInjuryEmailDigests(db, rows, emailConfig);
+
   return {
     scannedNews: recentNews.length,
     relevantNews: items.length,
     recipients,
     attempted: rows.length,
+    emailsSent,
   };
+}
+
+/**
+ * Sends one digest email per user who opted into email alerts and has a
+ * verified address, covering every injury notification row generated this
+ * run. Best-effort: a missing API key or a send failure never affects the
+ * (already-committed) in-app notifications, and never throws.
+ */
+async function sendInjuryEmailDigests(
+  db: DB,
+  rows: schema.NewNotification[],
+  { resendApiKey, appUrl }: EmailDigestConfig
+): Promise<number> {
+  if (!resendApiKey) return 0;
+
+  const byUser = new Map<string, DigestItem[]>();
+  for (const row of rows) {
+    const list = byUser.get(row.userId);
+    const item = { title: row.title, body: row.body ?? null, link: row.link ?? null };
+    if (list) list.push(item);
+    else byUser.set(row.userId, [item]);
+  }
+  const userIds = [...byUser.keys()];
+
+  // Filter to users who opted into email alerts and have a verified address.
+  // This list is small (only users who just got a notification this run).
+  const eligible: { id: string; email: string }[] = [];
+  for (const ids of chunk(userIds, IN_CHUNK)) {
+    const users = await db
+      .select({ id: schema.users.id, email: schema.users.email, eligible: schema.users.emailNotificationsEnabled, verified: schema.users.emailVerifiedAt })
+      .from(schema.users)
+      .where(inArray(schema.users.id, ids));
+    for (const u of users) {
+      if (u.eligible && u.verified) eligible.push({ id: u.id, email: u.email });
+    }
+  }
+
+  let sent = 0;
+  const base = appUrl || 'http://localhost:5173';
+  for (const { id, email } of eligible) {
+    const items = byUser.get(id);
+    if (!items || items.length === 0) continue;
+    const ok = await sendInjuryDigestEmail(email, items, base, resendApiKey);
+    if (ok) sent++;
+  }
+  return sent;
 }
