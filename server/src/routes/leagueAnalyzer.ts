@@ -6,6 +6,15 @@ import { requireTier } from '../middleware/tier';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateId } from '../utils/id';
 import { buildCachedSystemBlocks, sanitizePromptInput } from '../utils/prompt';
+import {
+  EFFORT_QUICK,
+  EFFORT_REASONING,
+  describeResponse,
+  firstText,
+  maxTokensWithThinking,
+  parseJsonObject,
+  type AnthropicTextResponse,
+} from '../utils/aiOutput';
 import { resolveLeagueWeek } from '../services/nflState';
 import type { Env, Variables } from '../index';
 
@@ -960,7 +969,9 @@ Current starters: ${starterLine}`;
               },
               body: JSON.stringify({
                 model: AI_MODEL,
-                max_tokens: 500,
+                // 500 visible tokens plus thinking headroom — see utils/aiOutput.ts.
+                max_tokens: maxTokensWithThinking(500),
+                output_config: EFFORT_QUICK,
                 system: buildCachedSystemBlocks(TEAM_NARRATIVE_SYSTEM_PROMPT),
                 messages: [{ role: 'user', content: dataBlock }],
               }),
@@ -972,9 +983,10 @@ Current starters: ${starterLine}`;
               console.error('[league-analyzer/narrative] Anthropic error:', res.status, errText);
               throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
             }
-            const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-            const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
+            const data = (await res.json()) as AnthropicTextResponse;
+            const text = firstText(data);
             if (!text) {
+              console.error(`[league-analyzer/narrative] no text block (${describeResponse(data)})`);
               throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
             }
             narrative = text;
@@ -1128,11 +1140,13 @@ ${teamBlocks}`;
               },
               body: JSON.stringify({
                 model: AI_MODEL,
-                max_tokens: 900,
+                // 900 visible tokens plus thinking headroom — see utils/aiOutput.ts.
+                max_tokens: maxTokensWithThinking(900),
+                output_config: EFFORT_REASONING,
                 system: buildCachedSystemBlocks(LEAGUE_PULSE_SYSTEM_PROMPT),
                 messages: [{ role: 'user', content: dataBlock }],
               }),
-              signal: AbortSignal.timeout(30000),
+              signal: AbortSignal.timeout(45000),
             });
 
             if (!res.ok) {
@@ -1140,18 +1154,16 @@ ${teamBlocks}`;
               console.error('[league-analyzer/pulse] Anthropic error:', res.status, errText);
               throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
             }
-            const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-            const text = data.content?.find((b) => b.type === 'text')?.text?.trim();
+            const data = (await res.json()) as AnthropicTextResponse;
+            const text = firstText(data);
             if (!text) {
+              console.error(`[league-analyzer/pulse] no text block (${describeResponse(data)})`);
               throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
             }
 
-            const jsonStr = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-            let parsed: { ranking?: unknown; narrative?: unknown };
-            try {
-              parsed = JSON.parse(jsonStr);
-            } catch {
-              console.error('[league-analyzer/pulse] non-JSON response:', text.slice(0, 300));
+            const parsed = parseJsonObject<{ ranking?: unknown; narrative?: unknown }>(text);
+            if (!parsed) {
+              console.error(`[league-analyzer/pulse] non-JSON response (${describeResponse(data)}):`, text.slice(0, 300));
               throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
             }
             if (typeof parsed.narrative !== 'string' || !parsed.narrative.trim()) {
