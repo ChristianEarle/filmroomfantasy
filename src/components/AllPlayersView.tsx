@@ -87,7 +87,11 @@ const AllPlayerRow = memo(function AllPlayerRow({
         <span className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{player.keyLine}</span>
       </td>
       <td className="px-3 py-2 text-right">
-        <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+        {player.hasProjection === false ? (
+          <span className={`font-bold text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} title="No projection yet for this week">—</span>
+        ) : (
+          <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{player.projectedPoints.toFixed(1)}</span>
+        )}
       </td>
     </tr>
   );

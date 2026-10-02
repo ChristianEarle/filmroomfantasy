@@ -106,6 +106,16 @@ export interface TeamScheduleGame extends NFLGame {
   opponent: string;
 }
 
+// Single source of truth for "what NFL week is it" — see
+// server/src/services/nflState.ts for how this is resolved.
+export interface NflState {
+  season: number;
+  week: number;
+  seasonType: 'preseason' | 'regular' | 'postseason' | 'offseason';
+  source: 'schedule' | 'espn' | 'calendar';
+  resolvedAt: string;
+}
+
 // Games API functions
 export const gameService = {
   // Get games for a week
@@ -168,6 +178,11 @@ export const gameService = {
       weekLabel?: string;
       games: EspnScoreboardGame[];
     }>(`/games/slate${query ? `?${query}` : ''}`);
+  },
+
+  // Get the current NFL season/week/phase (used to default week-scoped views)
+  getNflState: async (): Promise<NflState> => {
+    return api.get<NflState>('/games/nfl-state');
   },
 
   // Get team schedule

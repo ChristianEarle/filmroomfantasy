@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
+import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
 
 // Rate limits for Yahoo OAuth routes
@@ -16,6 +17,18 @@ export const yahooRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 const YAHOO_AUTH_URL = 'https://api.login.yahoo.com/oauth2/request_auth';
 const YAHOO_TOKEN_URL = 'https://api.login.yahoo.com/oauth2/get_token';
 const YAHOO_API_BASE = 'https://fantasysports.yahooapis.com/fantasy/v2';
+
+// Shown to end users when the deploy has no Yahoo OAuth secrets. Deliberately
+// user-facing: the frontend surfaces this string verbatim, so it must explain
+// that retrying is pointless rather than implying a transient failure.
+const NOT_CONFIGURED_MESSAGE =
+  'Yahoo connection is unavailable right now — this server is missing its Yahoo OAuth credentials. Please try another platform or contact support.';
+
+type ConfiguredEnv = Env & { YAHOO_CLIENT_ID: string; YAHOO_CLIENT_SECRET: string };
+
+function isYahooConfigured(env: Env): env is ConfiguredEnv {
+  return Boolean(env.YAHOO_CLIENT_ID && env.YAHOO_CLIENT_SECRET);
+}
 
 // Derive the OAuth callback URL. Prefer the explicit YAHOO_REDIRECT_URI env
 // var (required when the worker is reachable on multiple hostnames but Yahoo's
@@ -154,6 +167,12 @@ async function yahooApiFetch(accessToken: string, path: string): Promise<any> {
 // ============================================
 // ROUTES
 // ============================================
+
+// Report whether this deploy can do Yahoo OAuth at all, so the UI can mark the
+// platform unavailable up front instead of failing after the user clicks it.
+yahooRoutes.get('/status', yahooReadRateLimit, (c) => {
+  return c.json({ configured: isYahooConfigured(c.env) });
+});
 
 // Generate Yahoo OAuth authorization URL
 yahooRoutes.post('/auth-url', yahooAuthRateLimit, authMiddleware, async (c) => {
@@ -431,7 +450,7 @@ function parseYahooLeagues(data: any): Array<{
             externalId,
             leagueKey,
             name: l.name || `Yahoo League`,
-            seasonYear: parseInt(l.season) || new Date().getFullYear(),
+            seasonYear: parseInt(l.season) || getDefaultSeason(),
             teamCount: parseInt(l.num_teams) || 12,
             // Requires the `;out=settings` sub-resource on the leagues request;
             // without it there are no stat_modifiers and this falls back to

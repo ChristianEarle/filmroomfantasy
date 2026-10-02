@@ -5,6 +5,14 @@
  */
 
 import staticSchedule from '../data/nfl-schedule-2025.json';
+import { resolveWeekFromCalendar } from './nflState';
+
+// The bundled static schedule is a point-in-time snapshot of ONE specific
+// season (see filename). It must never be used as a stand-in for a
+// different season — doing so previously let real 2025 games get silently
+// relabeled and stored as season 2026's schedule whenever ESPN's live API
+// had no data yet for a future season.
+const STATIC_SCHEDULE_SEASON = 2025;
 
 const ESPN_SCOREBOARD = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 
@@ -44,38 +52,27 @@ const INDOOR_TEAMS = new Set(['NO', 'DET', 'MIN', 'LV', 'IND', 'ATL', 'DAL', 'HO
  * Determine the current NFL season year and phase based on the calendar date.
  * ESPN season types: '1' = preseason, '2' = regular season, '3' = postseason.
  *
- * NFL calendar (approximate):
- *   Jan 1 – Feb 15:   Previous year's postseason
- *   Feb 16 – Jul 31:  Offseason (return previous year's regular season for historical data)
- *   Aug 1 – Sep 4:    Current year's preseason
- *   Sep 5 – Jan 15*:  Current year's regular season (* extends into next calendar year)
- *
- * Note: The exact cutoff dates shift year-to-year. These are close enough for
- * default context when the caller doesn't specify an explicit week/season.
+ * Derived from the calendar resolver (services/nflState.ts) — the single
+ * source of truth for "what NFL week/season is it" — so this stays in sync
+ * with the server and frontend resolvers. Offseason still returns the
+ * previous season's regular-season data (seasontype '2'), matching this
+ * function's historical behavior for callers that want default context.
  */
 export function getNflSeasonContext(): { season: number; seasontype: string } {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-indexed
-  const day = now.getDate();
-
-  // Jan 1 – Feb 15: previous year's postseason
-  if (month === 0 || (month === 1 && day <= 15)) {
-    return { season: year - 1, seasontype: '3' };
+  const calendar = resolveWeekFromCalendar(new Date());
+  switch (calendar.seasonType) {
+    case 'preseason':
+      return { season: calendar.season, seasontype: '1' };
+    case 'regular':
+      return { season: calendar.season, seasontype: '2' };
+    case 'postseason':
+      return { season: calendar.season, seasontype: '3' };
+    case 'offseason':
+    default:
+      // Offseason: the current calendar-year season has no data yet, so
+      // point at the previous (completed) season's regular-season data.
+      return { season: calendar.season, seasontype: '2' };
   }
-
-  // Feb 16 – Jul 31: offseason — show previous year's regular season data
-  if (month <= 6) {
-    return { season: year - 1, seasontype: '2' };
-  }
-
-  // Aug 1 – Sep 4: preseason
-  if (month === 7 || (month === 8 && day <= 4)) {
-    return { season: year, seasontype: '1' };
-  }
-
-  // Sep 5 – Dec 31: regular season
-  return { season: year, seasontype: '2' };
 }
 
 export interface EspnGameRow {
@@ -295,15 +292,49 @@ async function fetchEspnByWeek(
       },
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[espn] week-based fetch failed for season=${season} week=${week}: HTTP ${res.status} ${res.statusText}`);
+      return null;
+    }
 
     const data = await res.json() as any;
     if (!data || typeof data !== 'object') return null;
 
     const events = data.events || [];
+    if (events.length === 0) {
+      console.warn(`[espn] week-based fetch returned 0 events for season=${season} week=${week} (response season: ${data.season?.year}, week: ${data.week?.number})`);
+    }
     const resolvedWeek = week ?? data.week?.number ?? 1;
     return { events, resolvedWeek };
-  } catch {
+  } catch (err) {
+    console.warn(`[espn] week-based fetch threw for season=${season} week=${week}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Ask ESPN what week it currently thinks we're in, without mapping any
+ * game data. Used as a fallback when we have no schedule rows in our own
+ * DB to reason about. Never throws — returns null on any failure.
+ */
+export async function fetchEspnCurrentWeek(season: number, seasonType: string): Promise<number | null> {
+  try {
+    const params = new URLSearchParams({ season: String(season), seasontype: seasonType });
+    const res = await fetch(`${ESPN_SCOREBOARD}?${params}`, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as any;
+    // Only trust an explicit week number. ESPN answers 200 with no `week`
+    // for out-of-window/completed seasons, and defaulting that to 1 would
+    // reintroduce the "stuck on week 1" symptom the caller exists to avoid.
+    const week = Number(data?.week?.number);
+    return Number.isInteger(week) && week >= 1 ? week : null;
+  } catch (err) {
+    console.warn(`[espn] current-week fetch threw for season=${season}:`, err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -343,12 +374,19 @@ async function fetchEspnByDateRange(
       },
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[espn] date-range fetch failed for season=${season} week=${week} (dates=${dateRange}): HTTP ${res.status} ${res.statusText}`);
+      return null;
+    }
 
     const data = await res.json() as any;
     if (!data || typeof data !== 'object') return null;
 
-    return { events: data.events || [] };
+    const events = data.events || [];
+    if (events.length === 0) {
+      console.warn(`[espn] date-range fetch returned 0 events for season=${season} week=${week} (dates=${dateRange})`);
+    }
+    return { events };
   } catch {
     return null;
   }
@@ -371,25 +409,37 @@ export async function fetchEspnScoreboard(
     return { ...parsed, week: weekResult.resolvedWeek, season: s, source: 'espn' };
   }
 
-  // 2. Week-based failed (ESPN returns 500 for completed seasons) — try date-range endpoint
-  const dateResult = await fetchEspnByDateRange(weekNum, s, st);
+  // 2. Week-based failed (ESPN returns 500 for completed seasons) — try the
+  // date-range endpoint. Its date window comes from the static schedule
+  // (see below), so — same reasoning as step 3 — it can only be trusted for
+  // the season that schedule actually represents. For any other season it
+  // would query real (but wrong-season) calendar dates and mislabel
+  // whatever real games it finds as the requested season.
+  const dateResult = s === STATIC_SCHEDULE_SEASON ? await fetchEspnByDateRange(weekNum, s, st) : null;
   if (dateResult && dateResult.events.length > 0) {
     const parsed = parseEspnEvents(dateResult.events, weekNum, s, st);
     return { ...parsed, week: weekNum, season: s, source: 'espn' };
   }
 
-  // 3. Both ESPN methods failed — fall back to static schedule
-  if (st === '2') {
+  // 3. Both ESPN methods failed — fall back to the static schedule, but ONLY
+  // for the exact season it's a snapshot of. Falling back for any other
+  // season would silently mislabel that season's real schedule as one it
+  // never was.
+  if (st === '2' && s === STATIC_SCHEDULE_SEASON) {
     console.warn(`ESPN API unavailable for ${s} week ${weekNum}, using static schedule`);
     try {
       const fallback = loadStaticSchedule(weekNum, s, st);
       if (fallback.games.length > 0) {
         return { ...fallback, week: weekNum, season: s, source: 'static' };
       }
-    } catch { /* static schedule doesn't exist for this season */ }
+    } catch { /* static schedule doesn't exist for this week */ }
   }
 
-  throw new Error(`ESPN unavailable and no static schedule for season ${s} week ${weekNum}`);
+  throw new Error(
+    s === STATIC_SCHEDULE_SEASON
+      ? `ESPN unavailable and no static schedule for season ${s} week ${weekNum}`
+      : `ESPN unavailable for season ${s} week ${weekNum} — no static fallback exists for this season (static schedule is ${STATIC_SCHEDULE_SEASON} only)`
+  );
 }
 
 // ESPN uses WSH, static schedule may use WAS — normalize

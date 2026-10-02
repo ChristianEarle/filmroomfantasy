@@ -46,10 +46,6 @@ const ROUTE_SEO: Record<string, { title: string; description: string }> = {
     title: 'Fantasy Football Trends | FilmRoom',
     description: 'Track trending players, roster percentages, and add/drop activity across fantasy football leagues.',
   },
-  Research: {
-    title: 'Player Research & Analysis | FilmRoom',
-    description: 'In-depth fantasy football player analysis with Vegas props, game logs, projection accuracy tracking, and advanced metrics.',
-  },
   Playoffs: {
     title: 'Fantasy Football Playoff Predictor | FilmRoom',
     description: 'Simulate your fantasy football playoff scenarios with AI-powered predictions and strength of schedule analysis.',
@@ -146,7 +142,6 @@ const VIEW_TO_PATH: Record<string, string> = {
   Waivers: '/waivers',
   GameSlate: '/game-slate',
   Trends: '/trends',
-  Research: '/research',
   Playoffs: '/playoff-predictor',
   DraftRankings: '/draft-rankings',
   LeagueAnalyzer: '/league-analyzer',
@@ -226,7 +221,7 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
   const noindexViews = [
     'Home', 'Team', 'Matchup', 'Settings', 'Profile', 'Admin', 'AllPlayers', // private
     'Login', 'Register',                                                       // utility screens
-    'Research', 'LeagueAnalyzer',                                               // Coming Soon placeholders
+    'LeagueAnalyzer',                                                           // Coming Soon placeholder
     'NotFound',                                                                 // 404 page
   ];
   if (noindexViews.includes(effectiveView)) {
@@ -424,7 +419,6 @@ export function getSEOPropsForView(view: string, authView?: string): SEOProps {
     Playoffs: 'Playoff Predictor',
     DraftRankings: 'Draft Rankings',
     LeagueAnalyzer: 'League Analyzer',
-    Research: 'Research',
     Articles: 'Articles',
     Login: 'Sign In',
     Register: 'Sign Up',

@@ -4,6 +4,7 @@ import { jwtVerify } from 'jose';
 import { eq, and, gt } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import type { Env, Variables } from '../index';
+import { isLocalDevRequest } from './tier';
 
 const AUTH_COOKIE_NAME = 'auth_token';
 
@@ -26,6 +27,49 @@ function getAuthToken(c: Context): string | undefined {
   return undefined;
 }
 
+/**
+ * Local-dev auto-login. When `DEV_AUTO_LOGIN_EMAIL` is set (server/.dev.vars,
+ * gitignored), requests that carry NO auth token are treated as that user —
+ * so the login form can be skipped entirely on localhost. It applies only when
+ * all four hold: the var is set, `ENVIRONMENT` is not 'production', the
+ * request Host header is a local host, AND the request URL's own hostname
+ * (from `c.req.url`, not attacker-controllable the way a Host header can be)
+ * is ALSO a local host. Requiring both closes the gap where a spoofed/forwarded
+ * Host header could otherwise trick this into auto-logging in a request whose
+ * real URL is not local. A real token always takes precedence, and the
+ * user row must exist (create it once with scripts/seed-dev-league.mjs).
+ * Note: after "Sign out" the next request auto-logs-in again — that's expected.
+ */
+export function shouldDevAutoLogin(
+  env: Pick<Env, 'ENVIRONMENT'> & { DEV_AUTO_LOGIN_EMAIL?: string },
+  hostHeader: string | undefined | null,
+  urlHostname: string | undefined | null,
+): string | null {
+  const email = env.DEV_AUTO_LOGIN_EMAIL?.trim().toLowerCase();
+  if (!email) return null;
+  if (env.ENVIRONMENT === 'production') return null;
+  if (!isLocalDevRequest(hostHeader) || !isLocalDevRequest(urlHostname)) return null;
+  return email;
+}
+
+async function resolveDevAutoLoginUser(c: Context<{ Bindings: Env; Variables: Variables }>) {
+  let urlHostname: string | null = null;
+  try {
+    urlHostname = new URL(c.req.url).hostname;
+  } catch {
+    urlHostname = null;
+  }
+  const email = shouldDevAutoLogin(c.env, c.req.header('host'), urlHostname);
+  if (!email) return null;
+  const db = c.get('db');
+  const user = await db.query.users.findFirst({ where: eq(schema.users.email, email) });
+  if (!user) {
+    console.warn(`[auth] DEV_AUTO_LOGIN_EMAIL is set but no user exists for ${email}`);
+    return null;
+  }
+  return user;
+}
+
 export const authMiddleware = async (
   c: Context<{ Bindings: Env; Variables: Variables }>,
   next: Next
@@ -33,6 +77,12 @@ export const authMiddleware = async (
   const token = getAuthToken(c);
 
   if (!token) {
+    const devUser = await resolveDevAutoLoginUser(c);
+    if (devUser) {
+      c.set('user', devUser);
+      await next();
+      return;
+    }
     return c.json({ error: 'Unauthorized - No token provided' }, 401);
   }
 
@@ -82,6 +132,11 @@ export const optionalAuthMiddleware = async (
   next: Next
 ) => {
   const token = getAuthToken(c);
+
+  if (!token) {
+    const devUser = await resolveDevAutoLoginUser(c);
+    if (devUser) c.set('user', devUser);
+  }
 
   if (token) {
     try {

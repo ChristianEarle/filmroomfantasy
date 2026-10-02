@@ -1,6 +1,7 @@
 import { Trophy, TrendingUp, TrendingDown, Calendar, Award, BarChart3, Shuffle, CheckCircle2, Loader2 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useLeagueContext, LeagueMatchup } from '../context/LeagueContext';
+import { remainingRegularSeasonGames, runPlayoffSimulation, teamPointsPerGame, winProbability } from '../utils/playoffSimulation';
 
 interface Team {
   id: string;
@@ -21,194 +22,7 @@ interface Team {
 const formatRecord = (wins: number, losses: number, ties: number) =>
   ties > 0 ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
 
-// ── Monte Carlo Simulation Engine ──────────────────────────────────────
-// Uses team strength (points-per-game) to compute win probabilities for
-// each remaining matchup, then runs simulated seasons to calculate
-// realistic playoff odds for every team.
-
-/** Number of Monte Carlo simulations to run for playoff probability estimates */
-const DEFAULT_NUM_SIMULATIONS = 10_000;
-
-/** Minimum win probability floor — any team can win on any given week */
-const WIN_PROB_FLOOR = 0.15;
-
-/** Maximum win probability ceiling — no matchup is a guaranteed win */
-const WIN_PROB_CEILING = 0.85;
-
-interface MonteCarloResult {
-  playoffPct: number;       // 0-100
-  avgProjectedWins: number; // average wins across all sims
-  winProbByMatchup: Map<string, number>; // matchupId → P(team1 wins)
-}
-
-function runMonteCarloSimulation(
-  standings: { teamId: string; wins: number; losses: number; ties: number; pointsFor: number }[],
-  remainingMatchups: { id: string; team1Id: string; team2Id: string }[],
-  playoffSpots: number,
-  numSims = DEFAULT_NUM_SIMULATIONS,
-): Map<string, MonteCarloResult> {
-  const results = new Map<string, MonteCarloResult>();
-
-  // Sanity check: determine max games per team and filter out invalid "remaining" matchups
-  // A team's total games (played + remaining) should not exceed the regular season length
-  const gamesPlayed = new Map<string, number>();
-  for (const s of standings) {
-    gamesPlayed.set(s.teamId, s.wins + s.losses + s.ties);
-  }
-
-  // Count how many remaining matchups each team has
-  const remainingPerTeam = new Map<string, number>();
-  for (const m of remainingMatchups) {
-    remainingPerTeam.set(m.team1Id, (remainingPerTeam.get(m.team1Id) || 0) + 1);
-    remainingPerTeam.set(m.team2Id, (remainingPerTeam.get(m.team2Id) || 0) + 1);
-  }
-
-  // Detect the regular season length from the data
-  const maxGamesPlayed = Math.max(...Array.from(gamesPlayed.values()), 0);
-  const maxRemaining = Math.max(...Array.from(remainingPerTeam.values()), 0);
-  const impliedSeasonLength = maxGamesPlayed + maxRemaining;
-
-  // If any team's total (played + remaining) exceeds a reasonable season length,
-  // the "remaining" matchups include already-played games — filter them out
-  let filteredRemaining = remainingMatchups;
-  if (maxGamesPlayed > 0 && impliedSeasonLength > maxGamesPlayed + 4) {
-    // Too many remaining matchups — likely a data issue where completed matchups
-    // aren't marked as complete. Only keep matchups where BOTH teams have room.
-    const maxRemainingPerTeam = new Map<string, number>();
-    // Estimate: each team should have at most (maxGamesPlayed - their games played) remaining
-    // But we don't know the exact season length, so use the max games played as proxy
-    for (const s of standings) {
-      const played = gamesPlayed.get(s.teamId) || 0;
-      maxRemainingPerTeam.set(s.teamId, Math.max(0, maxGamesPlayed - played));
-    }
-
-    // If ALL teams have played the same number of games (season is over or bye-week aligned),
-    // and there are still "remaining" matchups, the season is actually complete
-    const allSameGamesPlayed = new Set(gamesPlayed.values()).size === 1;
-    if (allSameGamesPlayed && maxRemaining > 0) {
-      // All teams played the same number of games but we still have "remaining" — season is done
-      filteredRemaining = [];
-    } else {
-      // Filter: track how many we've allowed per team
-      const allowed = new Map<string, number>();
-      filteredRemaining = remainingMatchups.filter(m => {
-        const t1Allowed = (allowed.get(m.team1Id) || 0) < (maxRemainingPerTeam.get(m.team1Id) || 0);
-        const t2Allowed = (allowed.get(m.team2Id) || 0) < (maxRemainingPerTeam.get(m.team2Id) || 0);
-        if (t1Allowed && t2Allowed) {
-          allowed.set(m.team1Id, (allowed.get(m.team1Id) || 0) + 1);
-          allowed.set(m.team2Id, (allowed.get(m.team2Id) || 0) + 1);
-          return true;
-        }
-        return false;
-      });
-    }
-  }
-
-  // Calculate each team's PPG (points per game) as strength metric
-  const teamPpg = new Map<string, number>();
-  let leagueAvgPpg = 0;
-  let teamsWithGames = 0;
-  for (const s of standings) {
-    const gp = s.wins + s.losses + s.ties;
-    if (gp > 0) {
-      const ppg = s.pointsFor / gp;
-      teamPpg.set(s.teamId, ppg);
-      leagueAvgPpg += ppg;
-      teamsWithGames++;
-    }
-  }
-  leagueAvgPpg = teamsWithGames > 0 ? leagueAvgPpg / teamsWithGames : 100;
-
-  // Fill in teams with no games played using league average
-  for (const s of standings) {
-    if (!teamPpg.has(s.teamId)) {
-      teamPpg.set(s.teamId, leagueAvgPpg);
-    }
-  }
-
-  // Pre-compute win probabilities for each remaining matchup
-  // Uses PPG ratio with a floor/ceiling to prevent extreme probabilities
-  const matchupWinProbs: { id: string; team1Id: string; team2Id: string; p1: number }[] = [];
-  const winProbMap = new Map<string, number>();
-
-  for (const m of filteredRemaining) {
-    const ppg1 = teamPpg.get(m.team1Id) || leagueAvgPpg;
-    const ppg2 = teamPpg.get(m.team2Id) || leagueAvgPpg;
-    // Clamp between floor and ceiling — any team can win on any given week
-    const raw = ppg1 / (ppg1 + ppg2);
-    const clamped = Math.min(WIN_PROB_CEILING, Math.max(WIN_PROB_FLOOR, raw));
-    matchupWinProbs.push({ id: m.id, team1Id: m.team1Id, team2Id: m.team2Id, p1: clamped });
-    winProbMap.set(m.id, clamped);
-  }
-
-  // Edge case: if no remaining games, standings are final
-  if (filteredRemaining.length === 0) {
-    const sorted = [...standings].sort((a, b) => {
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      return b.pointsFor - a.pointsFor;
-    });
-    for (let i = 0; i < sorted.length; i++) {
-      results.set(sorted[i].teamId, {
-        playoffPct: i < playoffSpots ? 100 : 0,
-        avgProjectedWins: sorted[i].wins,
-        winProbByMatchup: winProbMap,
-      });
-    }
-    return results;
-  }
-
-  // Accumulators
-  const playoffCount: Record<string, number> = {};
-  const totalWins: Record<string, number> = {};
-  for (const s of standings) {
-    playoffCount[s.teamId] = 0;
-    totalWins[s.teamId] = 0;
-  }
-
-  // Run simulations
-  for (let sim = 0; sim < numSims; sim++) {
-    // Copy current records
-    const simWins: Record<string, number> = {};
-    const simPf: Record<string, number> = {};
-    for (const s of standings) {
-      simWins[s.teamId] = s.wins;
-      simPf[s.teamId] = s.pointsFor;
-    }
-
-    // Simulate each remaining matchup
-    for (const mp of matchupWinProbs) {
-      if (Math.random() < mp.p1) {
-        simWins[mp.team1Id]++;
-      } else {
-        simWins[mp.team2Id]++;
-      }
-    }
-
-    // Sort by wins desc, then PF desc (standard tiebreaker)
-    const simStandings = standings.map(s => ({
-      id: s.teamId,
-      w: simWins[s.teamId],
-      pf: simPf[s.teamId],
-    })).sort((a, b) => b.w !== a.w ? b.w - a.w : b.pf - a.pf);
-
-    // Top N make playoffs
-    for (let i = 0; i < simStandings.length; i++) {
-      if (i < playoffSpots) playoffCount[simStandings[i].id]++;
-      totalWins[simStandings[i].id] += simStandings[i].w;
-    }
-  }
-
-  // Build results
-  for (const s of standings) {
-    results.set(s.teamId, {
-      playoffPct: Math.round((playoffCount[s.teamId] / numSims) * 100),
-      avgProjectedWins: totalWins[s.teamId] / numSims,
-      winProbByMatchup: winProbMap,
-    });
-  }
-
-  return results;
-}
+// Monte Carlo engine: src/utils/playoffSimulation.ts (same model as the League Analyzer).
 
 interface SimulatorMatchup {
   id: string;
@@ -221,6 +35,8 @@ interface SimulatorMatchup {
   team1Points?: number;
   team2Points?: number;
   isComplete?: boolean;
+  /** Playoff-bracket game: excluded from regular-season odds and the simulator. */
+  isPlayoff?: boolean;
 }
 
 // Convert LeagueMatchup to SimulatorMatchup format
@@ -239,6 +55,7 @@ const convertToSimulatorMatchup = (m: LeagueMatchup): SimulatorMatchup => ({
   team1Points: m.isComplete ? m.homeTeam.score : undefined,
   team2Points: m.isComplete ? m.awayTeam.score : undefined,
   isComplete: m.isComplete,
+  isPlayoff: m.isPlayoff,
 });
 
 interface PlayoffPredictorViewProps {
@@ -276,47 +93,59 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
     }
   }, [allMatchups, league?.id]);
 
-  // Get weeks that have matchups
-  const matchupWeeks = useMemo(() => {
-    const weeks = [...new Set(matchups.map(m => m.week))].sort((a, b) => a - b);
-    return weeks;
-  }, [matchups]);
+  // Every week in the schedule, playoff bracket included (for the playoff label).
+  const allWeeks = useMemo(
+    () => [...new Set(matchups.map(m => m.week))].sort((a, b) => a - b),
+    [matchups],
+  );
 
-  // Get remaining (incomplete) matchup weeks
-  const remainingWeeks = useMemo(() => {
-    return matchupWeeks.filter(week =>
-      matchups.some(m => m.week === week && !m.isComplete)
-    );
-  }, [matchupWeeks, matchups]);
+  // Regular-season weeks only: the playoff bracket weeks aren't regular-season
+  // games, so they never count toward odds, "weeks left" or the simulator.
+  const matchupWeeks = useMemo(
+    () => [...new Set(matchups.filter(m => !m.isPlayoff).map(m => m.week))].sort((a, b) => a - b),
+    [matchups],
+  );
 
-  // Run Monte Carlo simulation
-  const monteCarloResults = useMemo(() => {
-    if (!standings || standings.length === 0) return null;
-
-    const remaining = matchups
-      .filter(m => !m.isComplete)
-      .map(m => ({ id: m.id, team1Id: m.team1Id, team2Id: m.team2Id }));
-
-    const standingsInput = standings.map(s => ({
+  const standingsInput = useMemo(
+    () => (standings || []).map(s => ({
       teamId: s.teamId,
       wins: s.wins,
       losses: s.losses,
       ties: s.ties,
       pointsFor: s.pointsFor,
-    }));
+    })),
+    [standings],
+  );
 
+  // Regular-season games still to play (same rule as the League Analyzer).
+  const remainingGames = useMemo(
+    () => remainingRegularSeasonGames(standingsInput, matchups),
+    [standingsInput, matchups],
+  );
+
+  // Weeks with regular-season games still to play — taken from the same
+  // capped set the odds use, so "weeks left" and the odds always agree.
+  const remainingWeeks = useMemo(
+    () => [...new Set(remainingGames.map(m => m.week))].sort((a, b) => a - b),
+    [remainingGames],
+  );
+
+  // Run Monte Carlo simulation
+  const monteCarloResults = useMemo(() => {
+    if (standingsInput.length === 0) return null;
     const playoffSpots = league?.playoffTeams || 6;
-    return runMonteCarloSimulation(standingsInput, remaining, playoffSpots);
-  }, [standings, matchups, league]);
+    return runPlayoffSimulation(standingsInput, remainingGames, playoffSpots);
+  }, [standingsInput, remainingGames, league]);
 
   // Convert real standings to Team format, powered by Monte Carlo
   const leagueTeamsData = useMemo(() => {
     if (standings && standings.length > 0) {
+      const nameById = new Map(matchups.flatMap(m => [[m.team1Id, m.team1], [m.team2Id, m.team2]] as const));
       return standings.map((s) => {
         // Find remaining games for this team
-        const teamRemainingGames = matchups
-          .filter(m => !m.isComplete && (m.team1Id === s.teamId || m.team2Id === s.teamId))
-          .map(m => m.team1Id === s.teamId ? m.team2 : m.team1);
+        const teamRemainingGames = remainingGames
+          .filter(m => m.team1Id === s.teamId || m.team2Id === s.teamId)
+          .map(m => nameById.get(m.team1Id === s.teamId ? m.team2Id : m.team1Id) || 'TBD');
 
         const mc = monteCarloResults?.get(s.teamId);
 
@@ -337,7 +166,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
       });
     }
     return [];
-  }, [standings, matchups, monteCarloResults]);
+  }, [standings, matchups, remainingGames, monteCarloResults]);
   
   // Calculate simulated standings based on matchup selections
   const simulatedStandings = useMemo(() => {
@@ -350,8 +179,8 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
       simulatedPointsFor: team.pointsFor,
     }));
 
-    // Only process incomplete matchups that have a selected winner
-    matchups.filter(m => !m.isComplete).forEach(matchup => {
+    // Only process incomplete regular-season matchups that have a selected winner
+    matchups.filter(m => !m.isComplete && !m.isPlayoff).forEach(matchup => {
       if (matchup.winner) {
         const winnerTeam = teamRecords.find(t => t.id === matchup.winner);
         const loserTeam = teamRecords.find(t =>
@@ -436,11 +265,16 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
   // Compute playoff week range dynamically from matchup data / league settings
   const playoffWeekLabel = useMemo(() => {
     if (!league) return '';
-    const maxWeek = matchupWeeks.length > 0 ? Math.max(...matchupWeeks) : 17;
+    // Prefer the bracket weeks themselves. Mid-season the bracket often isn't
+    // synced yet, so otherwise the playoffs start the week after the last
+    // regular-season week and run for the league's playoff length.
+    const bracketWeeks = [...new Set(matchups.filter(m => m.isPlayoff).map(m => m.week))].sort((a, b) => a - b);
     const playoffWeeks = league.playoffWeeks || 3;
-    const startWeek = maxWeek - playoffWeeks + 1;
+    const lastRegularWeek = matchupWeeks.length > 0 ? matchupWeeks[matchupWeeks.length - 1] : allWeeks.length > 0 ? allWeeks[allWeeks.length - 1] : 14;
+    const startWeek = bracketWeeks.length > 0 ? bracketWeeks[0] : lastRegularWeek + 1;
+    const maxWeek = bracketWeeks.length > 0 ? bracketWeeks[bracketWeeks.length - 1] : startWeek + playoffWeeks - 1;
     return startWeek === maxWeek ? `Week ${startWeek}` : `Week ${startWeek}-${maxWeek}`;
-  }, [league, matchupWeeks]);
+  }, [league, matchups, matchupWeeks, allWeeks]);
 
   // Pre-compute user's rank (by playoff %) — returns '-' if user team not found
   const userPlayoffRank = useMemo(() => {
@@ -470,40 +304,25 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
   const userRemainingMatchups = useMemo(() => {
     if (!userTeamData) return [];
 
-    // Build PPG map for win probability calculation
-    const teamPpg = new Map<string, number>();
-    let avgPpg = 0;
-    let count = 0;
-    for (const s of (standings || [])) {
-      const gp = s.wins + s.losses + s.ties;
-      if (gp > 0) {
-        const ppg = s.pointsFor / gp;
-        teamPpg.set(s.teamId, ppg);
-        avgPpg += ppg;
-        count++;
-      }
-    }
-    avgPpg = count > 0 ? avgPpg / count : 100;
+    // Same win-probability model the simulation uses.
+    const { ppg, leagueAvg } = teamPointsPerGame(standingsInput);
+    const nameById = new Map(matchups.flatMap(m => [[m.team1Id, m.team1], [m.team2Id, m.team2]] as const));
 
-    return matchups
-      .filter(m => !m.isComplete && (m.team1Id === userTeamData.id || m.team2Id === userTeamData.id))
+    return remainingGames
+      .filter(m => m.team1Id === userTeamData.id || m.team2Id === userTeamData.id)
       .map(m => {
         const isTeam1 = m.team1Id === userTeamData.id;
         const opponentId = isTeam1 ? m.team2Id : m.team1Id;
-        const userPpg = teamPpg.get(userTeamData.id) || avgPpg;
-        const oppPpg = teamPpg.get(opponentId) || avgPpg;
-        const rawProb = userPpg / (userPpg + oppPpg);
-        const clampedProb = Math.min(0.85, Math.max(0.15, rawProb));
-
+        const prob = winProbability(ppg.get(userTeamData.id) ?? leagueAvg, ppg.get(opponentId) ?? leagueAvg);
         return {
           week: m.week,
-          opponent: isTeam1 ? m.team2 : m.team1,
+          opponent: nameById.get(opponentId) || 'TBD',
           opponentId,
-          winProb: Math.round(clampedProb * 100),
+          winProb: Math.round(prob * 100),
         };
       })
       .sort((a, b) => a.week - b.week);
-  }, [matchups, userTeamData, standings]);
+  }, [matchups, userTeamData, standingsInput, remainingGames]);
 
   // Show loading state
   if (standingsLoading || allMatchupsLoading) {
@@ -910,7 +729,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
               </div>
             ) : (
               matchupWeeks.map(week => {
-                const weekMatchups = matchups.filter(m => m.week === week);
+                const weekMatchups = matchups.filter(m => m.week === week && !m.isPlayoff);
                 const isWeekComplete = weekMatchups.every(m => m.isComplete);
 
                 return (
