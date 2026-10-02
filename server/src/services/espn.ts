@@ -46,7 +46,7 @@ export function getTeamDisplayName(abbrev: string): string {
  * Note: LAR/LAC (SoFi Stadium) is open-air despite having a canopy roof,
  * so it's intentionally excluded.
  */
-const INDOOR_TEAMS = new Set(['NO', 'DET', 'MIN', 'LV', 'IND', 'ATL', 'DAL', 'HOU', 'ARI']);
+export const INDOOR_TEAMS = new Set(['NO', 'DET', 'MIN', 'LV', 'IND', 'ATL', 'DAL', 'HOU', 'ARI']);
 
 /**
  * Determine the current NFL season year and phase based on the calendar date.

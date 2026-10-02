@@ -109,7 +109,15 @@ history accrues from the first daily cron.
 - [ ] Practice reports / injury designations (nflverse or ESPN, free)
 - [ ] Usage data: snap %, target share, red-zone touches (nflverse, free)
 - [ ] Depth charts (Sleeper fields already synced upstream — store/expose)
-- [ ] Weather for outdoor games (Open-Meteo/NWS, free)
+- [x] **Weather for outdoor games** — `server/src/services/weather.ts` fetches
+  a real Open-Meteo hourly forecast (temperature + condition) for every
+  upcoming outdoor game via a static team→stadium-coords map; a new
+  `POST /api/admin/sync-game-weather` runs right after `sync-games` in the
+  daily cron and writes it onto `nfl_games.weather`, replacing the old
+  "Indoor"/"Outdoor" placeholder for games that haven't kicked off yet.
+  Indoor teams and games outside a 7-day window are left untouched. No
+  frontend changes needed — `GameSlateView`/`GameDetailModal` already render
+  `weather.displayValue` + `weather.temperature`.
 - [x] **Redraft ADP** — via FantasyFootballCalculator's public JSON API
   (not Sleeper/Underdog as originally scoped), feeding both the AI
   draft-rankings prompts and `adpDelta` (#306).

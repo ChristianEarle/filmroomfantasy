@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, or, inArray, sql, gte } from 'drizzle-orm';
+import { eq, and, or, inArray, sql, gte, lte } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { getMappedPlayers, fetchSleeperPlayers, buildHeadshotUrl, sleep } from '../services/sleeper';
 import { fetchTwitterTweets } from '../services/twitter';
@@ -974,6 +974,86 @@ adminRoutes.post('/sync-games', async (c) => {
     });
   } catch (err) {
     console.error('Sync games error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-game-weather
+ * Fetches an Open-Meteo forecast for every upcoming outdoor game and stores
+ * it on nfl_games.weather. Runs after sync-games in the daily cron, since
+ * sync-games itself only ever writes an "Indoor"/"Outdoor" placeholder (real
+ * pre-game weather isn't available from ESPN's scoreboard endpoint).
+ * Requires X-Admin-Key header matching SYNC_SECRET env var.
+ * Body: { daysAhead?: number } - defaults to 7 (Open-Meteo forecasts get
+ * less reliable further out; 7 days keeps the ones we show trustworthy).
+ */
+adminRoutes.post('/sync-game-weather', async (c) => {
+  const db = c.get('db');
+
+  try {
+    let body: { daysAhead?: number } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body - use defaults
+    }
+    const daysAhead = body.daysAhead ?? 7;
+    if (typeof daysAhead !== 'number' || daysAhead < 1 || daysAhead > 16) {
+      return c.json({ error: 'daysAhead must be between 1 and 16' }, 400);
+    }
+
+    const { INDOOR_TEAMS } = await import('../services/espn');
+    const { fetchStadiumForecast } = await import('../services/weather');
+
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+
+    const upcomingGames = await db.query.nflGames.findMany({
+      where: and(
+        eq(schema.nflGames.isComplete, false),
+        gte(schema.nflGames.gameTime, now),
+        lte(schema.nflGames.gameTime, windowEnd),
+      ),
+    });
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const game of upcomingGames) {
+      if (INDOOR_TEAMS.has(game.homeTeam)) {
+        skipped++;
+        continue;
+      }
+
+      const forecast = await fetchStadiumForecast(game.homeTeam, game.gameTime);
+      if (!forecast) {
+        skipped++;
+        continue;
+      }
+
+      await db.update(schema.nflGames)
+        .set({ weather: JSON.stringify(forecast) })
+        .where(eq(schema.nflGames.id, game.id));
+      updated++;
+    }
+
+    return c.json({
+      success: true,
+      message: 'Game weather sync completed',
+      checked: upcomingGames.length,
+      updated,
+      skipped,
+    });
+  } catch (err) {
+    console.error('Sync game weather error:', err);
     return c.json(
       {
         error: 'Sync failed',
