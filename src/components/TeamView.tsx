@@ -7,6 +7,7 @@ import { clampWeek } from '../utils/playerUtils';
 
 import { sortByPosition } from '../utils/rosterPositions';
 import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
+import { ArchivedLeagueBanner } from './ArchivedLeagueBanner';
 
 interface TeamViewProps {
   onPlayerClick: (player: Player) => void;
@@ -183,6 +184,7 @@ export function TeamView({ onPlayerClick, isDarkMode }: TeamViewProps) {
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-6">
+      <ArchivedLeagueBanner isDarkMode={isDarkMode} />
       {/* Header Section */}
       <div className={`rounded-lg border p-4 sm:p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">

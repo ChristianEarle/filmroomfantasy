@@ -329,6 +329,8 @@ export const leagueConnectService = {
     message: string;
     userTeamMatched?: boolean;
     warning?: string | null;
+    /** Set when the sync followed a Sleeper season renewal to the new season's league. */
+    rolledOver?: { fromExternalId: string; toExternalId: string; season: number };
   }> => {
     return api.post(`/leagues/${leagueId}/sync`);
   },
