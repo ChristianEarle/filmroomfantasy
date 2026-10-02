@@ -388,6 +388,11 @@ export function PlayerProfileView({
               {player.weight != null && <span><span className={`font-semibold ${bodyColor}`}>{player.weight}</span> lbs</span>}
               {player.college && <span><span className={`font-semibold ${bodyColor}`}>{player.college}</span></span>}
               {player.yearsExp != null && <span><span className={`font-semibold ${bodyColor}`}>{player.yearsExp}</span> yrs exp</span>}
+              {player.depthChartOrder != null && player.depthChartOrder > 0 && (
+                <span>
+                  Depth chart <span className={`font-semibold ${bodyColor}`}>{position}{player.depthChartOrder}</span>
+                </span>
+              )}
             </div>
 
             {player.injuryNote && (
