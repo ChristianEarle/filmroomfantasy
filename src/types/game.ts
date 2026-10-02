@@ -16,6 +16,8 @@ export interface Game {
     displayValue: string;
     temperature?: number;
     highTemperature?: number;
+    windMph?: number;
+    precipChance?: number;
   } | null;
   homeScore?: number;
   awayScore?: number;

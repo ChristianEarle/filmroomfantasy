@@ -6,6 +6,7 @@ import { rateLimit } from '../middleware/rateLimit';
 import { fetchEspnScoreboard, getNflSeasonContext, getTeamDisplayName, getStaticNetwork } from '../services/espn';
 import { getNflState } from '../services/nflState';
 import { getDefaultSeason } from '../utils/seasons';
+import { INDOOR_TEAMS } from '../services/weather';
 import type { Env, Variables } from '../index';
 
 export const gameRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -55,9 +56,6 @@ async function persistGamesToDb(
     }
   }
 }
-
-// NFL teams that play in indoor/dome/retractable-roof stadiums
-const INDOOR_TEAMS = new Set(['NO', 'DET', 'MIN', 'LV', 'IND', 'ATL', 'DAL', 'HOU', 'ARI']);
 
 // Normalize team abbreviation aliases (ESPN uses WSH, Sleeper/player DB uses WAS)
 function normalizeTeam(abbrev: string): string {
