@@ -298,7 +298,16 @@
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
 - [ ] **Audit WaiversView** - Waiver claims, player search, bid management
 - [ ] **Audit TrendsView** - Roster trends, projection movers
-- [ ] **Audit AllPlayersView** - Full player list with filters, pagination
+- [x] **Audit AllPlayersView** - Full player list with filters, pagination.
+  Fixed: the "Load More" pagination was missing entirely — the view always
+  fetched only the first `ALL_PLAYERS_PAGE_SIZE` (350) players sorted by
+  projected points and silently discarded the API's `pagination.total`,
+  so any player ranked below the cutoff (very common — the position/status
+  universe regularly exceeds 350) was unreachable via search or scroll on
+  this view. Added incremental "Load More" fetching plus a visible
+  "X of Y players" count, and fixed a latent type bug where the error
+  state's Retry button passed its click `MouseEvent` into `fetchPlayers`
+  as the `pageNum`/`append` args.
 - [ ] **Audit ProfileView** - User profile, password change, Google link status
 - [x] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth. Found and fixed a real bug: switching between the Login/Register/Forgot-password screens didn't clear the previous screen's error banner, so a stale "invalid password" message could reappear on a fresh form the user hadn't touched yet. Password-complexity policy (register requires uppercase+number, reset-password only enforces 8 chars) and progressive-cooldown persistence are noted as pre-existing product decisions, not addressed here.
 - [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
