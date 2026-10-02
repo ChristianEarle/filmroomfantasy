@@ -93,9 +93,13 @@ history accrues from the first daily cron.
   genuine full-season `seasonProjectedPoints` from `draft_rankings`
   (redraft, matching scoring format), with `seasonActualPoints` as a
   labeled fallback (#301).
-- [ ] **PlayerCard Alert/Pin/Compare actions** — deliberately skipped in
-  the sprint (Watch/Share shipped). Compare could reuse the Draft
-  Rankings compare-basket pattern.
+- [x] **PlayerCard Compare action** — client-side compare basket (up to 4
+  players, `useCompare` hook + `PlayerComparisonModal`), reusing the Draft
+  Rankings compare-basket pattern, triggered from a new Compare quick
+  action next to Watch/Share.
+- [ ] **PlayerCard Alert/Pin actions** — still stubs; Alert overlaps with
+  the push-notifications gap above, Pin overlaps with the existing
+  watchlist ("Watch").
 - [x] **Redraft / Dynasty / Rookie three-way split** — true veteran-inclusive
   `dynasty` ranking type added alongside `redraft` and the existing
   rookie-only `dynasty_rookie`; Draft Rankings now has Redraft/Dynasty/
