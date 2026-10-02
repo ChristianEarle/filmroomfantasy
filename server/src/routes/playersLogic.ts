@@ -1,0 +1,237 @@
+/**
+ * Pure helpers extracted from routes/players.ts GET / so they can be unit
+ * tested without a D1 database. Behavior must stay byte-for-byte identical
+ * to the inline logic that used to live in the route handler — see the call
+ * sites in players.ts for how these are wired back in.
+ */
+
+import { resolveWeekFromCalendar, isGameFinished, type ScheduleGame } from '../services/nflState';
+
+export interface GameForWeek {
+  isComplete?: boolean | null;
+  homeScore?: number | null;
+  awayScore?: number | null;
+}
+
+export interface ResolveWeekCompleteArgs {
+  /** Games rows for the requested week/season (may be empty). */
+  gamesForWeek: GameForWeek[];
+  /** Whether the caller requested stats (`includeStats=true`). */
+  includeStats: boolean;
+  /**
+   * Whether at least one playerWeeklyStats row exists for this week/season.
+   * Only consulted when the games-based check didn't already resolve to
+   * complete and `includeStats` is true (mirrors the original short-circuit
+   * so callers can skip the DB query entirely otherwise).
+   */
+  hasAnyStat: boolean;
+  /** Injectable clock for the offseason fallback — defaults to `new Date()`. */
+  now?: Date;
+}
+
+/**
+ * Reproduces the weekComplete resolution previously inlined in
+ * routes/players.ts (~lines 196-230):
+ *
+ *  1. Complete if every known game for the week is complete (or has both
+ *     final scores).
+ *  2. Otherwise, complete if `includeStats` and we already know a stat row
+ *     exists for the week (Sleeper only has stats for completed weeks).
+ *  3. Otherwise, complete if there are NO game records at all for the
+ *     week/season AND the calendar resolver (services/nflState.ts) says
+ *     we're in the offseason or postseason. Preseason is deliberately
+ *     excluded — that's the window for the upcoming season's games not
+ *     being synced yet, so treating it as "complete" here would
+ *     misreport Week 1 as done before games are synced.
+ */
+export function resolveWeekComplete({
+  gamesForWeek,
+  includeStats,
+  hasAnyStat,
+  now = new Date(),
+}: ResolveWeekCompleteArgs): boolean {
+  let weekComplete =
+    gamesForWeek.length > 0 &&
+    gamesForWeek.every((g) => g.isComplete || (g.homeScore != null && g.awayScore != null));
+
+  if (!weekComplete && includeStats && hasAnyStat) {
+    weekComplete = true;
+  }
+
+  if (!weekComplete && gamesForWeek.length === 0) {
+    const { seasonType } = resolveWeekFromCalendar(now);
+    if (seasonType === 'offseason' || seasonType === 'postseason') weekComplete = true;
+  }
+
+  return weekComplete;
+}
+
+export interface ComputeFetchWindowArgs {
+  /** True when sorting by a computed field (projectedPoints/avgPointsPPR). */
+  sortByComputed: boolean;
+  includeStats: boolean;
+  availableOnly: boolean;
+  leagueId?: string | null;
+  limit: number;
+  offset: number;
+  /** Total rows matching the current filters (pre-computed count query). */
+  total: number;
+}
+
+export interface FetchWindow {
+  fetchLimit: number;
+  fetchOffset: number;
+}
+
+/**
+ * Reproduces the fetchLimit/fetchOffset sizing previously inlined in
+ * routes/players.ts (~lines 434-448).
+ *
+ * When sorting by a computed field (projectedPoints/avgPointsPPR) with
+ * includeStats, the FULL matching pool must be fetched (limit = total,
+ * offset = 0) before in-memory sorting — a name-ordered, limited fetch would
+ * silently drop late-alphabet players from ranking consideration regardless
+ * of their actual projection.
+ *
+ * When availableOnly, fetch extra (up to 3x, floor 500) to compensate for
+ * rostered players that get filtered out post-fetch.
+ */
+export function computeFetchWindow({
+  sortByComputed,
+  includeStats,
+  availableOnly,
+  leagueId,
+  limit,
+  offset,
+  total,
+}: ComputeFetchWindowArgs): FetchWindow {
+  const availableMultiplier = availableOnly && leagueId ? 3 : 1;
+  const fetchLimit =
+    sortByComputed && includeStats
+      ? total
+      : availableOnly
+        ? Math.max((limit + offset) * availableMultiplier, 500)
+        : limit + offset;
+  const fetchOffset = (sortByComputed && includeStats) || availableOnly ? 0 : offset;
+  return { fetchLimit, fetchOffset };
+}
+
+export interface ShouldReportActualsArgs {
+  /** The player's team game for the requested week/season, if we have a schedule row for it. */
+  teamGame: ScheduleGame | null | undefined;
+  now: Date;
+  week: number;
+  season: number;
+  /** The live NFL week/season from the resolver. */
+  currentWeek: number;
+  currentSeason: number;
+}
+
+/**
+ * Whether the props endpoint should attach actual results (OVER/UNDER,
+ * scored a TD YES/NO) to a week's lines. Stats syncs can write zero rows for
+ * an upcoming week before kickoff, so "a stats row exists" is not enough:
+ * only report actuals once the player's game has actually finished. When
+ * we have no schedule row for the team, fall back to "the week is behind
+ * the live week" (or the season is a past one).
+ */
+export function shouldReportActuals({
+  teamGame,
+  now,
+  week,
+  season,
+  currentWeek,
+  currentSeason,
+}: ShouldReportActualsArgs): boolean {
+  if (teamGame) return isGameFinished(teamGame, now);
+  if (season < currentSeason) return true;
+  if (season > currentSeason) return false;
+  return week < currentWeek;
+}
+
+/**
+ * Whether a week's prop lines can be graded for a player:
+ * - `pending`: the game hasn't finished.
+ * - `played`: the player took part, so results grade normally.
+ * - `did_not_play`: he was inactive or got no snaps; books void these props.
+ * - `unknown`: we can't tell. An all-zero stats row with no team snaps is
+ *   what a failed stats sync leaves behind, and a missing row only means
+ *   "didn't play" once other players from the same game have stats.
+ */
+export type PropGameStatus = 'pending' | 'played' | 'did_not_play' | 'unknown';
+
+export interface ParticipationStats {
+  offSnaps?: number | null;
+  defSnaps?: number | null;
+  stSnaps?: number | null;
+  tmOffSnaps?: number | null;
+  passAttempts?: number | null;
+  rushAttempts?: number | null;
+  targets?: number | null;
+  receptions?: number | null;
+}
+
+export function hasParticipation(stats: ParticipationStats): boolean {
+  return [stats.offSnaps, stats.defSnaps, stats.stSnaps, stats.passAttempts, stats.rushAttempts, stats.targets, stats.receptions]
+    .some((value) => (value ?? 0) > 0);
+}
+
+export function propGameStatus({
+  gameFinished,
+  stats,
+  gameStatsSynced,
+}: {
+  gameFinished: boolean;
+  stats: ParticipationStats | null | undefined;
+  /** Whether any other player in the same game has a stats row for the week. */
+  gameStatsSynced: boolean;
+}): PropGameStatus {
+  if (!gameFinished) return 'pending';
+  if (stats) {
+    if (hasParticipation(stats)) return 'played';
+    // Sleeper lists an inactive player with his team's snap count and none of his own.
+    return (stats.tmOffSnaps ?? 0) > 0 ? 'did_not_play' : 'unknown';
+  }
+  // Sleeper omits players who didn't suit up.
+  return gameStatsSynced ? 'did_not_play' : 'unknown';
+}
+
+/** Sportsbooks settle anytime-TD on any touchdown the player scores; throwing one doesn't count. */
+export function scoredAnytimeTd(stats: { rushTDs?: number | null; receivingTDs?: number | null; defenseTDs?: number | null }): boolean {
+  return (stats.rushTDs ?? 0) + (stats.receivingTDs ?? 0) + (stats.defenseTDs ?? 0) > 0;
+}
+
+export interface ShouldFallBackToPriorSeasonArgs {
+  /** Whether any props were found for the requested season+week. */
+  propsForRequestedWeek: boolean;
+  /**
+   * Whether the requested season has ANY props at all (any week), used to
+   * tell "this season hasn't started yet" (offseason, ok to fall back) apart
+   * from "this season is underway but this week's lines aren't synced yet"
+   * (not ok to fall back — that would silently show last year's settled
+   * lines for an upcoming game).
+   */
+  seasonHasAnyProps: boolean;
+}
+
+/**
+ * Decides whether GET /players/:id/props (and the /props list route) should
+ * walk back to a prior season's lines when the requested season/week has no
+ * props.
+ *
+ * - Props already found for the requested week -> never fall back.
+ * - No props this week, and the season has none at all (e.g. the 2026
+ *   season hasn't had any lines posted yet) -> fall back, this is the
+ *   offseason case the fallback exists for.
+ * - No props this week, but the season DOES have props for other weeks
+ *   (mid-season, this week just hasn't synced yet) -> do NOT fall back;
+ *   the caller should report `linesPosted: false` instead of showing last
+ *   season's settled results.
+ */
+export function shouldFallBackToPriorSeason({
+  propsForRequestedWeek,
+  seasonHasAnyProps,
+}: ShouldFallBackToPriorSeasonArgs): boolean {
+  if (propsForRequestedWeek) return false;
+  return !seasonHasAnyProps;
+}

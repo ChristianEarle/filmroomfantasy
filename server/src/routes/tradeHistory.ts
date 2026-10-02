@@ -9,6 +9,15 @@ import { computeOutcome, computeRecordImpact } from '../services/tradeOutcomes';
 import { ingestSleeperTrades } from '../services/tradeIngest';
 import { chunkedInArrayFetch, DEFAULT_ID_CHUNK } from '../utils/chunked';
 import { getTodayKey } from '../utils/prompt';
+import {
+  EFFORT_REASONING,
+  describeResponse,
+  firstText,
+  hitMaxTokens,
+  maxTokensWithThinking,
+  parseJsonObject,
+  type AnthropicTextResponse,
+} from '../utils/aiOutput';
 
 /**
  * Resolution result for the caller's team in a league. Includes the
@@ -152,6 +161,8 @@ import {
   formatTradeContextForPrompt,
   type LeagueSettings,
 } from '../services/tradeContext';
+import { resolveLeagueWeek } from '../services/nflState';
+import { normalizeScoringFormat } from '../utils/scoringFormat';
 
 const tradeHistoryRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -979,19 +990,20 @@ tradeHistoryRoutes.post('/grade/:tradeId', authMiddleware, requireTier('pro', 'R
   // Build TradeContext with current data (we can't rebuild historical
   // projections — tell the AI this in the system prompt).
   const leagueSettings: LeagueSettings = {
-    scoringFormat:
-      (league?.scoringFormat as LeagueSettings['scoringFormat']) || 'ppr',
+    scoringFormat: normalizeScoringFormat(league?.scoringFormat),
     superflex: false,
     tePremium: false,
     teamCount: league?.teamCount || 12,
   };
 
+  const leagueWeek = await resolveLeagueWeek(db, league ?? null);
+
   const tradeContext = await buildTradeContext({
     db,
     playerIds,
     leagueSettings,
-    seasonYear: league?.seasonYear || new Date().getFullYear(),
-    currentWeek: league?.currentWeek || 1,
+    seasonYear: leagueWeek.season,
+    currentWeek: leagueWeek.week,
     userTeamId: null,
     leagueId: trade.leagueId,
   });
@@ -1109,11 +1121,13 @@ Provide your JSON analysis. Weight the ACTUAL OUTCOME block more heavily than th
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 2048,
+        // 2048 visible tokens plus thinking headroom — see utils/aiOutput.ts.
+        max_tokens: maxTokensWithThinking(2048),
+        output_config: EFFORT_REASONING,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       }),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(60000),
     });
 
     if (!res.ok) {
@@ -1122,29 +1136,30 @@ Provide your JSON analysis. Weight the ACTUAL OUTCOME block more heavily than th
       return c.json({ error: 'AI grading failed. Please try again later.' }, 502);
     }
 
-    const data = (await res.json()) as {
-      content?: { type: string; text?: string }[];
-    };
-    const textBlock = data.content?.find((b) => b.type === 'text');
-    const rawText = textBlock?.text?.trim();
+    const data = (await res.json()) as AnthropicTextResponse;
+    const rawText = firstText(data);
     if (!rawText) {
-      return c.json({ error: 'AI returned empty response.' }, 502);
+      console.error(`[retro-grade] no text block (${describeResponse(data)})`);
+      return c.json(
+        { error: hitMaxTokens(data) ? 'AI grading ran out of room before answering. Please try again.' : 'AI returned empty response.' },
+        502
+      );
     }
 
-    const jsonStr = rawText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-    let parsed: {
+    const parsed = parseJsonObject<{
       winner: string;
       winnerExplanation: string;
       teamGrades: Array<{ team: string; grade: string; summary: string }>;
       fairnessScore?: { score: number; diff: number; favored: string };
       improvements?: string[];
       keyFactors?: string[];
-    };
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      console.error('Failed to parse retro-grade response:', rawText.slice(0, 500));
-      return c.json({ error: 'AI returned invalid response.' }, 502);
+    }>(rawText);
+    if (!parsed || !Array.isArray(parsed.teamGrades)) {
+      console.error(`[retro-grade] JSON parse failed (${describeResponse(data)}):`, rawText.slice(0, 500));
+      return c.json(
+        { error: hitMaxTokens(data) ? 'AI grading was cut off before it finished. Please try again.' : 'AI returned invalid response.' },
+        502
+      );
     }
 
     // Determine which team belongs to the calling user so we cache

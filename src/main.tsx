@@ -2,7 +2,6 @@ import { createRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import App from "./App.tsx";
 import "./index.css";
-import "./styles/globals.css";
 import { initTracking } from "./services/tracking";
 
 // Clear legacy key from the pre-cookie era (now stored under filmroom_auth_token).
