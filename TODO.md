@@ -169,6 +169,13 @@ Dashboard, DFS Optimizer, Live Draft Assistant, Opponent Scouting, Dynasty
 Age Curves, Historical Splits (Elite); Draft Kit / Playoff Bundle /
 Commissioner Toolkit (one-time).
 
+- **Waiver Wire Rankings — first cut** — `WaiversView`'s existing
+  (free, projection-sorted) "Top Available" list gained a Pro-gated "AI
+  Take" toggle per player, reusing the same cached per-player analysis
+  endpoint (`GET /players/:id/analysis`) PlayerCard already calls — no new
+  backend. Still open: a ranking formula beyond plain projected points,
+  and FAAB bid suggestions.
+
 ---
 
 ## Notes
