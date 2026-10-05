@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import { desc, eq, gte, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
+import { fetchLeagueTransactions, type SleeperTransaction } from './sleeper';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -285,5 +286,222 @@ export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNot
     relevantNews: items.length,
     recipients,
     attempted: rows.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Waiver / trade transaction notifications
+// ---------------------------------------------------------------------------
+
+export interface TransactionNotificationResult {
+  scannedTransactions: number;
+  relevantTransactions: number;
+  recipients: number;
+  attempted: number;
+  skipped: string | null;
+}
+
+export interface TransactionNotificationRow {
+  userId: string;
+  type: 'waiver' | 'trade';
+  title: string;
+  body: string;
+  dedupeKey: string;
+}
+
+/** True for a processed (non-pending) waiver claim, or a completed trade. */
+export function isRelevantTransaction(txn: SleeperTransaction): boolean {
+  if (txn.status === 'pending') return false;
+  if (txn.type === 'waiver') return true;
+  if (txn.type === 'trade') return txn.status === 'complete';
+  return false;
+}
+
+/**
+ * Build in-app notification rows for the Sleeper transactions (waiver
+ * claims, trades) a team was party to. Pure and DB-free so it's unit
+ * testable — the caller resolves Sleeper roster_id -> recipient userIds and
+ * Sleeper player_id -> display name first (see
+ * generateTransactionNotificationsForLeague below).
+ */
+export function buildTransactionNotificationRows(
+  transactions: SleeperTransaction[],
+  rosterIdToUserIds: Map<number, string[]>,
+  playerNameById: Map<string, string>,
+): TransactionNotificationRow[] {
+  const rows: TransactionNotificationRow[] = [];
+  const nameOf = (sleeperPlayerId: string) => playerNameById.get(sleeperPlayerId) || 'a player';
+
+  for (const txn of transactions) {
+    if (!isRelevantTransaction(txn)) continue;
+
+    for (const rosterId of txn.roster_ids) {
+      const userIds = rosterIdToUserIds.get(rosterId);
+      if (!userIds || userIds.length === 0) continue;
+
+      const received = Object.entries(txn.adds ?? {})
+        .filter(([, r]) => r === rosterId)
+        .map(([playerId]) => nameOf(playerId));
+      const sent = Object.entries(txn.drops ?? {})
+        .filter(([, r]) => r === rosterId)
+        .map(([playerId]) => nameOf(playerId));
+
+      let title: string;
+      let body: string;
+      if (txn.type === 'trade') {
+        title = 'Trade completed';
+        const parts: string[] = [];
+        if (received.length) parts.push(`received ${received.join(', ')}`);
+        if (sent.length) parts.push(`sent ${sent.join(', ')}`);
+        body = parts.length ? `You ${parts.join(' and ')}.` : 'A trade affecting your team was processed.';
+      } else if (txn.status === 'complete') {
+        title = 'Waiver claim successful';
+        const faab = (txn.waiver_budget ?? []).find((w) => w.sender === rosterId);
+        const addedPart = received.length ? `You added ${received.join(', ')}` : 'Your waiver claim went through';
+        const droppedPart = sent.length ? `, dropped ${sent.join(', ')}` : '';
+        const faabPart = faab ? ` ($${faab.amount} FAAB)` : '';
+        body = `${addedPart}${droppedPart}${faabPart}.`;
+      } else {
+        title = 'Waiver claim unsuccessful';
+        body = received.length
+          ? `Your claim for ${received.join(', ')} did not go through.`
+          : 'One of your waiver claims did not go through.';
+      }
+
+      for (const userId of userIds) {
+        rows.push({
+          userId,
+          type: txn.type === 'trade' ? 'trade' : 'waiver',
+          title,
+          body,
+          dedupeKey: `txn:${txn.transaction_id}:${userId}`,
+        });
+      }
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * Fan a league's processed Sleeper transactions (waiver claims, trades) for
+ * one week out to in-app notifications for the affected teams' owners.
+ *
+ * Idempotent: each row carries a deterministic dedupeKey
+ * (`txn:<transactionId>:<userId>`) and inserts use ON CONFLICT DO NOTHING
+ * against the (user_id, dedupe_key) unique index, so re-running (cron
+ * retries, overlapping runs, re-fetching the same week) never duplicates.
+ *
+ * Team -> recipient resolution mirrors generateInjuryNewsNotifications:
+ * teams.externalOwnerId matched against league_members.externalUsername.
+ * Never teams.ownerId — for a synced league that's the member who imported
+ * it, not necessarily this team's real owner.
+ */
+export async function generateTransactionNotificationsForLeague(
+  db: DB,
+  league: { id: string; externalId: string | null; platform: string | null },
+  week: number,
+): Promise<TransactionNotificationResult> {
+  if (league.platform !== 'sleeper' || !league.externalId) {
+    return { scannedTransactions: 0, relevantTransactions: 0, recipients: 0, attempted: 0, skipped: 'not a synced Sleeper league' };
+  }
+
+  const transactions = await fetchLeagueTransactions(league.externalId, week);
+  const relevantCount = transactions.filter(isRelevantTransaction).length;
+  if (relevantCount === 0) {
+    return { scannedTransactions: transactions.length, relevantTransactions: 0, recipients: 0, attempted: 0, skipped: null };
+  }
+
+  const teams = await db.query.teams.findMany({
+    where: eq(schema.teams.leagueId, league.id),
+    columns: { id: true, externalTeamId: true, externalOwnerId: true },
+  });
+  if (teams.length === 0) {
+    return { scannedTransactions: transactions.length, relevantTransactions: relevantCount, recipients: 0, attempted: 0, skipped: 'no teams synced for this league' };
+  }
+
+  const members = await db.query.leagueMembers.findMany({
+    where: eq(schema.leagueMembers.leagueId, league.id),
+    columns: { userId: true, externalUsername: true },
+  });
+
+  // Sleeper roster_id -> our team.id. external_team_id is the stable roster
+  // identity written by services/teamIdentity.ts during league sync.
+  const rosterIdToTeamId = new Map<number, string>();
+  const externalOwnerIdByTeamId = new Map<string, string | null>();
+  for (const t of teams) {
+    if (t.externalTeamId) {
+      const rosterId = Number(t.externalTeamId);
+      if (!Number.isNaN(rosterId)) rosterIdToTeamId.set(rosterId, t.id);
+    }
+    externalOwnerIdByTeamId.set(t.id, t.externalOwnerId);
+  }
+
+  const rosterIdToUserIds = new Map<number, string[]>();
+  for (const [rosterId, teamId] of rosterIdToTeamId) {
+    const externalOwnerId = externalOwnerIdByTeamId.get(teamId);
+    if (!externalOwnerId) continue;
+    const userIds = members.filter((m) => m.externalUsername === externalOwnerId).map((m) => m.userId);
+    if (userIds.length > 0) rosterIdToUserIds.set(rosterId, userIds);
+  }
+
+  if (rosterIdToUserIds.size === 0) {
+    return { scannedTransactions: transactions.length, relevantTransactions: relevantCount, recipients: 0, attempted: 0, skipped: 'no rosters could be mapped to recipients' };
+  }
+
+  // Player names for the adds/drops in the notification body. Transaction
+  // player ids are Sleeper ids == nfl_players.external_id.
+  const sleeperPlayerIds = new Set<string>();
+  for (const txn of transactions) {
+    for (const id of Object.keys(txn.adds ?? {})) sleeperPlayerIds.add(id);
+    for (const id of Object.keys(txn.drops ?? {})) sleeperPlayerIds.add(id);
+  }
+  const nameById = new Map<string, string>();
+  for (const ids of chunk([...sleeperPlayerIds], IN_CHUNK)) {
+    if (ids.length === 0) continue;
+    const rows = await db
+      .select({ externalId: schema.nflPlayers.externalId, name: schema.nflPlayers.name })
+      .from(schema.nflPlayers)
+      .where(inArray(schema.nflPlayers.externalId, ids));
+    for (const row of rows) {
+      if (row.externalId) nameById.set(row.externalId, row.name);
+    }
+  }
+
+  const built = buildTransactionNotificationRows(transactions, rosterIdToUserIds, nameById);
+  if (built.length === 0) {
+    return { scannedTransactions: transactions.length, relevantTransactions: relevantCount, recipients: 0, attempted: 0, skipped: null };
+  }
+
+  const seenUsers = new Set<string>();
+  const rows: schema.NewNotification[] = built.map((b) => {
+    seenUsers.add(b.userId);
+    return {
+      id: generateId(),
+      userId: b.userId,
+      type: b.type,
+      title: b.title,
+      body: b.body,
+      playerId: null,
+      link: null,
+      dedupeKey: b.dedupeKey,
+      isRead: false,
+      createdAt: new Date(),
+    };
+  });
+
+  const statements = chunk(rows, INSERT_CHUNK_ROWS).map((group) =>
+    db.insert(schema.notifications).values(group).onConflictDoNothing(),
+  );
+  for (const group of chunk(statements, BATCH_SIZE)) {
+    await db.batch(group as any);
+  }
+
+  return {
+    scannedTransactions: transactions.length,
+    relevantTransactions: relevantCount,
+    recipients: seenUsers.size,
+    attempted: rows.length,
+    skipped: null,
   };
 }
