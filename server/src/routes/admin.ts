@@ -18,6 +18,7 @@ import {
 } from '../services/draftRankings';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
 import { syncSleeperLeague } from '../services/leagueSync';
+import { generateTransactionNotificationsForLeague } from '../services/notifications';
 import { resolveWeekFromCalendar, getNflState } from '../services/nflState';
 import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
@@ -3055,6 +3056,80 @@ adminRoutes.post('/sync-leagues', async (c) => {
     console.error('[admin] sync-leagues error:', err);
     return c.json({
       error: 'Failed to sync leagues',
+      message: err instanceof Error ? err.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * POST /api/admin/sync-transactions
+ *
+ * Fans each synced Sleeper league's processed waiver claims and trades for
+ * one week out to in-app notifications for the affected teams' owners (see
+ * generateTransactionNotificationsForLeague in services/notifications.ts).
+ * In-app notifications only — no new push/email channel.
+ *
+ * Requires X-Admin-Key header matching SYNC_SECRET env var (or JWT admin).
+ * Body: { week?: number, limit?: number }
+ * - week: defaults to the current NFL week (getNflState)
+ * - limit: max leagues processed this call, default 50
+ *
+ * Each league is isolated in its own try/catch so one failure doesn't abort
+ * the batch; failures are returned in `failed` for visibility.
+ */
+adminRoutes.post('/sync-transactions', async (c) => {
+  const db = c.get('db');
+
+  try {
+    let body: { week?: number; limit?: number } = {};
+    try {
+      const raw = await c.req.json();
+      body = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      // No body or invalid JSON - use defaults
+    }
+
+    const state = await getNflState(db);
+    const week = body.week ?? state.week;
+    const limit = Math.min(Math.max(Math.trunc(body.limit ?? 50) || 50, 1), 200);
+
+    const leaguesToSync = await db.query.leagues.findMany({
+      where: and(eq(schema.leagues.platform, 'sleeper'), gte(schema.leagues.seasonYear, state.season - 1)),
+      orderBy: (l, { asc }) => [asc(l.lastSyncedAt)],
+      limit,
+    });
+
+    let recipients = 0;
+    let attempted = 0;
+    let skipped = 0;
+    const failed: { leagueId: string; error: string }[] = [];
+
+    for (const league of leaguesToSync) {
+      try {
+        const result = await generateTransactionNotificationsForLeague(db, league, week);
+        if (result.skipped) skipped++;
+        recipients += result.recipients;
+        attempted += result.attempted;
+      } catch (err) {
+        console.error(`[admin] sync-transactions failed for league ${league.id}:`, err);
+        failed.push({ leagueId: league.id, error: err instanceof Error ? err.message : String(err) });
+      }
+      // Same courtesy pause as sync-leagues — don't hammer Sleeper back-to-back.
+      await sleep(150);
+    }
+
+    return c.json({
+      week,
+      recipients,
+      attempted,
+      skipped,
+      failed,
+      totalConsidered: leaguesToSync.length,
+    });
+  } catch (err) {
+    console.error('[admin] sync-transactions error:', err);
+    return c.json({
+      error: 'Failed to sync transactions',
       message: err instanceof Error ? err.message : 'Unknown error',
     }, 500);
   }
