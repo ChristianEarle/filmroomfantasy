@@ -5,6 +5,7 @@
  */
 
 import staticSchedule from '../data/nfl-schedule-2025.json';
+import { isDomeTeam } from '../data/nflStadiums';
 import { resolveWeekFromCalendar } from './nflState';
 
 // The bundled static schedule is a point-in-time snapshot of ONE specific
@@ -32,21 +33,6 @@ const TEAM_NAMES: Record<string, string> = {
 export function getTeamDisplayName(abbrev: string): string {
   return TEAM_NAMES[abbrev] ?? abbrev;
 }
-
-/**
- * NFL teams that play in indoor / dome / retractable-roof stadiums.
- * Used as a fallback when ESPN doesn't set `venue.indoor` or when
- * fetching completed games that lack weather data.
- *
- * Fixed roof:  NO (Caesars Superdome), DET (Ford Field), MIN (U.S. Bank Stadium),
- *              LV (Allegiant Stadium)
- * Retractable: IND (Lucas Oil Stadium), ATL (Mercedes-Benz Stadium),
- *              DAL (AT&T Stadium), HOU (NRG Stadium), ARI (State Farm Stadium)
- *
- * Note: LAR/LAC (SoFi Stadium) is open-air despite having a canopy roof,
- * so it's intentionally excluded.
- */
-const INDOOR_TEAMS = new Set(['NO', 'DET', 'MIN', 'LV', 'IND', 'ATL', 'DAL', 'HOU', 'ARI']);
 
 /**
  * Determine the current NFL season year and phase based on the calendar date.
@@ -150,12 +136,12 @@ function loadStaticSchedule(
       favoredTeam: 'home',
       overUnder: null,
       tvNetwork: network,
-      weather: INDOOR_TEAMS.has(g.home)
+      weather: isDomeTeam(g.home)
         ? { displayValue: 'Indoor', temperature: 72 }
         : gameTime.getTime() < Date.now() ? { displayValue: 'Outdoor' } : null,
     });
 
-    const weatherObj = INDOOR_TEAMS.has(g.home)
+    const weatherObj = isDomeTeam(g.home)
       ? { displayValue: 'Indoor', temperature: 72 }
       : gameTime.getTime() < Date.now() ? { displayValue: 'Outdoor' } : null;
     dbRows.push({
@@ -208,7 +194,7 @@ function parseEspnEvents(
     const absSpread = spreadVal != null ? (Math.abs(parseFloat(String(spreadVal).replace(/[+-]/g, '')) || 0)) : null;
     const signedSpread = absSpread != null ? (awayFavorite ? absSpread : -absSpread) : null;
     const overUnder = overUnderVal ? parseFloat(String(overUnderVal).replace(/[ou]/gi, '')) || null : null;
-    const isIndoor = venue?.indoor || INDOOR_TEAMS.has(homeAbbrev);
+    const isIndoor = venue?.indoor || isDomeTeam(homeAbbrev);
     const isFinalOrPast = ev.status?.type?.name === 'STATUS_FINAL' ||
       new Date(ev.date).getTime() < Date.now() - 4 * 3600000;
     const weatherObj = weather

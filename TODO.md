@@ -112,7 +112,16 @@ history accrues from the first daily cron.
   `nfl_players.depth_chart_order` and returned by `GET /players`, just never
   shown; `PlayerTable` and `PlayerCard` now label the position with the
   depth slot (e.g. "RB2") whenever it's known.
-- [ ] Weather for outdoor games (Open-Meteo/NWS, free)
+- [x] **Weather for outdoor games** — `POST /api/admin/sync-weather` fetches an
+  Open-Meteo hourly forecast (free, no API key) for every incomplete game
+  within the next ~2 weeks and stores the kickoff-hour reading on
+  `nfl_games.weather`, reusing the existing `{ displayValue, temperature }`
+  shape the frontend already renders. Dome games get a fixed "Indoor"
+  reading with no outbound fetch. Wired into the existing daily
+  `0 12 * * *` cron right after `sync-games`. New `server/src/data/
+  nflStadiums.ts` is the single source of truth for stadium lat/long +
+  dome flag, replacing the `INDOOR_TEAMS` set previously duplicated in
+  `services/espn.ts` and `routes/games.ts`.
 - [x] **Redraft ADP** — via FantasyFootballCalculator's public JSON API
   (not Sleeper/Underdog as originally scoped), feeding both the AI
   draft-rankings prompts and `adpDelta` (#306).

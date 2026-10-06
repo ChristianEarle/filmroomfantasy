@@ -4,6 +4,7 @@ import * as schema from '../db/schema';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { fetchEspnScoreboard, getNflSeasonContext, getTeamDisplayName, getStaticNetwork } from '../services/espn';
+import { isDomeTeam } from '../data/nflStadiums';
 import { getNflState } from '../services/nflState';
 import { getDefaultSeason } from '../utils/seasons';
 import type { Env, Variables } from '../index';
@@ -56,9 +57,6 @@ async function persistGamesToDb(
   }
 }
 
-// NFL teams that play in indoor/dome/retractable-roof stadiums
-const INDOOR_TEAMS = new Set(['NO', 'DET', 'MIN', 'LV', 'IND', 'ATL', 'DAL', 'HOU', 'ARI']);
-
 // Normalize team abbreviation aliases (ESPN uses WSH, Sleeper/player DB uses WAS)
 function normalizeTeam(abbrev: string): string {
   return abbrev === 'WSH' ? 'WAS' : abbrev;
@@ -76,7 +74,7 @@ function dbGameToSlateGame(g: any) {
 
   // Fallback: if no weather data stored, infer from home team's stadium
   if (!weather) {
-    if (INDOOR_TEAMS.has(g.homeTeam)) {
+    if (isDomeTeam(g.homeTeam)) {
       weather = { displayValue: 'Indoor', temperature: 72 };
     } else if (isFinalOrPast) {
       weather = { displayValue: 'Outdoor' };
