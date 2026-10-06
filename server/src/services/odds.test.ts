@@ -129,13 +129,60 @@ describe('parsePlayerProps', () => {
     ],
   };
 
-  it('groups over/under outcomes by player and prefers fanduel/draftkings/betmgm in that order', () => {
+  it('groups over/under outcomes by player and tags the row with the source bookmaker', () => {
     const parsed = parsePlayerProps(propGame, 2, '2026-09-10T00:00:00Z');
     expect(parsed).toHaveLength(1);
     expect(parsed[0].player_name).toBe('Patrick Mahomes');
     expect(parsed[0].bookmaker).toBe('fanduel');
     expect(parsed[0].over_point).toBe(275.5);
     expect(parsed[0].under_point).toBe(275.5);
+  });
+
+  it('merges lines across bookmakers per player+market, preferring fanduel > draftkings > betmgm > others', () => {
+    const mk = (name: 'Over' | 'Under', player: string, point: number, price = -110) => ({ name, description: player, price, point });
+    const multiBookGame = {
+      ...propGame,
+      bookmakers: [
+        // Listed first in the response but lowest priority: must lose the
+        // Mahomes pass-yds line to FanDuel and the Kelce rec-yds line to
+        // DraftKings, but is the only book with Rice's receptions.
+        {
+          key: 'caesars',
+          title: 'Caesars',
+          last_update: '2026-09-10T00:00:00Z',
+          markets: [
+            { key: 'player_pass_yds', last_update: '', outcomes: [mk('Over', 'Patrick Mahomes', 280.5), mk('Under', 'Patrick Mahomes', 280.5)] },
+            { key: 'player_reception_yds', last_update: '', outcomes: [mk('Over', 'Travis Kelce', 60.5), mk('Under', 'Travis Kelce', 60.5)] },
+            { key: 'player_receptions', last_update: '', outcomes: [mk('Over', 'Rashee Rice', 5.5), mk('Under', 'Rashee Rice', 5.5)] },
+          ],
+        },
+        {
+          key: 'draftkings',
+          title: 'DraftKings',
+          last_update: '2026-09-10T00:00:00Z',
+          markets: [
+            { key: 'player_pass_yds', last_update: '', outcomes: [mk('Over', 'Patrick Mahomes', 277.5), mk('Under', 'Patrick Mahomes', 277.5)] },
+            { key: 'player_reception_yds', last_update: '', outcomes: [mk('Over', 'Travis Kelce', 62.5), mk('Under', 'Travis Kelce', 62.5)] },
+            // DK lists a depth player FanDuel doesn't.
+            { key: 'player_rush_yds', last_update: '', outcomes: [mk('Over', 'Isiah Pacheco', 55.5), mk('Under', 'Isiah Pacheco', 55.5)] },
+          ],
+        },
+        // FanDuel: has Mahomes pass yds only — previously the whole event
+        // would have been reduced to this single line.
+        propGame.bookmakers[0],
+      ],
+    };
+
+    const parsed = parsePlayerProps(multiBookGame, 2, '2026-09-10T00:00:00Z');
+    const byKey = new Map(parsed.map((p) => [`${p.market}|${p.player_name}`, p]));
+
+    expect(parsed).toHaveLength(4);
+    expect(byKey.get('player_pass_yds|Patrick Mahomes')).toMatchObject({ bookmaker: 'fanduel', over_point: 275.5, under_point: 275.5 });
+    expect(byKey.get('player_reception_yds|Travis Kelce')).toMatchObject({ bookmaker: 'draftkings', over_point: 62.5 });
+    expect(byKey.get('player_rush_yds|Isiah Pacheco')).toMatchObject({ bookmaker: 'draftkings', over_point: 55.5 });
+    expect(byKey.get('player_receptions|Rashee Rice')).toMatchObject({ bookmaker: 'caesars', over_point: 5.5 });
+    // Never mixes sides from two books for one player+market.
+    expect(parsed.filter((p) => p.player_name === 'Patrick Mahomes')).toHaveLength(1);
   });
 
   it('falls back to whichever bookmaker has player_ markets when none of the big three do, and returns [] with none at all', () => {

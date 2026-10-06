@@ -9,6 +9,7 @@ import api from '../services/api';
 
 import { sortByPosition } from '../utils/rosterPositions';
 import { calculateGrade, getMatchupGradeLabel, getMatchupGradeColor } from '../utils/matchupGrades';
+import { ArchivedLeagueBanner } from './ArchivedLeagueBanner';
 
 /** Sentinel name for an unfilled roster slot */
 const EMPTY_SLOT_NAME = 'Empty';
@@ -543,6 +544,7 @@ export function MatchupView({ onPlayerClick, isDarkMode }: MatchupViewProps) {
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-6">
+      <ArchivedLeagueBanner isDarkMode={isDarkMode} />
       {/* Error alert */}
       {error && (
         <div className={`rounded-lg border p-4 flex items-center gap-3 ${isDarkMode ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'}`}>

@@ -194,6 +194,8 @@ export interface Player {
   weekChange: number;
   weeklyProjectedPoints?: number;
   headshotUrl?: string | null;
+  /** Depth chart rank within the player's own position on their team (1 = starter). Sourced from Sleeper; null/undefined when unknown. */
+  depthChartOrder?: number | null;
   /**
    * Truthfully labels what `projectedPoints` represents when a caller
    * overrides it outside week mode (e.g. PlayerTable's Full Season view):
@@ -395,6 +397,14 @@ function AppContent() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Clear stale login/register errors when the auth screen changes — otherwise
+  // switching Login -> Register -> Login (or -> Forgot -> Login) redisplays a
+  // failed-attempt banner from before the user ever touched the new form.
+  useEffect(() => {
+    setLoginError(null);
+    setRegisterError(null);
+  }, [authView]);
 
   // Sync URL when activeView changes (BUG-001 fix: URL now updates on sidebar nav)
   useEffect(() => {
@@ -697,6 +707,11 @@ function AppContent() {
 
         <main className={`flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 pb-20 sm:pb-20 md:pb-6 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
           <PageTransition viewKey={activeView}>
+            {/* Isolates a crash in the active view from the rest of the app shell
+                (sidebar, header, bottom nav) instead of falling through to the
+                root ErrorBoundary and blanking the whole page. resetKeys clears
+                a caught error on navigation so the next view gets a fresh render. */}
+            <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
             {activeView === 'Home' ? (
               showLoginGate ? (
                 <LoginSyncGate
@@ -713,7 +728,6 @@ function AppContent() {
                   isDarkMode={isDarkMode}
                 />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}>
                     <HomeView
                       onPlayerClick={setSelectedPlayer}
@@ -722,7 +736,6 @@ function AppContent() {
                       isDarkMode={isDarkMode}
                     />
                   </Suspense>
-                </ErrorBoundary>
               )
             ) : activeView === 'Board' ? (
               currentWeek == null ? (
@@ -764,9 +777,7 @@ function AppContent() {
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}><TeamView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
-                </ErrorBoundary>
               )
             ) : activeView === 'Matchup' ? (
               showLoginGate ? (
@@ -774,45 +785,36 @@ function AppContent() {
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}><MatchupView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} /></Suspense>
-                </ErrorBoundary>
               )
             ) : activeView === 'GameSlate' ? (
-              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                 <Suspense fallback={suspenseFallback}>
                   <GameSlateView
                     onSelectGame={setSelectedGame}
                     isDarkMode={isDarkMode}
                   />
                 </Suspense>
-              </ErrorBoundary>
             ) : activeView === 'Trends' ? (
-              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
-                <Suspense fallback={suspenseFallback}>
-                  <TrendsView
-                    onPlayerClick={handlePlayerClick}
-                    isDarkMode={isDarkMode}
-                  />
-                </Suspense>
-              </ErrorBoundary>
+              <Suspense fallback={suspenseFallback}>
+                <TrendsView
+                  onPlayerClick={handlePlayerClick}
+                  isDarkMode={isDarkMode}
+                />
+              </Suspense>
             ) : activeView === 'Playoffs' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
-                  <Suspense fallback={suspenseFallback}>
-                    <PlayoffPredictorView isDarkMode={isDarkMode} />
-                  </Suspense>
-                </ErrorBoundary>
+                <Suspense fallback={suspenseFallback}>
+                  <PlayoffPredictorView isDarkMode={isDarkMode} />
+                </Suspense>
               )
             ) : activeView === 'Settings' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}>
                     <SettingsView
                       isDarkMode={isDarkMode}
@@ -820,15 +822,12 @@ function AppContent() {
                       onLeagueSynced={() => refreshAll()}
                     />
                   </Suspense>
-                </ErrorBoundary>
               )
             ) : activeView === 'Profile' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}><ProfileView isDarkMode={isDarkMode} onLogout={handleLogout} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
-                </ErrorBoundary>
               )
             ) : activeView === 'Login' ? (
               authView === 'forgot' ? (
@@ -862,7 +861,6 @@ function AppContent() {
               currentWeek == null ? (
                 suspenseFallback
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}>
                     <AllPlayersView
                       selectedScoring={selectedScoring}
@@ -877,7 +875,6 @@ function AppContent() {
                       source={allPlayersSource}
                     />
                   </Suspense>
-                </ErrorBoundary>
               )
             ) : activeView === 'Waivers' ? (
               showLoginGate ? (
@@ -885,35 +882,25 @@ function AppContent() {
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}><WaiversView onPlayerClick={setSelectedPlayer} onViewAll={handleViewAllFromWaivers} isDarkMode={isDarkMode} /></Suspense>
-                </ErrorBoundary>
               )
             ) : activeView === 'DraftRankings' ? (
-              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                 <Suspense fallback={suspenseFallback}><DraftRankingsView onPlayerClick={setSelectedPlayer} isDarkMode={isDarkMode} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
-              </ErrorBoundary>
             ) : activeView === 'LeagueAnalyzer' ? (
               showLoginGate ? (
                 <LoginSyncGate needsLogin onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : showSyncGate ? (
                 <LoginSyncGate needsLogin={false} onGoToLogin={goToLogin} onGoToSettings={goToSettings} isDarkMode={isDarkMode} />
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
-                  <Suspense fallback={suspenseFallback}>
-                    <LeagueAnalyzerView isDarkMode={isDarkMode} />
-                  </Suspense>
-                </ErrorBoundary>
+                <Suspense fallback={suspenseFallback}>
+                  <LeagueAnalyzerView isDarkMode={isDarkMode} />
+                </Suspense>
               )
             ) : activeView === 'TradeAnalyzer' ? (
-              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                 <Suspense fallback={suspenseFallback}><TradeAnalyzerShell isDarkMode={isDarkMode} /></Suspense>
-              </ErrorBoundary>
             ) : activeView === 'Admin' ? (
               user?.role === 'admin' ? (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}><AdminView isDarkMode={isDarkMode} /></Suspense>
-                </ErrorBoundary>
               ) : (
                 <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
                   <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Access Denied</h2>
@@ -924,11 +911,8 @@ function AppContent() {
                 </div>
               )
             ) : activeView === 'Pricing' ? (
-              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                 <Suspense fallback={suspenseFallback}><PricingView isDarkMode={isDarkMode} userTier={user?.subscriptionTier as 'free' | 'pro' | 'elite'} isAuthenticated={isAuthenticated} onNavigate={(view) => setActiveView(view as any)} /></Suspense>
-              </ErrorBoundary>
             ) : activeView === 'Articles' ? (
-              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                 <Suspense fallback={suspenseFallback}>
                   <ArticlesView
                     isDarkMode={isDarkMode}
@@ -936,9 +920,7 @@ function AppContent() {
                     onArticleSelect={(slug) => { setArticleSlug(slug); setActiveView('ArticleDetail'); }}
                   />
                 </Suspense>
-              </ErrorBoundary>
             ) : activeView === 'ArticleDetail' && articleSlug ? (
-              <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                 <Suspense fallback={suspenseFallback}>
                   <ArticleDetailView
                     slug={articleSlug}
@@ -948,12 +930,10 @@ function AppContent() {
                     onNavigate={(view) => setActiveView(view as any)}
                   />
                 </Suspense>
-              </ErrorBoundary>
             ) : activeView === 'PlayerProfile' && playerProfile ? (
               currentWeek == null ? (
                 suspenseFallback
               ) : (
-                <ErrorBoundary isDarkMode={isDarkMode} resetKeys={[activeView]}>
                   <Suspense fallback={suspenseFallback}>
                     <PlayerProfileView
                       playerId={playerProfile.id}
@@ -965,7 +945,6 @@ function AppContent() {
                       onOpenQuickLook={handleQuickLookFromProfile}
                     />
                   </Suspense>
-                </ErrorBoundary>
               )
             ) : activeView === 'Privacy' ? (
               <Suspense fallback={suspenseFallback}><PrivacyPolicyView isDarkMode={isDarkMode} /></Suspense>
@@ -1032,6 +1011,7 @@ function AppContent() {
                 </div>
               </div>
             )}
+            </ErrorBoundary>
           </PageTransition>
           <AppFooter isDarkMode={isDarkMode} onNavigate={(view) => setActiveView(view as any)} />
         </main>

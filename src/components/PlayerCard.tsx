@@ -136,6 +136,12 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
   // Some callers pass richer player objects than App's Player interface declares.
   const playerExtras = player as Player & { status?: string; externalId?: string };
 
+  // "RB2", "WR3", etc. — falls back to the bare position when depth chart
+  // order isn't known (most K/DEF rows, and any player Sleeper hasn't slotted).
+  const positionLabel = player.depthChartOrder != null && player.depthChartOrder > 0
+    ? `${player.position}${player.depthChartOrder}`
+    : player.position;
+
   // --- Quick actions: Watch + Share ---
   const watchlist = useWatchlist();
   const isWatched = watchlist.isWatched(player.id);
@@ -499,7 +505,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                       )}
                     </div>
                     <div className={`flex items-center gap-1.5 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <span>{player.team} • {player.position} •</span>
+                      <span>{player.team} • {positionLabel} •</span>
                       <select
                         value={selectedWeek}
                         onChange={(e) => { weekTouchedRef.current = true; setSelectedWeek(Number(e.target.value)); }}
@@ -627,6 +633,7 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
 
                 const props = propsData?.props || {};
                 const actual = propsData?.actual || {};
+                const gameStatus: string | undefined = propsData?.status;
                 const markets = Object.keys(props);
 
                 const isFallback = Boolean(propsData?.isFallback);
@@ -709,6 +716,18 @@ export function PlayerCard({ player, onClose, isDarkMode, seasonYear: propsSeaso
                                   </div>
                                   {result && <div className={`text-xs font-bold ${resultColor}`}>{result}</div>}
                                 </>
+                              ) : gameStatus === 'did_not_play' ? (
+                                <>
+                                  <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>DNP</div>
+                                  <div className={`text-xs font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>VOID</div>
+                                </>
+                              ) : gameStatus === 'unknown' ? (
+                                <div
+                                  className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+                                  title="Stats for this game aren't available, so this line isn't graded."
+                                >
+                                  No stats
+                                </div>
                               ) : (
                                 <div className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>—</div>
                               )}
