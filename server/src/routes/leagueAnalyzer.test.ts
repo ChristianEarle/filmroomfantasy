@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignPositionRanks, computeAllPlay, currentStreak, lineupOrder, slotGroup, stdDev, weeklyResultsFor, withLiveCompletion, type ScoredMatchup } from './leagueAnalyzer';
+import { assignPositionRanks, computeAllPlay, isValidTierGrades, currentStreak, lineupOrder, slotGroup, stdDev, weeklyResultsFor, withLiveCompletion, type ScoredMatchup } from './leagueAnalyzer';
 
 describe('assignPositionRanks', () => {
   const pos = (position: 'RB' | 'TE', avgPoints: number, starterCount = 1) => ({
@@ -146,5 +146,18 @@ describe('withLiveCompletion', () => {
       { week: 2, homeTeamId: 'c', awayTeamId: 'd', homeScore: 80, awayScore: 70, isComplete: false, isPlayoff: false },
     ], 3);
     expect(computeAllPlay(matchups, ['a', 'b', 'c', 'd']).get('a')).toMatchObject({ wins: 3, losses: 0 });
+  });
+});
+
+describe('isValidTierGrades', () => {
+  it('accepts tiers where close teams share a grade', () => {
+    expect(isValidTierGrades(['A', 'A', 'A', 'B+', 'B', 'C'], 6)).toBe(true);
+  });
+
+  it('rejects a grade that improves down the ranking, an unknown grade, or the wrong length', () => {
+    expect(isValidTierGrades(['A', 'B', 'A-'], 3)).toBe(false);
+    expect(isValidTierGrades(['A', 'F'], 2)).toBe(false);
+    expect(isValidTierGrades(['A', 'B'], 3)).toBe(false);
+    expect(isValidTierGrades(null, 0)).toBe(false);
   });
 });

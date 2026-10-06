@@ -52,7 +52,7 @@ class RouteError extends Error {
 // tuple used for the DB cache row; entries are removed in `finally` so a
 // later cache miss (new week, cache cleared) always starts a fresh call.
 const narrativeInFlight = new Map<string, Promise<{ narrative: string; generatedAt: string }>>();
-const pulseInFlight = new Map<string, Promise<{ narrative: string; ranking: string[] | null; generatedAt: string }>>();
+const pulseInFlight = new Map<string, Promise<{ narrative: string; ranking: string[] | null; grades: string[] | null; generatedAt: string }>>();
 
 type Db = ReturnType<typeof import('drizzle-orm/d1').drizzle<typeof schema>>;
 type LeagueRow = typeof schema.leagues.$inferSelect;
@@ -1633,11 +1633,16 @@ You will receive league context (scoring format, size, playoff spots, league-ave
 A power ranking is NOT the same as the standings — it's your holistic judgment of which team is actually best right now and going forward. All-play record is the cleanest measure of true strength; recent form is the momentum signal; roster quality, depth, injuries and byes say what comes next. A team with a losing record but a strong all-play record and a hot last 3 games can rank above a team coasting on a lucky early-season record. Also weigh remaining schedule and playoff odds. Break ties by which team you'd rather own going forward.
 
 Respond with ONLY valid JSON (no markdown fences, no other text), in this exact shape:
-{"ranking": ["<team id>", "<team id>", ...], "narrative": "<4-6 short paragraphs, under 350 words>"}
+{"ranking": ["<team id>", "<team id>", ...], "grades": ["<grade>", "<grade>", ...], "narrative": "<4-6 short paragraphs, under 350 words>"}
 
 Rules for "ranking":
 - Must contain every team id from the data block EXACTLY as given, each exactly once, ordered from most to least powerful.
 - Use the exact id strings from the data block's "[id: ...]" tags — do not alter, guess, or invent ids.
+
+Rules for "grades":
+- One letter grade per team, in the SAME order as "ranking" (grades[0] is the grade of ranking[0], and so on). The array must have exactly as many entries as "ranking".
+- The grade is the team's TIER in your power ranking, not a points-per-game grade (the "grade" in a team's sheet is only a scoring grade — ignore it here). Teams you see as close in strength share a tier and therefore the same grade, even when you still have to put one ahead of the other: if #1 and #2 are a toss-up, or #1, #2 and #3 are all close, they get the same grade. Step down a grade only where there is a real gap in quality.
+- Use only these grades: A+, A, A-, B+, B, B-, C+, C, D. Grades must never go up as you move down the ranking. Use as much of the scale as the league's spread honestly warrants.
 
 Rules for "narrative":
 - Cover: the biggest mover(s) between the power ranking and the win-loss standings and why (cite all-play records and luck), the luckiest and unluckiest teams, the tightest part of the playoff race, which lineup slots are scarce or abundant league-wide and which teams could trade from surplus to fill a need (name players), injury or bye-week trouble that changes a team's outlook, and one storyline to watch.
@@ -1660,9 +1665,10 @@ const PULSE_OUTPUT_FORMAT = {
     type: 'object',
     properties: {
       ranking: { type: 'array', items: { type: 'string' } },
+      grades: { type: 'array', items: { type: 'string' } },
       narrative: { type: 'string' },
     },
-    required: ['ranking', 'narrative'],
+    required: ['ranking', 'grades', 'narrative'],
     additionalProperties: false,
   },
 } as const;
@@ -1677,6 +1683,34 @@ function isValidRanking(ranking: unknown, teamIds: string[]): ranking is string[
     seen.add(id);
   }
   return true;
+}
+
+export const TIER_GRADES = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'D'] as const;
+
+/**
+ * Validates the model's tier grades: one known letter grade per ranked team,
+ * never improving as the ranking goes down. A bad array is dropped (the client
+ * falls back to the points-per-game grade) rather than shown out of order.
+ */
+export function isValidTierGrades(grades: unknown, teamCount: number): grades is string[] {
+  if (!Array.isArray(grades) || grades.length !== teamCount) return false;
+  let prev = 0;
+  for (const g of grades) {
+    const idx = typeof g === 'string' ? (TIER_GRADES as readonly string[]).indexOf(g) : -1;
+    if (idx === -1 || idx < prev) return false;
+    prev = idx;
+  }
+  return true;
+}
+
+function parseCachedGrades(json: string | null, teamCount: number): string[] | null {
+  if (!json) return null;
+  try {
+    const grades: unknown = JSON.parse(json);
+    return isValidTierGrades(grades, teamCount) ? grades : null;
+  } catch {
+    return null;
+  }
 }
 
 // GET /:leagueId/pulse — league-wide AI narrative, cached per (league, season, week).
@@ -1728,6 +1762,7 @@ leagueAnalyzerRoutes.get(
         return c.json({
           narrative: cachedRow.narrative,
           ranking: cachedRanking,
+          grades: cachedRanking ? parseCachedGrades(cachedRow.gradesJson, cachedRanking.length) : null,
           cached: true,
           generatedAt: cachedRow.createdAt,
           season: seasonYear,
@@ -1756,6 +1791,7 @@ ${teamBlocks}`;
 
           let narrative: string;
           let ranking: string[] | null;
+          let grades: string[] | null;
           try {
             const res = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
@@ -1789,7 +1825,7 @@ ${teamBlocks}`;
               throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
             }
 
-            const parsed = parseJsonObject<{ ranking?: unknown; narrative?: unknown }>(text);
+            const parsed = parseJsonObject<{ ranking?: unknown; grades?: unknown; narrative?: unknown }>(text);
             if (!parsed) {
               console.error(`[league-analyzer/pulse] non-JSON response (${describeResponse(data)}):`, text.slice(0, 300));
               throw new RouteError(503, 'AI analysis is temporarily unavailable. Please try again shortly.');
@@ -1803,6 +1839,11 @@ ${teamBlocks}`;
             ranking = isValidRanking(parsed.ranking, teamIds) ? parsed.ranking : null;
             if (!ranking) {
               console.error('[league-analyzer/pulse] model returned an invalid ranking permutation');
+            }
+            // Tier grades only make sense alongside a valid ranking.
+            grades = ranking && isValidTierGrades(parsed.grades, ranking.length) ? parsed.grades : null;
+            if (ranking && !grades) {
+              console.error('[league-analyzer/pulse] model returned invalid tier grades');
             }
           } catch (err) {
             if (err instanceof RouteError) throw err;
@@ -1820,6 +1861,7 @@ ${teamBlocks}`;
                 week,
                 narrative,
                 rankingJson: ranking ? JSON.stringify(ranking) : null,
+                gradesJson: grades ? JSON.stringify(grades) : null,
                 model: AI_MODEL,
               })
               .onConflictDoNothing();
@@ -1827,14 +1869,14 @@ ${teamBlocks}`;
             console.error('[league-analyzer/pulse] failed to cache pulse:', err);
           }
 
-          return { narrative, ranking, generatedAt: new Date().toISOString() };
+          return { narrative, ranking, grades, generatedAt: new Date().toISOString() };
         })();
         pulseInFlight.set(cacheKey, generation);
         generation.finally(() => pulseInFlight.delete(cacheKey)).catch(() => {}); // see the narrative route
       }
 
       const result = await generation;
-      return c.json({ narrative: result.narrative, ranking: result.ranking, cached: false, generatedAt: result.generatedAt, season: seasonYear, week });
+      return c.json({ narrative: result.narrative, ranking: result.ranking, grades: result.grades, cached: false, generatedAt: result.generatedAt, season: seasonYear, week });
     } catch (error) {
       if (error instanceof RouteError) {
         return c.json({ error: error.message }, error.status);
