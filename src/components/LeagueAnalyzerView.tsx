@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import api, { ApiError } from '../services/api';
 import { LeagueTrends } from './leagueAnalyzer/LeagueTrends';
 import { SlotRankGrid } from './leagueAnalyzer/SlotRankGrid';
+import { gradesFollowRank } from '../utils/rankGrades';
 
 // ── Types (mirror GET /api/league-analyzer/:leagueId) ─────────────────────────
 
@@ -98,6 +99,8 @@ interface AiNarrativeResponse {
 interface AiPulseResponse extends AiNarrativeResponse {
   /** Team ids ordered most to least powerful, or null if the model's ranking didn't validate. */
   ranking: string[] | null;
+  /** Tier letter grades aligned to `ranking` (teams in the same tier share one), or null if unavailable. */
+  grades?: string[] | null;
 }
 
 interface AiNarrativeState {
@@ -206,21 +209,25 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
   // ── AI League Pulse + power ranking — fetched once per league, Pro/Elite gated ──
   const [pulse, setPulse] = useState<AiNarrativeState>(AI_NARRATIVE_IDLE);
   const [aiRanking, setAiRanking] = useState<string[] | null>(null);
+  const [aiGrades, setAiGrades] = useState<string[] | null>(null);
 
   useEffect(() => {
     if (!leagueId || !canViewAi) {
       setPulse(AI_NARRATIVE_IDLE);
       setAiRanking(null);
+      setAiGrades(null);
       return;
     }
     let cancelled = false;
     setPulse({ text: null, loading: true, error: null });
     setAiRanking(null);
+    setAiGrades(null);
     api.get<AiPulseResponse>(`/league-analyzer/${leagueId}/pulse`)
       .then((res) => {
         if (cancelled) return;
         setPulse({ text: res.narrative, loading: false, error: null });
         setAiRanking(res.ranking);
+        setAiGrades(res.grades ?? null);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -330,18 +337,24 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
     }));
   }, [analysis, userTeam]);
 
-  const userTeamData = teams.find((t) => t.isUserTeam);
-
   // When a valid AI power ranking is available, display teams in that order
   // instead of the deterministic season-PPG standings order. Falls back to
   // standings order for free tier, on AI failure, or an invalid permutation.
   const orderedByAi = canViewAi && aiRanking != null && aiRanking.length === teams.length;
   const displayTeams = useMemo(() => {
-    if (!orderedByAi || !aiRanking) return teams;
+    if (!orderedByAi || !aiRanking) return gradesFollowRank(teams);
     const byId = new Map(teams.map((t) => [t.id, t]));
     const reordered = aiRanking.map((id) => byId.get(id)).filter((t): t is (typeof teams)[number] => !!t);
-    return reordered.length === teams.length ? reordered : teams;
-  }, [teams, aiRanking, orderedByAi]);
+    if (reordered.length !== teams.length) return gradesFollowRank(teams);
+    // The AI's tier grades go with its ranking: teams it sees as close share
+    // a grade. Without them (older cached ranking), cap grades to the order.
+    if (aiGrades && aiGrades.length === reordered.length) {
+      return reordered.map((t, i) => ({ ...t, grade: aiGrades[i] }));
+    }
+    return gradesFollowRank(reordered);
+  }, [teams, aiRanking, aiGrades, orderedByAi]);
+
+  const userTeamData = displayTeams.find((t) => t.isUserTeam);
 
   // ── Empty state: no league connected ──────────────────────────────────────
   if (!leagueId && !leagueLoading) {

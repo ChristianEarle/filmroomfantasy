@@ -840,6 +840,8 @@ export const leagueAiPulses = sqliteTable('league_ai_pulses', {
   narrative: text('narrative').notNull(),
   /** JSON array of team ids, ordered most to least powerful. Null if the model's ranking failed validation. */
   rankingJson: text('ranking_json'),
+  /** JSON array of letter grades aligned to `rankingJson` (teams in the same tier share a grade). Null for rows cached before tiers, or if validation failed. */
+  gradesJson: text('grades_json'),
   model: text('model').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
