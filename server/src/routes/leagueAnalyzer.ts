@@ -301,6 +301,20 @@ export interface ScoredMatchup {
   isPlayoff: boolean;
 }
 
+/**
+ * Sync flags a matchup complete only when it runs after the week rolls over,
+ * but the synced team records (from the platform) already include the newest
+ * finished week. Without this the all-play record, recent form and history
+ * skip the latest week until the next sync. Weeks before the live week are
+ * done regardless of the stored flag.
+ */
+export function withLiveCompletion<T extends { week: number; isComplete: boolean }>(
+  matchups: T[],
+  liveWeek: number,
+): T[] {
+  return matchups.map((m) => (m.isComplete || m.week >= liveWeek ? m : { ...m, isComplete: true }));
+}
+
 export interface AllPlayRecord {
   wins: number;
   losses: number;
@@ -773,19 +787,23 @@ export async function computeLeagueAnalysis(
     }
 
     // All league matchups in one query
-    const leagueMatchups = await db.query.matchups.findMany({
-      where: eq(schema.matchups.leagueId, league.id),
-      columns: {
-        id: true,
-        week: true,
-        homeTeamId: true,
-        awayTeamId: true,
-        homeScore: true,
-        awayScore: true,
-        isComplete: true,
-        isPlayoff: true,
-      },
-    });
+    const liveWeek = (await resolveLeagueWeek(db, league)).week;
+    const leagueMatchups = withLiveCompletion(
+      await db.query.matchups.findMany({
+        where: eq(schema.matchups.leagueId, league.id),
+        columns: {
+          id: true,
+          week: true,
+          homeTeamId: true,
+          awayTeamId: true,
+          homeScore: true,
+          awayScore: true,
+          isComplete: true,
+          isPlayoff: true,
+        },
+      }),
+      liveWeek,
+    );
 
     // ── Per-player value: season PPG, falling back to this week's projection ─
     const playerValue = new Map<string, number>();
@@ -1256,7 +1274,7 @@ leagueAnalyzerRoutes.get('/:leagueId/history', authMiddleware, async (c) => {
   const { league } = loaded;
 
   try {
-    const [teams, matchups] = await Promise.all([
+    const [teams, storedMatchups, liveWeek] = await Promise.all([
       db.query.teams.findMany({
         where: eq(schema.teams.leagueId, leagueId),
         columns: { id: true, name: true, wins: true, losses: true, ties: true },
@@ -1265,7 +1283,9 @@ leagueAnalyzerRoutes.get('/:leagueId/history', authMiddleware, async (c) => {
         where: eq(schema.matchups.leagueId, leagueId),
         columns: { id: true, week: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true, isComplete: true, isPlayoff: true },
       }),
+      resolveLeagueWeek(db, league).then((r) => r.week),
     ]);
+    const matchups = withLiveCompletion(storedMatchups, liveWeek);
     const teamRecords = teams;
     // Median-game leagues: the synced records (what the headline numbers use)
     // carry about two results per played week — one head-to-head, one vs. the

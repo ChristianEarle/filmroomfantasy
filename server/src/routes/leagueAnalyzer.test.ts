@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignPositionRanks, computeAllPlay, currentStreak, lineupOrder, slotGroup, stdDev, weeklyResultsFor, type ScoredMatchup } from './leagueAnalyzer';
+import { assignPositionRanks, computeAllPlay, currentStreak, lineupOrder, slotGroup, stdDev, weeklyResultsFor, withLiveCompletion, type ScoredMatchup } from './leagueAnalyzer';
 
 describe('assignPositionRanks', () => {
   const pos = (position: 'RB' | 'TE', avgPoints: number, starterCount = 1) => ({
@@ -129,5 +129,22 @@ describe('weekly results, streak and consistency', () => {
   it('computes the population standard deviation', () => {
     expect(stdDev([100, 120])).toBe(10);
     expect(stdDev([100])).toBeNull();
+  });
+});
+
+describe('withLiveCompletion', () => {
+  const m = (week: number, isComplete: boolean) => ({ week, isComplete });
+
+  it('treats weeks before the live week as complete even when the sync never flagged them', () => {
+    const out = withLiveCompletion([m(1, true), m(2, false), m(3, false)], 3);
+    expect(out.map((x) => x.isComplete)).toEqual([true, true, false]);
+  });
+
+  it('feeds the unflagged latest week into all-play', () => {
+    const matchups = withLiveCompletion([
+      { week: 2, homeTeamId: 'a', awayTeamId: 'b', homeScore: 100, awayScore: 90, isComplete: false, isPlayoff: false },
+      { week: 2, homeTeamId: 'c', awayTeamId: 'd', homeScore: 80, awayScore: 70, isComplete: false, isPlayoff: false },
+    ], 3);
+    expect(computeAllPlay(matchups, ['a', 'b', 'c', 'd']).get('a')).toMatchObject({ wins: 3, losses: 0 });
   });
 });
