@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import api, { ApiError } from '../services/api';
 import { LeagueTrends } from './leagueAnalyzer/LeagueTrends';
 import { SlotRankGrid } from './leagueAnalyzer/SlotRankGrid';
+import { gradesFollowRank } from '../utils/rankGrades';
 
 // ── Types (mirror GET /api/league-analyzer/:leagueId) ─────────────────────────
 
@@ -330,18 +331,18 @@ export function LeagueAnalyzerView({ isDarkMode }: LeagueAnalyzerViewProps) {
     }));
   }, [analysis, userTeam]);
 
-  const userTeamData = teams.find((t) => t.isUserTeam);
-
   // When a valid AI power ranking is available, display teams in that order
   // instead of the deterministic season-PPG standings order. Falls back to
   // standings order for free tier, on AI failure, or an invalid permutation.
   const orderedByAi = canViewAi && aiRanking != null && aiRanking.length === teams.length;
   const displayTeams = useMemo(() => {
-    if (!orderedByAi || !aiRanking) return teams;
+    if (!orderedByAi || !aiRanking) return gradesFollowRank(teams);
     const byId = new Map(teams.map((t) => [t.id, t]));
     const reordered = aiRanking.map((id) => byId.get(id)).filter((t): t is (typeof teams)[number] => !!t);
-    return reordered.length === teams.length ? reordered : teams;
+    return gradesFollowRank(reordered.length === teams.length ? reordered : teams);
   }, [teams, aiRanking, orderedByAi]);
+
+  const userTeamData = displayTeams.find((t) => t.isUserTeam);
 
   // ── Empty state: no league connected ──────────────────────────────────────
   if (!leagueId && !leagueLoading) {
