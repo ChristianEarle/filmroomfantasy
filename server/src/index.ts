@@ -327,6 +327,19 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     await callSync('/api/admin/sync-news');
     await callSync('/api/admin/sync-games');
 
+    // Refresh outdoor-stadium weather forecasts (temp/wind/precip) for the
+    // current week from Open-Meteo. ESPN's own weather field only shows up
+    // within a few hours of kickoff, so this keeps forecasts fresh all week.
+    try {
+      const db = drizzle(env.DB, { schema });
+      const state = await getNflState(db);
+      if (state.week <= 18) {
+        await callSync('/api/admin/sync-weather', { week: state.week, seasonYear: state.season });
+      }
+    } catch (err) {
+      console.error('[cron] weather sync failed:', err);
+    }
+
     // Fan fresh injury news out to in-app notifications for rostered/watched
     // players. Idempotent (dedupe keys), and failures never break the sync.
     try {

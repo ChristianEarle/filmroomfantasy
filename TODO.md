@@ -112,7 +112,13 @@ history accrues from the first daily cron.
   `nfl_players.depth_chart_order` and returned by `GET /players`, just never
   shown; `PlayerTable` and `PlayerCard` now label the position with the
   depth slot (e.g. "RB2") whenever it's known.
-- [ ] Weather for outdoor games (Open-Meteo/NWS, free)
+- [x] **Weather for outdoor games** — `services/weather.ts` fetches a real
+  hourly forecast (temp/wind/precip chance) per stadium from Open-Meteo
+  (free, no key), merged into `nfl_games.weather` via a new
+  `POST /api/admin/sync-weather` admin endpoint, wired into the existing
+  daily cron. ESPN's own weather field only appears near kickoff and never
+  carries wind/precip, so this fills the gap earlier in the week. Surfaced
+  in GameSlateView and GameDetailModal.
 - [x] **Redraft ADP** — via FantasyFootballCalculator's public JSON API
   (not Sleeper/Underdog as originally scoped), feeding both the AI
   draft-rankings prompts and `adpDelta` (#306).
