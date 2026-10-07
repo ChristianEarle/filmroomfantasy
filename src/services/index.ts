@@ -21,6 +21,7 @@ export type {
   Player,
   PlayerWeeklyStats,
   PlayerProjection,
+  PlayerSeasonProjection,
   PlayerNews,
   PlayersResponse,
   PlayerStatsResponse,
