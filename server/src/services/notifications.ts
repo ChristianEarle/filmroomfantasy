@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/d1';
-import { desc, eq, gte, inArray } from 'drizzle-orm';
+import { desc, eq, gte, inArray, isNull } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
 
@@ -62,6 +62,17 @@ function slugifyName(text: string): string {
 function truncate(text: string, max: number): string {
   const t = text.trim();
   return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** Notification title/body ultimately come from RSS/news headlines — untrusted
+ * external text — so it must be escaped before landing in an HTML email body. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -286,4 +297,180 @@ export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNot
     recipients,
     attempted: rows.length,
   };
+}
+
+// ── Email delivery ───────────────────────────────────────────────────
+
+/** Cap on notification rows scanned per digest run. */
+const MAX_PENDING_EMAIL_ROWS = 500;
+/** Cap on items listed in a single digest email; the rest are summarized as "and N more". */
+const MAX_ITEMS_PER_EMAIL = 5;
+
+export interface NotificationEmailResult {
+  usersEmailed: number;
+  notificationsMarked: number;
+  skippedNoApiKey: boolean;
+}
+
+type PendingNotification = {
+  id: string;
+  userId: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+};
+
+async function sendNotificationDigestEmail(
+  to: string,
+  items: PendingNotification[],
+  appUrl: string,
+  resendApiKey: string,
+): Promise<boolean> {
+  const shown = items.slice(0, MAX_ITEMS_PER_EMAIL);
+  const overflow = items.length - shown.length;
+  const subject = items.length === 1
+    ? `FilmRoom: ${shown[0].title}`
+    : `FilmRoom: ${items.length} new notifications`;
+
+  const itemsHtml = shown.map((item) => {
+    const href = item.link ? `${appUrl}${item.link}` : appUrl;
+    return `
+      <div style="padding: 12px 0; border-bottom: 1px solid #e2e8f0;">
+        <a href="${href}" style="color: #2563eb; font-weight: 600; text-decoration: none;">${escapeHtml(item.title)}</a>
+        ${item.body ? `<p style="color: #475569; margin: 4px 0 0; font-size: 14px;">${escapeHtml(item.body)}</p>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'FilmRoom <noreply@filmroomfantasy.com>',
+        to: [to],
+        subject,
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+            <h2 style="color: #1e293b; margin-bottom: 16px;">You have new updates</h2>
+            ${itemsHtml}
+            ${overflow > 0 ? `<p style="color: #94a3b8; font-size: 14px;">And ${overflow} more.</p>` : ''}
+            <a href="${appUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 24px 0;">
+              Open FilmRoom
+            </a>
+            <p style="color: #94a3b8; font-size: 14px; line-height: 1.5;">
+              You're receiving this because notifications are enabled on your account. Turn them off anytime in Settings.
+            </p>
+          </div>
+        `,
+      }),
+    });
+    if (!res.ok) {
+      console.error('[notifications] Resend digest send failed:', res.status, await res.text().catch(() => ''));
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[notifications] Resend digest send error:', err);
+    return false;
+  }
+}
+
+/**
+ * Emails a digest of any not-yet-emailed notification rows, one email per
+ * user. Only sent to users with notificationsEnabled and a verified email;
+ * rows for ineligible users are still marked processed so this query never
+ * rescans them, but users become eligible again for any NEW notification
+ * created after they enable/verify.
+ *
+ * On a per-user send failure, that user's rows are left unmarked so the next
+ * cron tick retries. No-ops (logging a warning) when RESEND_API_KEY is unset,
+ * same convention as the password-reset/verification emails in routes/auth.ts.
+ */
+export async function sendPendingNotificationEmails(
+  db: DB,
+  resendApiKey: string | undefined,
+  appUrl: string,
+): Promise<NotificationEmailResult> {
+  if (!resendApiKey) {
+    console.warn('[notifications] No RESEND_API_KEY configured — skipping email digest.');
+    return { usersEmailed: 0, notificationsMarked: 0, skippedNoApiKey: true };
+  }
+
+  const pending: PendingNotification[] = await db
+    .select({
+      id: schema.notifications.id,
+      userId: schema.notifications.userId,
+      title: schema.notifications.title,
+      body: schema.notifications.body,
+      link: schema.notifications.link,
+    })
+    .from(schema.notifications)
+    .where(isNull(schema.notifications.emailedAt))
+    .orderBy(desc(schema.notifications.createdAt))
+    .limit(MAX_PENDING_EMAIL_ROWS);
+
+  if (pending.length === 0) {
+    return { usersEmailed: 0, notificationsMarked: 0, skippedNoApiKey: false };
+  }
+
+  const userIds = [...new Set(pending.map((p) => p.userId))];
+  const userRows: { id: string; email: string; notificationsEnabled: boolean | null; emailVerifiedAt: Date | null }[] = [];
+  for (const ids of chunk(userIds, IN_CHUNK)) {
+    const rows = await db
+      .select({
+        id: schema.users.id,
+        email: schema.users.email,
+        notificationsEnabled: schema.users.notificationsEnabled,
+        emailVerifiedAt: schema.users.emailVerifiedAt,
+      })
+      .from(schema.users)
+      .where(inArray(schema.users.id, ids));
+    userRows.push(...rows);
+  }
+  const eligibleUsers = new Map(
+    userRows.filter((u) => u.notificationsEnabled && u.emailVerifiedAt != null).map((u) => [u.id, u]),
+  );
+
+  const byUser = new Map<string, PendingNotification[]>();
+  for (const item of pending) {
+    const list = byUser.get(item.userId);
+    if (list) list.push(item);
+    else byUser.set(item.userId, [item]);
+  }
+
+  let usersEmailed = 0;
+  const sentIds: string[] = [];
+  const skippedIds: string[] = [];
+
+  for (const [userId, items] of byUser) {
+    const user = eligibleUsers.get(userId);
+    if (!user) {
+      // Not currently eligible (disabled / unverified) — mark processed so
+      // these specific rows aren't rescanned every run.
+      skippedIds.push(...items.map((i) => i.id));
+      continue;
+    }
+    const ok = await sendNotificationDigestEmail(user.email, items, appUrl, resendApiKey);
+    if (ok) {
+      usersEmailed++;
+      sentIds.push(...items.map((i) => i.id));
+    }
+    // On failure, leave emailedAt null so the next cron tick retries.
+  }
+
+  const toMark = [...sentIds, ...skippedIds];
+  if (toMark.length > 0) {
+    const now = new Date();
+    for (const ids of chunk(toMark, IN_CHUNK)) {
+      await db.update(schema.notifications)
+        .set({ emailedAt: now })
+        .where(inArray(schema.notifications.id, ids));
+    }
+  }
+
+  return { usersEmailed, notificationsMarked: toMark.length, skippedNoApiKey: false };
 }
