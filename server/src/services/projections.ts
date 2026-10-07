@@ -273,6 +273,15 @@ export function calculateFantasyPoints(
 }
 
 /**
+ * Whether prop-based stats include at least one yardage line. TD and
+ * receptions lines alone describe a fraction of a player's output, so they
+ * are not enough to stand in for a full projection.
+ */
+export function hasYardageLine(stats: ProjectedStats): boolean {
+  return stats.projPassYards != null || stats.projRushYards != null || stats.projRecYards != null;
+}
+
+/**
  * Build projections for all players from their prop lines.
  * Returns an array of ProjectionResult with stats and points for all formats.
  */
@@ -285,17 +294,11 @@ export function buildProjectionsFromProps(
   for (const [playerName, data] of grouped) {
     const projectedStats = calculateProjectedStats(data.props);
 
-    // Skip players with no meaningful stat lines
-    const hasStats =
-      projectedStats.projPassYards != null ||
-      projectedStats.projRushYards != null ||
-      projectedStats.projRecYards != null ||
-      projectedStats.projReceptions != null ||
-      projectedStats.projRushTDs != null ||
-      projectedStats.projRecTDs != null ||
-      projectedStats.projPassTDs != null;
-
-    if (!hasStats) continue;
+    // Skip players without a yardage line. Books post anytime-TD prices and
+    // receptions lines for depth players (and before a starter's yardage
+    // markets open), and a projection built from those alone lands around
+    // 1 point. Leaving the player out lets the Sleeper fallback cover them.
+    if (!hasYardageLine(projectedStats)) continue;
 
     const ppr = calculateFantasyPoints(projectedStats, 'ppr');
     const halfPpr = calculateFantasyPoints(projectedStats, 'half-ppr');
@@ -324,7 +327,7 @@ export async function generateProjectionsFromProps(
   db: any,
   week: number,
   seasonYear: number
-): Promise<{ generated: number; updated: number; unchanged: number }> {
+): Promise<{ generated: number; updated: number; unchanged: number; coveredPlayerIds: Set<string> }> {
   // Fetch all props for this week
   const props = await db.query.playerProps.findMany({
     where: and(
@@ -333,8 +336,9 @@ export async function generateProjectionsFromProps(
     ),
   });
 
+  const coveredPlayerIds = new Set<string>();
   if (props.length === 0) {
-    return { generated: 0, updated: 0, unchanged: 0 };
+    return { generated: 0, updated: 0, unchanged: 0, coveredPlayerIds };
   }
 
   const projections = buildProjectionsFromProps(props);
@@ -382,6 +386,7 @@ export async function generateProjectionsFromProps(
       playerId = playerByName.get(proj.playerName.toLowerCase());
     }
     if (!playerId) continue;
+    coveredPlayerIds.add(playerId);
 
     // Create projections for all three scoring formats
     const formats: Array<{ format: 'ppr' | 'half-ppr' | 'standard'; points: number }> = [
@@ -467,5 +472,5 @@ export async function generateProjectionsFromProps(
   invalidateCache('projection', true);
 
   console.log(`[projections] Generated ${generated}, updated ${updated} from ${projections.length} player prop lines`);
-  return { generated, updated, unchanged };
+  return { generated, updated, unchanged, coveredPlayerIds };
 }
