@@ -1284,23 +1284,14 @@ adminRoutes.post('/sync-projections', async (c) => {
           propsUpdated += propsResult.updated;
           weekPropsProjections = propsResult.generated + propsResult.updated;
 
-          // Track which players already have props-based projections. Read
-          // the stored rows rather than trusting this run's write count: a
-          // run where no book line moved writes nothing, and those players
-          // must still be kept out of the Sleeper fallback or the two
-          // sources would overwrite each other on alternate runs.
-          {
-            const propsProjections = await db.query.playerProjections.findMany({
-              where: and(
-                eq(schema.playerProjections.week, weekNum),
-                eq(schema.playerProjections.seasonYear, seasonYear),
-                eq(schema.playerProjections.source, 'props')
-              ),
-              columns: { playerId: true },
-            });
-            for (const p of propsProjections) {
-              playersCoveredByProps.add(p.playerId);
-            }
+          // Keep the players the current book lines cover out of the Sleeper
+          // fallback. This set includes players whose line did not move (no
+          // write this run), so the two sources do not overwrite each other on
+          // alternate runs. It comes from the lines, not the stored 'props'
+          // rows, so a row left over from partial lines (e.g. only an
+          // anytime-TD price) is replaced by Sleeper instead of sticking.
+          for (const id of propsResult.coveredPlayerIds) {
+            playersCoveredByProps.add(id);
           }
         }
 

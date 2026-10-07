@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { calculateFantasyPoints, type ProjectedStats } from './projections';
+import { buildProjectionsFromProps, calculateFantasyPoints, type ProjectedStats } from './projections';
+import type { PlayerProps } from '../db/schema';
 
 const baseStats: ProjectedStats = {
   projPassYards: 4500,
@@ -32,5 +33,39 @@ describe('calculateFantasyPoints', () => {
   it('treats a null interceptions value the same as omitted (no deduction)', () => {
     const stats: ProjectedStats = { ...baseStats, interceptions: null };
     expect(calculateFantasyPoints(stats, 'ppr')).toBeCloseTo(353);
+  });
+});
+
+describe('buildProjectionsFromProps', () => {
+  const prop = (playerName: string, market: string, fields: Partial<PlayerProps>): PlayerProps =>
+    ({
+      playerName,
+      playerExternalId: null,
+      market,
+      overPoint: null,
+      overPrice: null,
+      underPrice: null,
+      yesPrice: null,
+      noPrice: null,
+      snapshotTime: '2026-10-07T12:00:00Z',
+      ...fields,
+    }) as PlayerProps;
+
+  it('skips players whose only lines are anytime TD or receptions, leaving them to the fallback source', () => {
+    const results = buildProjectionsFromProps([
+      prop('Depth Receiver', 'player_anytime_td', { yesPrice: 600, noPrice: -1000 }),
+      prop('Slot Guy', 'player_receptions', { overPoint: 1.5 }),
+    ]);
+    expect(results).toEqual([]);
+  });
+
+  it('keeps players with a yardage line', () => {
+    const results = buildProjectionsFromProps([
+      prop('Starter WR', 'player_reception_yds', { overPoint: 64.5 }),
+      prop('Starter WR', 'player_receptions', { overPoint: 5.5 }),
+      prop('Starter WR', 'player_anytime_td', { yesPrice: 150, noPrice: -190 }),
+    ]);
+    expect(results).toHaveLength(1);
+    expect(results[0].points.ppr).toBeGreaterThan(10);
   });
 });
