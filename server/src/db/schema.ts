@@ -758,7 +758,7 @@ export type NewPageView = typeof pageViews.$inferInsert;
 export const notifications = sqliteTable('notifications', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(), // 'injury' | 'news' | 'waiver' | 'trade' | 'system'
+  type: text('type').notNull(), // 'injury' | 'news' | 'waiver' | 'trade' | 'lineup_lock' | 'system'
   title: text('title').notNull(),
   body: text('body'),
   playerId: text('player_id').references(() => nflPlayers.id, { onDelete: 'cascade' }),

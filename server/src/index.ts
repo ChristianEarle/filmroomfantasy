@@ -7,7 +7,7 @@ import * as schema from './db/schema';
 // Import utilities
 import { cleanupExpiredRateLimits } from './middleware/rateLimit';
 import { snapshotRankHistory } from './services/draftRankings';
-import { generateInjuryNewsNotifications } from './services/notifications';
+import { generateInjuryNewsNotifications, generateLineupLockNotifications } from './services/notifications';
 import { getNflState } from './services/nflState';
 import { legacyOwns } from './ingest/ownership';
 
@@ -413,6 +413,18 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // Off-season this instead runs once daily — see the 0 12 * * * block.
     if (isInSeasonMonth()) {
       await callSync('/api/admin/sync-leagues');
+
+      // Remind league members once the week's earliest kickoff is within
+      // 24h. Idempotent via dedupe key, so running every 4h inside that
+      // window is safe — only the first hit per (league, week) persists.
+      try {
+        const res = await generateLineupLockNotifications(db);
+        if (res.recipients > 0) {
+          console.log(`[cron] lineup-lock notifications: ${res.attempted} rows for ${res.recipients} members (lock ${res.lockTime})`);
+        }
+      } catch (err) {
+        console.error('[cron] lineup-lock notification generation failed:', err);
+      }
     }
   } else if (event.cron === '0 */6 * * *') {
     // Every 6 hours: sync all news sources

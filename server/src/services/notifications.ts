@@ -1,7 +1,8 @@
 import { drizzle } from 'drizzle-orm/d1';
-import { desc, eq, gte, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
+import { getNflState } from './nflState';
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -285,5 +286,118 @@ export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNot
     relevantNews: items.length,
     recipients,
     attempted: rows.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Lineup-lock reminder notifications
+// ---------------------------------------------------------------------------
+
+/** Remind once the week's lock is this close; dedupeKey keeps repeat cron runs inside the window from duplicating. */
+const LINEUP_LOCK_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export interface LineupLockNotificationResult {
+  recipients: number;
+  attempted: number;
+  skipped: string | null;
+  lockTime: string | null;
+}
+
+/** True once `now` has entered the reminder window before `lockTime` and the lock hasn't passed yet. */
+export function isWithinLineupLockWindow(now: Date, lockTime: Date, windowMs = LINEUP_LOCK_WINDOW_MS): boolean {
+  const msUntilLock = lockTime.getTime() - now.getTime();
+  return msUntilLock > 0 && msUntilLock <= windowMs;
+}
+
+/** e.g. "Week 5 lineups lock in about 3h — double check your starters before kickoff." */
+export function buildLineupLockBody(week: number, now: Date, lockTime: Date): string {
+  const msUntilLock = Math.max(0, lockTime.getTime() - now.getTime());
+  const hours = Math.round(msUntilLock / 3600000);
+  const relative = hours <= 1 ? 'in under an hour' : `in about ${hours}h`;
+  return `Week ${week} lineups lock ${relative} — double check your starters before kickoff.`;
+}
+
+/**
+ * Remind every league member once per (league, week) once that week's
+ * earliest kickoff falls inside the reminder window. In-app only, same
+ * idempotent dedupe-key pattern as generateInjuryNewsNotifications above —
+ * safe to call on every cron tick inside the window.
+ *
+ * Only considers leagues parked on the live NFL season: an archived league
+ * on a past season isn't playing this week, so its members shouldn't be
+ * reminded about a lock time that doesn't apply to them (same season-scoping
+ * rule as pickLeagueWeek in services/nflState.ts).
+ */
+export async function generateLineupLockNotifications(db: DB, now: Date = new Date()): Promise<LineupLockNotificationResult> {
+  const state = await getNflState(db, now);
+  if (state.seasonType !== 'regular' && state.seasonType !== 'preseason') {
+    return { recipients: 0, attempted: 0, skipped: 'not in season', lockTime: null };
+  }
+
+  const games = await db
+    .select({ gameTime: schema.nflGames.gameTime })
+    .from(schema.nflGames)
+    .where(and(
+      eq(schema.nflGames.seasonYear, state.season),
+      eq(schema.nflGames.week, state.week),
+      eq(schema.nflGames.seasonType, state.seasonType),
+    ));
+  if (games.length === 0) {
+    return { recipients: 0, attempted: 0, skipped: 'no games synced for this week', lockTime: null };
+  }
+
+  const lockTime = new Date(Math.min(...games.map((g) => g.gameTime.getTime())));
+  if (!isWithinLineupLockWindow(now, lockTime)) {
+    return { recipients: 0, attempted: 0, skipped: 'outside the reminder window', lockTime: lockTime.toISOString() };
+  }
+
+  const members = await db
+    .select({ userId: schema.leagueMembers.userId, leagueId: schema.leagueMembers.leagueId })
+    .from(schema.leagueMembers)
+    .innerJoin(schema.leagues, eq(schema.leagueMembers.leagueId, schema.leagues.id))
+    .where(eq(schema.leagues.seasonYear, state.season));
+
+  if (members.length === 0) {
+    return { recipients: 0, attempted: 0, skipped: 'no league members on the live season', lockTime: lockTime.toISOString() };
+  }
+
+  const body = buildLineupLockBody(state.week, now, lockTime);
+  const seen = new Set<string>();
+  const rows: schema.NewNotification[] = [];
+  for (const m of members) {
+    const dedupeKey = `lineup_lock:${m.leagueId}:${state.season}:${state.week}`;
+    const key = `${m.userId}|${dedupeKey}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({
+      id: generateId(),
+      userId: m.userId,
+      type: 'lineup_lock',
+      title: 'Lineups lock soon',
+      body,
+      playerId: null,
+      link: null,
+      dedupeKey,
+      isRead: false,
+      createdAt: now,
+    });
+  }
+
+  if (rows.length === 0) {
+    return { recipients: 0, attempted: 0, skipped: null, lockTime: lockTime.toISOString() };
+  }
+
+  const statements = chunk(rows, INSERT_CHUNK_ROWS).map((group) =>
+    db.insert(schema.notifications).values(group).onConflictDoNothing(),
+  );
+  for (const group of chunk(statements, BATCH_SIZE)) {
+    await db.batch(group as any);
+  }
+
+  return {
+    recipients: seen.size,
+    attempted: rows.length,
+    skipped: null,
+    lockTime: lockTime.toISOString(),
   };
 }
