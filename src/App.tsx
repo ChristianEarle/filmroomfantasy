@@ -7,6 +7,8 @@ import { NewsPanel } from './components/NewsPanel';
 import { BiggestMovers } from './components/BiggestMovers';
 import { RosterBoardPanel } from './components/RosterBoardPanel';
 import { PlayerCard } from './components/PlayerCard';
+import { AiChatModal } from './components/AiChatModal';
+import { MessageSquare } from 'lucide-react';
 import type { Game } from './types/game';
 import { GameDetailModal } from './components/GameDetailModal';
 import { SEO, getSEOPropsForView } from './components/SEO';
@@ -74,7 +76,7 @@ import { trackSignUp } from './services/tracking';
 import { authService } from './services/auth';
 import { buildPlayerProfilePath, parsePlayerProfilePath } from './utils/slug';
 import { useNflState } from './hooks';
-import { clampWeek } from './utils/playerUtils';
+import { clampWeek, scoringToFormat } from './utils/playerUtils';
 
 // Page transition wrapper component
 function PageTransition({ children, viewKey }: { children: React.ReactNode; viewKey: string }) {
@@ -312,6 +314,11 @@ function AppContent() {
   // a real default instead of firing requests against the wrong week/season.
   const [currentWeek, setCurrentWeek] = useState<number | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  // Global Ask AI bubble — persists across every view, reusing the same
+  // board-scoped /players/ask endpoint (lookup_player/search_players/
+  // get_matchup/get_my_lineup tools) that PlayerTable's per-surface Ask AI
+  // already uses, instead of a separate global endpoint.
+  const [showGlobalAsk, setShowGlobalAsk] = useState(false);
   const { week: nflWeek, season: nflSeason } = useNflState();
 
   // Default week: the current NFL week for a league in the current season
@@ -504,6 +511,20 @@ function AppContent() {
   const handlePlayerClick = useCallback((player: Player) => {
     setSelectedPlayer(player);
   }, []);
+
+  // Ask AI is Pro/Elite only: route logged-out users to login, free tier to
+  // pricing (same gating pattern as PlayerTable/DraftRankingsView's Ask AI).
+  const handleGlobalAskAi = useCallback(() => {
+    if (!isAuthenticated) {
+      window.location.assign('/login');
+      return;
+    }
+    if ((user?.subscriptionTier || 'free') === 'free') {
+      window.location.assign('/pricing');
+      return;
+    }
+    setShowGlobalAsk(true);
+  }, [isAuthenticated, user]);
 
   /** Navigate to the standalone player profile page (closes modal if open). */
   const handleOpenPlayerProfile = useCallback((p: { id: string; name: string }) => {
@@ -1038,6 +1059,39 @@ function AppContent() {
           isDarkMode={isDarkMode}
         />
       )}
+
+      {/* Global Ask AI bubble — persists across every view (not just the
+          Board/Draft Rankings surfaces that already had their own). Hidden
+          while another modal is open so it never stacks on top of one. */}
+      {currentWeek != null && !selectedPlayer && !selectedGame && (
+        <button
+          type="button"
+          onClick={handleGlobalAskAi}
+          aria-label="Ask AI"
+          title="Ask AI"
+          className={`fixed right-4 z-50 mobile-bottom-nav-offset mb-4 flex items-center justify-center w-12 h-12 rounded-full border shadow-lg transition-colors ${
+            isDarkMode ? 'bg-blue-600 border-blue-500 hover:bg-blue-500' : 'bg-blue-600 border-blue-500 hover:bg-blue-700'
+          }`}
+        >
+          <MessageSquare className="w-5 h-5 text-white" />
+        </button>
+      )}
+
+      <AiChatModal
+        isOpen={showGlobalAsk}
+        onClose={() => setShowGlobalAsk(false)}
+        isDarkMode={isDarkMode}
+        title="Ask AI"
+        endpoint="/players/ask"
+        contextParams={{
+          scoringFormat: scoringToFormat(selectedScoring),
+          week: currentWeek ?? undefined,
+          season: cardSeasonYear,
+          leagueId: league?.id,
+        }}
+        placeholder="e.g. Who should I start at FLEX this week?"
+        quickActions={['Best waiver targets this week?', 'How is my team looking this week?', 'Who has the best matchup?']}
+      />
 
     </div>
   );

@@ -138,12 +138,14 @@ history accrues from the first daily cron.
 
 ## P3 — Nice-to-haves / follow-ups
 
-- [ ] **Global AI chat assistant** — persistent bubble reusing
-  `AiChatModal` against a league-context endpoint; still not built, but
-  Ask AI v2 (#310) shipped per-surface (board, draft rankings) with a real
-  tool-calling loop (lookup_player/search_players/get_matchup/
-  get_my_lineup) and league awareness via `leagueId`, which covers most of
-  the value a global assistant would add.
+- [x] **Global AI chat assistant** — a persistent "Ask AI" bubble (bottom-right,
+  all views) reusing `AiChatModal` against the existing board-scoped
+  `/players/ask` endpoint — same tool-calling loop (lookup_player/
+  search_players/get_matchup/get_my_lineup) and `leagueId` awareness
+  PlayerTable's own Ask AI already uses, so no new backend endpoint was
+  needed. Same Pro/Elite gating (redirect logged-out to login, free tier
+  to pricing) as the per-surface buttons; shares their daily Ask AI quota
+  since it's the same endpoint.
 - [ ] **AI post-game recaps** — cron on `gameStatus === 'final'`,
   cache per game; surface on GameDetailModal + matchup recap.
 - [x] **ROS rankings** — Market board gained a "By Season / By ROS" sort
