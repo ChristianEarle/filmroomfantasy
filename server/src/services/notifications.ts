@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/d1';
-import { desc, eq, gte, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { generateId } from '../utils/id';
 
@@ -80,7 +80,8 @@ export interface InjuryNotificationResult {
 /**
  * Fan recent injury-relevant player news out to in-app notifications for every
  * user who either rosters the player (their own team, resolved the same way as
- * /rosters/:leagueId/mine) or has the player on their watchlist.
+ * /rosters/:leagueId/mine) or has the player on their watchlist. Skips users
+ * who disabled notifications via the Settings toggle (users.notificationsEnabled).
  *
  * Idempotent: each row carries a deterministic dedupeKey and inserts use
  * ON CONFLICT DO NOTHING against the (user_id, dedupe_key) unique index, so
@@ -226,6 +227,18 @@ export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNot
     for (const row of rows) nameById.set(row.id, row.name);
   }
 
+  // Drop users who turned off notifications in Settings (users.notificationsEnabled).
+  // The column defaults to true, so only users with an explicit false are excluded.
+  const candidateUserIds = [...new Set([...recipientsByPlayer.values()].flatMap((s) => [...s]))];
+  const disabledUserIds = new Set<string>();
+  for (const ids of chunk(candidateUserIds, IN_CHUNK)) {
+    const rows = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(and(inArray(schema.users.id, ids), eq(schema.users.notificationsEnabled, false)));
+    for (const row of rows) disabledUserIds.add(row.id);
+  }
+
   // --- Build rows ---
   const seen = new Set<string>(); // in-memory (userId, dedupeKey) dedupe
   const rows: schema.NewNotification[] = [];
@@ -244,6 +257,7 @@ export async function generateInjuryNewsNotifications(db: DB): Promise<InjuryNot
     const body = truncate(item.aiSummary || item.content, 240);
 
     for (const userId of users) {
+      if (disabledUserIds.has(userId)) continue;
       const key = `${userId}|${dedupeKey}`;
       if (seen.has(key)) continue;
       seen.add(key);
