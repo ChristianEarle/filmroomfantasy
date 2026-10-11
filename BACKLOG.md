@@ -321,7 +321,19 @@
   elsewhere in the app (Escape to close, Tab focus trap, focus restored on
   close) and added `aria-current`/`aria-expanded`/`aria-controls`/nav
   `aria-label` for screen readers.
-- [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
+- [x] **Audit Header + LeagueManager** - Search bar, league switcher dropdown
+  (`Header.tsx`) and the sidebar league selector (`LeagueManager.tsx`) were
+  already solid — click-outside handling, Escape-to-close with focus
+  restored to the trigger, and ARIA roles/labels all present. Fixed a real
+  bug in the notifications bell's data source instead: Settings has a
+  "Notifications" toggle (`users.notificationsEnabled`, persisted via
+  `PUT /auth/profile`) that the injury-news fan-out
+  (`generateInjuryNewsNotifications` in `services/notifications.ts`) never
+  read, so a user who turned notifications off in Settings kept getting
+  injury alerts in the bell anyway. The generator now excludes users with
+  `notificationsEnabled === false` before inserting rows. Added
+  `notifications.workers.test.ts` covering the opt-out and the
+  default-enabled case.
 - [x] **Audit PlayerAvatar** - Fixed a real fallback-chain bug: the component
   accepted both `headshotUrl` and `imageUrl` props but picked one source
   permanently via `headshotUrl || imageUrl`, so a broken `headshotUrl`
