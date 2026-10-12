@@ -8,6 +8,7 @@ import { generateId } from '../utils/id';
 import { invalidateCache } from '../utils/cache';
 import { fetchCurrentOdds, fetchHistoricalOdds, parseOddsResponse, fetchPlayerProps, parsePlayerProps, teamNameToAbbr } from '../services/odds';
 import { syncGameOdds } from '../services/gameOddsSync';
+import { syncGameWeather } from '../services/weatherSync';
 import { generateProjectionsFromProps, calculateFantasyPoints, PROJECTION_COMPARE_KEYS_WITH_SOURCE } from '../services/projections';
 import { rowChanged } from '../utils/rowDiff';
 import { sleeperWeeklyByPlayer } from '../utils/sleeperWeekly';
@@ -974,6 +975,38 @@ adminRoutes.post('/sync-games', async (c) => {
     });
   } catch (err) {
     console.error('Sync games error:', err);
+    return c.json(
+      {
+        error: 'Sync failed',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/admin/sync-weather
+ * Refreshes stored weather (Open-Meteo, free/no key) for every incomplete
+ * game kicking off within the next ~2 weeks. Dome games get a fixed
+ * "Indoor" reading; outdoor games get the forecast closest to kickoff.
+ * Run this after sync-games so the games it forecasts for already exist.
+ */
+adminRoutes.post('/sync-weather', async (c) => {
+  const db = c.get('db');
+  try {
+    const { updated, unchanged, skipped, failed, total } = await syncGameWeather(db);
+    return c.json({
+      success: true,
+      message: 'Weather sync completed',
+      updated,
+      unchanged,
+      skipped,
+      failed,
+      total,
+    });
+  } catch (err) {
+    console.error('Sync weather error:', err);
     return c.json(
       {
         error: 'Sync failed',
