@@ -343,7 +343,15 @@
   navigation; removed the 3 now-redundant per-view wrappers. Added
   `ErrorBoundary.test.tsx` (catch/fallback/retry/resetKeys) — the
   component had no test coverage before.
-- [ ] **Audit App.tsx** - Routing, state management, context wiring, page transitions
+- [x] **Audit App.tsx** - Fixed 2 routing/state bugs: (1) "Back" from the
+  standalone player profile page always returned to Board regardless of
+  which view the user opened it from — now records the origin view like
+  the existing `allPlayersSource` pattern. (2) `/register`,
+  `/forgot-password`, `/reset-password` never got their own URL — the
+  router only ever wrote `/login`, so sharing/refreshing on those screens
+  silently rewrote the address bar and lost the sub-screen. (The missing
+  per-view `ErrorBoundary` coverage this item originally also flagged was
+  fixed separately and more thoroughly above.)
 
 ---
 
