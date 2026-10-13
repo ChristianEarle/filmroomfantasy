@@ -87,8 +87,12 @@ history accrues from the first daily cron.
 
 ## P1 — Remaining feature gaps
 
-- [ ] **Push notifications** — in-app notifications shipped; web push /
-  email delivery (and waiver/trade/lineup-lock event types) remain.
+- [ ] **Push notifications** — in-app notifications shipped for injuries
+  and now waiver/trade event types too (`POST /api/admin/sync-transactions`,
+  wired into the existing in-season 4h cron — fans out completed Sleeper
+  waiver claims and trades via `generateTransactionNotificationsForLeague`,
+  same idempotent dedupe-key pattern as the injury fan-out). Web push /
+  email delivery and lineup-lock events still remain.
 - [x] **Season projections** — `GET /players` in season mode now returns
   genuine full-season `seasonProjectedPoints` from `draft_rankings`
   (redraft, matching scoring format), with `seasonActualPoints` as a

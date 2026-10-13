@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { mapSleeperPlayerToDb, mapStatus, type SleeperPlayer } from './sleeper';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import {
+  fetchLeagueTransactions,
+  isValidSleeperTransaction,
+  mapSleeperPlayerToDb,
+  mapStatus,
+  type SleeperPlayer,
+} from './sleeper';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('mapSleeperPlayerToDb', () => {
   it('maps a fantasy-relevant player to the expected DB shape (id is random, everything else asserted)', () => {
@@ -67,5 +77,58 @@ describe('mapStatus', () => {
   it('maps injury_status over the base status when present', () => {
     expect(mapStatus('Active', 'Questionable')).toBe('questionable');
     expect(mapStatus('Active', 'Out')).toBe('out');
+  });
+});
+
+describe('isValidSleeperTransaction', () => {
+  it('accepts a well-formed transaction', () => {
+    expect(
+      isValidSleeperTransaction({
+        transaction_id: 'abc',
+        type: 'waiver',
+        status: 'complete',
+        roster_ids: [1, 2],
+        adds: { '100': 1 },
+        drops: null,
+        created: Date.now(),
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects entries missing required fields', () => {
+    expect(isValidSleeperTransaction({ type: 'waiver', status: 'complete', roster_ids: [1] })).toBe(false);
+    expect(isValidSleeperTransaction({ transaction_id: 'abc', status: 'complete', roster_ids: [1] })).toBe(false);
+    expect(isValidSleeperTransaction({ transaction_id: 'abc', type: 'waiver', roster_ids: [1] })).toBe(false);
+    expect(isValidSleeperTransaction({ transaction_id: 'abc', type: 'waiver', status: 'complete' })).toBe(false);
+    expect(isValidSleeperTransaction(null)).toBe(false);
+  });
+});
+
+describe('fetchLeagueTransactions', () => {
+  function stubFetch(body: unknown, ok = true) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok,
+        status: ok ? 200 : 500,
+        json: async () => body,
+      } as unknown as Response),
+    );
+  }
+
+  it('returns only the valid entries from the response', async () => {
+    stubFetch([
+      { transaction_id: 't1', type: 'waiver', status: 'complete', roster_ids: [1], adds: null, drops: null, created: 1 },
+      { not: 'a transaction' },
+    ]);
+    const result = await fetchLeagueTransactions('123', 3);
+    expect(result).toHaveLength(1);
+    expect(result[0].transaction_id).toBe('t1');
+  });
+
+  it('returns an empty array when the request fails', async () => {
+    stubFetch({}, false);
+    const result = await fetchLeagueTransactions('123', 3);
+    expect(result).toEqual([]);
   });
 });

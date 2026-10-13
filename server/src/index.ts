@@ -413,6 +413,12 @@ async function handleScheduled(event: ScheduledEvent, env: Env, ctx: ExecutionCo
     // Off-season this instead runs once daily — see the 0 12 * * * block.
     if (isInSeasonMonth()) {
       await callSync('/api/admin/sync-leagues');
+
+      // Fan out any newly-processed waiver claims/trades to in-app
+      // notifications for the affected teams' owners. Cheap relative to the
+      // league sync above (one transactions fetch per league) and idempotent,
+      // so it's safe to run every 4h alongside it.
+      await callSync('/api/admin/sync-transactions');
     }
   } else if (event.cron === '0 */6 * * *') {
     // Every 6 hours: sync all news sources

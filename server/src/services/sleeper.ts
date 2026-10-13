@@ -277,6 +277,47 @@ export function isValidSleeperMatchup(obj: unknown): obj is {
   return typeof m.roster_id === 'number';
 }
 
+/** A Sleeper league transaction — waiver claim, free-agent add/drop, or trade. */
+export interface SleeperTransaction {
+  transaction_id: string;
+  type: 'trade' | 'waiver' | 'free_agent' | 'commissioner';
+  status: 'complete' | 'failed' | 'pending';
+  roster_ids: number[];
+  adds: Record<string, number> | null;
+  drops: Record<string, number> | null;
+  waiver_budget?: Array<{ sender: number; receiver: number; amount: number }> | null;
+  created: number;
+}
+
+/** Validates that a Sleeper transaction response entry has the expected shape. */
+export function isValidSleeperTransaction(obj: unknown): obj is SleeperTransaction {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const t = obj as Record<string, unknown>;
+  return (
+    typeof t.transaction_id === 'string' &&
+    typeof t.type === 'string' &&
+    typeof t.status === 'string' &&
+    Array.isArray(t.roster_ids)
+  );
+}
+
+/**
+ * Fetch a Sleeper league's processed transactions (waiver claims, free-agent
+ * moves, trades) for one week. Sleeper calls the week param "round" for this
+ * endpoint even though it has nothing to do with the draft.
+ */
+export async function fetchLeagueTransactions(
+  externalLeagueId: string,
+  week: number,
+): Promise<SleeperTransaction[]> {
+  const res = await fetch(`${SLEEPER_API_BASE}/league/${externalLeagueId}/transactions/${week}`);
+  if (!res.ok) {
+    console.warn(`[sleeper] transactions fetch failed (${res.status}) for league ${externalLeagueId}, week ${week}`);
+    return [];
+  }
+  return validateSleeperArray(await res.json(), isValidSleeperTransaction, 'transactions');
+}
+
 /**
  * Validate and filter an array response from Sleeper API.
  * Logs warnings for invalid entries and returns only valid ones.
