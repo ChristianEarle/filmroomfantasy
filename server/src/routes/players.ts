@@ -1365,23 +1365,43 @@ playerRoutes.get('/trending', optionalAuthMiddleware, async (c) => {
       }
     }
 
-    // 4. Get the latest weekly stats for PPR points (last synced week)
+    // 4. Get average PPR points over the last 4 weeks of the current season
+    // that actually have stats. Previously this averaged every row ever
+    // recorded for the player with no season/week bound at all, silently
+    // blending in prior seasons (and even off-weeks) despite the comment
+    // claiming "last 4 weeks" — wildly overstating or understating a
+    // player's current form on a page literally about recent trends.
     const internalIds = allPlayers.map(p => p.id);
     const avgPointsMap = new Map<string, number>();
     if (internalIds.length > 0) {
-      // Get average PPR points from last 4 weeks of stats
-      for (let i = 0; i < internalIds.length; i += CHUNK_SIZE) {
-        const chunk = internalIds.slice(i, i + CHUNK_SIZE);
-        const statsRows = await db
-          .select({
-            playerId: schema.playerWeeklyStats.playerId,
-            avgPts: sql<number>`ROUND(AVG(${schema.playerWeeklyStats.fantasyPointsPPR}), 1)`.as('avg_pts'),
-          })
-          .from(schema.playerWeeklyStats)
-          .where(inArray(schema.playerWeeklyStats.playerId, chunk))
-          .groupBy(schema.playerWeeklyStats.playerId) as any[];
-        for (const row of statsRows) {
-          avgPointsMap.set(row.playerId, row.avgPts ?? 0);
+      const currentSeason = getDefaultSeason();
+      const latestWeekResult = await db
+        .select({ maxWeek: sql<number>`max(${schema.playerWeeklyStats.week})` })
+        .from(schema.playerWeeklyStats)
+        .where(eq(schema.playerWeeklyStats.seasonYear, currentSeason));
+      const latestWeek = latestWeekResult[0]?.maxWeek ?? 0;
+
+      if (latestWeek >= 1) {
+        const windowStart = Math.max(1, latestWeek - 3);
+        const recentWeeks = Array.from({ length: latestWeek - windowStart + 1 }, (_, i) => windowStart + i);
+
+        for (let i = 0; i < internalIds.length; i += CHUNK_SIZE) {
+          const chunk = internalIds.slice(i, i + CHUNK_SIZE);
+          const statsRows = await db
+            .select({
+              playerId: schema.playerWeeklyStats.playerId,
+              avgPts: sql<number>`ROUND(AVG(${schema.playerWeeklyStats.fantasyPointsPPR}), 1)`.as('avg_pts'),
+            })
+            .from(schema.playerWeeklyStats)
+            .where(and(
+              inArray(schema.playerWeeklyStats.playerId, chunk),
+              eq(schema.playerWeeklyStats.seasonYear, currentSeason),
+              inArray(schema.playerWeeklyStats.week, recentWeeks)
+            ))
+            .groupBy(schema.playerWeeklyStats.playerId) as any[];
+          for (const row of statsRows) {
+            avgPointsMap.set(row.playerId, row.avgPts ?? 0);
+          }
         }
       }
     }

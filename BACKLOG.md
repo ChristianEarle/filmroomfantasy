@@ -297,7 +297,12 @@
 **Views — Not yet audited:**
 - [ ] **Audit TeamView** - Roster display, player cards, team stats
 - [ ] **Audit WaiversView** - Waiver claims, player search, bid management
-- [ ] **Audit TrendsView** - Roster trends, projection movers
+- [x] **Audit TrendsView** - Roster trends, projection movers. Fixed: the
+  Roster Trends tab's `avgPointsPPR` (`GET /players/trending`) averaged
+  *every* `player_weekly_stats` row ever recorded for a player — all
+  seasons, all weeks, no bound at all — despite the code comment claiming
+  "last 4 weeks." Scoped it to the current season's last 4 weeks that
+  actually have stats, matching the existing `/recent-leaders` pattern.
 - [x] **Audit AllPlayersView** - Full player list with filters, pagination.
   Fixed: the "Load More" pagination was missing entirely — the view always
   fetched only the first `ALL_PLAYERS_PAGE_SIZE` (350) players sorted by
