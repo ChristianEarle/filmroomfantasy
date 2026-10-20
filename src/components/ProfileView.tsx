@@ -62,6 +62,7 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
     }
   }, [user?.email, user?.username, editingAccount]);
   const [accountSaved, setAccountSaved] = useState(false);
+  const [accountSavedEmailChanged, setAccountSavedEmailChanged] = useState(false);
   const [accountError, setAccountError] = useState('');
   const [accountLoading, setAccountLoading] = useState(false);
 
@@ -119,8 +120,12 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
       if (usernameChanged) updates.username = editUsername;
       await updateProfile(updates);
       setAccountSaved(true);
+      setAccountSavedEmailChanged(emailChanged);
       setEditingAccount(false);
-      timersRef.current.push(setTimeout(() => setAccountSaved(false), 3000));
+      timersRef.current.push(setTimeout(() => {
+        setAccountSaved(false);
+        setAccountSavedEmailChanged(false);
+      }, emailChanged ? 6000 : 3000));
     } catch (err) {
       setAccountError(err instanceof Error ? err.message : 'Failed to update account');
     } finally {
@@ -168,7 +173,9 @@ export function ProfileView({ isDarkMode = true, onLogout, onNavigate }: Profile
           {accountSaved && (
             <div role="status" className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-sm">
               <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
-              Account updated
+              {accountSavedEmailChanged
+                ? "Account updated. We've sent a verification link to your new email address."
+                : 'Account updated'}
             </div>
           )}
 
