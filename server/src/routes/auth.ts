@@ -472,12 +472,22 @@ authRoutes.put('/profile', profileRateLimit, authMiddleware, async (c) => {
       }
     }
 
+    const emailChanged = !!newEmail && newEmail.toLowerCase() !== user.email;
+
     const updates: Record<string, unknown> = {
       username: username ?? user.username,
       avatarUrl: avatarUrl !== undefined ? avatarUrl : user.avatarUrl,
       updatedAt: new Date(),
     };
-    if (newEmail && newEmail.toLowerCase() !== user.email) updates.email = newEmail.toLowerCase();
+    if (emailChanged) {
+      updates.email = newEmail.toLowerCase();
+      // A changed email hasn't been proven to belong to this user yet — keeping
+      // the old verified status would let someone claim an unverified address
+      // (including a mistyped one) is confirmed, which the verified badge and
+      // the "we'll send you billing receipts / account updates here" promise
+      // both depend on.
+      updates.emailVerifiedAt = null;
+    }
     if (preferredScoring !== undefined) updates.preferredScoring = preferredScoring;
     if (darkMode !== undefined) updates.darkMode = darkMode;
     if (notificationsEnabled !== undefined) updates.notificationsEnabled = notificationsEnabled;
@@ -489,8 +499,19 @@ authRoutes.put('/profile', profileRateLimit, authMiddleware, async (c) => {
 
     const updated = await db.query.users.findFirst({
       where: eq(schema.users.id, user.id),
-      columns: { id: true, email: true, username: true, avatarUrl: true, preferredScoring: true, darkMode: true, notificationsEnabled: true },
+      columns: { id: true, email: true, username: true, avatarUrl: true, preferredScoring: true, darkMode: true, notificationsEnabled: true, emailVerifiedAt: true },
     });
+
+    if (emailChanged) {
+      // Same swallow-and-log pattern as /register and /resend-verification —
+      // a transient Resend outage shouldn't block the profile update.
+      try {
+        const appUrl = c.env.APP_URL || 'http://localhost:5173';
+        await issueVerificationToken(db, { id: user.id, email: updated!.email }, appUrl, c.env.RESEND_API_KEY);
+      } catch (err) {
+        console.error('[Profile] Failed to send verification email for changed address:', err);
+      }
+    }
 
     return c.json({
       user: {
@@ -501,6 +522,7 @@ authRoutes.put('/profile', profileRateLimit, authMiddleware, async (c) => {
         preferredScoring: updated!.preferredScoring ?? 'ppr',
         darkMode: updated!.darkMode ?? true,
         notificationsEnabled: updated!.notificationsEnabled ?? true,
+        emailVerifiedAt: updated!.emailVerifiedAt ?? null,
       },
     });
   } catch (error) {

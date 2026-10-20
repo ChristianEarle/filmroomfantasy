@@ -308,7 +308,19 @@
   "X of Y players" count, and fixed a latent type bug where the error
   state's Retry button passed its click `MouseEvent` into `fetchPlayers`
   as the `pageNum`/`append` args.
-- [ ] **Audit ProfileView** - User profile, password change, Google link status
+- [x] **Audit ProfileView** - User profile, password change, Google link status.
+  Fixed a real bug: changing the account email from the Profile "Edit" form
+  updated the `users.email` column but left `emailVerifiedAt` untouched, so a
+  changed (or mistyped) address was immediately treated as verified without
+  ever proving the user controlled it — defeating the point of email
+  verification and silently invalidating the "we'll send you password resets,
+  billing receipts, and account updates here" promise in the verification
+  email. `PUT /auth/profile` now clears `emailVerifiedAt` and re-issues a
+  verification token (same `issueVerificationToken` helper used by
+  `/register` and `/resend-verification`) whenever the email actually
+  changes, and returns the field so the client's merged `user` state picks it
+  up without a refetch. `ProfileView` now tells the user a new verification
+  link was sent.
 - [x] **Audit LoginView + RegisterView + ForgotPasswordView** - Auth forms, rate limiting, Google OAuth. Found and fixed a real bug: switching between the Login/Register/Forgot-password screens didn't clear the previous screen's error banner, so a stale "invalid password" message could reappear on a fresh form the user hadn't touched yet. Password-complexity policy (register requires uppercase+number, reset-password only enforces 8 chars) and progressive-cooldown persistence are noted as pre-existing product decisions, not addressed here.
 - [ ] **Audit PlayerCard** - Player detail modal, game log, stats, matchup grade, projections
 
