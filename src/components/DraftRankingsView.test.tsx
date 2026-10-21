@@ -49,6 +49,7 @@ function makeRanking(over: Record<string, any>): any {
     analysis: over.analysis ?? null,
     ceilingRank: over.ceilingRank ?? null,
     floorRank: over.floorRank ?? null,
+    statBreakdown: over.statBreakdown ?? null,
     recentRanks: over.recentRanks ?? [],
     movement: over.movement ?? { d1: null, d7: null, d30: null },
     generatedAt: '2026-05-31T14:15:47.000Z',
@@ -103,7 +104,10 @@ function marketResponse(rankings: any[], asOfWeek: number | null = 3) {
 
 // A = steal (adpDelta -5), B = reach (adpDelta +6), C = fair (0) + null projection.
 const ALLEN = makeRanking({ id: 'a', overallRank: 1, positionRank: 1, tier: 1, position: 'QB', name: 'Josh Allen', team: 'BUF', age: 28, adp: 6, adpDelta: -5, projectedPoints: 380, analysis: 'Allen is the overall QB1.' });
-const CMC = makeRanking({ id: 'b', overallRank: 2, positionRank: 1, tier: 1, position: 'RB', name: 'Christian McCaffrey', team: 'SF', age: 27, adp: 1, adpDelta: 6, projectedPoints: 290, analysis: 'McCaffrey is a reach at this cost.' });
+const CMC = makeRanking({
+  id: 'b', overallRank: 2, positionRank: 1, tier: 1, position: 'RB', name: 'Christian McCaffrey', team: 'SF', age: 27, adp: 1, adpDelta: 6, projectedPoints: 290, analysis: 'McCaffrey is a reach at this cost.',
+  statBreakdown: { passYards: null, passTDs: null, rushYards: 1100, rushTDs: 9, receptions: 55, recYards: null, recTDs: null },
+});
 const CHASE = makeRanking({ id: 'c', overallRank: 3, positionRank: 1, tier: 2, position: 'WR', name: "Ja'Marr Chase", team: 'CIN', age: 25, adp: 3, adpDelta: 0, projectedPoints: null, analysis: null, rationale: 'Chase is a target hog.' });
 
 const ALL = [ALLEN, CMC, CHASE];
@@ -324,6 +328,29 @@ describe('DraftRankingsView — real fields render', () => {
     expect(panel.getByText('380.0')).toBeInTheDocument();
     // 380 / 17 = 22.4
     expect(panel.getByText('22.4')).toBeInTheDocument();
+  });
+
+  it('shows a position-relevant stat breakdown (RB: rush yds/TDs + receptions) in the Season Projection panel', async () => {
+    renderView();
+    await loaded();
+    expandRow('Christian McCaffrey');
+    const panel = within(table().getByText('Season Projection').closest('div') as HTMLElement);
+    expect(panel.getByText('Rush Yds')).toBeInTheDocument();
+    expect(panel.getByText('1100')).toBeInTheDocument();
+    expect(panel.getByText('Rush TDs')).toBeInTheDocument();
+    expect(panel.getByText('9.0')).toBeInTheDocument();
+    expect(panel.getByText('Rec')).toBeInTheDocument();
+    expect(panel.getByText('55.0')).toBeInTheDocument();
+    // QB-only fields must not leak into an RB's breakdown.
+    expect(panel.queryByText('Pass Yds')).toBeNull();
+  });
+
+  it('omits the stat breakdown rows when statBreakdown is null (no projection data yet)', async () => {
+    renderView();
+    await loaded();
+    expandRow('Josh Allen');
+    const panel = within(table().getByText('Season Projection').closest('div') as HTMLElement);
+    expect(panel.queryByText('Pass Yds')).toBeNull();
   });
 
   it('shows an honest empty state when projectedPoints is null', async () => {

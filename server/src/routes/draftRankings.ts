@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, asc, desc, inArray } from 'drizzle-orm';
+import { eq, and, asc, desc, inArray, sql } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { cached } from '../utils/cache';
 import { authMiddleware } from '../middleware/auth';
@@ -132,6 +132,49 @@ draftRankingsRoutes.get('/', async (c) => {
       }
     }
 
+    // Season-long stat breakdown (pass/rush/rec) for the expanded row's
+    // Season Projection panel — summed from the weekly player_projections
+    // rows already produced for this season/scoring format rather than
+    // stored on draft_rankings, so it stays consistent with whatever
+    // projection data exists without a new migration or AI prompt change.
+    // Chunked to stay under D1's bound-parameter limit (same pattern as
+    // games.ts's getTopPerformersForWeek).
+    const statBreakdownByPlayer = new Map<string, {
+      passYards: number | null;
+      passTDs: number | null;
+      rushYards: number | null;
+      rushTDs: number | null;
+      receptions: number | null;
+      recYards: number | null;
+      recTDs: number | null;
+    }>();
+    const rankedPlayerIds = rankings.map(r => r.playerId);
+    const STAT_CHUNK_SIZE = 80;
+    for (let i = 0; i < rankedPlayerIds.length; i += STAT_CHUNK_SIZE) {
+      const chunk = rankedPlayerIds.slice(i, i + STAT_CHUNK_SIZE);
+      const statRows = await db
+        .select({
+          playerId: schema.playerProjections.playerId,
+          passYards: sql<number | null>`ROUND(SUM(${schema.playerProjections.projPassYards}), 0)`,
+          passTDs: sql<number | null>`ROUND(SUM(${schema.playerProjections.projPassTDs}), 1)`,
+          rushYards: sql<number | null>`ROUND(SUM(${schema.playerProjections.projRushYards}), 0)`,
+          rushTDs: sql<number | null>`ROUND(SUM(${schema.playerProjections.projRushTDs}), 1)`,
+          receptions: sql<number | null>`ROUND(SUM(${schema.playerProjections.projReceptions}), 1)`,
+          recYards: sql<number | null>`ROUND(SUM(${schema.playerProjections.projRecYards}), 0)`,
+          recTDs: sql<number | null>`ROUND(SUM(${schema.playerProjections.projRecTDs}), 1)`,
+        })
+        .from(schema.playerProjections)
+        .where(and(
+          inArray(schema.playerProjections.playerId, chunk),
+          eq(schema.playerProjections.seasonYear, season),
+          eq(schema.playerProjections.scoringFormat, scoringFormat),
+        ))
+        .groupBy(schema.playerProjections.playerId);
+      for (const { playerId, ...stats } of statRows) {
+        statBreakdownByPlayer.set(playerId, stats);
+      }
+    }
+
     // playerId|date → overallRank
     const rankByPlayerDate = new Map<string, number>();
     if (neededDates.length > 0) {
@@ -169,6 +212,7 @@ draftRankingsRoutes.get('/', async (c) => {
         analysis: r.analysis,
         ceilingRank: r.ceilingRank,
         floorRank: r.floorRank,
+        statBreakdown: statBreakdownByPlayer.get(r.playerId) ?? null,
         recentRanks,
         movement: {
           d1: deltaFrom(d1Date),
