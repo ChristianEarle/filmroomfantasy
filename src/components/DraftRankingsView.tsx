@@ -31,6 +31,17 @@ interface RankMovement {
   d30: number | null;
 }
 
+/** Season-long pass/rush/rec totals, summed server-side from weekly player_projections. */
+interface StatBreakdown {
+  passYards: number | null;
+  passTDs: number | null;
+  rushYards: number | null;
+  rushTDs: number | null;
+  receptions: number | null;
+  recYards: number | null;
+  recTDs: number | null;
+}
+
 interface DraftRanking {
   id: string;
   overallRank: number;
@@ -47,6 +58,8 @@ interface DraftRanking {
   ceilingRank?: number | null;
   /** AI worst-case overall rank; null until generated. */
   floorRank?: number | null;
+  /** Season pass/rush/rec totals for the expanded row; null when no projection data exists yet. */
+  statBreakdown?: StatBreakdown | null;
   /** Last 4 daily snapshots' overall rank, oldest first; empty when no history. */
   recentRanks?: number[];
   movement?: RankMovement;
@@ -961,6 +974,41 @@ function TrendSparkline({ ranks, isDarkMode }: { ranks: number[] | undefined; is
  * before the columns existed), falls back to the positionRank ± 3
  * approximation, labelled as an estimate.
  */
+/** Position-relevant stat rows for the Season Projection panel, in display order. */
+function buildStatBreakdownRows(position: string, sb: StatBreakdown | null | undefined): { label: string; value: string }[] {
+  if (!sb) return [];
+  const row = (label: string, value: number | null, fractionDigits = 0) =>
+    value != null ? { label, value: value.toFixed(fractionDigits) } : null;
+
+  const rows = (() => {
+    switch (position) {
+      case 'QB':
+        return [
+          row('Pass Yds', sb.passYards),
+          row('Pass TDs', sb.passTDs, 1),
+          row('Rush Yds', sb.rushYards),
+        ];
+      case 'RB':
+        return [
+          row('Rush Yds', sb.rushYards),
+          row('Rush TDs', sb.rushTDs, 1),
+          row('Rec', sb.receptions, 1),
+        ];
+      case 'WR':
+      case 'TE':
+        return [
+          row('Rec', sb.receptions, 1),
+          row('Rec Yds', sb.recYards),
+          row('Rec TDs', sb.recTDs, 1),
+        ];
+      default:
+        return [];
+    }
+  })();
+
+  return rows.filter((r): r is { label: string; value: string } => r != null);
+}
+
 function RankMovementPanel({ ranking, isDarkMode }: { ranking: DraftRanking; isDarkMode: boolean }) {
   const p = ranking.player;
   const m = ranking.movement;
@@ -1215,6 +1263,7 @@ function PlayerRow({
                   {[
                     { label: 'Total Points', value: ranking.projectedPoints.toFixed(1) },
                     { label: 'PPG', value: (ranking.projectedPoints / 17).toFixed(1) },
+                    ...buildStatBreakdownRows(ranking.player.position, ranking.statBreakdown),
                   ].map(({ label, value }) => (
                     <div key={label} className="flex justify-between text-sm">
                       <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{label}</span>
