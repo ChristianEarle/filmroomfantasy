@@ -321,7 +321,17 @@
   elsewhere in the app (Escape to close, Tab focus trap, focus restored on
   close) and added `aria-current`/`aria-expanded`/`aria-controls`/nav
   `aria-label` for screen readers.
-- [ ] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell
+- [x] **Audit Header + LeagueManager** - Search bar, league switcher dropdown, notifications bell.
+  Fixed a real bug in `Header.tsx`: the notifications dropdown and
+  `LeagueManager`'s own league switcher both close on Escape and restore
+  focus to their trigger, but `Header`'s search box and league-switcher
+  dropdown did neither — a keyboard user had no way to dismiss them short
+  of Tab-ing away, and closing one (by any means) dropped focus onto
+  `<body>` instead of returning it to the button that opened it. Added the
+  same Escape-to-close + focus-restore handling used by the notifications
+  dropdown and `LeagueManager`. `LeagueManager.tsx` itself already had
+  this pattern correctly — no changes needed there. Added `Header.test.tsx`
+  (previously untested) covering both dropdowns.
 - [x] **Audit PlayerAvatar** - Fixed a real fallback-chain bug: the component
   accepted both `headshotUrl` and `imageUrl` props but picked one source
   permanently via `headshotUrl || imageUrl`, so a broken `headshotUrl`

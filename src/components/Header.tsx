@@ -18,8 +18,10 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchRef = useRef<HTMLDivElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
   const [leagueDropdownOpen, setLeagueDropdownOpen] = useState(false);
   const leagueDropdownRef = useRef<HTMLDivElement>(null);
+  const leagueButtonRef = useRef<HTMLButtonElement>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const bellButtonRef = useRef<HTMLButtonElement>(null);
@@ -30,7 +32,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
   const { selectedLeagueId, setSelectedLeagueId } = useLeagueContext();
   const selectedLeague = leagues.find(l => l.id === selectedLeagueId);
 
-  // Close league dropdown on click outside
+  // Close league dropdown on click outside or Escape (Escape returns focus to the trigger)
   useEffect(() => {
     if (!leagueDropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
@@ -38,8 +40,18 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
         setLeagueDropdownOpen(false);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLeagueDropdownOpen(false);
+        leagueButtonRef.current?.focus();
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [leagueDropdownOpen]);
 
   // Close notifications dropdown on click outside
@@ -96,6 +108,9 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
     return () => clearTimeout(timer);
   }, [searchQuery, search, clearResults]);
 
+  // Close the search box on click outside or Escape. The toggle button only
+  // exists while the box is closed (it's replaced by the input), so focus
+  // has to be restored after it remounts rather than synchronously.
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -104,13 +119,23 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
         clearResults();
       }
     }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setSearchOpen(false);
+        setSearchQuery('');
+        clearResults();
+        setTimeout(() => searchButtonRef.current?.focus(), 0);
+      }
+    }
 
     if (searchOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [searchOpen, clearResults]);
 
@@ -148,6 +173,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
         {isAuthenticated && leagues.length > 1 && (
           <div ref={leagueDropdownRef} className="relative">
             <button
+              ref={leagueButtonRef}
               onClick={() => setLeagueDropdownOpen(!leagueDropdownOpen)}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-700'}`}
             >
@@ -171,6 +197,10 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
                           setSelectedLeagueId(league.id);
                         }
                         setLeagueDropdownOpen(false);
+                        // The dropdown unmounts on close — move focus back to the
+                        // trigger so keyboard users (Enter/Space) aren't dropped
+                        // onto <body> when the menu item they were on disappears.
+                        leagueButtonRef.current?.focus();
                       }}
                       className={`w-full px-3 py-2.5 text-left transition-colors flex items-center justify-between ${
                         league.id === selectedLeagueId
@@ -221,6 +251,7 @@ export function Header({ onPlayerClick, isDarkMode, isAuthenticated = false, onP
             </div>
           ) : (
             <button
+              ref={searchButtonRef}
               onClick={() => setSearchOpen(true)}
               aria-label="Search players"
               aria-expanded={searchOpen}
