@@ -1,9 +1,11 @@
-import { User, Loader2, RefreshCw, Search } from 'lucide-react';
+import { User, Loader2, RefreshCw, Search, Sparkles, Lock, ChevronUp } from 'lucide-react';
 import { Player } from '../App';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLeagueContext } from '../context/LeagueContext';
+import { useAuth } from '../context/AuthContext';
 import { useNflState } from '../hooks';
-import api from '../services/api';
+import api, { ApiError } from '../services/api';
+import { playerService } from '../services';
 import { getEffectiveSeason, clampWeek, type APIPlayer } from '../utils/playerUtils';
 
 interface WaiversViewProps {
@@ -17,6 +19,9 @@ type AvailablePlayer = APIPlayer;
 
 export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversViewProps) {
   const { league, userTeam } = useLeagueContext();
+  const { user, isAuthenticated } = useAuth();
+  const aiTier = (user?.subscriptionTier || 'free') as 'free' | 'pro' | 'elite';
+  const canViewAiTake = isAuthenticated && (aiTier === 'pro' || aiTier === 'elite');
   const [selectedScoring, setSelectedScoring] = useState<'PPR' | 'Half PPR' | 'Standard'>('PPR');
   const [selectedPosition, setSelectedPosition] = useState<string>('ALL');
   const [players, setPlayers] = useState<AvailablePlayer[]>([]);
@@ -130,6 +135,33 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
   useEffect(() => {
     fetchPlayers();
   }, [fetchPlayers]);
+
+  // --- AI Pickup Take (Pro/Elite): lazy, per-player, reuses the cached
+  // per-player analysis endpoint (same one PlayerCard's AI Take uses) rather
+  // than a bespoke waiver-ranking model. One expanded at a time. ---
+  const [expandedAiId, setExpandedAiId] = useState<string | null>(null);
+  const [aiTakes, setAiTakes] = useState<Record<string, string>>({});
+  const [aiTakeLoadingId, setAiTakeLoadingId] = useState<string | null>(null);
+  const [aiTakeErrors, setAiTakeErrors] = useState<Record<string, string>>({});
+
+  const handleToggleAiTake = useCallback((playerId: string) => {
+    if (!canViewAiTake || currentWeek == null) return;
+    if (expandedAiId === playerId) {
+      setExpandedAiId(null);
+      return;
+    }
+    setExpandedAiId(playerId);
+    if (aiTakes[playerId] || aiTakeLoadingId === playerId) return;
+    setAiTakeLoadingId(playerId);
+    setAiTakeErrors((prev) => { const next = { ...prev }; delete next[playerId]; return next; });
+    playerService.getPlayerAnalysis(playerId, { week: currentWeek, season: seasonYear })
+      .then((res) => setAiTakes((prev) => ({ ...prev, [playerId]: res.analysis })))
+      .catch((err) => {
+        const message = err instanceof ApiError ? err.message : 'AI take is temporarily unavailable. Please try again shortly.';
+        setAiTakeErrors((prev) => ({ ...prev, [playerId]: message }));
+      })
+      .finally(() => setAiTakeLoadingId((prev) => (prev === playerId ? null : prev)));
+  }, [canViewAiTake, currentWeek, seasonYear, expandedAiId, aiTakes, aiTakeLoadingId]);
 
   // Sort by projectedPoints (actual scored or projected depending on week status)
   const sortedPlayers = useMemo(() => {
@@ -401,32 +433,80 @@ export function WaiversView({ onPlayerClick, onViewAll, isDarkMode }: WaiversVie
 
           {/* Top Available */}
           <div className={`rounded-lg p-4 sm:p-6 border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
-            <h3 className="font-bold mb-4">Top Available</h3>
-            <div className="space-y-3">
-              {sortedPlayers.slice(0, 5).map((player, index) => (
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold">Top Available</h3>
+              {!canViewAiTake && (
                 <button
-                  key={player.id}
-                  onClick={() => onPlayerClick(convertToPlayer(player, index))}
-                  className={`w-full rounded-lg p-3 border text-left transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-slate-600' : 'bg-slate-50 border-slate-200 hover:border-slate-300'}`}
+                  type="button"
+                  onClick={() => window.location.assign(isAuthenticated ? '/pricing' : '/login')}
+                  title="AI pickup analysis for top available players"
+                  className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md ${isDarkMode ? 'bg-purple-950/40 text-purple-300 hover:bg-purple-950/60' : 'bg-purple-50 text-purple-700 hover:bg-purple-100'}`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-semibold">{player.name}</div>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                        {player.team} • {player.position}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                        {(player.projectedPoints || 0) > 0 ? player.projectedPoints.toFixed(1) : '-'}
-                      </div>
-                      <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                        {pointsType === 'actual' ? 'pts' : 'proj'}
-                      </div>
-                    </div>
-                  </div>
+                  <Lock className="w-3 h-3" />
+                  AI Take (Pro)
                 </button>
-              ))}
+              )}
+            </div>
+            <div className="space-y-3">
+              {sortedPlayers.slice(0, 5).map((player, index) => {
+                const isExpanded = expandedAiId === player.id;
+                return (
+                  <div
+                    key={player.id}
+                    className={`rounded-lg border transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                  >
+                    <div className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => onPlayerClick(convertToPlayer(player, index))}
+                        className={`flex-1 min-w-0 p-3 text-left rounded-l-lg transition-colors ${isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold truncate">{player.name}</div>
+                            <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                              {player.team} • {player.position}
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0 ml-2">
+                            <div className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                              {(player.projectedPoints || 0) > 0 ? player.projectedPoints.toFixed(1) : '-'}
+                            </div>
+                            <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                              {pointsType === 'actual' ? 'pts' : 'proj'}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                      {canViewAiTake && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAiTake(player.id)}
+                          aria-expanded={isExpanded}
+                          title={isExpanded ? 'Hide AI pickup take' : 'Show AI pickup take'}
+                          className={`flex-shrink-0 self-stretch px-2.5 rounded-r-lg border-l ${isDarkMode ? 'border-slate-700 text-purple-400 hover:bg-slate-700/50' : 'border-slate-200 text-purple-600 hover:bg-slate-100'}`}
+                        >
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                        </button>
+                      )}
+                    </div>
+                    {isExpanded && (
+                      <div className={`px-3 pb-3 pt-0.5 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                        {aiTakeLoadingId === player.id ? (
+                          <div className="space-y-1.5 pt-2">
+                            <div className={`animate-pulse h-2.5 rounded ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                            <div className={`animate-pulse h-2.5 rounded w-4/5 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                          </div>
+                        ) : aiTakeErrors[player.id] ? (
+                          <p className={`text-xs pt-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{aiTakeErrors[player.id]}</p>
+                        ) : aiTakes[player.id] ? (
+                          <p className={`text-xs leading-relaxed pt-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{aiTakes[player.id]}</p>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               {sortedPlayers.length === 0 && !loading && (
                 <p className={`text-sm text-center py-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   {error ? 'Players could not be loaded' : 'Sync your league to see available players'}

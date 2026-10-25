@@ -362,7 +362,7 @@
 ### Pro Tier ($4.99/mo)
 - [ ] AI Trade Analyzer - GPT-powered "Who wins this trade?" with ROS projections. Sidebar nav item removed for beta — re-add `{ icon: ArrowRightLeft, label: 'Trade Analyzer', view: 'TradeAnalyzer' }` to `Sidebar.tsx` menuItems. Route and `ComingSoonView` still exist in `App.tsx`.
 - [ ] Start/Sit Optimizer - Matchup-based lineup recommendations (weather, Vegas lines, defensive rankings)
-- [ ] Waiver Wire Rankings - Priority-ranked targets with FAAB bid suggestions
+- [ ] Waiver Wire Rankings - Priority-ranked targets with FAAB bid suggestions. First cut shipped: a Pro-gated "AI Take" per top-available player on WaiversView, reusing the existing per-player AI analysis endpoint. Still open: a real ranking formula and FAAB bid suggestions.
 - [ ] Advanced Projections - Multi-source consensus (ESPN, FantasyPros, PFF) with trend graphs
 - [ ] Custom Alerts - Push/email notifications for injuries, lineup locks, stat milestones
 - [ ] Snap Count Analytics - Usage trend charts (target share, snap %, red zone opportunities)
