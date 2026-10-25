@@ -170,7 +170,7 @@
 - [ ] **Matchup page insights working** - Re-add the FilmRoom Edge Analysis section on the Matchup page with real, data-driven insights (e.g. position advantages, start/sit suggestions, injury alerts). Previously removed because it was hardcoded fake content.
 
 ### Notifications
-- [ ] **Working notifications** - Implement real push/in-app notifications for injuries, lineup locks, trade offers, and waiver results.
+- [ ] **Working notifications** - Real in-app injury notifications shipped, plus an opt-in email digest for the same injury alerts (Settings → Email Alerts, gated on a verified address, sent via Resend from the existing injury-notification cron). Push notifications and lineup-lock/trade-offer/waiver-result event types remain.
 - [x] **Restore notification bell in header** - Re-added `<Bell>` icon from lucide-react to Header. Shows for authenticated users with "coming soon" tooltip. Ready to wire to notification API when backend is built.
 
 ### Waivers

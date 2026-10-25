@@ -406,6 +406,7 @@ authRoutes.get('/me', authMiddleware, async (c) => {
       preferredScoring: user.preferredScoring ?? 'ppr',
       darkMode: user.darkMode ?? true,
       notificationsEnabled: user.notificationsEnabled ?? true,
+      emailNotificationsEnabled: user.emailNotificationsEnabled ?? false,
       hasGoogle: !!user.googleId,
       hasPassword: !!user.passwordHash,
       subscriptionTier: effectiveTier.tier,
@@ -430,7 +431,7 @@ authRoutes.put('/profile', profileRateLimit, authMiddleware, async (c) => {
   try {
     const user = c.get('user');
     const body = await c.req.json();
-    const { username, email: newEmail, avatarUrl, preferredScoring, darkMode, notificationsEnabled } = body;
+    const { username, email: newEmail, avatarUrl, preferredScoring, darkMode, notificationsEnabled, emailNotificationsEnabled } = body;
 
     if (!user) {
       return c.json({ error: 'Not authenticated' }, 401);
@@ -481,6 +482,12 @@ authRoutes.put('/profile', profileRateLimit, authMiddleware, async (c) => {
     if (preferredScoring !== undefined) updates.preferredScoring = preferredScoring;
     if (darkMode !== undefined) updates.darkMode = darkMode;
     if (notificationsEnabled !== undefined) updates.notificationsEnabled = notificationsEnabled;
+    if (emailNotificationsEnabled !== undefined) {
+      if (emailNotificationsEnabled && !user.emailVerifiedAt) {
+        return c.json({ error: 'Verify your email address before enabling email alerts' }, 400);
+      }
+      updates.emailNotificationsEnabled = emailNotificationsEnabled;
+    }
 
     await db
       .update(schema.users)
@@ -489,7 +496,7 @@ authRoutes.put('/profile', profileRateLimit, authMiddleware, async (c) => {
 
     const updated = await db.query.users.findFirst({
       where: eq(schema.users.id, user.id),
-      columns: { id: true, email: true, username: true, avatarUrl: true, preferredScoring: true, darkMode: true, notificationsEnabled: true },
+      columns: { id: true, email: true, username: true, avatarUrl: true, preferredScoring: true, darkMode: true, notificationsEnabled: true, emailNotificationsEnabled: true },
     });
 
     return c.json({
@@ -501,6 +508,7 @@ authRoutes.put('/profile', profileRateLimit, authMiddleware, async (c) => {
         preferredScoring: updated!.preferredScoring ?? 'ppr',
         darkMode: updated!.darkMode ?? true,
         notificationsEnabled: updated!.notificationsEnabled ?? true,
+        emailNotificationsEnabled: updated!.emailNotificationsEnabled ?? false,
       },
     });
   } catch (error) {

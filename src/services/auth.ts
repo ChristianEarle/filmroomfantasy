@@ -13,6 +13,7 @@ export interface User {
   preferredScoring?: ScoringFormat;
   darkMode?: boolean;
   notificationsEnabled?: boolean;
+  emailNotificationsEnabled?: boolean;
   hasGoogle?: boolean;
   hasPassword?: boolean;
   subscriptionTier?: 'free' | 'pro' | 'elite';
@@ -29,6 +30,7 @@ export interface UpdateProfileData {
   preferredScoring?: ScoringFormat;
   darkMode?: boolean;
   notificationsEnabled?: boolean;
+  emailNotificationsEnabled?: boolean;
 }
 
 export interface League {

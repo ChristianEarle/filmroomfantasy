@@ -18,6 +18,7 @@ export const users = sqliteTable('users', {
   preferredScoring: text('preferred_scoring').default('ppr'),
   darkMode: integer('dark_mode', { mode: 'boolean' }).default(true),
   notificationsEnabled: integer('notifications_enabled', { mode: 'boolean' }).default(true),
+  emailNotificationsEnabled: integer('email_notifications_enabled', { mode: 'boolean' }).notNull().default(false),
   subscriptionTier: text('subscription_tier').notNull().default('free'),
   stripeCustomerId: text('stripe_customer_id'),
   stripeSubscriptionId: text('stripe_subscription_id'),
