@@ -69,6 +69,13 @@ export interface GamesByDay {
   [date: string]: NFLGame[];
 }
 
+/** GET /games/:id/recap — cached AI recap for a finalized game (Pro/Elite). */
+export interface GameRecapResponse {
+  recap: string;
+  cached: boolean;
+  generatedAt: string;
+}
+
 export interface GameProps {
   gameId: string;
   spread?: number;
@@ -194,6 +201,11 @@ export const gameService = {
     return api.get<{ team: string; season: number; schedule: TeamScheduleGame[] }>(
       `/games/team/${team}${query}`
     );
+  },
+
+  // Get the cached/generated AI recap for a finalized game (Pro/Elite only — server enforces via requireTier)
+  getGameRecap: async (gameId: string): Promise<GameRecapResponse> => {
+    return api.get<GameRecapResponse>(`/games/${gameId}/recap`);
   },
 };
 
