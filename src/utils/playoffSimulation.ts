@@ -104,9 +104,17 @@ export function winProbability(ppg1: number, ppg2: number): number {
   return Math.min(WIN_PROB_CEILING, Math.max(WIN_PROB_FLOOR, raw));
 }
 
+export interface SimulationOverrides {
+  /** Remaining game id → team id picked to win; those games are no longer random. */
+  fixedWinners?: Map<string, string>;
+  /** Extra points-for per team (hypothetical scores entered in the simulator), used for the tiebreak. */
+  extraPointsFor?: Map<string, number>;
+}
+
 /**
  * Simulate the rest of the regular season `numSims` times. `remaining` should
- * come from remainingRegularSeasonGames(). `random` is injectable for tests.
+ * come from remainingRegularSeasonGames(). `overrides` locks in simulator
+ * picks. `random` is injectable for tests.
  */
 export function runPlayoffSimulation(
   standings: StandingInput[],
@@ -114,9 +122,18 @@ export function runPlayoffSimulation(
   playoffSpots: number,
   numSims = DEFAULT_NUM_SIMULATIONS,
   random: () => number = Math.random,
+  overrides: SimulationOverrides = {},
 ): Map<string, MonteCarloResult> {
   const results = new Map<string, MonteCarloResult>();
   if (standings.length === 0) return results;
+
+  // Win probabilities come from real scoring only, so hypothetical points
+  // affect the tiebreak but not team strength.
+  const { ppg, leagueAvg } = teamPointsPerGame(standings);
+  const extraPf = overrides.extraPointsFor;
+  if (extraPf && extraPf.size > 0) {
+    standings = standings.map((s) => ({ ...s, pointsFor: s.pointsFor + (extraPf.get(s.teamId) ?? 0) }));
+  }
 
   // No games left: the standings are final.
   if (remaining.length === 0) {
@@ -125,12 +142,17 @@ export function runPlayoffSimulation(
     return results;
   }
 
-  const { ppg, leagueAvg } = teamPointsPerGame(standings);
-  const games = remaining.map((m) => ({
-    team1Id: m.team1Id,
-    team2Id: m.team2Id,
-    p1: winProbability(ppg.get(m.team1Id) ?? leagueAvg, ppg.get(m.team2Id) ?? leagueAvg),
-  }));
+  const fixed = overrides.fixedWinners;
+  const games = remaining.map((m) => {
+    const pick = fixed?.get(m.id);
+    return {
+      team1Id: m.team1Id,
+      team2Id: m.team2Id,
+      // A picked game always goes to the pick (random() is in [0, 1)).
+      p1: pick === m.team1Id ? 1 : pick === m.team2Id ? 0
+        : winProbability(ppg.get(m.team1Id) ?? leagueAvg, ppg.get(m.team2Id) ?? leagueAvg),
+    };
+  });
 
   const playoffCount: Record<string, number> = {};
   const totalWins: Record<string, number> = {};

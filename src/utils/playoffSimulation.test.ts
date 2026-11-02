@@ -95,6 +95,40 @@ describe('runPlayoffSimulation', () => {
   });
 });
 
+describe('runPlayoffSimulation with simulator picks', () => {
+  it('locks picked games to the chosen winner and moves the odds', () => {
+    const { standings, schedule } = earlySeasonLeague();
+    const remaining = remainingRegularSeasonGames(standings, schedule);
+    const base = runPlayoffSimulation(standings, remaining, 6, 4000);
+    // t9 wins every remaining game.
+    const fixedWinners = new Map(
+      remaining.filter((m) => m.team1Id === 't9' || m.team2Id === 't9').map((m) => [m.id, 't9']),
+    );
+    const picked = runPlayoffSimulation(standings, remaining, 6, 4000, Math.random, { fixedWinners });
+    expect(picked.get('t9')?.playoffPct).toBe(100);
+    expect(picked.get('t9')?.avgProjectedWins).toBe(1 + fixedWinners.size);
+    expect(picked.get('t9')!.playoffPct).toBeGreaterThan(base.get('t9')!.playoffPct);
+  });
+
+  it('uses entered points for the tiebreak only', () => {
+    const standings: StandingInput[] = [
+      { teamId: 'a', wins: 5, losses: 0, ties: 0, pointsFor: 500 },
+      { teamId: 'b', wins: 5, losses: 0, ties: 0, pointsFor: 600 },
+    ];
+    const remaining: ScheduleMatchup[] = [
+      { id: 'g1', week: 6, team1Id: 'a', team2Id: 'x' },
+      { id: 'g2', week: 6, team1Id: 'b', team2Id: 'y' },
+    ];
+    const all = [...standings, { teamId: 'x', wins: 0, losses: 5, ties: 0, pointsFor: 400 }, { teamId: 'y', wins: 0, losses: 5, ties: 0, pointsFor: 400 }];
+    const odds = runPlayoffSimulation(all, remaining, 1, 200, Math.random, {
+      fixedWinners: new Map([['g1', 'a'], ['g2', 'b']]),
+      extraPointsFor: new Map([['a', 200]]),
+    });
+    expect(odds.get('a')?.playoffPct).toBe(100);
+    expect(odds.get('b')?.playoffPct).toBe(0);
+  });
+});
+
 describe('winProbability', () => {
   it('uses the points-per-game ratio clamped to 15–85%', () => {
     expect(winProbability(120, 120)).toBe(0.5);
