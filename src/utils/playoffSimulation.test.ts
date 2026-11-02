@@ -3,6 +3,7 @@ import {
   regularSeasonLength,
   remainingRegularSeasonGames,
   runPlayoffSimulation,
+  seededRandom,
   winProbability,
   type ScheduleMatchup,
   type StandingInput,
@@ -108,6 +109,14 @@ describe('runPlayoffSimulation with simulator picks', () => {
     expect(picked.get('t9')?.playoffPct).toBe(100);
     expect(picked.get('t9')?.avgProjectedWins).toBe(1 + fixedWinners.size);
     expect(picked.get('t9')!.playoffPct).toBeGreaterThan(base.get('t9')!.playoffPct);
+  });
+
+  it('with the same seed and no picks, matches the baseline exactly', () => {
+    const { standings, schedule } = earlySeasonLeague();
+    const remaining = remainingRegularSeasonGames(standings, schedule);
+    const base = runPlayoffSimulation(standings, remaining, 6, 2000, seededRandom());
+    const noPicks = runPlayoffSimulation(standings, remaining, 6, 2000, seededRandom(), { fixedWinners: new Map() });
+    expect([...noPicks.entries()]).toEqual([...base.entries()]);
   });
 
   it('uses entered points for the tiebreak only', () => {

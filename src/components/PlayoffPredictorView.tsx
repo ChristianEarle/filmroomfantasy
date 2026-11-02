@@ -1,7 +1,7 @@
 import { Trophy, TrendingUp, TrendingDown, Calendar, Award, BarChart3, Shuffle, CheckCircle2, Loader2 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useLeagueContext, LeagueMatchup } from '../context/LeagueContext';
-import { remainingRegularSeasonGames, runPlayoffSimulation, teamPointsPerGame, winProbability } from '../utils/playoffSimulation';
+import { remainingRegularSeasonGames, runPlayoffSimulation, seededRandom, teamPointsPerGame, winProbability } from '../utils/playoffSimulation';
 
 interface Team {
   id: string;
@@ -134,7 +134,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
   const monteCarloResults = useMemo(() => {
     if (standingsInput.length === 0) return null;
     const playoffSpots = league?.playoffTeams || 6;
-    return runPlayoffSimulation(standingsInput, remainingGames, playoffSpots);
+    return runPlayoffSimulation(standingsInput, remainingGames, playoffSpots, undefined, seededRandom());
   }, [standingsInput, remainingGames, league]);
 
   // Convert real standings to Team format, powered by Monte Carlo
@@ -241,7 +241,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
     }
     return runPlayoffSimulation(
       standingsInput, remainingGames, league?.playoffTeams || 6,
-      undefined, undefined, { fixedWinners, extraPointsFor },
+      undefined, seededRandom(), { fixedWinners, extraPointsFor },
     );
   }, [activeTab, standingsInput, remainingGames, matchups, remainingIds, showPointsInput, league]);
 

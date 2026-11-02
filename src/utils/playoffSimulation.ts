@@ -98,6 +98,24 @@ export function teamPointsPerGame(standings: StandingInput[]): { ppg: Map<string
   return { ppg, leagueAvg };
 }
 
+/**
+ * Deterministic random source (mulberry32). The predictor and the simulator
+ * both use a fresh one with the same seed so their runs share the same
+ * random draws: games you didn't pick play out identically in both, and the
+ * odds change only because of your picks, not Monte Carlo noise.
+ */
+export const SIMULATION_SEED = 0x5eed;
+export function seededRandom(seed: number = SIMULATION_SEED): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /** Probability team 1 beats team 2 under the shared model. */
 export function winProbability(ppg1: number, ppg2: number): number {
   const raw = ppg1 + ppg2 > 0 ? ppg1 / (ppg1 + ppg2) : 0.5;
