@@ -12,6 +12,11 @@
 > (owner-blocked credentials, external data sources, premium roadmap).
 > Checkboxes below are historical; `TODO.md` is the live list.
 >
+> **Follow-up:** added full-season AI projections (`GET
+> /players/:id/season-projection`, surfaced on PlayerCard) by exposing
+> Draft Rankings' existing redraft `projectedPoints` rather than building
+> a new model. See `TODO.md` → "Shipped since the completion sprint".
+>
 > **2026-09-06:** several backlog items shipped (season projections,
 > Redraft/Dynasty/Rookie split, League Analyzer AI narratives + pulse
 > ranking, backend Vitest harness, Sidebar audit, mobile sweeps — see
