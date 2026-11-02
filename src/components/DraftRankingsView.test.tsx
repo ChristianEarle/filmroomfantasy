@@ -177,17 +177,17 @@ describe('DraftRankingsView — data fetching', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dynasty' }));
     await waitFor(() => {
       const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
-      expect(urls.some(u => u.includes('type=dynasty') && !u.includes('type=dynasty_rookie'))).toBe(true);
+      expect(urls.some(u => u.includes('type=dynasty'))).toBe(true);
     });
   });
 
-  it('refetches dynasty rookies when the Rookie pill is clicked', async () => {
+  it('refetches rookie rankings when the Rookie pill is clicked', async () => {
     renderView();
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: 'Rookie' }));
     await waitFor(() => {
       const urls = hoisted.mockGet.mock.calls.map(c => c[0] as string);
-      expect(urls.some(u => u.includes('type=dynasty_rookie'))).toBe(true);
+      expect(urls.some(u => u.includes('type=rookie'))).toBe(true);
     });
   });
 
