@@ -1,7 +1,7 @@
 import { Trophy, TrendingUp, TrendingDown, Calendar, Award, BarChart3, Shuffle, CheckCircle2, Loader2 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useLeagueContext, LeagueMatchup } from '../context/LeagueContext';
-import { remainingRegularSeasonGames, runPlayoffSimulation, teamPointsPerGame, winProbability } from '../utils/playoffSimulation';
+import { remainingRegularSeasonGames, runPlayoffSimulation, seededRandom, teamPointsPerGame, winProbability } from '../utils/playoffSimulation';
 
 interface Team {
   id: string;
@@ -134,7 +134,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
   const monteCarloResults = useMemo(() => {
     if (standingsInput.length === 0) return null;
     const playoffSpots = league?.playoffTeams || 6;
-    return runPlayoffSimulation(standingsInput, remainingGames, playoffSpots);
+    return runPlayoffSimulation(standingsInput, remainingGames, playoffSpots, undefined, seededRandom());
   }, [standingsInput, remainingGames, league]);
 
   // Convert real standings to Team format, powered by Monte Carlo
@@ -168,6 +168,10 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
     return [];
   }, [standings, matchups, remainingGames, monteCarloResults]);
   
+  // Ids of the regular-season games still to play — the only games the
+  // simulator lets you pick, so picks and odds use the same schedule.
+  const remainingIds = useMemo(() => new Set(remainingGames.map(m => m.id)), [remainingGames]);
+
   // Calculate simulated standings based on matchup selections
   const simulatedStandings = useMemo(() => {
     if (leagueTeamsData.length === 0) return [];
@@ -180,7 +184,7 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
     }));
 
     // Only process incomplete regular-season matchups that have a selected winner
-    matchups.filter(m => !m.isComplete && !m.isPlayoff).forEach(matchup => {
+    matchups.filter(m => remainingIds.has(m.id)).forEach(matchup => {
       if (matchup.winner) {
         const winnerTeam = teamRecords.find(t => t.id === matchup.winner);
         const loserTeam = teamRecords.find(t =>
@@ -219,7 +223,30 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
       }
       return b.simulatedPointsFor - a.simulatedPointsFor;
     });
-  }, [leagueTeamsData, matchups, showPointsInput]);
+  }, [leagueTeamsData, matchups, showPointsInput, remainingIds]);
+
+  // Playoff odds with the simulator's picks locked in; unpicked games are
+  // still simulated. Recomputes on every pick.
+  const simulatedOdds = useMemo(() => {
+    if (activeTab !== 'simulator' || standingsInput.length === 0) return null;
+    const fixedWinners = new Map<string, string>();
+    const extraPointsFor = new Map<string, number>();
+    for (const m of matchups) {
+      if (!remainingIds.has(m.id) || !m.winner) continue;
+      fixedWinners.set(m.id, m.winner);
+      if (showPointsInput) {
+        if (m.team1Points) extraPointsFor.set(m.team1Id, (extraPointsFor.get(m.team1Id) || 0) + m.team1Points);
+        if (m.team2Points) extraPointsFor.set(m.team2Id, (extraPointsFor.get(m.team2Id) || 0) + m.team2Points);
+      }
+    }
+    return runPlayoffSimulation(
+      standingsInput, remainingGames, league?.playoffTeams || 6,
+      undefined, seededRandom(), { fixedWinners, extraPointsFor },
+    );
+  }, [activeTab, standingsInput, remainingGames, matchups, remainingIds, showPointsInput, league]);
+
+  // Simulator weeks: only weeks with games still to play.
+  const simulatorWeeks = remainingWeeks;
 
   const handleMatchupWinner = (matchupId: string, winnerId: string) => {
     setMatchups(prev => prev.map(m =>
@@ -720,32 +747,29 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
             </div>
 
             {/* Dynamic Week Matchups */}
-            {matchupWeeks.length === 0 ? (
+            {simulatorWeeks.length === 0 ? (
               <div className={`rounded-lg border p-8 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
                 <Calendar className={`w-12 h-12 mx-auto mb-3 ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`} aria-hidden="true" />
                 <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                  No matchups found. Sync your league to load matchup data.
+                  {matchupWeeks.length === 0
+                    ? 'No matchups found. Sync your league to load matchup data.'
+                    : 'No regular-season games left to simulate.'}
                 </p>
               </div>
             ) : (
-              matchupWeeks.map(week => {
-                const weekMatchups = matchups.filter(m => m.week === week && !m.isPlayoff);
-                const isWeekComplete = weekMatchups.every(m => m.isComplete);
+              simulatorWeeks.map(week => {
+                // Games already final this week stay visible (locked) next to the open ones.
+                const weekMatchups = matchups.filter(m => m.week === week && !m.isPlayoff && (m.isComplete || remainingIds.has(m.id)));
 
                 return (
                   <div
                     key={week}
-                    className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} ${isWeekComplete ? 'opacity-60' : ''}`}
+                    className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
                   >
                     <div className="flex items-center justify-between mb-4">
                       <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                         Week {week} Matchups
                       </h3>
-                      {isWeekComplete && (
-                        <span className={`text-xs px-2 py-1 rounded-full ${isDarkMode ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-600'}`}>
-                          Completed
-                        </span>
-                      )}
                     </div>
                     <div className="space-y-3">
                       {weekMatchups.map((matchup) => (
@@ -845,7 +869,10 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
           {/* Simulated Standings */}
           <div className="space-y-6">
             <div className={`rounded-lg border p-6 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-              <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Simulated Final Standings</h3>
+              <h3 className={`font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Simulated Standings</h3>
+              <p className={`text-xs mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Playoff % updates with your picks; games you don't pick are still simulated.
+              </p>
               <div className="space-y-3">
                 {simulatedStandings.map((team, index) => (
                   <div
@@ -866,8 +893,24 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                       </span>
                     </div>
                     <div className={`font-semibold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{team.name}</div>
-                    <div className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      {team.simulatedPointsFor.toFixed(1)} PF
+                    <div className="flex items-center justify-between mt-1">
+                      <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {team.simulatedPointsFor.toFixed(1)} PF
+                      </span>
+                      {(() => {
+                        const pct = simulatedOdds?.get(team.id)?.playoffPct ?? team.playoffChance;
+                        const delta = pct - team.playoffChance;
+                        return (
+                          <span className="text-xs" aria-label={`Playoff chance ${pct}%`}>
+                            <span className={`font-bold ${getPlayoffChanceColor(pct)}`}>{pct}%</span>
+                            {delta !== 0 && (
+                              <span className={`ml-1 ${delta > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {delta > 0 ? '▲' : '▼'}{Math.abs(delta)}
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
@@ -890,6 +933,12 @@ export function PlayoffPredictorView({ isDarkMode }: PlayoffPredictorViewProps) 
                     {userSimulatedTeam
                       ? formatRecord(userSimulatedTeam.simulatedWins, userSimulatedTeam.simulatedLosses, userSimulatedTeam.ties)
                       : '-'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Your Playoff Chance:</span>
+                  <span className={`font-semibold ${userSimulatedTeam ? getPlayoffChanceColor(simulatedOdds?.get(userSimulatedTeam.id)?.playoffPct ?? userSimulatedTeam.playoffChance) : ''}`}>
+                    {userSimulatedTeam ? `${simulatedOdds?.get(userSimulatedTeam.id)?.playoffPct ?? userSimulatedTeam.playoffChance}%` : '-'}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
